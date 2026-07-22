@@ -277,39 +277,27 @@ html, body {
 /* ============================================================
    CHARTS AREA
    ============================================================ */
-/* チャート領域の外枠。スクラブライン・パーティクルはこの中に
-   absoluteで固定し、スクロールに一切参加させない
-   （iOS Safariのsticky追従バグによる「飛び」を構造的に排除） */
+/* チャート領域（Meteograms風・全期間1画面固定表示）。
+   時刻選択はタップ/ドラッグ。カーソル・パーティクルはabsolute配置 */
 #charts-outer {
   flex: 1;
   min-height: 0;
   position: relative;
-  background: #f9f8f5;
+  background: #ffffff;
+  overflow: hidden;
+  touch-action: none;   /* ポインタドラッグで時刻選択するため */
 }
-#charts-wrapper {
-  height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  /* スクロールバー非表示 */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-#charts-wrapper::-webkit-scrollbar { display: none; }
-#charts-inner {
-  position: relative;
-  width: max-content;   /* チャート実幅に合わせてラッパーを横スクロールさせる */
-}
-/* 現在位置スクラブライン（画面左1/3に完全固定。チャート側が下を流れ、
-   日を跨いでもシームレス。スクロールコンテナ外なので絶対に動かない） */
+/* 選択時刻カーソル（transformのみで移動。canvas再描画なし） */
 #scrub-line {
   position: absolute;
-  left: 33%;
+  left: 0;
   top: 0;
   width: 0;
   height: 0;
   overflow: visible;
   z-index: 6;
   pointer-events: none;
+  will-change: transform;
 }
 #scrub-bar {
   position: absolute;
@@ -700,14 +688,6 @@ html, body {
   pointer-events: none;
   z-index: 5;
 }
-/* 固定Y軸ガター（画面左端。スクロールしても目盛りが消えない） */
-#axis-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 6;
-}
 
 /* ============================================================
    LEGEND
@@ -746,7 +726,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.5.0</span>
+    <span id="app-version">v4.6.0</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
@@ -801,17 +781,12 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#888"></div>気圧hPa</div>
   </div>
 
-  <!-- Charts -->
+  <!-- Charts（Meteograms風・全期間1画面表示、横スクロールなし） -->
   <div id="charts-outer">
-    <div id="charts-wrapper">
-      <div id="charts-inner">
-        <div id="chart-sky"></div>
-        <div id="chart-precip"></div>
-        <div id="chart-wind"></div>
-      </div>
-    </div>
+    <div id="chart-sky"></div>
+    <div id="chart-precip"></div>
+    <div id="chart-wind"></div>
     <canvas id="particle-canvas"></canvas>
-    <canvas id="axis-canvas"></canvas>
     <div id="scrub-line">
       <div id="scrub-bar"></div>
       <span id="time-badge">--:00</span>
@@ -895,6 +870,7 @@ const state = {
   locationName: '立山・黒部',
   mode: 'day',
   allData: null,
+  daily: null,       // 日の出・日の入り
   sliderIndex: 24,   // デフォルト：今日0時（index 24 = past_days=1の翌日）
   dayOffset: 0,
 };
@@ -925,12 +901,13 @@ function setMode(m) {
    ============================================================ */
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,weathercode,cloudcover&timezone=Asia%2FTokyo&past_days=1&forecast_days=3&models=jma_seamless`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,weathercode,cloudcover&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=1&forecast_days=3&models=jma_seamless`;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     state.allData = processData(json);
+    state.daily = json.daily || null;   // 日の出・日の入り（昼間帯シェーディング用）
     state.lat = lat;
     state.lon = lon;
     // 初期表示位置は現在時刻（データ範囲外なら今日0時のまま）
@@ -965,6 +942,7 @@ function processData(json) {
       snow: h.snowfall[i],
       pressure: h.surface_pressure[i],
       wind: h.windspeed_10m[i],
+      wdir: h.winddirection_10m ? h.winddirection_10m[i] : null,
       wcode: h.weathercode[i],
       cloud: h.cloudcover[i],
       dpress: pres6,
@@ -1014,10 +992,9 @@ function render() {
     updateLocationName();
     updateHUD();
     updateABC();
-    buildCharts();          // データ取得時のみの1回描画
-    updateScrubBadge();
+    buildCharts();          // データ取得・リサイズ時のみの1回描画
+    updateCursor();
     updateNowButton();
-    scrollToIndex(state.sliderIndex);
     updateSliderLabels();
     updateDayTabs();
     updateParticles();
@@ -1122,52 +1099,44 @@ function updateABC() {
 }
 
 /* ============================================================
-   CHARTS (uPlot)  ── データ取得時に1回だけ描画。
-   スクロールはCSSネイティブ、現在位置インジケーターはDOM
-   オーバーレイのtransform更新のみ（canvas再描画なし）
+   CHARTS (uPlot)  ── Meteograms風の全期間1画面表示。
+   横スクロールなし。時刻選択はチャートのタップ/ドラッグと
+   スライダー。描画はデータ取得・リサイズ時のみ
    ============================================================ */
-const CHART_H_SKY   = 140;
-const CHART_H_PREC  = 90;
-const CHART_H_WIND  = 90;
-const PADDING_L     = 38;
-const PADDING_R     = 8;
-const PX_PER_HOUR   = 18;   // 1時間あたりのpx幅（96h × 18 = 1728px）
+const CHART_H_SKY   = 160;
+const CHART_H_PREC  = 85;
+const CHART_H_WIND  = 115;
+const PADDING_L     = 34;
+const PADDING_R     = 6;
 const HOURS         = 96;
+const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
 let skyChart = null, precipChart = null, windChart = null;
+let chartW = 360;           // チャート全幅（buildChartsで実測）
 
-// 全体の論理幅（CSS px）
-function chartTotalW() { return PADDING_L + HOURS * PX_PER_HOUR + PADDING_R; }
+// 1時間あたりのpx幅（画面幅に96hを収める）
+function pxPerHour() { return (chartW - PADDING_L - PADDING_R) / HOURS; }
 
-// sliderIndexに対応するx座標（バーの中心、CSS px）
-function idxToX(idx) { return PADDING_L + (idx + 0.5) * PX_PER_HOUR; }
+// indexに対応するx座標（時刻の中心、CSS px）
+function idxToX(idx) { return PADDING_L + (idx + 0.5) * pxPerHour(); }
+
+// x座標 → index（タップ位置の逆算）
+function xToIdx(x) {
+  const raw = Math.round((x - PADDING_L) / pxPerHour() - 0.5);
+  return Math.max(0, Math.min(HOURS - 1, raw));
+}
 
 // 実際のcanvas倍率（pxRatio未対応環境でもcanvas実寸から算出）
 function canvasRatio(u) { return u.ctx.canvas.width / u.width; }
-
-// スクラブライン（画面左1/3固定）に全時刻が到達できるよう、
-// チャート両端に余白を設ける。戻り値はモジュール変数chartPadLに保持
-let chartPadL = 0;
-function updateChartSpacers() {
-  const wrap = document.getElementById('charts-wrapper');
-  const vw = wrap.clientWidth || window.innerWidth;
-  chartPadL = Math.max(0, Math.round(vw * 0.33 - idxToX(0)));
-  const padR = Math.max(0, Math.round(vw * 0.67 - (chartTotalW() - idxToX(HOURS - 1))));
-  const inner = document.getElementById('charts-inner');
-  inner.style.paddingLeft = chartPadL + 'px';
-  inner.style.paddingRight = padR + 'px';
-  // box-sizing: border-boxのためpadding込みの幅を指定
-  // （uPlotのサイズ適用は次フレーム遅延のため、スクロール可能幅を先に確定させる）
-  inner.style.width = (chartTotalW() + chartPadL + padR) + 'px';
-}
 
 function buildCharts() {
   if (typeof uPlot === 'undefined') {
     throw new Error('チャートライブラリ(uPlot)の読み込みに失敗しました。通信環境を確認して再読み込みしてください');
   }
   const data = state.allData;
-  updateChartSpacers();
+  const outer = document.getElementById('charts-outer');
+  chartW = outer.clientWidth || window.innerWidth;
   const xs       = data.map((_, i) => i);
   const temps    = data.map(d => d.temp);
   const precips  = data.map(d => d.precip);
@@ -1180,18 +1149,18 @@ function buildCharts() {
   if (windChart)   { windChart.destroy();   windChart = null; }
 
   const common = {
-    width: chartTotalW(),
+    width: chartW,
     pxRatio: PX_RATIO,
     cursor: { show: false },
     legend: { show: false },
   };
   const xScale = { time: false, range: [-0.5, HOURS - 0.5] };
 
-  // --- SKY（空色背景 + 気温ライン） ---
+  // --- TEMP（白地＋昼間帯 + 気温ライン + 最高/最低注記） ---
   skyChart = new uPlot({
     ...common,
     height: CHART_H_SKY,
-    padding: [30, PADDING_R, 16, PADDING_L],
+    padding: [34, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
       y: { range: (u, min, max) => [min - 3, max + 3] },
@@ -1206,15 +1175,15 @@ function buildCharts() {
         points: { show: false },
         fill: u => {
           const g = u.ctx.createLinearGradient(0, 0, 0, u.ctx.canvas.height);
-          g.addColorStop(0, 'rgba(224,80,32,0.4)');
+          g.addColorStop(0, 'rgba(224,80,32,0.22)');
           g.addColorStop(1, 'rgba(224,80,32,0)');
           return g;
         },
       },
     ],
     hooks: {
-      drawClear: [drawSkyBackground],
-      draw: [drawSkyOverlay, drawNowMarker],
+      drawClear: [drawDayBackground],
+      draw: [drawTempOverlay, drawNowMarker],
     },
   }, [xs, temps], document.getElementById('chart-sky'));
 
@@ -1222,7 +1191,7 @@ function buildCharts() {
   precipChart = new uPlot({
     ...common,
     height: CHART_H_PREC,
-    padding: [10, PADDING_R, 0, PADDING_L],
+    padding: [8, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
       y: { range: (u, min, max) => [0, Math.max(5, max)] },
@@ -1234,16 +1203,16 @@ function buildCharts() {
       { paths: () => null, points: { show: false } },  // 降雪（スケール算出用）
     ],
     hooks: {
-      drawClear: [drawPanelBackground],
+      drawClear: [drawDayBackground],
       draw: [drawPrecipBars, drawNowMarker],
     },
   }, [xs, precips, snows], document.getElementById('chart-precip'));
 
-  // --- WIND + PRESSURE（風速バーはhook描画、気圧はライン） ---
+  // --- WIND + PRESSURE（風速バーはhook描画、気圧ライン、風向矢印） ---
   windChart = new uPlot({
     ...common,
     height: CHART_H_WIND,
-    padding: [10, PADDING_R, 0, PADDING_L],
+    padding: [24, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
       w: { range: (u, min, max) => [0, Math.max(20, max)] },
@@ -1256,177 +1225,145 @@ function buildCharts() {
       { scale: 'p', stroke: '#aaa', width: 1.5, spanGaps: true, points: { show: false } },  // 気圧
     ],
     hooks: {
-      drawClear: [drawPanelBackground],
-      draw: [drawWindBars, drawNowMarker],
+      drawClear: [drawDayBackground],
+      draw: [drawWindOverlay, drawNowMarker],
     },
   }, [xs, winds, pressures], document.getElementById('chart-wind'));
 
-  // スクラブラインの高さをチャート合計に合わせる
+  // カーソルの高さをチャート合計に合わせる
   document.getElementById('scrub-bar').style.height =
     (CHART_H_SKY + CHART_H_PREC + CHART_H_WIND) + 'px';
-
-  // 固定Y軸ガター用のスケール情報（uPlotのrange関数と同一の計算）
-  const validTemps = temps.filter(v => v != null);
-  scaleInfo = {
-    tempMin: Math.min(...validTemps) - 3,
-    tempMax: Math.max(...validTemps) + 3,
-    precipMax: Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0)),
-    windMax: Math.max(20, ...winds.map(v => v || 0)),
-  };
-  drawAxisGutter();
 }
 
-/* ------ 固定Y軸ガター（画面左端に固定。スクロールで目盛りが消えない） ------ */
-let scaleInfo = null;
-
-function drawAxisGutter() {
-  const c = document.getElementById('axis-canvas');
-  const W = PADDING_L + 2;
-  const H = CHART_H_SKY + CHART_H_PREC + CHART_H_WIND;
-  c.width = Math.round(W * PX_RATIO);
-  c.height = Math.round(H * PX_RATIO);
-  c.style.width = W + 'px';
-  c.style.height = H + 'px';
-  const ctx = c.getContext('2d');
-  ctx.setTransform(PX_RATIO, 0, 0, PX_RATIO, 0, 0);
-
-  // 半透明の下地 + 右境界線
-  ctx.fillStyle = 'rgba(249,248,245,0.88)';
-  ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(W - 0.5, 0); ctx.lineTo(W - 0.5, H); ctx.stroke();
-  if (!scaleInfo) return;
-  const si = scaleInfo;
-
-  // --- 気温（skyチャート、padding[30,,16]と同一ジオメトリ） ---
-  const skyTop = 30;
-  const skyBottom = CHART_H_SKY - 16;
-  const ty = t => skyTop + (si.tempMax - t) / (si.tempMax - si.tempMin) * (skyBottom - skyTop);
-  ctx.textAlign = 'left';
-  ctx.font = "bold 8px 'Noto Sans JP', sans-serif";
-  ctx.fillStyle = '#e05020';
-  ctx.fillText('気温℃', 3, 10);
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'right';
-  [si.tempMin + 2, (si.tempMin + si.tempMax) / 2, si.tempMax - 2].forEach(t => {
-    ctx.fillText(Math.round(t) + '°', W - 4, ty(t) + 3);
-  });
-
-  // --- 降水・降雪 ---
-  const pTop = CHART_H_SKY;
-  ctx.textAlign = 'left';
-  ctx.font = "bold 8px 'Noto Sans JP', sans-serif";
-  ctx.fillStyle = '#3a7fc1';
-  ctx.fillText('降水㎜', 3, pTop + 10);
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'right';
-  ctx.fillText(si.precipMax.toFixed(0), W - 4, pTop + 22);
-  ctx.fillStyle = 'rgba(58,127,193,0.6)';
-  ctx.fillText('0', W - 4, pTop + CHART_H_PREC - 3);
-
-  // --- 風・気圧 ---
-  const wTop = CHART_H_SKY + CHART_H_PREC;
-  ctx.textAlign = 'left';
-  ctx.font = "bold 8px 'Noto Sans JP', sans-serif";
-  ctx.fillStyle = '#6c5ce7';
-  ctx.fillText('風m/s', 3, wTop + 10);
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'right';
-  ctx.fillText(String(Math.round(si.windMax)), W - 4, wTop + 22);
-  ctx.fillStyle = 'rgba(108,92,231,0.6)';
-  ctx.fillText('0', W - 4, wTop + CHART_H_WIND - 3);
-}
-
-/* ------ SKY hook: 空色背景 + 日付区切り ------ */
-function drawSkyBackground(u) {
-  const ctx = u.ctx;
-  const pr = canvasRatio(u);
-  const data = state.allData;
-  const H = ctx.canvas.height;
-  const skyBottom = H - 16 * pr;   // 下部の時刻ラベル帯を除く
-  ctx.save();
-  // 空色（時間帯 × 雲量）
-  for (let i = 0; i < data.length; i++) {
-    const x0 = u.valToPos(i - 0.5, 'x', true);
-    const x1 = u.valToPos(i + 0.5, 'x', true);
-    ctx.fillStyle = getSkyColor(data[i].time.getHours(), data[i].cloud, data[i].wcode);
-    ctx.fillRect(x0, 0, x1 - x0 + 1, skyBottom);
+/* ------ 昼間帯の算出（日の出〜日の入り。データなし時は5〜19時） ------ */
+function dayBandsFracs() {
+  const d0 = state.allData[0].time.getTime();
+  if (state.daily && state.daily.sunrise && state.daily.sunset) {
+    return state.daily.sunrise.map((sr, i) => ({
+      from: (new Date(sr).getTime() - d0) / 3600e3,
+      to: (new Date(state.daily.sunset[i]).getTime() - d0) / 3600e3,
+    }));
   }
-  // 日付区切りライン + 日付ラベル
-  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
-  ctx.textAlign = 'left';
-  for (let i = 0; i < data.length; i++) {
-    const t = data[i].time;
-    if (t.getHours() !== 0) continue;
-    const x = u.valToPos(i - 0.5, 'x', true);
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    ctx.lineWidth = pr;
-    ctx.setLineDash([4 * pr, 3 * pr]);
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, skyBottom); ctx.stroke();
-    ctx.setLineDash([]);
-    const dow = ['日','月','火','水','木','金','土'][t.getDay()];
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}(${dow})`, x + 3 * pr, 12 * pr);
-  }
-  ctx.restore();
+  const bands = [];
+  for (let h = 5; h < HOURS; h += 24) bands.push({ from: h, to: h + 14 });
+  return bands;
 }
 
-/* ------ SKY hook: 天気アイコン + 時刻/気温ラベル ------ */
-function drawSkyOverlay(u) {
-  const ctx = u.ctx;
-  const pr = canvasRatio(u);
-  const data = state.allData;
-  const H = ctx.canvas.height;
-  ctx.save();
-  ctx.textAlign = 'center';
-  for (let i = 0; i < data.length; i++) {
-    const d = data[i];
-    if (d.time.getHours() % 6 !== 0) continue;
-    const x = u.valToPos(i, 'x', true);
-    ctx.font = `${14 * pr}px sans-serif`;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(weatherEmoji(d.wcode), x, 26 * pr);
-    ctx.font = `bold ${9 * pr}px monospace`;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillText(d.time.getHours() + 'h', x, H - 4 * pr);
-  }
-  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
-  ctx.restore();
-}
-
-/* ------ PRECIP/WIND共通 hook: 背景 + グリッド + 日付区切り ------ */
-function drawPanelBackground(u) {
+/* ------ 共通背景hook: 白地 + 昼夜シェーディング + グリッド + 日付区切り ------ */
+function drawDayBackground(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
-  ctx.save();
-  ctx.fillStyle = '#f9f8f5';
-  ctx.fillRect(0, 0, W, H);
-  // グリッド
-  ctx.strokeStyle = '#e0ddd5';
-  ctx.lineWidth = 0.5 * pr;
-  [0.33, 0.66, 1.0].forEach(r => {
-    const y = H * (1 - r) * 0.9 + 4 * pr;
-    ctx.beginPath();
-    ctx.moveTo(PADDING_L * pr, y);
-    ctx.lineTo(W - PADDING_R * pr, y);
-    ctx.stroke();
-  });
-  // 日付区切り
-  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-  ctx.lineWidth = pr;
   const data = state.allData;
+  ctx.save();
+  // 下地（白）
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+  // 昼間帯シェーディング（日の出〜日の入り）
+  ctx.fillStyle = 'rgba(255,206,84,0.14)';
+  dayBandsFracs().forEach(b => {
+    const x0 = u.valToPos(Math.max(-0.5, b.from), 'x', true);
+    const x1 = u.valToPos(Math.min(HOURS - 0.5, b.to), 'x', true);
+    if (x1 > x0) ctx.fillRect(x0, 0, x1 - x0, H);
+  });
+  // 水平グリッド
+  ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+  ctx.lineWidth = pr;
+  [0.25, 0.5, 0.75].forEach(r => {
+    const y = Math.round(H * r) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(PADDING_L * pr, y); ctx.lineTo(W - PADDING_R * pr, y); ctx.stroke();
+  });
+  // 日付区切り（0時に縦線）
   for (let i = 0; i < data.length; i++) {
     if (data[i].time.getHours() !== 0) continue;
     const x = u.valToPos(i - 0.5, 'x', true);
+    ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+    ctx.lineWidth = pr;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
   }
   ctx.restore();
 }
 
-/* ------ PRECIP hook: 降水・降雪バー ------ */
+/* ------ 共通: 下部の時刻ラベル（0/6/12/18時） ------ */
+function drawTimeLabels(u, pr) {
+  const ctx = u.ctx;
+  const H = ctx.canvas.height;
+  const data = state.allData;
+  ctx.textAlign = 'center';
+  ctx.font = `${8.5 * pr}px monospace`;
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  for (let i = 0; i < data.length; i++) {
+    const h = data[i].time.getHours();
+    if (h % 6 !== 0) continue;
+    ctx.fillText(String(h), u.valToPos(i, 'x', true), H - 3.5 * pr);
+  }
+}
+
+/* ------ TEMP hook: 日付ヘッダー・天気アイコン・最高最低注記・軸 ------ */
+function drawTempOverlay(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const data = state.allData;
+  const H = ctx.canvas.height;
+  ctx.save();
+  // 日付ヘッダー（正午位置に配置）
+  ctx.textAlign = 'center';
+  for (let i = 0; i < data.length; i++) {
+    const t = data[i].time;
+    if (t.getHours() !== 12) continue;
+    const x = u.valToPos(i, 'x', true);
+    const dow = ['日','月','火','水','木','金','土'][t.getDay()];
+    ctx.font = `bold ${11 * pr}px 'Noto Sans JP', sans-serif`;
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}（${dow}）`, x, 12 * pr);
+  }
+  // 天気アイコン（6hごと）
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].time.getHours() % 6 !== 0) continue;
+    ctx.font = `${13 * pr}px sans-serif`;
+    ctx.fillText(weatherEmoji(data[i].wcode), u.valToPos(i, 'x', true), 30 * pr);
+  }
+  // 日別 最高/最低 の注記
+  const byDay = {};
+  data.forEach((d, i) => {
+    if (d.temp == null) return;
+    const k = d.time.toDateString();
+    (byDay[k] = byDay[k] || []).push(i);
+  });
+  ctx.font = `bold ${10 * pr}px monospace`;
+  ctx.textAlign = 'center';
+  Object.values(byDay).forEach(idxs => {
+    let hi = idxs[0], lo = idxs[0];
+    idxs.forEach(i => {
+      if (data[i].temp > data[hi].temp) hi = i;
+      if (data[i].temp < data[lo].temp) lo = i;
+    });
+    [{ i: hi, dy: -6 }, { i: lo, dy: 15 }].forEach(({ i, dy }) => {
+      const x = u.valToPos(i, 'x', true);
+      const y = u.valToPos(data[i].temp, 'y', true);
+      ctx.fillStyle = '#c0401a';
+      ctx.fillText(Math.round(data[i].temp) + '°', x, y + dy * pr);
+    });
+  });
+  // Y軸ラベル（気温）
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${8 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.fillStyle = '#e05020';
+  ctx.fillText('気温℃', 3 * pr, 42 * pr);
+  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.textAlign = 'right';
+  const yMin = u.scales.y.min, yMax = u.scales.y.max;
+  [yMin + 2, (yMin + yMax) / 2, yMax - 2].forEach(t => {
+    const y = u.valToPos(t, 'y', true);
+    if (y > 34 * pr && y < H - 16 * pr) ctx.fillText(Math.round(t) + '°', (PADDING_L - 3) * pr, y + 3 * pr);
+  });
+  drawTimeLabels(u, pr);
+  ctx.restore();
+}
+
+/* ------ PRECIP hook: 降水・降雪バー + 軸 ------ */
 function drawPrecipBars(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
@@ -1436,8 +1373,8 @@ function drawPrecipBars(u) {
   for (let i = 0; i < data.length; i++) {
     const d = data[i];
     if (!(d.precip > 0) && !(d.snow > 0)) continue;
-    const x0 = u.valToPos(i - 0.5, 'x', true) + pr;
-    const x1 = u.valToPos(i + 0.5, 'x', true) - pr;
+    const x0 = u.valToPos(i - 0.5, 'x', true) + pr * 0.3;
+    const x1 = u.valToPos(i + 0.5, 'x', true) - pr * 0.3;
     const barW = x1 - x0;
     if (d.precip > 0) {
       const y = u.valToPos(d.precip, 'y', true);
@@ -1448,27 +1385,36 @@ function drawPrecipBars(u) {
       const y = u.valToPos(d.snow, 'y', true);
       ctx.fillStyle = '#7bb8e8';
       ctx.globalAlpha = 0.85;
-      ctx.fillRect(x0, y, barW * 0.6, bottom - y);
+      ctx.fillRect(x0, y, barW, bottom - y);
       ctx.globalAlpha = 1;
     }
   }
-  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
+  // Y軸ラベル（降水）
+  ctx.fillStyle = '#3a7fc1';
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${8 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.fillText('降水㎜', 3 * pr, 10 * pr);
+  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.textAlign = 'right';
+  ctx.fillText(u.scales.y.max.toFixed(0), (PADDING_L - 3) * pr, 12 * pr);
+  drawTimeLabels(u, pr);
   ctx.restore();
 }
 
-/* ------ WIND hook: 風速バー（閾値色分け、気圧ラインの上に重ねる） ------ */
-function drawWindBars(u) {
+/* ------ WIND hook: 風速バー（閾値色分け）+ 風向矢印 + 軸 ------ */
+function drawWindOverlay(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
   const data = state.allData;
   const modeT = THRESH[state.mode];
   const bottom = u.bbox.top + u.bbox.height;
   ctx.save();
-  ctx.globalAlpha = 0.72;
+  // 風速バー
+  ctx.globalAlpha = 0.82;
   for (let i = 0; i < data.length; i++) {
     const w = data[i].wind || 0;
-    const x0 = u.valToPos(i - 0.5, 'x', true) + pr;
-    const x1 = u.valToPos(i + 0.5, 'x', true) - pr;
+    const x0 = u.valToPos(i - 0.5, 'x', true) + pr * 0.3;
+    const x1 = u.valToPos(i + 0.5, 'x', true) - pr * 0.3;
     const y = u.valToPos(w, 'w', true);
     let col = '#6c5ce7';
     if (w >= modeT.windB) col = '#d03030';
@@ -1477,8 +1423,39 @@ function drawWindBars(u) {
     ctx.fillRect(x0, y, x1 - x0, bottom - y);
   }
   ctx.globalAlpha = 1;
-  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
+  // 風向矢印（6hごと、上部）
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].time.getHours() % 6 !== 0 || data[i].wdir == null) continue;
+    drawWindArrow(ctx, u.valToPos(i, 'x', true), 12 * pr, data[i].wdir, 5 * pr);
+  }
+  // Y軸ラベル（風速）
+  ctx.fillStyle = '#6c5ce7';
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${8 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.fillText('風m/s', 3 * pr, 32 * pr);
+  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.textAlign = 'right';
+  ctx.fillText(String(Math.round(u.scales.w.max)), (PADDING_L - 3) * pr, 34 * pr);
+  ctx.fillStyle = 'rgba(108,92,231,0.6)';
+  ctx.fillText('0', (PADDING_L - 3) * pr, bottom - 2 * pr);
+  drawTimeLabels(u, pr);
   ctx.restore();
+}
+
+// 風向矢印（dirFrom=気象学的風向、吹いていく向きに描画）
+function drawWindArrow(ctx, x, y, dirFrom, len) {
+  const ang = (dirFrom + 180) * Math.PI / 180;
+  const dx = Math.sin(ang) * len, dy = -Math.cos(ang) * len;
+  ctx.strokeStyle = 'rgba(60,60,80,0.7)';
+  ctx.fillStyle = 'rgba(60,60,80,0.7)';
+  ctx.lineWidth = Math.max(1, len * 0.28);
+  ctx.beginPath(); ctx.moveTo(x - dx, y - dy); ctx.lineTo(x + dx, y + dy); ctx.stroke();
+  const a2 = ang + Math.PI * 0.78, a3 = ang - Math.PI * 0.78;
+  ctx.beginPath();
+  ctx.moveTo(x + dx, y + dy);
+  ctx.lineTo(x + dx + Math.sin(a2) * len * 0.6, y + dy - Math.cos(a2) * len * 0.6);
+  ctx.lineTo(x + dx + Math.sin(a3) * len * 0.6, y + dy - Math.cos(a3) * len * 0.6);
+  ctx.closePath(); ctx.fill();
 }
 
 /* ------ 現在時刻 ------ */
@@ -1541,9 +1518,8 @@ function jumpToNow() {
   updateDayTabs();
   updateHUD();
   updateABC();
-  updateScrubBadge();
+  updateCursor();
   updateNowButton();
-  scrollToIndex(state.sliderIndex, true);
   updateParticles();
 }
 
@@ -1556,22 +1532,15 @@ setInterval(() => {
   updateNowButton();
 }, 5 * 60 * 1000);
 
-/* ------ スクラブライン（ビューポート固定）: バッジの日時表示のみ更新 ------ */
-function updateScrubBadge() {
+/* ------ 選択時刻カーソル: transformで移動 + バッジ日時更新 ------ */
+function updateCursor() {
+  const line = document.getElementById('scrub-line');
+  line.style.transform = `translateX(${idxToX(state.sliderIndex)}px)`;
   const d = state.allData && state.allData[state.sliderIndex];
   if (d) {
     document.getElementById('time-badge').textContent =
       `${d.time.getMonth() + 1}/${d.time.getDate()} ${d.time.getHours().toString().padStart(2, '0')}:00`;
   }
-}
-
-/* ------ スクロール位置の単発設定（毎フレーム追従は行わない） ------ */
-function scrollToIndex(idx, smooth = false) {
-  const wrap = document.getElementById('charts-wrapper');
-  const vw = wrap.clientWidth || window.innerWidth;
-  // 指定時刻をスクラブライン（画面左1/3）の直下に配置
-  const left = Math.max(0, chartPadL + idxToX(idx) - vw * 0.33);
-  wrap.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
 }
 
 /* ============================================================
@@ -1622,7 +1591,7 @@ let particleAnim = null;
 
 function updateParticles() {
   const d = state.allData[state.sliderIndex];
-  const wrap = document.getElementById('charts-wrapper');
+  const wrap = document.getElementById('charts-outer');
   const pc = document.getElementById('particle-canvas');
   pc.width = wrap.clientWidth;
   pc.height = wrap.clientHeight;
@@ -1698,9 +1667,8 @@ slider.addEventListener('input', () => {
   updateDayTabs();
   updateHUD();
   updateABC();
-  updateScrubBadge();     // canvas再描画なし
+  updateCursor();         // canvas再描画なし
   updateNowButton();
-  scrollToIndex(state.sliderIndex);
   updateParticles();
 });
 
@@ -1728,9 +1696,8 @@ function jumpToDay(offset) {
   updateDayTabs();
   updateHUD();
   updateABC();
-  updateScrubBadge();
+  updateCursor();
   updateNowButton();
-  scrollToIndex(state.sliderIndex, true);
   updateParticles();
 }
 
@@ -1741,49 +1708,58 @@ function updateDayTabs() {
 }
 
 /* ============================================================
-   SWIPE（グラフ上以外のエリアでの日切り替え）
-   charts-wrapper自体は横スクロールに任せるため
-   スワイプはヘッダー/HUD/ABC領域で検出
+   時刻選択（チャートのタップ/ドラッグ）
+   全期間が1画面に収まるため、横スクロールではなく
+   タップ位置・ドラッグで時刻カーソルを移動する
    ============================================================ */
-let touchStartX = 0;
-let touchStartY = 0;
-// charts-wrapperはネイティブ横スクロール。
-// スクロール終了時にsliderIndexを最近傍hourに同期。
-const chartsWrapper = document.getElementById('charts-wrapper');
-let scrollSyncTimer = null;
-let scrollRafPending = false;
+const chartsOuter = document.getElementById('charts-outer');
+let dragging = false;
+let dragRafPending = false;
+let pendingIdx = null;
 
-// スクラブライン（画面左1/3固定）の下にある時刻へ同期。
-// 軽量なDOM更新のみなのでrAFスロットルでスクロール中もリアルタイム追従し、
-// 日を跨いでもシームレス（canvas再描画なし）
-function syncFromScroll() {
-  if (!state.allData) return;
-  const cx = chartsWrapper.scrollLeft + chartsWrapper.clientWidth * 0.33 - chartPadL;
-  const rawIdx = Math.round((cx - PADDING_L) / PX_PER_HOUR - 0.5);
-  const idx = Math.max(0, Math.min(HOURS - 1, rawIdx));
-  if (idx === state.sliderIndex) return;
-  state.sliderIndex = idx;
-  state.dayOffset = Math.floor(idx / 24) - 1;
-  slider.value = idx;
+function idxFromClientX(clientX) {
+  const rect = chartsOuter.getBoundingClientRect();
+  return xToIdx(clientX - rect.left);
+}
+
+// カーソル移動（軽量DOM更新のみ、canvas再描画なし）。rAFスロットル
+function applyPendingIdx() {
+  dragRafPending = false;
+  if (pendingIdx == null || pendingIdx === state.sliderIndex) return;
+  state.sliderIndex = pendingIdx;
+  state.dayOffset = Math.floor(pendingIdx / 24) - 1;
+  slider.value = pendingIdx;
   updateDayTabs();
   updateHUD();
   updateABC();
-  updateScrubBadge();
+  updateCursor();
   updateNowButton();
 }
 
-chartsWrapper.addEventListener('scroll', () => {
-  if (!scrollRafPending) {
-    scrollRafPending = true;
-    requestAnimationFrame(() => {
-      scrollRafPending = false;
-      syncFromScroll();
-    });
+function selectFromPointer(clientX) {
+  pendingIdx = idxFromClientX(clientX);
+  if (!dragRafPending) {
+    dragRafPending = true;
+    requestAnimationFrame(applyPendingIdx);
   }
-  // パーティクルは重めなのでスクロール停止後にのみ更新
-  clearTimeout(scrollSyncTimer);
-  scrollSyncTimer = setTimeout(() => updateParticles(), 120);
-}, { passive: true });
+}
+
+chartsOuter.addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;   // 「現在」ボタン等のタップは選択に使わない
+  dragging = true;
+  try { chartsOuter.setPointerCapture(e.pointerId); } catch (_) {}
+  selectFromPointer(e.clientX);
+});
+chartsOuter.addEventListener('pointermove', e => {
+  if (dragging) selectFromPointer(e.clientX);
+});
+function endDrag() {
+  if (!dragging) return;
+  dragging = false;
+  updateParticles();   // パーティクルはドラッグ終了時のみ更新（重いため）
+}
+chartsOuter.addEventListener('pointerup', endDrag);
+chartsOuter.addEventListener('pointercancel', endDrag);
 
 /* ============================================================
    MAP
@@ -2150,13 +2126,17 @@ function hideLoading() {
 /* ============================================================
    RESIZE
    ============================================================ */
-// チャートは固定幅のためリサイズ時の再描画は不要。
-// 両端スペーサー再計算とスクロール位置の維持、パーティクルcanvasのみ追従
+// チャートは画面幅に追従するため、リサイズ時は再構築する（デバウンス）
+let resizeTimer = null;
 window.addEventListener('resize', () => {
   if (!state.allData) return;
-  updateChartSpacers();
-  scrollToIndex(state.sliderIndex);
-  updateParticles();
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    buildCharts();
+    updateCursor();
+    updateNowButton();
+    updateParticles();
+  }, 150);
 });
 
 /* ============================================================
