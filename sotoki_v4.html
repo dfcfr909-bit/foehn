@@ -282,21 +282,29 @@ html, body {
   position: relative;
   width: max-content;   /* チャート実幅に合わせてラッパーを横スクロールさせる */
 }
-/* 現在位置インジケーター（DOMオーバーレイ。canvas再描画なしでtransformのみ更新） */
-#time-indicator {
-  position: absolute;
+/* 現在位置スクラブライン（ビューポート左1/3に固定。チャート側が下を流れ、
+   日を跨いでもシームレス。canvas再描画・transform移動は一切なし） */
+#scrub-line {
+  position: sticky;
+  left: 33%;
   top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  z-index: 6;
+  pointer-events: none;
+}
+#scrub-bar {
+  position: absolute;
   left: -1px;           /* 線幅2pxの中心合わせ */
+  top: 0;
   width: 2px;
   background: #e03010;
-  pointer-events: none;
-  z-index: 6;
-  will-change: transform;
 }
 #time-badge {
   position: absolute;
   top: 1px;
-  left: 50%;
+  left: 0;
   transform: translateX(-50%);
   background: #e03010;
   color: #fff;
@@ -755,11 +763,14 @@ html, body {
   <!-- Charts -->
   <div id="charts-wrapper">
     <canvas id="particle-canvas"></canvas>
+    <div id="scrub-line">
+      <div id="scrub-bar"></div>
+      <span id="time-badge">--:00</span>
+    </div>
     <div id="charts-inner">
       <div id="chart-sky"></div>
       <div id="chart-precip"></div>
       <div id="chart-wind"></div>
-      <div id="time-indicator"><span id="time-badge">--:00</span></div>
     </div>
   </div>
 
@@ -952,7 +963,7 @@ function render() {
   updateHUD();
   updateABC();
   buildCharts();          // データ取得時のみの1回描画
-  updateIndicator();
+  updateScrubBadge();
   scrollToIndex(state.sliderIndex);
   updateSliderLabels();
   updateDayTabs();
@@ -1077,10 +1088,25 @@ function idxToX(idx) { return PADDING_L + (idx + 0.5) * PX_PER_HOUR; }
 // 実際のcanvas倍率（pxRatio未対応環境でもcanvas実寸から算出）
 function canvasRatio(u) { return u.ctx.canvas.width / u.width; }
 
+// スクラブライン（画面左1/3固定）に全時刻が到達できるよう、
+// チャート両端に余白を設ける。戻り値はモジュール変数chartPadLに保持
+let chartPadL = 0;
+function updateChartSpacers() {
+  const wrap = document.getElementById('charts-wrapper');
+  const vw = wrap.clientWidth || window.innerWidth;
+  chartPadL = Math.max(0, Math.round(vw * 0.33 - idxToX(0)));
+  const padR = Math.max(0, Math.round(vw * 0.67 - (chartTotalW() - idxToX(HOURS - 1))));
+  const inner = document.getElementById('charts-inner');
+  inner.style.paddingLeft = chartPadL + 'px';
+  inner.style.paddingRight = padR + 'px';
+  // box-sizing: border-boxのためpadding込みの幅を指定
+  // （uPlotのサイズ適用は次フレーム遅延のため、スクロール可能幅を先に確定させる）
+  inner.style.width = (chartTotalW() + chartPadL + padR) + 'px';
+}
+
 function buildCharts() {
   const data = state.allData;
-  // uPlotのサイズ適用は次フレームに遅延されるため、スクロール可能幅を先に確定させる
-  document.getElementById('charts-inner').style.width = chartTotalW() + 'px';
+  updateChartSpacers();
   const xs       = data.map((_, i) => i);
   const temps    = data.map(d => d.temp);
   const precips  = data.map(d => d.precip);
@@ -1174,8 +1200,8 @@ function buildCharts() {
     },
   }, [xs, winds, pressures], document.getElementById('chart-wind'));
 
-  // インジケーターの高さをチャート合計に合わせる
-  document.getElementById('time-indicator').style.height =
+  // スクラブラインの高さをチャート合計に合わせる
+  document.getElementById('scrub-bar').style.height =
     (CHART_H_SKY + CHART_H_PREC + CHART_H_WIND) + 'px';
 }
 
@@ -1343,14 +1369,12 @@ function drawWindBars(u) {
   ctx.restore();
 }
 
-/* ------ 現在位置インジケーター（DOMオーバーレイ、transformのみ） ------ */
-function updateIndicator() {
+/* ------ スクラブライン（ビューポート固定）: バッジの日時表示のみ更新 ------ */
+function updateScrubBadge() {
   const d = state.allData && state.allData[state.sliderIndex];
-  document.getElementById('time-indicator').style.transform =
-    `translateX(${idxToX(state.sliderIndex)}px)`;
   if (d) {
     document.getElementById('time-badge').textContent =
-      d.time.getHours().toString().padStart(2, '0') + ':00';
+      `${d.time.getMonth() + 1}/${d.time.getDate()} ${d.time.getHours().toString().padStart(2, '0')}:00`;
   }
 }
 
@@ -1358,8 +1382,8 @@ function updateIndicator() {
 function scrollToIndex(idx, smooth = false) {
   const wrap = document.getElementById('charts-wrapper');
   const vw = wrap.clientWidth || window.innerWidth;
-  // 現在位置を画面左1/3に配置
-  const left = Math.max(0, idxToX(idx) - vw * 0.33);
+  // 指定時刻をスクラブライン（画面左1/3）の直下に配置
+  const left = Math.max(0, chartPadL + idxToX(idx) - vw * 0.33);
   wrap.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
 }
 
@@ -1487,7 +1511,7 @@ slider.addEventListener('input', () => {
   updateDayTabs();
   updateHUD();
   updateABC();
-  updateIndicator();      // canvas再描画なし
+  updateScrubBadge();     // canvas再描画なし
   scrollToIndex(state.sliderIndex);
   updateParticles();
 });
@@ -1516,7 +1540,7 @@ function jumpToDay(offset) {
   updateDayTabs();
   updateHUD();
   updateABC();
-  updateIndicator();
+  updateScrubBadge();
   scrollToIndex(state.sliderIndex, true);
   updateParticles();
 }
@@ -1538,26 +1562,37 @@ let touchStartY = 0;
 // スクロール終了時にsliderIndexを最近傍hourに同期。
 const chartsWrapper = document.getElementById('charts-wrapper');
 let scrollSyncTimer = null;
+let scrollRafPending = false;
+
+// スクラブライン（画面左1/3固定）の下にある時刻へ同期。
+// 軽量なDOM更新のみなのでrAFスロットルでスクロール中もリアルタイム追従し、
+// 日を跨いでもシームレス（canvas再描画なし）
+function syncFromScroll() {
+  if (!state.allData) return;
+  const cx = chartsWrapper.scrollLeft + chartsWrapper.clientWidth * 0.33 - chartPadL;
+  const rawIdx = Math.round((cx - PADDING_L) / PX_PER_HOUR - 0.5);
+  const idx = Math.max(0, Math.min(HOURS - 1, rawIdx));
+  if (idx === state.sliderIndex) return;
+  state.sliderIndex = idx;
+  state.dayOffset = Math.floor(idx / 24) - 1;
+  slider.value = idx;
+  updateDayTabs();
+  updateHUD();
+  updateABC();
+  updateScrubBadge();
+}
+
 chartsWrapper.addEventListener('scroll', () => {
+  if (!scrollRafPending) {
+    scrollRafPending = true;
+    requestAnimationFrame(() => {
+      scrollRafPending = false;
+      syncFromScroll();
+    });
+  }
+  // パーティクルは重めなのでスクロール停止後にのみ更新
   clearTimeout(scrollSyncTimer);
-  scrollSyncTimer = setTimeout(() => {
-    // スクロール位置からおよそのindexを逆算して同期
-    const scrollLeft = chartsWrapper.scrollLeft;
-    const vw = chartsWrapper.clientWidth;
-    // 画面左1/3の位置にある時刻を現在位置とする
-    const cx = scrollLeft + vw * 0.33;
-    const rawIdx = Math.round((cx - PADDING_L) / PX_PER_HOUR - 0.5);
-    const idx = Math.max(0, Math.min(HOURS - 1, rawIdx));
-    if (idx === state.sliderIndex) return;
-    state.sliderIndex = idx;
-    state.dayOffset = Math.floor(idx / 24) - 1;
-    slider.value = idx;
-    updateDayTabs();
-    updateHUD();
-    updateABC();
-    updateIndicator();   // canvas再描画なし
-    updateParticles();
-  }, 80);
+  scrollSyncTimer = setTimeout(() => updateParticles(), 120);
 }, { passive: true });
 
 /* ============================================================
@@ -1925,8 +1960,14 @@ function hideLoading() {
 /* ============================================================
    RESIZE
    ============================================================ */
-// チャートは固定幅のためリサイズ時の再描画は不要。パーティクルcanvasのみ追従
-window.addEventListener('resize', () => { if (state.allData) updateParticles(); });
+// チャートは固定幅のためリサイズ時の再描画は不要。
+// 両端スペーサー再計算とスクロール位置の維持、パーティクルcanvasのみ追従
+window.addEventListener('resize', () => {
+  if (!state.allData) return;
+  updateChartSpacers();
+  scrollToIndex(state.sliderIndex);
+  updateParticles();
+});
 
 /* ============================================================
    BOOT
