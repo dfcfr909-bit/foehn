@@ -140,42 +140,6 @@ html, body {
   color: #fff;
 }
 
-/* ============================================================
-   DAY SELECTOR
-   ============================================================ */
-#day-selector {
-  display: flex;
-  gap: 0;
-  border-bottom: 2px solid var(--border);
-  flex-shrink: 0;
-}
-.day-tab {
-  flex: 1;
-  text-align: center;
-  padding: 7px 4px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  color: var(--text3);
-  position: relative;
-  transition: color 0.15s;
-  font-family: var(--font-ui);
-}
-.day-tab.active {
-  color: var(--text);
-}
-.day-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 10%;
-  width: 80%;
-  height: 3px;
-  background: var(--text);
-  border-radius: 2px;
-}
 
 /* ============================================================
    HUD – 大型数値表示
@@ -726,20 +690,12 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.6.0</span>
+    <span id="app-version">v4.7.0</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
     </div>
-  </div>
-
-  <!-- Day selector -->
-  <div id="day-selector">
-    <button class="day-tab" data-offset="-1" onclick="jumpToDay(-1)">昨日</button>
-    <button class="day-tab active" data-offset="0" onclick="jumpToDay(0)">今日</button>
-    <button class="day-tab" data-offset="1" onclick="jumpToDay(1)">明日</button>
-    <button class="day-tab" data-offset="2" onclick="jumpToDay(2)">明後日</button>
   </div>
 
   <!-- HUD -->
@@ -869,10 +825,9 @@ const state = {
   lon: 137.65,
   locationName: '立山・黒部',
   mode: 'day',
-  allData: null,
+  allData: null,     // 表示データ（現在時刻〜+72h）
   daily: null,       // 日の出・日の入り
-  sliderIndex: 24,   // デフォルト：今日0時（index 24 = past_days=1の翌日）
-  dayOffset: 0,
+  sliderIndex: 0,    // デフォルト：現在時刻
 };
 
 // ABC閾値
@@ -901,21 +856,20 @@ function setMode(m) {
    ============================================================ */
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,weathercode,cloudcover&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=1&forecast_days=3&models=jma_seamless`;
+  // past_days=1は6h気圧変化(dpress)の算出用。表示は現在時刻〜+72hに絞る
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,weathercode,cloudcover&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=1&forecast_days=4&models=jma_seamless`;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
-    state.allData = processData(json);
-    state.daily = json.daily || null;   // 日の出・日の入り（昼間帯シェーディング用）
+    const full = processData(json);              // dpressは全期間の文脈で算出済み
+    const startIdx = indexOfNow(full);           // 現在時刻を含む1時間の開始index
+    state.allData = full.slice(startIdx, startIdx + FORECAST_HOURS + 1);
+    HOURS = state.allData.length;
+    state.sliderIndex = 0;                        // 現在時刻から開始
+    state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
     state.lat = lat;
     state.lon = lon;
-    // 初期表示位置は現在時刻（データ範囲外なら今日0時のまま）
-    const nf = nowIndexFrac();
-    if (nf != null) {
-      state.sliderIndex = Math.max(0, Math.min(state.allData.length - 1, Math.round(nf)));
-      state.dayOffset = Math.floor(state.sliderIndex / 24) - 1;
-    }
     saveLast(lat, lon, state.locationName);
     // DOM反映後に描画
     requestAnimationFrame(() => {
@@ -927,9 +881,18 @@ async function fetchWeather(lat, lon) {
   }
 }
 
+// 現在時刻を含む1時間の開始index（表示開始位置）
+function indexOfNow(data) {
+  const now = Date.now();
+  for (let i = data.length - 1; i >= 0; i--) {
+    if (data[i].time.getTime() <= now) return i;
+  }
+  return 0;
+}
+
 function processData(json) {
   const h = json.hourly;
-  const len = h.time.length; // 96h
+  const len = h.time.length; // 120h（past_days=1 + forecast_days=4）
   const data = [];
   for (let i = 0; i < len; i++) {
     const dt = new Date(h.time[i]);
@@ -992,11 +955,11 @@ function render() {
     updateLocationName();
     updateHUD();
     updateABC();
+    slider.max = HOURS - 1;
     buildCharts();          // データ取得・リサイズ時のみの1回描画
     updateCursor();
     updateNowButton();
     updateSliderLabels();
-    updateDayTabs();
     updateParticles();
     hideLoading();
   } catch (e) {
@@ -1108,7 +1071,8 @@ const CHART_H_PREC  = 85;
 const CHART_H_WIND  = 115;
 const PADDING_L     = 34;
 const PADDING_R     = 6;
-const HOURS         = 96;
+const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
+let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
@@ -1513,9 +1477,7 @@ function jumpToNow() {
   const frac = nowIndexFrac();
   if (frac == null) return;
   state.sliderIndex = Math.max(0, Math.min(HOURS - 1, Math.round(frac)));
-  state.dayOffset = Math.floor(state.sliderIndex / 24) - 1;
   slider.value = state.sliderIndex;
-  updateDayTabs();
   updateHUD();
   updateABC();
   updateCursor();
@@ -1662,9 +1624,6 @@ function drawSnowflake(ctx, p) {
 const slider = document.getElementById('time-slider');
 slider.addEventListener('input', () => {
   state.sliderIndex = parseInt(slider.value);
-  // dayOffsetをsliderIndexから自動同期
-  state.dayOffset = Math.floor(state.sliderIndex / 24) - 1;
-  updateDayTabs();
   updateHUD();
   updateABC();
   updateCursor();         // canvas再描画なし
@@ -1674,37 +1633,15 @@ slider.addEventListener('input', () => {
 
 function updateSliderLabels() {
   if (!state.allData) return;
+  const last = state.allData.length - 1;
   const fmt = i => {
     const d = state.allData[i];
     if (!d) return '';
     return `${(d.time.getMonth()+1)}/${d.time.getDate()} ${d.time.getHours()}h`;
   };
   document.getElementById('sl-start').textContent = fmt(0);
-  document.getElementById('sl-mid').textContent   = fmt(48);
-  document.getElementById('sl-end').textContent   = fmt(95);
-}
-
-/* ============================================================
-   DAY TAB
-   ============================================================ */
-function jumpToDay(offset) {
-  state.dayOffset = Math.max(-1, Math.min(2, offset));
-  // その日の0時にsliderを移動
-  const newIdx = (state.dayOffset + 1) * 24;
-  state.sliderIndex = Math.max(0, Math.min(HOURS - 1, newIdx));
-  slider.value = state.sliderIndex;
-  updateDayTabs();
-  updateHUD();
-  updateABC();
-  updateCursor();
-  updateNowButton();
-  updateParticles();
-}
-
-function updateDayTabs() {
-  document.querySelectorAll('.day-tab').forEach(t => {
-    t.classList.toggle('active', parseInt(t.dataset.offset) === state.dayOffset);
-  });
+  document.getElementById('sl-mid').textContent   = fmt(Math.round(last / 2));
+  document.getElementById('sl-end').textContent   = fmt(last);
 }
 
 /* ============================================================
@@ -1727,9 +1664,7 @@ function applyPendingIdx() {
   dragRafPending = false;
   if (pendingIdx == null || pendingIdx === state.sliderIndex) return;
   state.sliderIndex = pendingIdx;
-  state.dayOffset = Math.floor(pendingIdx / 24) - 1;
   slider.value = pendingIdx;
-  updateDayTabs();
   updateHUD();
   updateABC();
   updateCursor();
