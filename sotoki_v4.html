@@ -12,10 +12,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <!-- Leaflet JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<!-- uPlot CSS -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/uPlot/1.6.32/uPlot.min.css">
-<!-- uPlot JS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/uPlot/1.6.32/uPlot.iife.min.js"></script>
+<!-- uPlot CSS/JS（v1.6.32 同梱。CDN配信されていないためセルフホスト） -->
+<link rel="stylesheet" href="vendor/uPlot.min.css">
+<script src="vendor/uPlot.iife.min.js"></script>
 
 <style>
 /* ============================================================
@@ -721,7 +720,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.3.1</span>
+    <span id="app-version">v4.3.2</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
