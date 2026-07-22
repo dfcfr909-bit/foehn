@@ -1,0 +1,7 @@
+# Netlify設定: 静的ファイル直接配信（ビルドなし）
+# ルートURLでsotoki_v4.htmlを表示する（URLは / のまま）
+
+[[redirects]]
+  from = "/"
+  to = "/sotoki_v4.html"
+  status = 200
