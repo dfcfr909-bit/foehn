@@ -332,6 +332,24 @@ html, body {
   border-radius: 3px;
   white-space: nowrap;
 }
+/* 「現在へ戻る」ボタン（現在時刻がカーソルから離れているときのみ表示） */
+#btn-now {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 7;
+  min-height: 44px;   /* グローブ操作前提のタップ領域 */
+  padding: 0 16px;
+  border: none;
+  border-radius: 22px;
+  background: var(--text);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: none;
+}
 
 /* ============================================================
    TIME SLIDER
@@ -720,7 +738,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.3.2</span>
+    <span id="app-version">v4.4.0</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
@@ -789,6 +807,7 @@ html, body {
       <div id="scrub-bar"></div>
       <span id="time-badge">--:00</span>
     </div>
+    <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
   </div>
 
   <!-- Slider -->
@@ -905,6 +924,12 @@ async function fetchWeather(lat, lon) {
     state.allData = processData(json);
     state.lat = lat;
     state.lon = lon;
+    // 初期表示位置は現在時刻（データ範囲外なら今日0時のまま）
+    const nf = nowIndexFrac();
+    if (nf != null) {
+      state.sliderIndex = Math.max(0, Math.min(state.allData.length - 1, Math.round(nf)));
+      state.dayOffset = Math.floor(state.sliderIndex / 24) - 1;
+    }
     saveLast(lat, lon, state.locationName);
     // DOM反映後に描画
     requestAnimationFrame(() => {
@@ -982,6 +1007,7 @@ function render() {
     updateABC();
     buildCharts();          // データ取得時のみの1回描画
     updateScrubBadge();
+    updateNowButton();
     scrollToIndex(state.sliderIndex);
     updateSliderLabels();
     updateDayTabs();
@@ -1179,7 +1205,7 @@ function buildCharts() {
     ],
     hooks: {
       drawClear: [drawSkyBackground],
-      draw: [drawSkyOverlay],
+      draw: [drawSkyOverlay, drawNowMarker],
     },
   }, [xs, temps], document.getElementById('chart-sky'));
 
@@ -1200,7 +1226,7 @@ function buildCharts() {
     ],
     hooks: {
       drawClear: [drawPanelBackground],
-      draw: [drawPrecipBars],
+      draw: [drawPrecipBars, drawNowMarker],
     },
   }, [xs, precips, snows], document.getElementById('chart-precip'));
 
@@ -1222,7 +1248,7 @@ function buildCharts() {
     ],
     hooks: {
       drawClear: [drawPanelBackground],
-      draw: [drawWindBars],
+      draw: [drawWindBars, drawNowMarker],
     },
   }, [xs, winds, pressures], document.getElementById('chart-wind'));
 
@@ -1395,6 +1421,81 @@ function drawWindBars(u) {
   ctx.restore();
 }
 
+/* ------ 現在時刻 ------ */
+// データ先頭からの経過時間（時、小数）。データ範囲外ならnull
+function nowIndexFrac() {
+  if (!state.allData || !state.allData.length) return null;
+  const frac = (Date.now() - state.allData[0].time.getTime()) / 3600e3;
+  if (frac < 0 || frac > state.allData.length - 1) return null;
+  return frac;
+}
+
+// 過去域の薄いグレーアウト + 現在時刻の実線マーカー（uPlot draw hook）
+function drawNowMarker(u) {
+  const frac = nowIndexFrac();
+  if (frac == null) return;
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const H = ctx.canvas.height;
+  const x0 = u.valToPos(-0.5, 'x', true);
+  const xNow = u.valToPos(frac, 'x', true);
+  ctx.save();
+  // 過去域をほんの少しグレーアウト
+  ctx.fillStyle = 'rgba(110,110,110,0.16)';
+  ctx.fillRect(x0, 0, xNow - x0, H);
+  // 現在時刻線（実線・青）
+  ctx.strokeStyle = '#2570c9';
+  ctx.lineWidth = 2 * pr;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(xNow, 0);
+  ctx.lineTo(xNow, H);
+  ctx.stroke();
+  // 「現在」ラベル（skyチャートのみ）
+  if (u === skyChart) {
+    const label = '現在';
+    ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = '#2570c9';
+    ctx.fillRect(xNow - tw / 2 - 3 * pr, 14 * pr, tw + 6 * pr, 13 * pr);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, xNow, 24 * pr);
+  }
+  ctx.restore();
+}
+
+// 「現在へ」ボタン: カーソルが現在時刻から1.5時間以上離れているときのみ表示
+function updateNowButton() {
+  const frac = nowIndexFrac();
+  const show = frac != null && Math.abs(state.sliderIndex - frac) > 1.5;
+  document.getElementById('btn-now').style.display = show ? 'block' : 'none';
+}
+
+function jumpToNow() {
+  const frac = nowIndexFrac();
+  if (frac == null) return;
+  state.sliderIndex = Math.max(0, Math.min(HOURS - 1, Math.round(frac)));
+  state.dayOffset = Math.floor(state.sliderIndex / 24) - 1;
+  slider.value = state.sliderIndex;
+  updateDayTabs();
+  updateHUD();
+  updateABC();
+  updateScrubBadge();
+  updateNowButton();
+  scrollToIndex(state.sliderIndex, true);
+  updateParticles();
+}
+
+// 現在時刻線の位置を定期更新（5分ごと。軽量な再描画のみ、再構築はしない）
+setInterval(() => {
+  if (!skyChart) return;
+  skyChart.redraw();
+  precipChart.redraw();
+  windChart.redraw();
+  updateNowButton();
+}, 5 * 60 * 1000);
+
 /* ------ スクラブライン（ビューポート固定）: バッジの日時表示のみ更新 ------ */
 function updateScrubBadge() {
   const d = state.allData && state.allData[state.sliderIndex];
@@ -1538,6 +1639,7 @@ slider.addEventListener('input', () => {
   updateHUD();
   updateABC();
   updateScrubBadge();     // canvas再描画なし
+  updateNowButton();
   scrollToIndex(state.sliderIndex);
   updateParticles();
 });
@@ -1567,6 +1669,7 @@ function jumpToDay(offset) {
   updateHUD();
   updateABC();
   updateScrubBadge();
+  updateNowButton();
   scrollToIndex(state.sliderIndex, true);
   updateParticles();
 }
@@ -1606,6 +1709,7 @@ function syncFromScroll() {
   updateHUD();
   updateABC();
   updateScrubBadge();
+  updateNowButton();
 }
 
 chartsWrapper.addEventListener('scroll', () => {
