@@ -700,6 +700,14 @@ html, body {
   pointer-events: none;
   z-index: 5;
 }
+/* 固定Y軸ガター（画面左端。スクロールしても目盛りが消えない） */
+#axis-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 6;
+}
 
 /* ============================================================
    LEGEND
@@ -738,7 +746,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.4.0</span>
+    <span id="app-version">v4.5.0</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
@@ -803,6 +811,7 @@ html, body {
       </div>
     </div>
     <canvas id="particle-canvas"></canvas>
+    <canvas id="axis-canvas"></canvas>
     <div id="scrub-line">
       <div id="scrub-bar"></div>
       <span id="time-badge">--:00</span>
@@ -1255,6 +1264,78 @@ function buildCharts() {
   // スクラブラインの高さをチャート合計に合わせる
   document.getElementById('scrub-bar').style.height =
     (CHART_H_SKY + CHART_H_PREC + CHART_H_WIND) + 'px';
+
+  // 固定Y軸ガター用のスケール情報（uPlotのrange関数と同一の計算）
+  const validTemps = temps.filter(v => v != null);
+  scaleInfo = {
+    tempMin: Math.min(...validTemps) - 3,
+    tempMax: Math.max(...validTemps) + 3,
+    precipMax: Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0)),
+    windMax: Math.max(20, ...winds.map(v => v || 0)),
+  };
+  drawAxisGutter();
+}
+
+/* ------ 固定Y軸ガター（画面左端に固定。スクロールで目盛りが消えない） ------ */
+let scaleInfo = null;
+
+function drawAxisGutter() {
+  const c = document.getElementById('axis-canvas');
+  const W = PADDING_L + 2;
+  const H = CHART_H_SKY + CHART_H_PREC + CHART_H_WIND;
+  c.width = Math.round(W * PX_RATIO);
+  c.height = Math.round(H * PX_RATIO);
+  c.style.width = W + 'px';
+  c.style.height = H + 'px';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(PX_RATIO, 0, 0, PX_RATIO, 0, 0);
+
+  // 半透明の下地 + 右境界線
+  ctx.fillStyle = 'rgba(249,248,245,0.88)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W - 0.5, 0); ctx.lineTo(W - 0.5, H); ctx.stroke();
+  if (!scaleInfo) return;
+  const si = scaleInfo;
+
+  // --- 気温（skyチャート、padding[30,,16]と同一ジオメトリ） ---
+  const skyTop = 30;
+  const skyBottom = CHART_H_SKY - 16;
+  const ty = t => skyTop + (si.tempMax - t) / (si.tempMax - si.tempMin) * (skyBottom - skyTop);
+  ctx.textAlign = 'left';
+  ctx.font = "bold 8px 'Noto Sans JP', sans-serif";
+  ctx.fillStyle = '#e05020';
+  ctx.fillText('気温℃', 3, 10);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  [si.tempMin + 2, (si.tempMin + si.tempMax) / 2, si.tempMax - 2].forEach(t => {
+    ctx.fillText(Math.round(t) + '°', W - 4, ty(t) + 3);
+  });
+
+  // --- 降水・降雪 ---
+  const pTop = CHART_H_SKY;
+  ctx.textAlign = 'left';
+  ctx.font = "bold 8px 'Noto Sans JP', sans-serif";
+  ctx.fillStyle = '#3a7fc1';
+  ctx.fillText('降水㎜', 3, pTop + 10);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(si.precipMax.toFixed(0), W - 4, pTop + 22);
+  ctx.fillStyle = 'rgba(58,127,193,0.6)';
+  ctx.fillText('0', W - 4, pTop + CHART_H_PREC - 3);
+
+  // --- 風・気圧 ---
+  const wTop = CHART_H_SKY + CHART_H_PREC;
+  ctx.textAlign = 'left';
+  ctx.font = "bold 8px 'Noto Sans JP', sans-serif";
+  ctx.fillStyle = '#6c5ce7';
+  ctx.fillText('風m/s', 3, wTop + 10);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(String(Math.round(si.windMax)), W - 4, wTop + 22);
+  ctx.fillStyle = 'rgba(108,92,231,0.6)';
+  ctx.fillText('0', W - 4, wTop + CHART_H_WIND - 3);
 }
 
 /* ------ SKY hook: 空色背景 + 日付区切り ------ */
@@ -1310,18 +1391,7 @@ function drawSkyOverlay(u) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillText(d.time.getHours() + 'h', x, H - 4 * pr);
   }
-  // Y軸気温ラベル
-  const yMin = u.scales.y.min;
-  const yMax = u.scales.y.max;
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(224,80,32,0.9)';
-  ctx.font = `bold ${9 * pr}px monospace`;
-  [yMin + 2, (yMin + yMax) / 2, yMax - 2].forEach(t => {
-    const y = u.valToPos(t, 'y', true);
-    if (y > 16 * pr && y < H - 18 * pr) {
-      ctx.fillText(Math.round(t) + '°', (PADDING_L - 3) * pr, y + 3 * pr);
-    }
-  });
+  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   ctx.restore();
 }
 
@@ -1382,12 +1452,7 @@ function drawPrecipBars(u) {
       ctx.globalAlpha = 1;
     }
   }
-  // Y軸ラベル
-  ctx.fillStyle = '#3a7fc1';
-  ctx.font = `bold ${9 * pr}px monospace`;
-  ctx.textAlign = 'right';
-  ctx.fillText('mm', (PADDING_L - 2) * pr, 11 * pr);
-  ctx.fillText(u.scales.y.max.toFixed(0), (PADDING_L - 2) * pr, 22 * pr);
+  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   ctx.restore();
 }
 
@@ -1412,12 +1477,7 @@ function drawWindBars(u) {
     ctx.fillRect(x0, y, x1 - x0, bottom - y);
   }
   ctx.globalAlpha = 1;
-  // Y軸ラベル
-  ctx.fillStyle = '#6c5ce7';
-  ctx.font = `bold ${9 * pr}px monospace`;
-  ctx.textAlign = 'right';
-  ctx.fillText('m/s', (PADDING_L - 2) * pr, 11 * pr);
-  ctx.fillText(Math.round(u.scales.w.max), (PADDING_L - 2) * pr, 22 * pr);
+  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   ctx.restore();
 }
 
