@@ -99,6 +99,13 @@ html, body {
   color: var(--text);
   line-height: 1;
 }
+#app-version {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text3);
+  align-self: flex-end;
+  padding-bottom: 3px;
+}
 
 #location-name {
   flex: 1;
@@ -256,6 +263,11 @@ html, body {
   color: var(--text);
   margin-top: 2px;
   line-height: 1.4;
+  /* 高さを2行分に固定し、スクロール中の文言変化でチャートが縦に動くのを防ぐ */
+  height: 2.8em;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
 }
 #abc-sub {
   font-size: 11px;
@@ -266,13 +278,19 @@ html, body {
 /* ============================================================
    CHARTS AREA
    ============================================================ */
-#charts-wrapper {
+/* チャート領域の外枠。スクラブライン・パーティクルはこの中に
+   absoluteで固定し、スクロールに一切参加させない
+   （iOS Safariのsticky追従バグによる「飛び」を構造的に排除） */
+#charts-outer {
   flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #f9f8f5;
+}
+#charts-wrapper {
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  position: relative;
-  min-height: 0;
-  background: #f9f8f5;
   /* スクロールバー非表示 */
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -282,10 +300,10 @@ html, body {
   position: relative;
   width: max-content;   /* チャート実幅に合わせてラッパーを横スクロールさせる */
 }
-/* 現在位置スクラブライン（ビューポート左1/3に固定。チャート側が下を流れ、
-   日を跨いでもシームレス。canvas再描画・transform移動は一切なし） */
+/* 現在位置スクラブライン（画面左1/3に完全固定。チャート側が下を流れ、
+   日を跨いでもシームレス。スクロールコンテナ外なので絶対に動かない） */
 #scrub-line {
-  position: sticky;
+  position: absolute;
   left: 33%;
   top: 0;
   width: 0;
@@ -659,14 +677,11 @@ html, body {
    PARTICLES CANVAS
    ============================================================ */
 #particle-canvas {
-  position: sticky;
+  position: absolute;   /* charts-outerに固定（スクロール非参加） */
   top: 0;
   left: 0;
-  width: 100%;
-  height: 0;        /* 実サイズはJS設定、レイアウトには影響させない */
   pointer-events: none;
   z-index: 5;
-  overflow: visible;
 }
 
 /* ============================================================
@@ -706,6 +721,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
+    <span id="app-version">v4.3.1</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
@@ -761,16 +777,18 @@ html, body {
   </div>
 
   <!-- Charts -->
-  <div id="charts-wrapper">
+  <div id="charts-outer">
+    <div id="charts-wrapper">
+      <div id="charts-inner">
+        <div id="chart-sky"></div>
+        <div id="chart-precip"></div>
+        <div id="chart-wind"></div>
+      </div>
+    </div>
     <canvas id="particle-canvas"></canvas>
     <div id="scrub-line">
       <div id="scrub-bar"></div>
       <span id="time-badge">--:00</span>
-    </div>
-    <div id="charts-inner">
-      <div id="chart-sky"></div>
-      <div id="chart-precip"></div>
-      <div id="chart-wind"></div>
     </div>
   </div>
 
