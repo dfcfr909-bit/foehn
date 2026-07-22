@@ -399,6 +399,59 @@ html, body {
   color: var(--text);
   padding: 4px 8px;
 }
+#map-search-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+#map-search-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  font-size: 15px;   /* iOSの自動ズーム防止に16px近辺 */
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: var(--surface);
+}
+#map-search-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#map-results {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  background: var(--surface);
+}
+#map-results:empty { display: none; }
+.map-result-item {
+  padding: 11px 14px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.map-result-item:active { background: var(--bg2); }
+.map-result-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.map-result-sub { font-size: 11px; color: var(--text3); }
+.map-result-msg { padding: 12px 14px; font-size: 12px; color: var(--text3); text-align: center; }
 #map { flex: 1; }
 #map-hint {
   padding: 8px 14px;
@@ -692,7 +745,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.8.0</span>
+    <span id="app-version">v4.9.0</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
@@ -788,8 +841,14 @@ html, body {
       <h2>地点を選択</h2>
       <button id="btn-map-close" onclick="closeMap()">✕</button>
     </div>
+    <div id="map-search-row">
+      <input type="search" id="map-search-input" placeholder="山名・地名で検索（例: 槍ヶ岳）"
+        enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off">
+      <button id="map-search-btn" onclick="doMapSearch()">検索</button>
+    </div>
+    <div id="map-results"></div>
     <div id="map"></div>
-    <div id="map-hint">地図をタップして地点を選択</div>
+    <div id="map-hint">地図をタップ、または上の検索窓で地点を選択</div>
   </div>
 
   <!-- Favorites Overlay -->
@@ -1739,6 +1798,8 @@ let leafletMarker = null;
 
 function openMap() {
   document.getElementById('map-overlay').classList.add('open');
+  document.getElementById('map-results').innerHTML = '';   // 前回の検索結果をクリア
+  document.getElementById('map-search-input').value = '';
   if (!leafletMap) {
     setTimeout(() => {
       leafletMap = L.map('map').setView([state.lat, state.lon], 10);
@@ -1769,6 +1830,59 @@ function openMap() {
 function closeMap() {
   document.getElementById('map-overlay').classList.remove('open');
 }
+
+/* ------ 地名検索（Nominatim） ------ */
+// 地図上に選択マーカーを移動し、地点を確定して天気取得
+function pickMapPoint(lat, lon, name) {
+  state.lat = lat;
+  state.lon = lon;
+  state.locationName = name;
+  if (leafletMap) {
+    leafletMap.setView([lat, lon], Math.max(leafletMap.getZoom(), 11));
+    if (leafletMarker) leafletMarker.setLatLng([lat, lon]);
+  }
+  closeMap();
+  fetchWeather(lat, lon);
+}
+
+async function doMapSearch() {
+  const input = document.getElementById('map-search-input');
+  const q = input.value.trim();
+  const results = document.getElementById('map-results');
+  if (!q) { results.innerHTML = ''; return; }
+  results.innerHTML = '<div class="map-result-msg">検索中…</div>';
+  try {
+    // 日本国内に限定して山名・地名を検索
+    const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=jp&accept-language=ja&limit=8&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const list = await res.json();
+    if (!list.length) {
+      results.innerHTML = '<div class="map-result-msg">見つかりませんでした</div>';
+      return;
+    }
+    results.innerHTML = '';
+    list.forEach(item => {
+      const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
+      const full = item.display_name || '';
+      const name = full.split(',')[0].trim() || q;
+      const el = document.createElement('div');
+      el.className = 'map-result-item';
+      el.innerHTML =
+        `<div class="map-result-name">${name}</div>` +
+        `<div class="map-result-sub">${full}</div>`;
+      el.addEventListener('click', () => pickMapPoint(lat, lon, name));
+      results.appendChild(el);
+    });
+  } catch (e) {
+    results.innerHTML = `<div class="map-result-msg">検索失敗: ${e.message}</div>`;
+  }
+}
+
+// Enterキーで検索実行
+document.getElementById('map-search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); doMapSearch(); }
+});
 
 /* ============================================================
    FAVORITES
