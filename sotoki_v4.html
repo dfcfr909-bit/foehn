@@ -676,6 +676,8 @@ html, body {
   border-radius: 2px;
   flex-shrink: 0;
 }
+#range-toggle { margin-left: auto; }
+#range-toggle .mode-btn { font-size: 10px; padding: 4px 8px; }
 </style>
 </head>
 <body>
@@ -690,7 +692,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.7.0</span>
+    <span id="app-version">v4.8.0</span>
     <span id="location-name">──</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
@@ -728,13 +730,17 @@ html, body {
     </div>
   </div>
 
-  <!-- Legend -->
+  <!-- Legend + 表示範囲トグル -->
   <div id="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#e05020"></div>気温</div>
     <div class="legend-item"><div class="legend-dot" style="background:#3a7fc1"></div>降水mm</div>
     <div class="legend-item"><div class="legend-dot" style="background:#7bb8e8"></div>降雪cm</div>
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速m/s</div>
     <div class="legend-item"><div class="legend-dot" style="background:#888"></div>気圧hPa</div>
+    <div id="range-toggle" class="mode-toggle">
+      <button class="mode-btn active" data-range="forecast" onclick="setRange('forecast')">予報</button>
+      <button class="mode-btn" data-range="full" onclick="setRange('full')">実績+予報</button>
+    </div>
   </div>
 
   <!-- Charts（Meteograms風・全期間1画面表示、横スクロールなし） -->
@@ -825,10 +831,14 @@ const state = {
   lon: 137.65,
   locationName: '立山・黒部',
   mode: 'day',
-  allData: null,     // 表示データ（現在時刻〜+72h）
+  allData: null,     // 表示データ（rangeModeでスライスした範囲）
+  fullData: null,    // 取得した全データ（過去含む。再取得なしで範囲切替）
   daily: null,       // 日の出・日の入り
   sliderIndex: 0,    // デフォルト：現在時刻
+  rangeMode: 'forecast',  // 'forecast'=現在〜+72h / 'full'=-72h〜+72h
 };
+
+const PAST_HOURS = 72;   // 「実績+予報」表示時に遡る時間数
 
 // ABC閾値
 const THRESH = {
@@ -856,20 +866,17 @@ function setMode(m) {
    ============================================================ */
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
-  // past_days=1は6h気圧変化(dpress)の算出用。表示は現在時刻〜+72hに絞る
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,weathercode,cloudcover&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=1&forecast_days=4&models=jma_seamless`;
+  // past_days=3で過去3日分（解析値）も取得。表示範囲はrangeModeでスライス
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,weathercode,cloudcover&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=3&forecast_days=4&models=jma_seamless`;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
-    const full = processData(json);              // dpressは全期間の文脈で算出済み
-    const startIdx = indexOfNow(full);           // 現在時刻を含む1時間の開始index
-    state.allData = full.slice(startIdx, startIdx + FORECAST_HOURS + 1);
-    HOURS = state.allData.length;
-    state.sliderIndex = 0;                        // 現在時刻から開始
+    state.fullData = processData(json);          // dpressは全期間の文脈で算出済み
     state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
     state.lat = lat;
     state.lon = lon;
+    applyRange();                                // rangeModeに応じてallDataを切り出し
     saveLast(lat, lon, state.locationName);
     // DOM反映後に描画
     requestAnimationFrame(() => {
@@ -888,6 +895,27 @@ function indexOfNow(data) {
     if (data[i].time.getTime() <= now) return i;
   }
   return 0;
+}
+
+// rangeModeに応じてfullDataから表示範囲を切り出す（再取得なし）
+function applyRange() {
+  const full = state.fullData;
+  if (!full || !full.length) return;
+  const nowIdx = indexOfNow(full);
+  const start = state.rangeMode === 'full' ? Math.max(0, nowIdx - PAST_HOURS) : nowIdx;
+  const end = Math.min(full.length, nowIdx + FORECAST_HOURS + 1);
+  state.allData = full.slice(start, end);
+  HOURS = state.allData.length;
+  state.sliderIndex = nowIdx - start;   // 現在時刻の位置にカーソルを合わせる
+}
+
+function setRange(mode) {
+  if (mode === state.rangeMode || !state.fullData) return;
+  state.rangeMode = mode;
+  document.querySelectorAll('#range-toggle .mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.range === mode));
+  applyRange();
+  render();
 }
 
 function processData(json) {
@@ -1462,6 +1490,13 @@ function drawNowMarker(u) {
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.fillText(label, xNow, 24 * pr);
+    // 過去域が解析値（実測ではない）である旨の注記
+    if (state.rangeMode === 'full' && xNow - x0 > 40 * pr) {
+      ctx.fillStyle = 'rgba(90,90,90,0.8)';
+      ctx.font = `bold ${8.5 * pr}px 'Noto Sans JP', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillText('◀ 過去=解析値（実測ではない）', x0 + 3 * pr, 42 * pr);
+    }
   }
   ctx.restore();
 }
