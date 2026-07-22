@@ -475,6 +475,153 @@ html, body {
 }
 
 /* ============================================================
+   RANKING OVERLAY
+   ============================================================ */
+#rank-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: var(--surface);
+  display: none;
+  flex-direction: column;
+}
+#rank-overlay.open { display: flex; }
+#rank-header {
+  display: flex; align-items: center;
+  padding: 12px 14px;
+  border-bottom: 2px solid var(--border);
+  gap: 10px;
+  flex-shrink: 0;
+}
+#rank-header h2 { flex: 1; font-size: 16px; }
+#btn-rank-close {
+  font-size: 22px; border: none; background: none; cursor: pointer; color: var(--text);
+  padding: 4px 8px;
+}
+#rank-date-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+.rank-date-btn {
+  flex: 1;
+  min-height: 44px;   /* グローブ操作前提のタップ領域 */
+  border: 2px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--text2);
+}
+.rank-date-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+#rank-date-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 0 8px;
+  color: var(--text2);
+  background: var(--surface);
+}
+#rank-note {
+  padding: 2px 14px 6px;
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+#rank-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rank-msg { color: var(--text3); text-align: center; margin-top: 24px; font-size: 13px; }
+.rank-card {
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.rank-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 48px;   /* タップ領域44px以上 */
+  cursor: pointer;
+}
+.rank-card-head:active { background: var(--bg2); }
+.rank-pos {
+  font-family: var(--font-display);
+  font-size: 20px;
+  width: 26px;
+  text-align: center;
+  color: var(--text3);
+}
+.rank-name { flex: 1; min-width: 0; }
+.rank-name .rn-main { font-weight: 700; font-size: 14px; }
+.rank-name .rn-sub { font-size: 10px; color: var(--text3); }
+.rank-badges { display: flex; gap: 4px; align-items: center; }
+.rank-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 34px;
+  padding: 3px 4px;
+  border-radius: 8px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.rank-badge .rb-day { font-size: 9px; }
+.rank-badge .rb-grade { font-family: var(--font-display); font-size: 18px; }
+.rb-A { background: #e8f7ef; color: var(--a-col); }
+.rb-B { background: #fef5e4; color: var(--b-col); }
+.rb-C { background: #fde8e8; color: var(--c-col); }
+.rb-X { background: var(--bg2); color: var(--text3); }
+.rank-avg { font-size: 10px; color: var(--text3); margin-left: 2px; white-space: nowrap; }
+.rank-detail {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 8px 10px 10px;
+  background: var(--bg);
+}
+.rank-card.open .rank-detail { display: block; }
+.rank-detail table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.rank-detail th {
+  font-size: 9px; color: var(--text3);
+  text-align: left; padding: 3px 4px; font-weight: 700;
+}
+.rank-detail td { padding: 4px; border-top: 1px solid var(--border); vertical-align: middle; }
+.peak-link {
+  background: none; border: none;
+  padding: 6px 2px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  text-decoration: underline;
+}
+.peak-elev { font-size: 9px; color: var(--text3); }
+.pd-grade {
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.pd-metrics { font-size: 10px; color: var(--text2); font-family: var(--font-mono); margin-top: 2px; }
+
+/* ============================================================
    LOADING / ERROR
    ============================================================ */
 #loading-overlay {
@@ -637,6 +784,9 @@ html, body {
     <button class="foot-btn" id="btn-fav" onclick="openFav()">
       <span class="icon">⭐</span>お気に入り
     </button>
+    <button class="foot-btn" id="btn-rank" onclick="openRank()">
+      <span class="icon">🏔️</span>ランキング
+    </button>
   </div>
 
   <!-- Map Overlay -->
@@ -657,6 +807,24 @@ html, body {
     </div>
     <div id="fav-list"></div>
     <button id="fav-save-btn" onclick="saveCurrentAsFav()">⭐ 現在地点を保存</button>
+  </div>
+
+  <!-- Ranking Overlay -->
+  <div id="rank-overlay">
+    <div id="rank-header">
+      <h2>全国山域ランキング</h2>
+      <button id="btn-rank-close" onclick="closeRank()">✕</button>
+    </div>
+    <div id="rank-date-row">
+      <button class="rank-date-btn active" data-kind="weekend" onclick="setRankDate('weekend')">今週末</button>
+      <button class="rank-date-btn" data-kind="tomorrow" onclick="setRankDate('tomorrow')">明日</button>
+      <input type="date" id="rank-date-input" onchange="setRankDate('custom')">
+    </div>
+    <div id="rank-note">
+      6〜18時の最悪値で判定（<span id="rank-mode-label">日帰り</span>モード） /
+      山域＝代表峰の最良値、括弧は平均 / 風:最大m/s 雨:合計mm 雪:合計cm 温:最低℃
+    </div>
+    <div id="rank-list"></div>
   </div>
 
 </div><!-- #app -->
@@ -1495,6 +1663,241 @@ function saveCurrentAsFav() {
   saveFavs(favs);
   renderFavList();
   alert('保存しました');
+}
+
+/* ============================================================
+   RANKING（全国山域ランキング）
+   仕様: docs参照。ABC判定は既存judgePointをそのまま利用し、
+   日単位評価は行動時間帯6〜18時の最悪値を採用。
+   山域スコア = 代表峰の最良値（平均は参考表示）
+   ============================================================ */
+const RANK_WINDOW_START = 6;    // 評価時間帯の開始時（6時）
+const RANK_WINDOW_END   = 18;   // 評価時間帯の終了時（18時、含む）
+const RANK_MAX_AHEAD    = 6;    // カレンダー選択の上限（JMAモデルの予報期間内）
+
+let areasData = null;           // areas.json（初回fetch後キャッシュ）
+const rankFetchCache = {};      // 「日付レンジ+地点セット」→ 生の取得結果
+let rankDates = [];             // 表示中の対象日（YYYY-MM-DD配列、週末は2要素）
+let rankKind = 'weekend';
+
+async function loadAreas() {
+  if (areasData) return areasData;
+  const res = await fetch('areas.json');
+  if (!res.ok) throw new Error('areas.json HTTP ' + res.status);
+  areasData = await res.json();
+  return areasData;
+}
+
+// ローカル日付をYYYY-MM-DDに整形
+function fmtDateISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 種別 → 対象日配列。今週末=直近の土日（日曜当日は残りの日曜のみ）
+function resolveRankDates(kind) {
+  const today = new Date();
+  if (kind === 'tomorrow') {
+    const t = new Date(today);
+    t.setDate(t.getDate() + 1);
+    return [fmtDateISO(t)];
+  }
+  if (kind === 'custom') {
+    const v = document.getElementById('rank-date-input').value;
+    return v ? [v] : [];
+  }
+  // weekend
+  const dow = today.getDay();   // 0=日
+  if (dow === 0) return [fmtDateISO(today)];   // 日曜当日は今日のみ
+  const sat = new Date(today);
+  sat.setDate(sat.getDate() + (6 - dow));
+  const sun = new Date(sat);
+  sun.setDate(sun.getDate() + 1);
+  return [fmtDateISO(sat), fmtDateISO(sun)];
+}
+
+// 全峰一括取得（1リクエスト、日付+地点セットでキャッシュ）
+async function fetchRankData(dates) {
+  const areas = await loadAreas();
+  const peaks = areas.areas.flatMap(a => a.peaks);
+  const key = `${dates.join('_')}_v${areas.version}_${peaks.length}`;
+  if (rankFetchCache[key]) return rankFetchCache[key];
+
+  const lats  = peaks.map(p => p.lat).join(',');
+  const lons  = peaks.map(p => p.lon).join(',');
+  const elevs = peaks.map(p => p.elev).join(',');
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&elevation=${elevs}` +
+    `&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,weathercode,cloudcover` +
+    `&timezone=Asia%2FTokyo&start_date=${dates[0]}&end_date=${dates[dates.length - 1]}&models=jma_seamless`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  let json = await res.json();
+  if (!Array.isArray(json)) json = [json];   // 1地点時はオブジェクトで返る
+  rankFetchCache[key] = json;
+  return json;
+}
+
+// 1峰×1日の評価: 6〜18時をjudgePointで判定し最悪ランクと集計値を返す
+function judgePeakDay(hourData, dateStr) {
+  let worst = null, maxWind = 0, sumPrecip = 0, sumSnow = 0, minTemp = null;
+  for (const d of hourData) {
+    if (fmtDateISO(d.time) !== dateStr) continue;
+    const h = d.time.getHours();
+    if (h < RANK_WINDOW_START || h > RANK_WINDOW_END) continue;
+    const { grade } = judgePoint(d);
+    const r = { A: 0, B: 1, C: 2 }[grade];
+    worst = worst == null ? r : Math.max(worst, r);
+    maxWind = Math.max(maxWind, d.wind || 0);
+    sumPrecip += d.precip || 0;
+    sumSnow += d.snow || 0;
+    if (d.temp != null) minTemp = minTemp == null ? d.temp : Math.min(minTemp, d.temp);
+  }
+  if (worst == null) return null;   // 対象時間帯のデータなし → 判定不能
+  return { rank: worst, maxWind, sumPrecip, sumSnow, minTemp };
+}
+
+// ランキング構築: best昇順 → avg昇順 → 最高峰標高降順
+async function buildRanking(dates) {
+  const areas = (await loadAreas()).areas;
+  const results = await fetchRankData(dates);
+  let flatIdx = 0;
+  const rows = areas.map(area => {
+    const peakResults = area.peaks.map(peak => {
+      const raw = results[flatIdx++];
+      let days;
+      try {
+        const hourData = raw && raw.hourly ? processData(raw) : null;
+        days = dates.map(ds => hourData ? judgePeakDay(hourData, ds) : null);
+      } catch {
+        days = dates.map(() => null);   // 失敗地点は判定不能でフォールバック
+      }
+      return { peak, days };
+    });
+    // 日別の山域スコア
+    const dayScores = dates.map((_, di) => {
+      const ranks = peakResults.map(pr => pr.days[di] && pr.days[di].rank).filter(v => v != null);
+      if (!ranks.length) return null;
+      return { best: Math.min(...ranks), avg: ranks.reduce((a, b) => a + b, 0) / ranks.length };
+    });
+    const bests = dayScores.filter(Boolean).map(s => s.best);
+    const avgs  = dayScores.filter(Boolean).map(s => s.avg);
+    return {
+      area, peakResults, dayScores,
+      best: bests.length ? Math.min(...bests) : 99,   // 判定不能山域は最後尾
+      avg:  avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 99,
+      maxElev: Math.max(...area.peaks.map(p => p.elev)),
+    };
+  });
+  rows.sort((a, b) => a.best - b.best || a.avg - b.avg || b.maxElev - a.maxElev);
+  return rows;
+}
+
+const rankGradeChar = r => (r == null ? '—' : ['A', 'B', 'C'][r]);
+const rankDowChar = ds => ['日', '月', '火', '水', '木', '金', '土'][new Date(ds + 'T00:00').getDay()];
+
+function renderRankList(rows, dates) {
+  const list = document.getElementById('rank-list');
+  list.innerHTML = '';
+  rows.forEach((row, i) => {
+    const card = document.createElement('div');
+    card.className = 'rank-card';
+
+    const badges = row.dayScores.map((s, di) => {
+      const g = s ? rankGradeChar(s.best) : '—';
+      const cls = s ? `rb-${g}` : 'rb-X';
+      const dayLabel = dates.length > 1 ? `<span class="rb-day">${rankDowChar(dates[di])}</span>` : '';
+      return `<span class="rank-badge ${cls}">${dayLabel}<span class="rb-grade">${g}</span></span>`;
+    }).join('');
+    const avgTxt = row.avg < 90 ? `(平均${rankGradeChar(Math.round(row.avg))})` : '';
+
+    const headCols = dates.map(ds =>
+      `<th>${parseInt(ds.slice(5, 7))}/${parseInt(ds.slice(8, 10))}(${rankDowChar(ds)})</th>`).join('');
+    const peakRows = row.peakResults.map(pr => {
+      const cells = pr.days.map(d => {
+        if (!d) return '<td><span class="pd-grade rb-X">—</span><div class="pd-metrics">判定不能</div></td>';
+        const g = rankGradeChar(d.rank);
+        const snowTxt = d.sumSnow > 0 ? ` 雪${d.sumSnow.toFixed(0)}` : '';
+        const tempTxt = d.minTemp != null ? ` ${Math.round(d.minTemp)}°` : '';
+        return `<td><span class="pd-grade rb-${g}">${g}</span>` +
+          `<div class="pd-metrics">風${d.maxWind.toFixed(0)} 雨${d.sumPrecip.toFixed(0)}${snowTxt}${tempTxt}</div></td>`;
+      }).join('');
+      return `<tr><td><button class="peak-link" data-lat="${pr.peak.lat}" data-lon="${pr.peak.lon}" data-name="${pr.peak.name}">${pr.peak.name}</button>` +
+        `<div class="peak-elev">${pr.peak.elev}m</div></td>${cells}</tr>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="rank-card-head">
+        <span class="rank-pos">${i + 1}</span>
+        <div class="rank-name">
+          <div class="rn-main">${row.area.name}</div>
+          <div class="rn-sub">${row.area.region}</div>
+        </div>
+        <div class="rank-badges">${badges}<span class="rank-avg">${avgTxt}</span></div>
+      </div>
+      <div class="rank-detail">
+        <table>
+          <tr><th>峰（タップで96h詳細）</th>${headCols}</tr>
+          ${peakRows}
+        </table>
+      </div>
+    `;
+    card.querySelector('.rank-card-head').addEventListener('click', () => card.classList.toggle('open'));
+    card.querySelectorAll('.peak-link').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon));
+      });
+    });
+    list.appendChild(card);
+  });
+}
+
+// 峰名タップ → 既存96hメテオグラムへ遷移
+function gotoPeak(name, lat, lon) {
+  state.lat = lat;
+  state.lon = lon;
+  state.locationName = name;
+  closeRank();
+  fetchWeather(lat, lon);
+}
+
+async function refreshRanking() {
+  const list = document.getElementById('rank-list');
+  document.getElementById('rank-mode-label').textContent = state.mode === 'day' ? '日帰り' : '幕営';
+  if (!rankDates.length) {
+    list.innerHTML = '<div class="rank-msg">日付を選択してください</div>';
+    return;
+  }
+  list.innerHTML = '<div class="rank-msg">全国の気象データ取得中…</div>';
+  try {
+    const rows = await buildRanking(rankDates);
+    renderRankList(rows, rankDates);
+  } catch (e) {
+    list.innerHTML = `<div class="rank-msg">取得失敗: ${e.message}</div>`;
+  }
+}
+
+function setRankDate(kind) {
+  rankKind = kind;
+  document.querySelectorAll('.rank-date-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.kind === kind));
+  rankDates = resolveRankDates(kind);
+  refreshRanking();
+}
+
+function openRank() {
+  const input = document.getElementById('rank-date-input');
+  const today = new Date();
+  const max = new Date(today);
+  max.setDate(max.getDate() + RANK_MAX_AHEAD);
+  input.min = fmtDateISO(today);
+  input.max = fmtDateISO(max);
+  document.getElementById('rank-overlay').classList.add('open');
+  rankDates = resolveRankDates(rankKind);
+  refreshRanking();
+}
+
+function closeRank() {
+  document.getElementById('rank-overlay').classList.remove('open');
 }
 
 /* ============================================================
