@@ -5,3 +5,16 @@
   from = "/"
   to = "/sotoki_v4.html"
   status = 200
+
+# HTMLは毎回サーバーに最新確認させる（古いバージョンがキャッシュで残るのを防止）
+# must-revalidate: キャッシュを使う前に必ず再検証。更新後はリロードで最新が出る
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# ルートURL（/ → sotoki_v4.html）にも同じ制御を適用
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
