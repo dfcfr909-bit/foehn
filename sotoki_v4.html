@@ -957,18 +957,24 @@ async function reverseGeocode(lat, lon) {
    ============================================================ */
 function render() {
   if (!state.allData) return;
-  // sliderを現在のindexと同期
-  slider.value = state.sliderIndex;
-  updateLocationName();
-  updateHUD();
-  updateABC();
-  buildCharts();          // データ取得時のみの1回描画
-  updateScrubBadge();
-  scrollToIndex(state.sliderIndex);
-  updateSliderLabels();
-  updateDayTabs();
-  updateParticles();
-  hideLoading();
+  try {
+    // sliderを現在のindexと同期
+    slider.value = state.sliderIndex;
+    updateLocationName();
+    updateHUD();
+    updateABC();
+    buildCharts();          // データ取得時のみの1回描画
+    updateScrubBadge();
+    scrollToIndex(state.sliderIndex);
+    updateSliderLabels();
+    updateDayTabs();
+    updateParticles();
+    hideLoading();
+  } catch (e) {
+    // 例外時にローディングが永久表示にならないよう必ず解除し、原因を表示
+    hideLoading();
+    alert('画面描画エラー: ' + e.message);
+  }
 }
 
 function updateLocationName() {
@@ -1105,6 +1111,9 @@ function updateChartSpacers() {
 }
 
 function buildCharts() {
+  if (typeof uPlot === 'undefined') {
+    throw new Error('チャートライブラリ(uPlot)の読み込みに失敗しました。通信環境を確認して再読み込みしてください');
+  }
   const data = state.allData;
   updateChartSpacers();
   const xs       = data.map((_, i) => i);
