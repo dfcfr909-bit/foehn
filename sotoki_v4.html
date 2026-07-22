@@ -12,6 +12,10 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <!-- Leaflet JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- uPlot CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/uPlot/1.6.32/uPlot.min.css">
+<!-- uPlot JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/uPlot/1.6.32/uPlot.iife.min.js"></script>
 
 <style>
 /* ============================================================
@@ -274,9 +278,34 @@ html, body {
   -ms-overflow-style: none;
 }
 #charts-wrapper::-webkit-scrollbar { display: none; }
-.chart-canvas {
-  display: block;
-  /* 幅はJSで設定 */
+#charts-inner {
+  position: relative;
+  width: max-content;   /* チャート実幅に合わせてラッパーを横スクロールさせる */
+}
+/* 現在位置インジケーター（DOMオーバーレイ。canvas再描画なしでtransformのみ更新） */
+#time-indicator {
+  position: absolute;
+  top: 0;
+  left: -1px;           /* 線幅2pxの中心合わせ */
+  width: 2px;
+  background: #e03010;
+  pointer-events: none;
+  z-index: 6;
+  will-change: transform;
+}
+#time-badge {
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #e03010;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
 }
 
 /* ============================================================
@@ -303,7 +332,6 @@ html, body {
   border-radius: 50%;
   background: var(--text);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 #slider-labels {
   display: flex;
@@ -580,9 +608,12 @@ html, body {
   <!-- Charts -->
   <div id="charts-wrapper">
     <canvas id="particle-canvas"></canvas>
-    <canvas id="chart-sky" class="chart-canvas"></canvas>
-    <canvas id="chart-precip" class="chart-canvas"></canvas>
-    <canvas id="chart-wind" class="chart-canvas"></canvas>
+    <div id="charts-inner">
+      <div id="chart-sky"></div>
+      <div id="chart-precip"></div>
+      <div id="chart-wind"></div>
+      <div id="time-indicator"><span id="time-badge">--:00</span></div>
+    </div>
   </div>
 
   <!-- Slider -->
@@ -660,7 +691,9 @@ const THRESH = {
 function setMode(m) {
   state.mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-  render();
+  if (!state.allData) return;
+  updateABC();
+  if (windChart) windChart.redraw();   // 風速バーの閾値色のみ更新
 }
 
 /* ============================================================
@@ -750,7 +783,9 @@ function render() {
   updateLocationName();
   updateHUD();
   updateABC();
-  drawCharts();
+  buildCharts();          // データ取得時のみの1回描画
+  updateIndicator();
+  scrollToIndex(state.sliderIndex);
   updateSliderLabels();
   updateDayTabs();
   updateParticles();
@@ -850,7 +885,9 @@ function updateABC() {
 }
 
 /* ============================================================
-   CHART DRAWING  ── 96h全体を1枚のCanvasに描き、CSS translateで現在位置を中央に寄せる
+   CHARTS (uPlot)  ── データ取得時に1回だけ描画。
+   スクロールはCSSネイティブ、現在位置インジケーターはDOM
+   オーバーレイのtransform更新のみ（canvas再描画なし）
    ============================================================ */
 const CHART_H_SKY   = 140;
 const CHART_H_PREC  = 90;
@@ -858,308 +895,304 @@ const CHART_H_WIND  = 90;
 const PADDING_L     = 38;
 const PADDING_R     = 8;
 const PX_PER_HOUR   = 18;   // 1時間あたりのpx幅（96h × 18 = 1728px）
+const HOURS         = 96;
+const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
-// 96h全体の論理幅
-function chartTotalW() { return PADDING_L + 96 * PX_PER_HOUR + PADDING_R; }
+let skyChart = null, precipChart = null, windChart = null;
 
-// sliderIndexに対応するx座標（バーの中心）
+// 全体の論理幅（CSS px）
+function chartTotalW() { return PADDING_L + HOURS * PX_PER_HOUR + PADDING_R; }
+
+// sliderIndexに対応するx座標（バーの中心、CSS px）
 function idxToX(idx) { return PADDING_L + (idx + 0.5) * PX_PER_HOUR; }
 
-function drawCharts() {
-  const W = chartTotalW();
-  drawSky(W);
-  drawPrecip(W);
-  drawWindPress(W);
-  scrollToCurrentIndex();
-}
+// 実際のcanvas倍率（pxRatio未対応環境でもcanvas実寸から算出）
+function canvasRatio(u) { return u.ctx.canvas.width / u.width; }
 
-// charts-wrapperをスライダー位置に追従させる
-function scrollToCurrentIndex() {
-  const wrap = document.getElementById('charts-wrapper');
-  const vw = wrap.clientWidth || window.innerWidth;
-  const cx = idxToX(state.sliderIndex);
-  // 現在位置を画面左1/3に配置
-  const scrollLeft = cx - vw * 0.33;
-  wrap.scrollLeft = Math.max(0, scrollLeft);
-}
-
-/* ------ SKY (気温 + 天気背景 + 現在位置インジケーター) ------ */
-function drawSky(W) {
-  const c = document.getElementById('chart-sky');
-  c.width = W;
-  c.height = CHART_H_SKY;
-  const ctx = c.getContext('2d');
+function buildCharts() {
   const data = state.allData;
-  const N = data.length; // 96
-  const bw = PX_PER_HOUR;
-  const ch = CHART_H_SKY;
+  // uPlotのサイズ適用は次フレームに遅延されるため、スクロール可能幅を先に確定させる
+  document.getElementById('charts-inner').style.width = chartTotalW() + 'px';
+  const xs       = data.map((_, i) => i);
+  const temps    = data.map(d => d.temp);
+  const precips  = data.map(d => d.precip);
+  const snows    = data.map(d => d.snow);
+  const winds    = data.map(d => d.wind);
+  const pressures = data.map(d => d.pressure);
 
-  // --- 背景：時間帯グラデーション ---
-  for (let i = 0; i < N; i++) {
-    const d = data[i];
-    const x = PADDING_L + i * bw;
-    ctx.fillStyle = getSkyColor(d.time.getHours(), d.cloud, d.wcode);
-    ctx.fillRect(x, 0, bw + 1, ch - 16);
+  if (skyChart)    { skyChart.destroy();    skyChart = null; }
+  if (precipChart) { precipChart.destroy(); precipChart = null; }
+  if (windChart)   { windChart.destroy();   windChart = null; }
+
+  const common = {
+    width: chartTotalW(),
+    pxRatio: PX_RATIO,
+    cursor: { show: false },
+    legend: { show: false },
+  };
+  const xScale = { time: false, range: [-0.5, HOURS - 0.5] };
+
+  // --- SKY（空色背景 + 気温ライン） ---
+  skyChart = new uPlot({
+    ...common,
+    height: CHART_H_SKY,
+    padding: [30, PADDING_R, 16, PADDING_L],
+    scales: {
+      x: xScale,
+      y: { range: (u, min, max) => [min - 3, max + 3] },
+    },
+    axes: [{ show: false }, { show: false }],
+    series: [
+      {},
+      {
+        stroke: '#e05020',
+        width: 2.5,
+        spanGaps: true,
+        points: { show: false },
+        fill: u => {
+          const g = u.ctx.createLinearGradient(0, 0, 0, u.ctx.canvas.height);
+          g.addColorStop(0, 'rgba(224,80,32,0.4)');
+          g.addColorStop(1, 'rgba(224,80,32,0)');
+          return g;
+        },
+      },
+    ],
+    hooks: {
+      drawClear: [drawSkyBackground],
+      draw: [drawSkyOverlay],
+    },
+  }, [xs, temps], document.getElementById('chart-sky'));
+
+  // --- PRECIP（降水・降雪バー、バー本体はhook描画） ---
+  precipChart = new uPlot({
+    ...common,
+    height: CHART_H_PREC,
+    padding: [10, PADDING_R, 0, PADDING_L],
+    scales: {
+      x: xScale,
+      y: { range: (u, min, max) => [0, Math.max(5, max)] },
+    },
+    axes: [{ show: false }, { show: false }],
+    series: [
+      {},
+      { paths: () => null, points: { show: false } },  // 降水（スケール算出用）
+      { paths: () => null, points: { show: false } },  // 降雪（スケール算出用）
+    ],
+    hooks: {
+      drawClear: [drawPanelBackground],
+      draw: [drawPrecipBars],
+    },
+  }, [xs, precips, snows], document.getElementById('chart-precip'));
+
+  // --- WIND + PRESSURE（風速バーはhook描画、気圧はライン） ---
+  windChart = new uPlot({
+    ...common,
+    height: CHART_H_WIND,
+    padding: [10, PADDING_R, 0, PADDING_L],
+    scales: {
+      x: xScale,
+      w: { range: (u, min, max) => [0, Math.max(20, max)] },
+      p: { range: (u, min, max) => [min - 3, max + 3] },
+    },
+    axes: [{ show: false }, { show: false, scale: 'w' }],
+    series: [
+      {},
+      { scale: 'w', paths: () => null, points: { show: false } },        // 風速（スケール算出用）
+      { scale: 'p', stroke: '#aaa', width: 1.5, spanGaps: true, points: { show: false } },  // 気圧
+    ],
+    hooks: {
+      drawClear: [drawPanelBackground],
+      draw: [drawWindBars],
+    },
+  }, [xs, winds, pressures], document.getElementById('chart-wind'));
+
+  // インジケーターの高さをチャート合計に合わせる
+  document.getElementById('time-indicator').style.height =
+    (CHART_H_SKY + CHART_H_PREC + CHART_H_WIND) + 'px';
+}
+
+/* ------ SKY hook: 空色背景 + 日付区切り ------ */
+function drawSkyBackground(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const data = state.allData;
+  const H = ctx.canvas.height;
+  const skyBottom = H - 16 * pr;   // 下部の時刻ラベル帯を除く
+  ctx.save();
+  // 空色（時間帯 × 雲量）
+  for (let i = 0; i < data.length; i++) {
+    const x0 = u.valToPos(i - 0.5, 'x', true);
+    const x1 = u.valToPos(i + 0.5, 'x', true);
+    ctx.fillStyle = getSkyColor(data[i].time.getHours(), data[i].cloud, data[i].wcode);
+    ctx.fillRect(x0, 0, x1 - x0 + 1, skyBottom);
   }
-
-  // --- 日付区切りライン ---
-  for (let i = 0; i < N; i++) {
-    const d = data[i];
-    if (d.time.getHours() === 0) {
-      const x = PADDING_L + i * bw;
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch - 16); ctx.stroke();
-      ctx.setLineDash([]);
-      // 日付ラベル
-      const mm = d.time.getMonth() + 1;
-      const dd = d.time.getDate();
-      const dow = ['日','月','火','水','木','金','土'][d.time.getDay()];
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.font = `bold 10px 'Noto Sans JP', sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.fillText(`${mm}/${dd}(${dow})`, x + 3, 12);
-    }
+  // 日付区切りライン + 日付ラベル
+  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.textAlign = 'left';
+  for (let i = 0; i < data.length; i++) {
+    const t = data[i].time;
+    if (t.getHours() !== 0) continue;
+    const x = u.valToPos(i - 0.5, 'x', true);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = pr;
+    ctx.setLineDash([4 * pr, 3 * pr]);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, skyBottom); ctx.stroke();
+    ctx.setLineDash([]);
+    const dow = ['日','月','火','水','木','金','土'][t.getDay()];
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}(${dow})`, x + 3 * pr, 12 * pr);
   }
+  ctx.restore();
+}
 
-  // --- 気温の範囲 ---
-  const temps = data.map(d => d.temp).filter(v => v != null);
-  const tMin = Math.min(...temps) - 3;
-  const tMax = Math.max(...temps) + 3;
-  const tRange = tMax - tMin || 1;
-  const ty = t => (ch - 18) - (t - tMin) / tRange * (ch - 34);
-
-  // --- 気温グラデーション帯 ---
-  const grad = ctx.createLinearGradient(0, 0, 0, ch);
-  grad.addColorStop(0, 'rgba(224,80,32,0.4)');
-  grad.addColorStop(1, 'rgba(224,80,32,0)');
-  ctx.beginPath();
-  ctx.moveTo(PADDING_L, ch - 18);
-  for (let i = 0; i < N; i++) {
-    const d = data[i];
-    if (d.temp == null) continue;
-    ctx.lineTo(idxToX(i), ty(d.temp));
-  }
-  ctx.lineTo(PADDING_L + N * bw, ch - 18);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // --- 気温ライン ---
-  ctx.beginPath();
-  ctx.strokeStyle = '#e05020';
-  ctx.lineWidth = 2.5;
-  ctx.lineJoin = 'round';
-  let first = true;
-  for (let i = 0; i < N; i++) {
-    const d = data[i];
-    if (d.temp == null) continue;
-    if (first) { ctx.moveTo(idxToX(i), ty(d.temp)); first = false; }
-    else ctx.lineTo(idxToX(i), ty(d.temp));
-  }
-  ctx.stroke();
-
-  // --- 天気アイコン + 時間ラベル ---
+/* ------ SKY hook: 天気アイコン + 時刻/気温ラベル ------ */
+function drawSkyOverlay(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const data = state.allData;
+  const H = ctx.canvas.height;
+  ctx.save();
   ctx.textAlign = 'center';
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < data.length; i++) {
     const d = data[i];
-    const x = idxToX(i);
-    const h = d.time.getHours();
-    if (h % 6 === 0) {
-      ctx.font = `14px sans-serif`;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillText(weatherEmoji(d.wcode), x, 26);
-      ctx.font = `bold 9px monospace`;
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillText(h + 'h', x, ch - 4);
-    }
+    if (d.time.getHours() % 6 !== 0) continue;
+    const x = u.valToPos(i, 'x', true);
+    ctx.font = `${14 * pr}px sans-serif`;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(weatherEmoji(d.wcode), x, 26 * pr);
+    ctx.font = `bold ${9 * pr}px monospace`;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillText(d.time.getHours() + 'h', x, H - 4 * pr);
   }
-
-  // --- Y軸気温ラベル ---
+  // Y軸気温ラベル
+  const yMin = u.scales.y.min;
+  const yMax = u.scales.y.max;
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(224,80,32,0.9)';
-  ctx.font = `bold 9px monospace`;
-  [tMin + 2, (tMin + tMax) / 2, tMax - 2].forEach(t => {
-    const y = ty(t);
-    if (y > 16 && y < ch - 18) ctx.fillText(Math.round(t) + '°', PADDING_L - 3, y + 3);
+  ctx.font = `bold ${9 * pr}px monospace`;
+  [yMin + 2, (yMin + yMax) / 2, yMax - 2].forEach(t => {
+    const y = u.valToPos(t, 'y', true);
+    if (y > 16 * pr && y < H - 18 * pr) {
+      ctx.fillText(Math.round(t) + '°', (PADDING_L - 3) * pr, y + 3 * pr);
+    }
   });
-
-  // --- 現在位置インジケーター（赤縦線＋時刻バッジ） ---
-  drawCurrentLine(ctx, ch, '#e05020');
+  ctx.restore();
 }
 
-/* ------ PRECIP ------ */
-function drawPrecip(W) {
-  const c = document.getElementById('chart-precip');
-  c.width = W;
-  c.height = CHART_H_PREC;
-  const ctx = c.getContext('2d');
-  const data = state.allData;
-  const N = data.length;
-  const bw = PX_PER_HOUR;
-  const ch = CHART_H_PREC;
-
+/* ------ PRECIP/WIND共通 hook: 背景 + グリッド + 日付区切り ------ */
+function drawPanelBackground(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const W = ctx.canvas.width;
+  const H = ctx.canvas.height;
+  ctx.save();
   ctx.fillStyle = '#f9f8f5';
-  ctx.fillRect(0, 0, W, ch);
-
+  ctx.fillRect(0, 0, W, H);
   // グリッド
   ctx.strokeStyle = '#e0ddd5';
-  ctx.lineWidth = 0.5;
+  ctx.lineWidth = 0.5 * pr;
   [0.33, 0.66, 1.0].forEach(r => {
-    const y = ch * (1 - r) * 0.9 + 4;
-    ctx.beginPath(); ctx.moveTo(PADDING_L, y); ctx.lineTo(W - PADDING_R, y); ctx.stroke();
+    const y = H * (1 - r) * 0.9 + 4 * pr;
+    ctx.beginPath();
+    ctx.moveTo(PADDING_L * pr, y);
+    ctx.lineTo(W - PADDING_R * pr, y);
+    ctx.stroke();
   });
-
   // 日付区切り
-  for (let i = 0; i < N; i++) {
-    if (data[i].time.getHours() === 0) {
-      const x = PADDING_L + i * bw;
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
-    }
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = pr;
+  const data = state.allData;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].time.getHours() !== 0) continue;
+    const x = u.valToPos(i - 0.5, 'x', true);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
   }
+  ctx.restore();
+}
 
-  const maxPrecip = Math.max(5, ...data.map(d => Math.max(d.precip || 0, (d.snow || 0))));
-
-  for (let i = 0; i < N; i++) {
+/* ------ PRECIP hook: 降水・降雪バー ------ */
+function drawPrecipBars(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const data = state.allData;
+  const bottom = u.bbox.top + u.bbox.height;
+  ctx.save();
+  for (let i = 0; i < data.length; i++) {
     const d = data[i];
-    const x = PADDING_L + i * bw + 1;
-    const barW = bw - 2;
+    if (!(d.precip > 0) && !(d.snow > 0)) continue;
+    const x0 = u.valToPos(i - 0.5, 'x', true) + pr;
+    const x1 = u.valToPos(i + 0.5, 'x', true) - pr;
+    const barW = x1 - x0;
     if (d.precip > 0) {
-      const bh = (d.precip / maxPrecip) * (ch - 10);
+      const y = u.valToPos(d.precip, 'y', true);
       ctx.fillStyle = '#3a7fc1';
-      ctx.fillRect(x, ch - bh, barW, bh);
+      ctx.fillRect(x0, y, barW, bottom - y);
     }
     if (d.snow > 0) {
-      const bh = (d.snow / maxPrecip) * (ch - 10);
+      const y = u.valToPos(d.snow, 'y', true);
       ctx.fillStyle = '#7bb8e8';
       ctx.globalAlpha = 0.85;
-      ctx.fillRect(x, ch - bh, barW * 0.6, bh);
+      ctx.fillRect(x0, y, barW * 0.6, bottom - y);
       ctx.globalAlpha = 1;
     }
   }
-
   // Y軸ラベル
   ctx.fillStyle = '#3a7fc1';
-  ctx.font = `bold 9px monospace`;
+  ctx.font = `bold ${9 * pr}px monospace`;
   ctx.textAlign = 'right';
-  ctx.fillText('mm', PADDING_L - 2, 11);
-  ctx.fillText(maxPrecip.toFixed(0), PADDING_L - 2, ch * 0.12 + 11);
-
-  drawCurrentLine(ctx, ch, '#3a7fc1');
+  ctx.fillText('mm', (PADDING_L - 2) * pr, 11 * pr);
+  ctx.fillText(u.scales.y.max.toFixed(0), (PADDING_L - 2) * pr, 22 * pr);
+  ctx.restore();
 }
 
-/* ------ WIND + PRESSURE ------ */
-function drawWindPress(W) {
-  const c = document.getElementById('chart-wind');
-  c.width = W;
-  c.height = CHART_H_WIND;
-  const ctx = c.getContext('2d');
+/* ------ WIND hook: 風速バー（閾値色分け、気圧ラインの上に重ねる） ------ */
+function drawWindBars(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
   const data = state.allData;
-  const N = data.length;
-  const bw = PX_PER_HOUR;
-  const ch = CHART_H_WIND;
-
-  ctx.fillStyle = '#f9f8f5';
-  ctx.fillRect(0, 0, W, ch);
-
-  ctx.strokeStyle = '#e0ddd5';
-  ctx.lineWidth = 0.5;
-  [0.33, 0.66, 1.0].forEach(r => {
-    const y = ch * (1 - r) * 0.9 + 4;
-    ctx.beginPath(); ctx.moveTo(PADDING_L, y); ctx.lineTo(W - PADDING_R, y); ctx.stroke();
-  });
-
-  for (let i = 0; i < N; i++) {
-    if (data[i].time.getHours() === 0) {
-      const x = PADDING_L + i * bw;
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
-    }
-  }
-
-  const winds = data.map(d => d.wind || 0);
-  const pressures = data.map(d => d.pressure || 1013);
-  const wMax = Math.max(20, ...winds);
-  const pMin = Math.min(...pressures) - 3;
-  const pMax = Math.max(...pressures) + 3;
-  const py = p => (ch - 6) - (p - pMin) / (pMax - pMin) * (ch - 14);
-
-  // 気圧ライン
-  ctx.beginPath();
-  ctx.strokeStyle = '#aaa';
-  ctx.lineWidth = 1.5;
-  ctx.lineJoin = 'round';
-  for (let i = 0; i < N; i++) {
-    const x = idxToX(i);
-    if (i === 0) ctx.moveTo(x, py(pressures[i]));
-    else ctx.lineTo(x, py(pressures[i]));
-  }
-  ctx.stroke();
-
-  // 風速棒
   const modeT = THRESH[state.mode];
-  for (let i = 0; i < N; i++) {
-    const d = data[i];
-    const w = d.wind || 0;
-    const bh = (w / wMax) * (ch - 10);
-    const x = PADDING_L + i * bw + 1;
-    const barW = bw - 2;
+  const bottom = u.bbox.top + u.bbox.height;
+  ctx.save();
+  ctx.globalAlpha = 0.72;
+  for (let i = 0; i < data.length; i++) {
+    const w = data[i].wind || 0;
+    const x0 = u.valToPos(i - 0.5, 'x', true) + pr;
+    const x1 = u.valToPos(i + 0.5, 'x', true) - pr;
+    const y = u.valToPos(w, 'w', true);
     let col = '#6c5ce7';
     if (w >= modeT.windB) col = '#d03030';
     else if (w >= modeT.windA) col = '#e8a020';
     ctx.fillStyle = col;
-    ctx.globalAlpha = 0.72;
-    ctx.fillRect(x, ch - bh, barW, bh);
-    ctx.globalAlpha = 1;
+    ctx.fillRect(x0, y, x1 - x0, bottom - y);
   }
-
-  ctx.font = `bold 9px monospace`;
-  ctx.textAlign = 'right';
+  ctx.globalAlpha = 1;
+  // Y軸ラベル
   ctx.fillStyle = '#6c5ce7';
-  ctx.fillText('m/s', PADDING_L - 2, 11);
-  ctx.fillText(Math.round(wMax), PADDING_L - 2, 22);
-
-  drawCurrentLine(ctx, ch, '#6c5ce7');
+  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.textAlign = 'right';
+  ctx.fillText('m/s', (PADDING_L - 2) * pr, 11 * pr);
+  ctx.fillText(Math.round(u.scales.w.max), (PADDING_L - 2) * pr, 22 * pr);
+  ctx.restore();
 }
 
-/* ------ 現在位置インジケーター共通 ------ */
-function drawCurrentLine(ctx, ch, accentCol) {
-  const x = idxToX(state.sliderIndex);
-  const d = state.allData[state.sliderIndex];
-
-  // 半透明塗り（現在位置強調帯）
-  ctx.fillStyle = 'rgba(255,60,0,0.08)';
-  ctx.fillRect(x - PX_PER_HOUR * 0.5, 0, PX_PER_HOUR, ch);
-
-  // 縦線
-  ctx.beginPath();
-  ctx.strokeStyle = '#e03010';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([]);
-  ctx.moveTo(x, 0);
-  ctx.lineTo(x, ch);
-  ctx.stroke();
-
-  // 上部バッジ（時刻）
+/* ------ 現在位置インジケーター（DOMオーバーレイ、transformのみ） ------ */
+function updateIndicator() {
+  const d = state.allData && state.allData[state.sliderIndex];
+  document.getElementById('time-indicator').style.transform =
+    `translateX(${idxToX(state.sliderIndex)}px)`;
   if (d) {
-    const hh = d.time.getHours().toString().padStart(2, '0');
-    const label = `${hh}:00`;
-    ctx.font = `bold 10px monospace`;
-    const tw = ctx.measureText(label).width;
-    const bx = Math.min(x - tw / 2 - 4, ctx.canvas.width - tw - 10);
-    const bxClamped = Math.max(PADDING_L, bx);
-    ctx.fillStyle = '#e03010';
-    ctx.beginPath();
-    ctx.roundRect(bxClamped, 1, tw + 8, 14, 3);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-    ctx.fillText(label, bxClamped + 4, 12);
+    document.getElementById('time-badge').textContent =
+      d.time.getHours().toString().padStart(2, '0') + ':00';
   }
+}
+
+/* ------ スクロール位置の単発設定（毎フレーム追従は行わない） ------ */
+function scrollToIndex(idx, smooth = false) {
+  const wrap = document.getElementById('charts-wrapper');
+  const vw = wrap.clientWidth || window.innerWidth;
+  // 現在位置を画面左1/3に配置
+  const left = Math.max(0, idxToX(idx) - vw * 0.33);
+  wrap.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
 }
 
 /* ============================================================
@@ -1286,8 +1319,8 @@ slider.addEventListener('input', () => {
   updateDayTabs();
   updateHUD();
   updateABC();
-  // 全再描画（インジケーター位置更新のため）
-  drawCharts();
+  updateIndicator();      // canvas再描画なし
+  scrollToIndex(state.sliderIndex);
   updateParticles();
 });
 
@@ -1310,12 +1343,13 @@ function jumpToDay(offset) {
   state.dayOffset = Math.max(-1, Math.min(2, offset));
   // その日の0時にsliderを移動
   const newIdx = (state.dayOffset + 1) * 24;
-  state.sliderIndex = Math.max(0, Math.min(95, newIdx));
+  state.sliderIndex = Math.max(0, Math.min(HOURS - 1, newIdx));
   slider.value = state.sliderIndex;
   updateDayTabs();
   updateHUD();
   updateABC();
-  drawCharts();
+  updateIndicator();
+  scrollToIndex(state.sliderIndex, true);
   updateParticles();
 }
 
@@ -1345,15 +1379,16 @@ chartsWrapper.addEventListener('scroll', () => {
     // 画面左1/3の位置にある時刻を現在位置とする
     const cx = scrollLeft + vw * 0.33;
     const rawIdx = Math.round((cx - PADDING_L) / PX_PER_HOUR - 0.5);
-    const idx = Math.max(0, Math.min(95, rawIdx));
+    const idx = Math.max(0, Math.min(HOURS - 1, rawIdx));
+    if (idx === state.sliderIndex) return;
     state.sliderIndex = idx;
     state.dayOffset = Math.floor(idx / 24) - 1;
     slider.value = idx;
     updateDayTabs();
     updateHUD();
     updateABC();
-    // インジケーター再描画（スクロール後）
-    drawCharts();
+    updateIndicator();   // canvas再描画なし
+    updateParticles();
   }, 80);
 }, { passive: true });
 
@@ -1487,7 +1522,8 @@ function hideLoading() {
 /* ============================================================
    RESIZE
    ============================================================ */
-window.addEventListener('resize', () => { if (state.allData) drawCharts(); });
+// チャートは固定幅のためリサイズ時の再描画は不要。パーティクルcanvasのみ追従
+window.addEventListener('resize', () => { if (state.allData) updateParticles(); });
 
 /* ============================================================
    BOOT
