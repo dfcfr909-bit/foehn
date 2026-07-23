@@ -291,27 +291,44 @@ html, body {
 /* ============================================================
    CHARTS AREA
    ============================================================ */
-/* チャート領域（Meteograms風・全期間1画面固定表示）。
-   時刻選択はタップ/ドラッグ。カーソル・パーティクルはabsolute配置 */
+/* チャート領域（1日≒1画面の広い時間軸を横スクロール）。
+   Y軸ガター・選択線・パーティクルはスクロール外に固定配置 */
 #charts-outer {
   flex: 1;
   min-height: 0;
   position: relative;
   background: #ffffff;
   overflow: hidden;
-  touch-action: none;   /* ポインタドラッグで時刻選択するため */
 }
-/* 選択時刻カーソル（transformのみで移動。canvas再描画なし） */
-#scrub-line {
+#charts-wrapper {
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+#charts-wrapper::-webkit-scrollbar { display: none; }
+#charts-inner { position: relative; }   /* 幅はJSで設定（全時間ぶん） */
+/* 固定Y軸ガター（左端。スクロールしても単位・目盛りが残る） */
+#axis-gutter {
   position: absolute;
   left: 0;
   top: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+/* 選択時刻の固定インジケーター（画面の一定位置。下をチャートが流れる） */
+#scrub-line {
+  position: absolute;
+  top: 0;
+  left: 40%;
   width: 0;
-  height: 0;
+  height: 100%;
   overflow: visible;
   z-index: 6;
   pointer-events: none;
-  will-change: transform;
 }
 #scrub-bar {
   position: absolute;
@@ -319,6 +336,7 @@ html, body {
   top: 0;
   width: 2px;
   background: #e03010;
+  /* 高さはJSでチャート合計に合わせる */
 }
 #time-badge {
   position: absolute;
@@ -334,16 +352,16 @@ html, body {
   border-radius: 3px;
   white-space: nowrap;
 }
-/* 「現在へ戻る」ボタン（現在時刻がカーソルから離れているときのみ表示） */
+/* 「現在へ戻る」ボタン（選択が現在時刻から離れているときのみ表示） */
 #btn-now {
   position: absolute;
   right: 10px;
   bottom: 10px;
   z-index: 7;
-  min-height: 44px;   /* グローブ操作前提のタップ領域 */
+  min-height: 40px;
   padding: 0 16px;
   border: none;
-  border-radius: 22px;
+  border-radius: 20px;
   background: var(--text);
   color: #fff;
   font-family: var(--font-ui);
@@ -351,60 +369,7 @@ html, body {
   font-weight: 700;
   cursor: pointer;
   display: none;
-}
-
-/* ============================================================
-   PLAYBACK（再生バー）
-   ============================================================ */
-#playback-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 14px;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-}
-#btn-play {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: var(--text);
-  color: #fff;
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-}
-#btn-play.playing { background: var(--c-col); }
-#play-time {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  min-width: 92px;
-}
-#btn-speed {
-  flex-shrink: 0;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 2px solid var(--border);
-  border-radius: 16px;
-  background: var(--surface);
-  color: var(--text2);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-#play-hint {
-  flex: 1;
-  font-size: 9px;
-  color: var(--text3);
-  line-height: 1.3;
-  text-align: right;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.25);
 }
 
 /* ============================================================
@@ -825,7 +790,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.12.0</span>
+    <span id="app-version">v4.13.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -881,25 +846,22 @@ html, body {
     </div>
   </div>
 
-  <!-- Charts（Meteograms風・全期間1画面表示、横スクロールなし） -->
+  <!-- Charts（1日≒1画面の広い時間軸を横スクロール） -->
   <div id="charts-outer">
-    <div id="chart-sky"></div>
-    <div id="chart-precip"></div>
-    <div id="chart-wind"></div>
+    <div id="charts-wrapper">
+      <div id="charts-inner">
+        <div id="chart-sky"></div>
+        <div id="chart-precip"></div>
+        <div id="chart-wind"></div>
+      </div>
+    </div>
+    <canvas id="axis-gutter"></canvas>
     <canvas id="particle-canvas"></canvas>
     <div id="scrub-line">
       <div id="scrub-bar"></div>
       <span id="time-badge">--:00</span>
     </div>
     <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
-  </div>
-
-  <!-- Playback（再生で天気の推移をアニメーション表示） -->
-  <div id="playback-row">
-    <button id="btn-play" onclick="togglePlay()" aria-label="再生／一時停止">▶</button>
-    <span id="play-time">--</span>
-    <button id="btn-speed" onclick="cycleSpeed()">×1</button>
-    <span id="play-hint">▶で天気の推移を再生 ／ チャートを触って時刻選択</span>
   </div>
 
   <!-- Footer -->
@@ -1120,12 +1082,12 @@ async function reverseGeocode(lat, lon) {
 function render() {
   if (!state.allData) return;
   try {
-    stopPlay();             // 地点変更・再描画時は再生を止める
     updateLocationName();
     updateHUD();
     updateABC();
     buildCharts();          // データ取得・リサイズ時のみの1回描画
-    updateCursor();
+    scrollToIndex(state.sliderIndex);   // 選択線の下に現在時刻を配置
+    updateBadge();
     updateNowButton();
     updateParticles();
     hideLoading();
@@ -1332,9 +1294,9 @@ function updateABC() {
 }
 
 /* ============================================================
-   CHARTS (uPlot)  ── Meteograms風の全期間1画面表示。
-   横スクロールなし。時刻選択はチャートのタップ/ドラッグと
-   スライダー。描画はデータ取得・リサイズ時のみ
+   CHARTS (uPlot)  ── 1日≒1画面の広い時間軸を横スクロール。
+   選択線は画面固定、下をチャートが流れる（シームレススライド）。
+   描画はデータ取得・リサイズ時のみ
    ============================================================ */
 const CHART_H_SKY   = 160;
 const CHART_H_PREC  = 85;
@@ -1344,22 +1306,20 @@ const PADDING_R     = 6;
 const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
+const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
+const SCRUB_POS     = 0.40;  // 選択線の画面内位置（左からの割合）
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
 let skyChart = null, precipChart = null, windChart = null;
-let chartW = 360;           // チャート全幅（buildChartsで実測）
+let viewW = 360;            // 表示領域の幅（buildChartsで実測）
+let pxPerHourVal = 15;      // 1時間あたりのpx幅（24h≒画面幅になるよう算出）
+let chartPadL = 0, chartPadR = 0;   // 端の時刻も選択線に届くよう設ける余白
 
-// 1時間あたりのpx幅（画面幅に96hを収める）
-function pxPerHour() { return (chartW - PADDING_L - PADDING_R) / HOURS; }
+// チャート全体の論理幅（全時間ぶん）
+function chartTotalW() { return PADDING_L + HOURS * pxPerHourVal + PADDING_R; }
 
 // indexに対応するx座標（時刻の中心、CSS px）
-function idxToX(idx) { return PADDING_L + (idx + 0.5) * pxPerHour(); }
-
-// x座標 → index（タップ位置の逆算）
-function xToIdx(x) {
-  const raw = Math.round((x - PADDING_L) / pxPerHour() - 0.5);
-  return Math.max(0, Math.min(HOURS - 1, raw));
-}
+function idxToX(idx) { return PADDING_L + (idx + 0.5) * pxPerHourVal; }
 
 // 実際のcanvas倍率（pxRatio未対応環境でもcanvas実寸から算出）
 function canvasRatio(u) { return u.ctx.canvas.width / u.width; }
@@ -1370,7 +1330,19 @@ function buildCharts() {
   }
   const data = state.allData;
   const outer = document.getElementById('charts-outer');
-  chartW = outer.clientWidth || window.innerWidth;
+  viewW = outer.clientWidth || window.innerWidth;
+  // 24時間ぶんが画面幅に収まるpx/hを算出（1日≒1画面）
+  pxPerHourVal = (viewW - PADDING_L - PADDING_R) / HOURS_PER_SCREEN;
+  const totalW = chartTotalW();
+  // 先頭・末尾の時刻も選択線（画面SCRUB_POS位置）に届くよう両端に余白
+  chartPadL = Math.max(0, Math.round(viewW * SCRUB_POS - idxToX(0)));
+  chartPadR = Math.max(0, Math.round(viewW * (1 - SCRUB_POS) - (totalW - idxToX(HOURS - 1))));
+  const inner = document.getElementById('charts-inner');
+  inner.style.boxSizing = 'border-box';
+  inner.style.paddingLeft = chartPadL + 'px';
+  inner.style.paddingRight = chartPadR + 'px';
+  inner.style.width = (totalW + chartPadL + chartPadR) + 'px';
+
   const xs       = data.map((_, i) => i);
   const temps    = data.map(d => d.temp);
   const precips  = data.map(d => d.precip);
@@ -1383,7 +1355,7 @@ function buildCharts() {
   if (windChart)   { windChart.destroy();   windChart = null; }
 
   const common = {
-    width: chartW,
+    width: totalW,
     pxRatio: PX_RATIO,
     cursor: { show: false },
     legend: { show: false },
@@ -1464,9 +1436,80 @@ function buildCharts() {
     },
   }, [xs, winds, pressures], document.getElementById('chart-wind'));
 
-  // カーソルの高さをチャート合計に合わせる
+  // 固定Y軸ガター用のスケール情報（uPlotのrange関数と同一計算）
+  const validT = temps.filter(v => v != null);
+  scaleInfo = {
+    tempMin: (validT.length ? Math.min(...validT) : 0) - 3,
+    tempMax: (validT.length ? Math.max(...validT) : 10) + 3,
+    precipMax: Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0)),
+    windMax: Math.max(20, ...winds.map(v => v || 0)),
+  };
+  drawAxisGutter();
+
+  // 選択線の高さをチャート合計に合わせる
   document.getElementById('scrub-bar').style.height =
     (CHART_H_SKY + CHART_H_PREC + CHART_H_WIND) + 'px';
+}
+
+/* ------ 固定Y軸ガター（左端。スクロールしても単位・目盛りが残る） ------ */
+let scaleInfo = null;
+function drawAxisGutter() {
+  const c = document.getElementById('axis-gutter');
+  const W = PADDING_L;
+  const H = CHART_H_SKY + CHART_H_PREC + CHART_H_WIND;
+  c.width = Math.round(W * PX_RATIO);
+  c.height = Math.round(H * PX_RATIO);
+  c.style.width = W + 'px';
+  c.style.height = H + 'px';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(PX_RATIO, 0, 0, PX_RATIO, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  // 半透明の下地 + 右境界線
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W - 0.5, 0); ctx.lineTo(W - 0.5, H); ctx.stroke();
+  if (!scaleInfo) return;
+  const si = scaleInfo;
+
+  // 気温（skyパネル: 上34 / 下TIME_AXIS_H）
+  const skyTop = 34, skyBottom = CHART_H_SKY - TIME_AXIS_H;
+  const ty = t => skyTop + (si.tempMax - t) / (si.tempMax - si.tempMin) * (skyBottom - skyTop);
+  ctx.fillStyle = '#e05020';
+  ctx.textAlign = 'left';
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('気温℃', 3, 12);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  [si.tempMin + 2, (si.tempMin + si.tempMax) / 2, si.tempMax - 2].forEach(t => {
+    const y = ty(t);
+    if (y > 22 && y < skyBottom) ctx.fillText(Math.round(t) + '°', W - 4, y + 3);
+  });
+
+  // 降水（precipパネル）
+  const pTop = CHART_H_SKY;
+  ctx.fillStyle = '#3a7fc1';
+  ctx.textAlign = 'left';
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('降水mm', 3, pTop + 12);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(si.precipMax.toFixed(0), W - 4, pTop + 26);
+  ctx.fillStyle = 'rgba(58,127,193,0.6)';
+  ctx.fillText('0', W - 4, pTop + CHART_H_PREC - TIME_AXIS_H);
+
+  // 風速（windパネル）
+  const wTop = CHART_H_SKY + CHART_H_PREC;
+  ctx.fillStyle = '#6c5ce7';
+  ctx.textAlign = 'left';
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('風m/s', 3, wTop + 14);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(String(Math.round(si.windMax)), W - 4, wTop + 28);
+  ctx.fillStyle = 'rgba(108,92,231,0.6)';
+  ctx.fillText('0', W - 4, wTop + CHART_H_WIND - TIME_AXIS_H);
 }
 
 /* ------ 昼間帯の算出（日の出〜日の入り。データなし時は5〜19時） ------ */
@@ -1581,21 +1624,7 @@ function drawTempOverlay(u) {
       ctx.fillText(Math.round(data[i].temp) + '°', x, y + dy * pr);
     });
   });
-  // 左軸エリアの下地（データに重なっても目盛りが読めるように）
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillRect(0, 34 * pr, (PADDING_L - 2) * pr, H - 34 * pr);
-  // Y軸ラベル（気温）
-  ctx.textAlign = 'left';
-  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
-  ctx.fillStyle = '#e05020';
-  ctx.fillText('気温℃', 3 * pr, 45 * pr);
-  ctx.font = `bold ${10 * pr}px monospace`;
-  ctx.textAlign = 'right';
-  const yMin = u.scales.y.min, yMax = u.scales.y.max;
-  [yMin + 2, (yMin + yMax) / 2, yMax - 2].forEach(t => {
-    const y = u.valToPos(t, 'y', true);
-    if (y > 50 * pr && y < H - 16 * pr) ctx.fillText(Math.round(t) + '°', (PADDING_L - 3) * pr, y + 3 * pr);
-  });
+  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   drawTimeLabels(u, pr);
   ctx.restore();
 }
@@ -1626,17 +1655,7 @@ function drawPrecipBars(u) {
       ctx.globalAlpha = 1;
     }
   }
-  // 左軸エリアの下地
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillRect(0, 0, (PADDING_L - 2) * pr, u.ctx.canvas.height - TIME_AXIS_H * pr);
-  // Y軸ラベル（降水）
-  ctx.fillStyle = '#3a7fc1';
-  ctx.textAlign = 'left';
-  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
-  ctx.fillText('降水mm', 3 * pr, 12 * pr);
-  ctx.font = `bold ${10 * pr}px monospace`;
-  ctx.textAlign = 'right';
-  ctx.fillText(u.scales.y.max.toFixed(0), (PADDING_L - 3) * pr, 26 * pr);
+  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   drawTimeLabels(u, pr);
   ctx.restore();
 }
@@ -1668,19 +1687,7 @@ function drawWindOverlay(u) {
     if (data[i].time.getHours() % 6 !== 0 || data[i].wdir == null) continue;
     drawWindArrow(ctx, u.valToPos(i, 'x', true), 12 * pr, data[i].wdir, 5 * pr);
   }
-  // 左軸エリアの下地（矢印帯より下）
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillRect(0, 24 * pr, (PADDING_L - 2) * pr, u.ctx.canvas.height - (24 + TIME_AXIS_H) * pr);
-  // Y軸ラベル（風速）
-  ctx.fillStyle = '#6c5ce7';
-  ctx.textAlign = 'left';
-  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
-  ctx.fillText('風m/s', 3 * pr, 36 * pr);
-  ctx.font = `bold ${10 * pr}px monospace`;
-  ctx.textAlign = 'right';
-  ctx.fillText(String(Math.round(u.scales.w.max)), (PADDING_L - 3) * pr, 50 * pr);
-  ctx.fillStyle = 'rgba(108,92,231,0.6)';
-  ctx.fillText('0', (PADDING_L - 3) * pr, bottom - 2 * pr);
+  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   drawTimeLabels(u, pr);
   ctx.restore();
 }
@@ -1762,13 +1769,7 @@ function updateNowButton() {
 function jumpToNow() {
   const frac = nowIndexFrac();
   if (frac == null) return;
-  stopPlay();
-  state.sliderIndex = Math.max(0, Math.min(HOURS - 1, Math.round(frac)));
-  updateHUD();
-  updateABC();
-  updateCursor();
-  updateNowButton();
-  updateParticles();
+  scrollToIndex(Math.round(frac), true);   // 現在時刻を選択線の下へスムーズスクロール
 }
 
 // 現在時刻線の位置を定期更新（5分ごと。軽量な再描画のみ、再構築はしない）
@@ -1780,16 +1781,13 @@ setInterval(() => {
   updateNowButton();
 }, 5 * 60 * 1000);
 
-/* ------ 選択時刻カーソル: transformで移動 + バッジ日時更新 ------ */
-function updateCursor() {
-  const line = document.getElementById('scrub-line');
-  line.style.transform = `translateX(${idxToX(state.sliderIndex)}px)`;
+/* ------ 選択時刻バッジ（固定の選択線上に日時を表示） ------ */
+function updateBadge() {
   const d = state.allData && state.allData[state.sliderIndex];
   if (d) {
     document.getElementById('time-badge').textContent =
       `${d.time.getMonth() + 1}/${d.time.getDate()} ${d.time.getHours().toString().padStart(2, '0')}:00`;
   }
-  updatePlayTime();
 }
 
 /* ============================================================
@@ -1913,120 +1911,48 @@ function drawSnowflake(ctx, p) {
 }
 
 /* ============================================================
-   PLAYBACK（再生でカーソルを自動で進め、天気の推移を表示）
+   時刻選択（横スクロール）
+   固定の選択線（画面SCRUB_POS位置）の下にある時刻を選択時刻とし、
+   スクロールに追従してHUD・判定・バッジを更新（canvas再描画なし）
    ============================================================ */
-const PLAY_SPEEDS = [1, 2, 4];                  // 再生速度の選択肢
-const PLAY_BASE_MS = 450;                        // ×1のときの1コマ間隔
-let playTimer = null;
-let playSpeedIdx = 0;
+const chartsWrapper = document.getElementById('charts-wrapper');
+let scrollRafPending = false;
+let scrollEndTimer = null;
 
-function isPlaying() { return playTimer != null; }
+// スクロール位置 → 選択index（chartPadL分を差し引く）
+function scrollToIndexValue() {
+  const cx = chartsWrapper.scrollLeft + viewW * SCRUB_POS - chartPadL;   // 選択線の下の論理x
+  const raw = Math.round((cx - PADDING_L) / pxPerHourVal - 0.5);
+  return Math.max(0, Math.min(HOURS - 1, raw));
+}
 
-// カーソルを指定indexへ（軽量更新のみ、canvas再描画なし）
-function setCursorIndex(idx) {
-  idx = Math.max(0, Math.min(HOURS - 1, idx));
-  if (idx === state.sliderIndex) { updateCursor(); return; }
+// 指定indexを選択線の下に配置
+function scrollToIndex(idx, smooth = false) {
+  const left = chartPadL + idxToX(idx) - viewW * SCRUB_POS;
+  chartsWrapper.scrollTo({ left: Math.max(0, left), behavior: smooth ? 'smooth' : 'auto' });
+}
+
+// スクロール追従（rAFスロットルの軽量DOM更新のみ）
+function syncFromScroll() {
+  if (!state.allData) return;
+  const idx = scrollToIndexValue();
+  if (idx === state.sliderIndex) return;
   state.sliderIndex = idx;
   updateHUD();
   updateABC();
-  updateCursor();
-  updateNowButton();
-  updateParticles();
-}
-
-function togglePlay() {
-  if (isPlaying()) stopPlay();
-  else startPlay();
-}
-
-function startPlay() {
-  if (!state.allData) return;
-  // 末尾にいる場合は先頭から再生
-  if (state.sliderIndex >= HOURS - 1) setCursorIndex(0);
-  const btn = document.getElementById('btn-play');
-  btn.textContent = '⏸';
-  btn.classList.add('playing');
-  const tick = () => {
-    if (state.sliderIndex >= HOURS - 1) { stopPlay(); return; }  // 末尾で停止
-    setCursorIndex(state.sliderIndex + 1);
-  };
-  const interval = PLAY_BASE_MS / PLAY_SPEEDS[playSpeedIdx];
-  playTimer = setInterval(tick, interval);
-}
-
-function stopPlay() {
-  if (playTimer != null) { clearInterval(playTimer); playTimer = null; }
-  const btn = document.getElementById('btn-play');
-  if (btn) { btn.textContent = '▶'; btn.classList.remove('playing'); }
-}
-
-function cycleSpeed() {
-  playSpeedIdx = (playSpeedIdx + 1) % PLAY_SPEEDS.length;
-  document.getElementById('btn-speed').textContent = '×' + PLAY_SPEEDS[playSpeedIdx];
-  if (isPlaying()) { stopPlay(); startPlay(); }   // 再生中なら新速度で再開
-}
-
-// 選択時刻のテキスト表示を更新（再生バー）
-function updatePlayTime() {
-  const d = state.allData && state.allData[state.sliderIndex];
-  const el = document.getElementById('play-time');
-  if (el && d) {
-    const dow = ['日','月','火','水','木','金','土'][d.time.getDay()];
-    el.textContent = `${d.time.getMonth() + 1}/${d.time.getDate()}(${dow}) ${d.time.getHours().toString().padStart(2, '0')}:00`;
-  }
-}
-
-/* ============================================================
-   時刻選択（チャートのタップ/ドラッグ）
-   全期間が1画面に収まるため、横スクロールではなく
-   タップ位置・ドラッグで時刻カーソルを移動する
-   ============================================================ */
-const chartsOuter = document.getElementById('charts-outer');
-let dragging = false;
-let dragRafPending = false;
-let pendingIdx = null;
-
-function idxFromClientX(clientX) {
-  const rect = chartsOuter.getBoundingClientRect();
-  return xToIdx(clientX - rect.left);
-}
-
-// カーソル移動（軽量DOM更新のみ、canvas再描画なし）。rAFスロットル
-function applyPendingIdx() {
-  dragRafPending = false;
-  if (pendingIdx == null || pendingIdx === state.sliderIndex) return;
-  state.sliderIndex = pendingIdx;
-  updateHUD();
-  updateABC();
-  updateCursor();
+  updateBadge();
   updateNowButton();
 }
 
-function selectFromPointer(clientX) {
-  pendingIdx = idxFromClientX(clientX);
-  if (!dragRafPending) {
-    dragRafPending = true;
-    requestAnimationFrame(applyPendingIdx);
+chartsWrapper.addEventListener('scroll', () => {
+  if (!scrollRafPending) {
+    scrollRafPending = true;
+    requestAnimationFrame(() => { scrollRafPending = false; syncFromScroll(); });
   }
-}
-
-chartsOuter.addEventListener('pointerdown', e => {
-  if (e.target.closest('button')) return;   // 「現在」ボタン等のタップは選択に使わない
-  stopPlay();                                // 手動操作時は再生を止める
-  dragging = true;
-  try { chartsOuter.setPointerCapture(e.pointerId); } catch (_) {}
-  selectFromPointer(e.clientX);
-});
-chartsOuter.addEventListener('pointermove', e => {
-  if (dragging) selectFromPointer(e.clientX);
-});
-function endDrag() {
-  if (!dragging) return;
-  dragging = false;
-  updateParticles();   // パーティクルはドラッグ終了時のみ更新（重いため）
-}
-chartsOuter.addEventListener('pointerup', endDrag);
-chartsOuter.addEventListener('pointercancel', endDrag);
+  // パーティクルはスクロール停止後にのみ更新（重いため）
+  clearTimeout(scrollEndTimer);
+  scrollEndTimer = setTimeout(() => updateParticles(), 130);
+}, { passive: true });
 
 /* ============================================================
    MAP
@@ -2481,7 +2407,8 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     buildCharts();
-    updateCursor();
+    scrollToIndex(state.sliderIndex);
+    updateBadge();
     updateNowButton();
     updateParticles();
   }, 150);
