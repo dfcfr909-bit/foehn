@@ -354,37 +354,57 @@ html, body {
 }
 
 /* ============================================================
-   TIME SLIDER
+   PLAYBACK（再生バー）
    ============================================================ */
-#slider-row {
-  padding: 4px 14px 4px;
+#playback-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 14px;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
 }
-#time-slider {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg2);
-  outline: none;
-  cursor: pointer;
-}
-#time-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
+#btn-play {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
   border-radius: 50%;
+  border: none;
   background: var(--text);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
 }
-#slider-labels {
-  display: flex;
-  justify-content: space-between;
+#btn-play.playing { background: var(--c-col); }
+#play-time {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  min-width: 92px;
+}
+#btn-speed {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#play-hint {
+  flex: 1;
   font-size: 9px;
   color: var(--text3);
-  font-family: var(--font-mono);
-  padding: 2px 0;
+  line-height: 1.3;
+  text-align: right;
 }
 
 /* ============================================================
@@ -805,7 +825,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.11.0</span>
+    <span id="app-version">v4.12.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -874,14 +894,12 @@ html, body {
     <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
   </div>
 
-  <!-- Slider -->
-  <div id="slider-row">
-    <input type="range" id="time-slider" min="0" max="95" value="0" step="1">
-    <div id="slider-labels">
-      <span id="sl-start"></span>
-      <span id="sl-mid"></span>
-      <span id="sl-end"></span>
-    </div>
+  <!-- Playback（再生で天気の推移をアニメーション表示） -->
+  <div id="playback-row">
+    <button id="btn-play" onclick="togglePlay()" aria-label="再生／一時停止">▶</button>
+    <span id="play-time">--</span>
+    <button id="btn-speed" onclick="cycleSpeed()">×1</button>
+    <span id="play-hint">▶で天気の推移を再生 ／ チャートを触って時刻選択</span>
   </div>
 
   <!-- Footer -->
@@ -1102,16 +1120,13 @@ async function reverseGeocode(lat, lon) {
 function render() {
   if (!state.allData) return;
   try {
-    // sliderを現在のindexと同期
-    slider.value = state.sliderIndex;
+    stopPlay();             // 地点変更・再描画時は再生を止める
     updateLocationName();
     updateHUD();
     updateABC();
-    slider.max = HOURS - 1;
     buildCharts();          // データ取得・リサイズ時のみの1回描画
     updateCursor();
     updateNowButton();
-    updateSliderLabels();
     updateParticles();
     hideLoading();
   } catch (e) {
@@ -1747,8 +1762,8 @@ function updateNowButton() {
 function jumpToNow() {
   const frac = nowIndexFrac();
   if (frac == null) return;
+  stopPlay();
   state.sliderIndex = Math.max(0, Math.min(HOURS - 1, Math.round(frac)));
-  slider.value = state.sliderIndex;
   updateHUD();
   updateABC();
   updateCursor();
@@ -1774,6 +1789,7 @@ function updateCursor() {
     document.getElementById('time-badge').textContent =
       `${d.time.getMonth() + 1}/${d.time.getDate()} ${d.time.getHours().toString().padStart(2, '0')}:00`;
   }
+  updatePlayTime();
 }
 
 /* ============================================================
@@ -1897,29 +1913,67 @@ function drawSnowflake(ctx, p) {
 }
 
 /* ============================================================
-   SLIDER
+   PLAYBACK（再生でカーソルを自動で進め、天気の推移を表示）
    ============================================================ */
-const slider = document.getElementById('time-slider');
-slider.addEventListener('input', () => {
-  state.sliderIndex = parseInt(slider.value);
+const PLAY_SPEEDS = [1, 2, 4];                  // 再生速度の選択肢
+const PLAY_BASE_MS = 450;                        // ×1のときの1コマ間隔
+let playTimer = null;
+let playSpeedIdx = 0;
+
+function isPlaying() { return playTimer != null; }
+
+// カーソルを指定indexへ（軽量更新のみ、canvas再描画なし）
+function setCursorIndex(idx) {
+  idx = Math.max(0, Math.min(HOURS - 1, idx));
+  if (idx === state.sliderIndex) { updateCursor(); return; }
+  state.sliderIndex = idx;
   updateHUD();
   updateABC();
-  updateCursor();         // canvas再描画なし
+  updateCursor();
   updateNowButton();
   updateParticles();
-});
+}
 
-function updateSliderLabels() {
+function togglePlay() {
+  if (isPlaying()) stopPlay();
+  else startPlay();
+}
+
+function startPlay() {
   if (!state.allData) return;
-  const last = state.allData.length - 1;
-  const fmt = i => {
-    const d = state.allData[i];
-    if (!d) return '';
-    return `${(d.time.getMonth()+1)}/${d.time.getDate()} ${d.time.getHours()}h`;
+  // 末尾にいる場合は先頭から再生
+  if (state.sliderIndex >= HOURS - 1) setCursorIndex(0);
+  const btn = document.getElementById('btn-play');
+  btn.textContent = '⏸';
+  btn.classList.add('playing');
+  const tick = () => {
+    if (state.sliderIndex >= HOURS - 1) { stopPlay(); return; }  // 末尾で停止
+    setCursorIndex(state.sliderIndex + 1);
   };
-  document.getElementById('sl-start').textContent = fmt(0);
-  document.getElementById('sl-mid').textContent   = fmt(Math.round(last / 2));
-  document.getElementById('sl-end').textContent   = fmt(last);
+  const interval = PLAY_BASE_MS / PLAY_SPEEDS[playSpeedIdx];
+  playTimer = setInterval(tick, interval);
+}
+
+function stopPlay() {
+  if (playTimer != null) { clearInterval(playTimer); playTimer = null; }
+  const btn = document.getElementById('btn-play');
+  if (btn) { btn.textContent = '▶'; btn.classList.remove('playing'); }
+}
+
+function cycleSpeed() {
+  playSpeedIdx = (playSpeedIdx + 1) % PLAY_SPEEDS.length;
+  document.getElementById('btn-speed').textContent = '×' + PLAY_SPEEDS[playSpeedIdx];
+  if (isPlaying()) { stopPlay(); startPlay(); }   // 再生中なら新速度で再開
+}
+
+// 選択時刻のテキスト表示を更新（再生バー）
+function updatePlayTime() {
+  const d = state.allData && state.allData[state.sliderIndex];
+  const el = document.getElementById('play-time');
+  if (el && d) {
+    const dow = ['日','月','火','水','木','金','土'][d.time.getDay()];
+    el.textContent = `${d.time.getMonth() + 1}/${d.time.getDate()}(${dow}) ${d.time.getHours().toString().padStart(2, '0')}:00`;
+  }
 }
 
 /* ============================================================
@@ -1942,7 +1996,6 @@ function applyPendingIdx() {
   dragRafPending = false;
   if (pendingIdx == null || pendingIdx === state.sliderIndex) return;
   state.sliderIndex = pendingIdx;
-  slider.value = pendingIdx;
   updateHUD();
   updateABC();
   updateCursor();
@@ -1959,6 +2012,7 @@ function selectFromPointer(clientX) {
 
 chartsOuter.addEventListener('pointerdown', e => {
   if (e.target.closest('button')) return;   // 「現在」ボタン等のタップは選択に使わない
+  stopPlay();                                // 手動操作時は再生を止める
   dragging = true;
   try { chartsOuter.setPointerCapture(e.pointerId); } catch (_) {}
   selectFromPointer(e.clientX);
