@@ -188,13 +188,53 @@ html, body {
 
 
 /* ============================================================
+   日付・曜日・時刻バー（ヘッダー直下。選択時刻に追従）
+   ============================================================ */
+#datetime-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#dt-date {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+#dt-dow {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+}
+#dt-time {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-left: auto;
+}
+#dt-jst {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text3);
+}
+/* 土曜=青 / 日曜=赤 */
+#dt-dow.sat, #dt-date.sat { color: #2570c9; }
+#dt-dow.sun, #dt-date.sun { color: #e03010; }
+
+/* ============================================================
    HUD – 大型数値表示
    ============================================================ */
 #hud {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px 4px;
+  padding: 6px 12px 4px;
   background: var(--bg2);
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
@@ -207,25 +247,25 @@ html, body {
 }
 .hud-val {
   font-family: var(--font-display);
-  font-size: 38px;
+  font-size: 33px;
   letter-spacing: 1px;
   line-height: 1;
 }
 .hud-label {
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
   color: var(--text3);
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   margin-top: 2px;
-}
-.hud-time {
-  font-family: var(--font-mono);
-  font-size: 30px;
-  color: var(--text);
+  white-space: nowrap;
 }
 #hud-temp { color: #e05020; }
 #hud-wind { color: var(--wind-col); }
 #hud-precip { color: var(--rain-col); }
+/* 気圧変化：上昇=暖色/下降=寒色をJSで付与 */
+#hud-dpress { color: var(--text2); font-size: 28px; }
+#hud-dpress.rise { color: #e05020; }
+#hud-dpress.fall { color: #2570c9; }
 /* 気温の横に体感を小さく併記 */
 .hud-temp-row { display: flex; align-items: baseline; gap: 3px; }
 #hud-apparent {
@@ -787,7 +827,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.16.0</span>
+    <span id="app-version">v4.17.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -797,12 +837,16 @@ html, body {
     </div>
   </div>
 
+  <!-- 選択時刻の日付・曜日・時刻バー（ヘッダーとHUDの間） -->
+  <div id="datetime-bar">
+    <span id="dt-date">--/--</span>
+    <span id="dt-dow">(-)</span>
+    <span id="dt-time">--:--</span>
+    <span id="dt-jst">JST</span>
+  </div>
+
   <!-- HUD -->
   <div id="hud">
-    <div class="hud-item">
-      <span id="hud-time" class="hud-time">--:--</span>
-      <span class="hud-label">JST</span>
-    </div>
     <div class="hud-item">
       <span class="hud-temp-row">
         <span id="hud-temp" class="hud-val">--</span>
@@ -817,6 +861,10 @@ html, body {
     <div class="hud-item">
       <span id="hud-wind" class="hud-val">--</span>
       <span class="hud-label">風速 m/s</span>
+    </div>
+    <div class="hud-item">
+      <span id="hud-dpress" class="hud-val">--</span>
+      <span class="hud-label">気圧変化 hPa/6h</span>
     </div>
   </div>
 
@@ -1203,18 +1251,34 @@ document.getElementById('fav-rotary').addEventListener('scroll', () => {
 /* ============================================================
    HUD
    ============================================================ */
+const DOW_JP = ['日', '月', '火', '水', '木', '金', '土'];
 function updateHUD() {
   const d = state.allData[state.sliderIndex];
   if (!d) return;
   const hh = d.time.getHours().toString().padStart(2,'0');
   const mm = d.time.getMinutes().toString().padStart(2,'0');
-  document.getElementById('hud-time').textContent = `${hh}:${mm}`;
+  // 日付・曜日・時刻バー（土=青 / 日=赤）
+  const dow = d.time.getDay();
+  const dateEl = document.getElementById('dt-date');
+  const dowEl = document.getElementById('dt-dow');
+  dateEl.textContent = `${d.time.getMonth() + 1}/${d.time.getDate()}`;
+  dowEl.textContent = `(${DOW_JP[dow]})`;
+  const dowClass = dow === 6 ? 'sat' : (dow === 0 ? 'sun' : '');
+  dateEl.className = dowClass;
+  dowEl.className = dowClass;
+  document.getElementById('dt-time').textContent = `${hh}:${mm}`;
+  // 気温・降水・風速
   document.getElementById('hud-temp').textContent = d.temp != null ? Math.round(d.temp) : '--';
   document.getElementById('hud-apparent').textContent = d.apparent != null ? Math.round(d.apparent) + '°' : '--';
   const p = d.precip || 0;
   document.getElementById('hud-precip').textContent =
     p === 0 ? '0' : (p < 10 ? p.toFixed(1) : Math.round(p));
   document.getElementById('hud-wind').textContent = d.wind != null ? Math.round(d.wind) : '--';
+  // 気圧変化（6h）：上昇=暖色/下降=寒色
+  const dp = d.dpress != null ? d.dpress : 0;
+  const dpEl = document.getElementById('hud-dpress');
+  dpEl.textContent = (dp > 0 ? '+' : '') + dp.toFixed(1);
+  dpEl.className = 'hud-val' + (dp >= 1 ? ' rise' : (dp <= -1 ? ' fall' : ''));
 }
 
 /* ============================================================
@@ -1299,7 +1363,7 @@ function updateABC() {
 const CHART_H_SKY   = 150;
 const CHART_H_PREC  = 74;
 const CHART_H_WIND  = 92;
-const CHART_H_PRESS = 74;   // 気圧パネル
+const CHART_H_PRESS = 52;   // 気圧パネル（トレンド線用にコンパクト化）
 function chartsTotalH() { return CHART_H_SKY + CHART_H_PREC + CHART_H_WIND + CHART_H_PRESS; }
 const PADDING_L     = 44;   // 左軸の単位・目盛りを読める幅を確保
 const PADDING_R     = 6;
