@@ -138,6 +138,20 @@ html, body {
   transition: background 0.15s, color 0.15s;
 }
 .fav-chip.active { background: var(--text); color: #fff; }
+/* 現在地点のお気に入り登録トグル（ワンタップ） */
+#btn-fav-star {
+  flex-shrink: 0;
+  width: 32px;
+  min-height: 32px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text3);
+  padding: 0;
+}
+#btn-fav-star.on { color: var(--b-col); }
 .fav-rotary-empty {
   flex: 1;
   font-size: 12px;
@@ -226,12 +240,12 @@ html, body {
    ABC CARD
    ============================================================ */
 #abc-card {
-  margin: 8px 12px 4px;
+  margin: 5px 12px 3px;
   border-radius: var(--radius);
-  padding: 10px 14px;
+  padding: 5px 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   flex-shrink: 0;
   border: 2px solid transparent;
   transition: background 0.3s, border-color 0.3s;
@@ -242,10 +256,11 @@ html, body {
 
 #abc-grade {
   font-family: var(--font-display);
-  font-size: 56px;
+  font-size: 38px;
   line-height: 1;
-  width: 56px;
+  width: 38px;
   text-align: center;
+  flex-shrink: 0;
 }
 .grade-A #abc-grade { color: var(--a-col); }
 .grade-B #abc-grade { color: var(--b-col); }
@@ -253,30 +268,24 @@ html, body {
 
 #abc-reason {
   flex: 1;
-  padding-left: 12px;
+  min-width: 0;
 }
-#abc-reason-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text3);
-  letter-spacing: 1px;
-}
+#abc-reason-title { display: none; }
 #abc-reason-text {
   font-size: 13px;
   font-weight: 700;
   color: var(--text);
-  margin-top: 2px;
-  line-height: 1.4;
+  line-height: 1.25;
   /* 高さを2行分に固定し、スクロール中の文言変化でチャートが縦に動くのを防ぐ */
-  height: 2.8em;
+  height: 2.5em;
   overflow: hidden;
   display: flex;
   align-items: center;
 }
 #abc-sub {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text2);
-  margin-top: 3px;
+  margin-top: 1px;
 }
 
 /* ============================================================
@@ -659,6 +668,15 @@ html, body {
 .rank-name { flex: 1; min-width: 0; }
 .rank-name .rn-main { font-weight: 700; font-size: 14px; }
 .rank-name .rn-sub { font-size: 10px; color: var(--text3); }
+/* B/C評価の理由（一言）。バッジ色に合わせる */
+.rn-reason {
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  display: inline-block;
+}
 .rank-badges { display: flex; gap: 4px; align-items: center; }
 .rank-badge {
   display: flex;
@@ -709,6 +727,7 @@ html, body {
   display: inline-block;
 }
 .pd-metrics { font-size: 10px; color: var(--text2); font-family: var(--font-mono); margin-top: 2px; }
+.pd-reason { font-size: 10px; font-weight: 700; color: var(--c-col); margin-top: 1px; }
 
 /* ============================================================
    LOADING / ERROR
@@ -786,9 +805,10 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.10.0</span>
+    <span id="app-version">v4.11.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
+    <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1124,6 +1144,7 @@ function renderFavRotary() {
 
   if (!items.length) {
     el.innerHTML = `<span class="fav-rotary-empty">${state.locationName || '──'}</span>`;
+    updateFavStar();
     return;
   }
   el.innerHTML = '';
@@ -1138,6 +1159,25 @@ function renderFavRotary() {
     el.appendChild(chip);
   });
   centerActiveChip();
+  updateFavStar();
+}
+
+// 現在地点のお気に入り登録トグル（名前入力なしのワンタップ）
+function toggleFavStar() {
+  const favs = loadFavs();
+  const idx = favs.findIndex(f => sameLoc(f, state));
+  if (idx >= 0) favs.splice(idx, 1);   // 既に登録済み → 解除
+  else favs.push({ name: state.locationName, lat: state.lat, lon: state.lon });
+  saveFavs(favs);
+  renderFavRotary();
+}
+
+function updateFavStar() {
+  const btn = document.getElementById('btn-fav-star');
+  if (!btn) return;
+  const on = loadFavs().some(f => sameLoc(f, state));
+  btn.textContent = on ? '★' : '☆';
+  btn.classList.toggle('on', on);
 }
 
 // アクティブチップをロータリー中央へ（プログラム的スクロール）
@@ -1284,7 +1324,7 @@ function updateABC() {
 const CHART_H_SKY   = 160;
 const CHART_H_PREC  = 85;
 const CHART_H_WIND  = 115;
-const PADDING_L     = 34;
+const PADDING_L     = 44;   // 左軸の単位・目盛りを読める幅を確保
 const PADDING_R     = 6;
 const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
@@ -1502,7 +1542,7 @@ function drawTempOverlay(u) {
   for (let i = 0; i < data.length; i++) {
     if (data[i].time.getHours() % 6 !== 0) continue;
     ctx.font = `${13 * pr}px sans-serif`;
-    ctx.fillText(weatherEmoji(data[i].wcode), u.valToPos(i, 'x', true), 30 * pr);
+    ctx.fillText(weatherEmoji(data[i].wcode, isNightIdx(i)), u.valToPos(i, 'x', true), 30 * pr);
   }
   // 日別 最高/最低 の注記
   const byDay = {};
@@ -1526,17 +1566,20 @@ function drawTempOverlay(u) {
       ctx.fillText(Math.round(data[i].temp) + '°', x, y + dy * pr);
     });
   });
+  // 左軸エリアの下地（データに重なっても目盛りが読めるように）
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(0, 34 * pr, (PADDING_L - 2) * pr, H - 34 * pr);
   // Y軸ラベル（気温）
   ctx.textAlign = 'left';
-  ctx.font = `bold ${8 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
   ctx.fillStyle = '#e05020';
-  ctx.fillText('気温℃', 3 * pr, 42 * pr);
-  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.fillText('気温℃', 3 * pr, 45 * pr);
+  ctx.font = `bold ${10 * pr}px monospace`;
   ctx.textAlign = 'right';
   const yMin = u.scales.y.min, yMax = u.scales.y.max;
   [yMin + 2, (yMin + yMax) / 2, yMax - 2].forEach(t => {
     const y = u.valToPos(t, 'y', true);
-    if (y > 34 * pr && y < H - 16 * pr) ctx.fillText(Math.round(t) + '°', (PADDING_L - 3) * pr, y + 3 * pr);
+    if (y > 50 * pr && y < H - 16 * pr) ctx.fillText(Math.round(t) + '°', (PADDING_L - 3) * pr, y + 3 * pr);
   });
   drawTimeLabels(u, pr);
   ctx.restore();
@@ -1568,14 +1611,17 @@ function drawPrecipBars(u) {
       ctx.globalAlpha = 1;
     }
   }
+  // 左軸エリアの下地
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(0, 0, (PADDING_L - 2) * pr, u.ctx.canvas.height - TIME_AXIS_H * pr);
   // Y軸ラベル（降水）
   ctx.fillStyle = '#3a7fc1';
   ctx.textAlign = 'left';
-  ctx.font = `bold ${8 * pr}px 'Noto Sans JP', sans-serif`;
-  ctx.fillText('降水㎜', 3 * pr, 10 * pr);
-  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.fillText('降水mm', 3 * pr, 12 * pr);
+  ctx.font = `bold ${10 * pr}px monospace`;
   ctx.textAlign = 'right';
-  ctx.fillText(u.scales.y.max.toFixed(0), (PADDING_L - 3) * pr, 12 * pr);
+  ctx.fillText(u.scales.y.max.toFixed(0), (PADDING_L - 3) * pr, 26 * pr);
   drawTimeLabels(u, pr);
   ctx.restore();
 }
@@ -1607,14 +1653,17 @@ function drawWindOverlay(u) {
     if (data[i].time.getHours() % 6 !== 0 || data[i].wdir == null) continue;
     drawWindArrow(ctx, u.valToPos(i, 'x', true), 12 * pr, data[i].wdir, 5 * pr);
   }
+  // 左軸エリアの下地（矢印帯より下）
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(0, 24 * pr, (PADDING_L - 2) * pr, u.ctx.canvas.height - (24 + TIME_AXIS_H) * pr);
   // Y軸ラベル（風速）
   ctx.fillStyle = '#6c5ce7';
   ctx.textAlign = 'left';
-  ctx.font = `bold ${8 * pr}px 'Noto Sans JP', sans-serif`;
-  ctx.fillText('風m/s', 3 * pr, 32 * pr);
-  ctx.font = `bold ${9 * pr}px monospace`;
+  ctx.font = `bold ${10 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.fillText('風m/s', 3 * pr, 36 * pr);
+  ctx.font = `bold ${10 * pr}px monospace`;
   ctx.textAlign = 'right';
-  ctx.fillText(String(Math.round(u.scales.w.max)), (PADDING_L - 3) * pr, 34 * pr);
+  ctx.fillText(String(Math.round(u.scales.w.max)), (PADDING_L - 3) * pr, 50 * pr);
   ctx.fillStyle = 'rgba(108,92,231,0.6)';
   ctx.fillText('0', (PADDING_L - 3) * pr, bottom - 2 * pr);
   drawTimeLabels(u, pr);
@@ -1754,17 +1803,24 @@ function getSkyColor(hour, cloud, wcode) {
 /* ============================================================
    WEATHER EMOJI
    ============================================================ */
-function weatherEmoji(code) {
+// 昼夜対応の天気アイコン（晴れ/薄曇りは太陽↔月で区別）
+function weatherEmoji(code, night) {
   if (code == null) return '？';
-  if (code === 0) return '☀️';
-  if (code <= 3) return '⛅';
-  if (code <= 49) return '🌫️';
-  if (code <= 67) return '🌧️';
-  if (code <= 77) return '❄️';
-  if (code <= 82) return '🌦️';
-  if (code <= 86) return '🌨️';
-  if (code >= 95) return '⛈️';
-  return '🌥️';
+  if (code === 0) return night ? '🌙' : '☀️';       // 快晴
+  if (code <= 3) return night ? '☁️' : '⛅';          // 薄曇り（夜は雲、昼は太陽入り）
+  if (code <= 49) return '🌫️';                        // 霧
+  if (code <= 67) return '🌧️';                        // 雨
+  if (code <= 77) return '❄️';                        // 雪
+  if (code <= 82) return '🌦️';                        // にわか雨
+  if (code <= 86) return '🌨️';                        // にわか雪
+  if (code >= 95) return '⛈️';                        // 雷雨
+  return night ? '☁️' : '🌥️';                         // 曇り
+}
+
+// 指定indexが夜間か（日の出〜日の入りの昼間帯の外なら夜）
+function isNightIdx(i) {
+  const bands = dayBandsFracs();
+  return !bands.some(b => i >= b.from && i <= b.to);
 }
 
 /* ============================================================
@@ -2159,21 +2215,21 @@ async function fetchRankData(dates) {
 
 // 1峰×1日の評価: 6〜18時をjudgePointで判定し最悪ランクと集計値を返す
 function judgePeakDay(hourData, dateStr) {
-  let worst = null, maxWind = 0, sumPrecip = 0, sumSnow = 0, minTemp = null;
+  let worst = null, worstReasons = [], maxWind = 0, sumPrecip = 0, sumSnow = 0, minTemp = null;
   for (const d of hourData) {
     if (fmtDateISO(d.time) !== dateStr) continue;
     const h = d.time.getHours();
     if (h < RANK_WINDOW_START || h > RANK_WINDOW_END) continue;
-    const { grade } = judgePoint(d);
+    const { grade, reasons } = judgePoint(d);
     const r = { A: 0, B: 1, C: 2 }[grade];
-    worst = worst == null ? r : Math.max(worst, r);
+    if (worst == null || r > worst) { worst = r; worstReasons = reasons; }   // 最悪グレード時の理由を保持
     maxWind = Math.max(maxWind, d.wind || 0);
     sumPrecip += d.precip || 0;
     sumSnow += d.snow || 0;
     if (d.temp != null) minTemp = minTemp == null ? d.temp : Math.min(minTemp, d.temp);
   }
   if (worst == null) return null;   // 対象時間帯のデータなし → 判定不能
-  return { rank: worst, maxWind, sumPrecip, sumSnow, minTemp };
+  return { rank: worst, reasons: worstReasons, maxWind, sumPrecip, sumSnow, minTemp };
 }
 
 // ランキング構築: best昇順 → avg昇順 → 最高峰標高降順
@@ -2230,6 +2286,21 @@ function renderRankList(rows, dates) {
     }).join('');
     const avgTxt = row.avg < 90 ? `(平均${rankGradeChar(Math.round(row.avg))})` : '';
 
+    // B/Cの場合、代表的な理由を一言（best相当の峰・日の理由を採用）
+    let cardReason = '';
+    if (row.best >= 1) {
+      outer:
+      for (const pr of row.peakResults) {
+        for (const d of pr.days) {
+          if (d && d.rank === row.best && d.reasons && d.reasons.length) {
+            cardReason = d.reasons.slice(0, 2).join('・');
+            break outer;
+          }
+        }
+      }
+    }
+    const reasonHtml = cardReason ? `<div class="rn-reason rb-${rankGradeChar(row.best)}">${cardReason}</div>` : '';
+
     const headCols = dates.map(ds =>
       `<th>${parseInt(ds.slice(5, 7))}/${parseInt(ds.slice(8, 10))}(${rankDowChar(ds)})</th>`).join('');
     const peakRows = row.peakResults.map(pr => {
@@ -2238,8 +2309,10 @@ function renderRankList(rows, dates) {
         const g = rankGradeChar(d.rank);
         const snowTxt = d.sumSnow > 0 ? ` 雪${d.sumSnow.toFixed(0)}` : '';
         const tempTxt = d.minTemp != null ? ` ${Math.round(d.minTemp)}°` : '';
+        const reasonTxt = (d.rank >= 1 && d.reasons && d.reasons.length)
+          ? `<div class="pd-reason">${d.reasons.slice(0, 2).join('・')}</div>` : '';
         return `<td><span class="pd-grade rb-${g}">${g}</span>` +
-          `<div class="pd-metrics">風${d.maxWind.toFixed(0)} 雨${d.sumPrecip.toFixed(0)}${snowTxt}${tempTxt}</div></td>`;
+          `<div class="pd-metrics">風${d.maxWind.toFixed(0)} 雨${d.sumPrecip.toFixed(0)}${snowTxt}${tempTxt}</div>${reasonTxt}</td>`;
       }).join('');
       return `<tr><td><button class="peak-link" data-lat="${pr.peak.lat}" data-lon="${pr.peak.lon}" data-name="${pr.peak.name}">${pr.peak.name}</button>` +
         `<div class="peak-elev">${pr.peak.elev}m</div></td>${cells}</tr>`;
@@ -2251,6 +2324,7 @@ function renderRankList(rows, dates) {
         <div class="rank-name">
           <div class="rn-main">${row.area.name}</div>
           <div class="rn-sub">${row.area.region}</div>
+          ${reasonHtml}
         </div>
         <div class="rank-badges">${badges}<span class="rank-avg">${avgTxt}</span></div>
       </div>
