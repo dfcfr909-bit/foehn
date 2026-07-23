@@ -106,6 +106,24 @@ html, body {
   padding-bottom: 3px;
 }
 
+/* お気に入り地点バー（全幅・独立行）。中央のチップが選択地点 */
+#fav-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+.fav-edge {
+  flex-shrink: 0;
+  color: var(--text3);
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+}
 /* お気に入り地点ロータリー：水平スクロールスナップで地点を切替 */
 #fav-rotary {
   flex: 1;
@@ -121,6 +139,8 @@ html, body {
   padding: 2px 0;
 }
 #fav-rotary::-webkit-scrollbar { display: none; }
+/* 両端スペーサー：端の地点も画面中央へ寄せられるようにする（幅はJSで設定） */
+.fav-spacer { flex: 0 0 auto; pointer-events: none; }
 .fav-chip {
   scroll-snap-align: center;
   flex: 0 0 auto;
@@ -943,14 +963,19 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.20.0</span>
-    <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
-    <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
-    <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
+    <span id="app-version">v4.20.1</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
     </div>
+  </div>
+
+  <!-- お気に入り地点バー（全幅。中央のチップが選択地点） -->
+  <div id="fav-bar">
+    <span class="fav-edge">◂</span>
+    <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
+    <span class="fav-edge">▸</span>
+    <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
   </div>
 
   <!-- 上部の日付/HUD/ABCは撤去し、選択情報は指追従ポップアップに集約 -->
@@ -1273,6 +1298,9 @@ function renderFavRotary() {
     return;
   }
   el.innerHTML = '';
+  // 端のチップも中央に来られるよう、両端に半幅スペーサーを置く
+  const spL = document.createElement('span'); spL.className = 'fav-spacer';
+  el.appendChild(spL);
   items.forEach(f => {
     const isCur = sameLoc(f, state);
     const chip = document.createElement('button');
@@ -1284,6 +1312,8 @@ function renderFavRotary() {
     chip.addEventListener('click', () => selectFav(f.lat, f.lon, f.name));
     el.appendChild(chip);
   });
+  const spR = document.createElement('span'); spR.className = 'fav-spacer';
+  el.appendChild(spR);
   centerActiveChip();
   updateFavStar();
 }
@@ -1306,15 +1336,25 @@ function updateFavStar() {
   btn.classList.toggle('on', on);
 }
 
-// アクティブチップをロータリー中央へ（プログラム的スクロール）
-function centerActiveChip() {
+// アクティブチップをロータリー中央へ固定（プログラム的スクロール）
+function centerActiveChip(smooth) {
   const el = document.getElementById('fav-rotary');
-  const active = el.querySelector('.fav-chip.active');
-  if (!active) return;
-  favRotaryProgrammatic = true;
-  const target = active.offsetLeft - (el.clientWidth - active.offsetWidth) / 2;
-  el.scrollTo({ left: Math.max(0, target), behavior: 'auto' });
-  requestAnimationFrame(() => { favRotaryProgrammatic = false; });
+  const doCenter = () => {
+    const active = el.querySelector('.fav-chip.active');
+    if (!active) return;
+    // 両端スペーサー幅＝表示領域の半分。端の地点も中央へ寄せられるようにする
+    const half = Math.round(el.clientWidth / 2);
+    el.querySelectorAll('.fav-spacer').forEach(sp => { sp.style.width = half + 'px'; });
+    favRotaryProgrammatic = true;
+    // チップ中心を表示領域中心に合わせる
+    let target = active.offsetLeft + active.offsetWidth / 2 - el.clientWidth / 2;
+    target = Math.max(0, Math.min(el.scrollWidth - el.clientWidth, target));
+    el.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'auto' });
+    clearTimeout(favScrollTimer);   // 直後のスクロール選択を抑止
+    setTimeout(() => { favRotaryProgrammatic = false; }, smooth ? 400 : 60);
+  };
+  // レイアウト確定後に実行（チップ追加直後でも正しくoffsetを取得）
+  requestAnimationFrame(() => requestAnimationFrame(doCenter));
 }
 
 // 地点選択（現在地点と同じなら中央合わせのみ、違えば天気取得）
