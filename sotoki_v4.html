@@ -351,16 +351,14 @@ html, body {
   border-radius: 3px;
   white-space: nowrap;
 }
-/* 「現在へ戻る」ボタン（選択が現在時刻から離れているときのみ表示） */
+/* 「現在へ戻る」ボタン（ABC評価カード内。選択が現在から離れたときのみ表示） */
 #btn-now {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  z-index: 7;
-  min-height: 40px;
-  padding: 0 16px;
+  flex-shrink: 0;
+  align-self: center;
+  min-height: 38px;
+  padding: 0 14px;
   border: none;
-  border-radius: 20px;
+  border-radius: 19px;
   background: var(--text);
   color: #fff;
   font-family: var(--font-ui);
@@ -368,7 +366,6 @@ html, body {
   font-weight: 700;
   cursor: pointer;
   display: none;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.25);
 }
 
 /* ============================================================
@@ -789,7 +786,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.14.0</span>
+    <span id="app-version">v4.15.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -830,6 +827,7 @@ html, body {
       <div id="abc-reason-text">データ取得中</div>
       <div id="abc-sub">──</div>
     </div>
+    <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
   </div>
 
   <!-- Legend + 表示範囲トグル -->
@@ -852,6 +850,7 @@ html, body {
         <div id="chart-sky"></div>
         <div id="chart-precip"></div>
         <div id="chart-wind"></div>
+        <div id="chart-press"></div>
       </div>
     </div>
     <canvas id="axis-gutter"></canvas>
@@ -860,7 +859,6 @@ html, body {
       <div id="scrub-bar"></div>
       <span id="time-badge">--:00</span>
     </div>
-    <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
   </div>
 
   <!-- Footer -->
@@ -1297,9 +1295,11 @@ function updateABC() {
    選択線は画面固定、下をチャートが流れる（シームレススライド）。
    描画はデータ取得・リサイズ時のみ
    ============================================================ */
-const CHART_H_SKY   = 160;
-const CHART_H_PREC  = 85;
-const CHART_H_WIND  = 115;
+const CHART_H_SKY   = 150;
+const CHART_H_PREC  = 74;
+const CHART_H_WIND  = 92;
+const CHART_H_PRESS = 74;   // 気圧パネル
+function chartsTotalH() { return CHART_H_SKY + CHART_H_PREC + CHART_H_WIND + CHART_H_PRESS; }
 const PADDING_L     = 44;   // 左軸の単位・目盛りを読める幅を確保
 const PADDING_R     = 6;
 const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
@@ -1309,7 +1309,7 @@ const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
 const SCRUB_POS     = 0.14;  // 選択線の画面内位置（左端寄り。Y軸ガター直後）
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
-let skyChart = null, precipChart = null, windChart = null;
+let skyChart = null, precipChart = null, windChart = null, pressChart = null;
 let viewW = 360;            // 表示領域の幅（buildChartsで実測）
 let pxPerHourVal = 15;      // 1時間あたりのpx幅（24h≒画面幅になるよう算出）
 let chartPadL = 0, chartPadR = 0;   // 端の時刻も選択線に届くよう設ける余白
@@ -1352,6 +1352,7 @@ function buildCharts() {
   if (skyChart)    { skyChart.destroy();    skyChart = null; }
   if (precipChart) { precipChart.destroy(); precipChart = null; }
   if (windChart)   { windChart.destroy();   windChart = null; }
+  if (pressChart)  { pressChart.destroy();  pressChart = null; }
 
   const common = {
     width: totalW,
@@ -1413,7 +1414,7 @@ function buildCharts() {
     },
   }, [xs, precips, snows], document.getElementById('chart-precip'));
 
-  // --- WIND + PRESSURE（風速バーはhook描画、気圧ライン、風向矢印） ---
+  // --- WIND（風速バー + 風向矢印） ---
   windChart = new uPlot({
     ...common,
     height: CHART_H_WIND,
@@ -1421,33 +1422,72 @@ function buildCharts() {
     scales: {
       x: xScale,
       w: { range: (u, min, max) => [0, Math.max(20, max)] },
-      p: { range: (u, min, max) => [min - 3, max + 3] },
     },
     axes: [{ show: false }, { show: false, scale: 'w' }],
     series: [
       {},
       { scale: 'w', paths: () => null, points: { show: false } },        // 風速（スケール算出用）
-      { scale: 'p', stroke: '#aaa', width: 1.5, spanGaps: true, points: { show: false } },  // 気圧
     ],
     hooks: {
       drawClear: [drawDayBackground],
       draw: [drawWindOverlay, drawNowMarker],
     },
-  }, [xs, winds, pressures], document.getElementById('chart-wind'));
+  }, [xs, winds], document.getElementById('chart-wind'));
+
+  // --- PRESSURE（気圧ライン。変化＝傾きで一目、急降下は赤系で強調） ---
+  pressChart = new uPlot({
+    ...common,
+    height: CHART_H_PRESS,
+    padding: [10, PADDING_R, TIME_AXIS_H, PADDING_L],
+    scales: {
+      x: xScale,
+      p: { range: (u, min, max) => [min - 2, max + 2] },
+    },
+    axes: [{ show: false }, { show: false, scale: 'p' }],
+    series: [
+      {},
+      { scale: 'p', stroke: '#7a7f8c', width: 2, spanGaps: true, points: { show: false },
+        fill: 'rgba(136,136,150,0.10)' },
+    ],
+    hooks: {
+      drawClear: [drawDayBackground],
+      draw: [drawPressOverlay, drawNowMarker],
+    },
+  }, [xs, pressures], document.getElementById('chart-press'));
 
   // 固定Y軸ガター用のスケール情報（uPlotのrange関数と同一計算）
   const validT = temps.filter(v => v != null);
+  const validP = pressures.filter(v => v != null);
   scaleInfo = {
     tempMin: (validT.length ? Math.min(...validT) : 0) - 3,
     tempMax: (validT.length ? Math.max(...validT) : 10) + 3,
     precipMax: Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0)),
     windMax: Math.max(20, ...winds.map(v => v || 0)),
+    pressMin: (validP.length ? Math.min(...validP) : 1000) - 2,
+    pressMax: (validP.length ? Math.max(...validP) : 1020) + 2,
   };
   drawAxisGutter();
 
   // 選択線の高さをチャート合計に合わせる
-  document.getElementById('scrub-bar').style.height =
-    (CHART_H_SKY + CHART_H_PREC + CHART_H_WIND) + 'px';
+  document.getElementById('scrub-bar').style.height = chartsTotalH() + 'px';
+}
+
+/* ------ PRESSURE hook: 気圧の急変化を強調 + 軸ラベルはガター ------ */
+function drawPressOverlay(u) {
+  const ctx = u.ctx;
+  const pr = canvasRatio(u);
+  const data = state.allData;
+  ctx.save();
+  // 6時間で|ΔP|≧6hPaの急変化区間を赤帯でハイライト
+  for (let i = 0; i < data.length; i++) {
+    if (Math.abs(data[i].dpress || 0) < 6) continue;
+    const x0 = u.valToPos(i - 0.5, 'x', true);
+    const x1 = u.valToPos(i + 0.5, 'x', true);
+    ctx.fillStyle = 'rgba(208,48,48,0.12)';
+    ctx.fillRect(x0, 0, x1 - x0, u.ctx.canvas.height - TIME_AXIS_H * pr);
+  }
+  drawTimeLabels(u, pr);
+  ctx.restore();
 }
 
 /* ------ 固定Y軸ガター（左端。スクロールしても単位・目盛りが残る） ------ */
@@ -1455,7 +1495,7 @@ let scaleInfo = null;
 function drawAxisGutter() {
   const c = document.getElementById('axis-gutter');
   const W = PADDING_L;
-  const H = CHART_H_SKY + CHART_H_PREC + CHART_H_WIND;
+  const H = chartsTotalH();
   c.width = Math.round(W * PX_RATIO);
   c.height = Math.round(H * PX_RATIO);
   c.style.width = W + 'px';
@@ -1509,6 +1549,21 @@ function drawAxisGutter() {
   ctx.fillText(String(Math.round(si.windMax)), W - 4, wTop + 28);
   ctx.fillStyle = 'rgba(108,92,231,0.6)';
   ctx.fillText('0', W - 4, wTop + CHART_H_WIND - TIME_AXIS_H);
+
+  // 気圧（pressパネル: 上10 / 下TIME_AXIS_H）
+  const prTop = CHART_H_SKY + CHART_H_PREC + CHART_H_WIND;
+  const prPlotTop = prTop + 10, prPlotBottom = prTop + CHART_H_PRESS - TIME_AXIS_H;
+  const py = p => prPlotTop + (si.pressMax - p) / (si.pressMax - si.pressMin) * (prPlotBottom - prPlotTop);
+  ctx.fillStyle = '#5a5f6c';
+  ctx.textAlign = 'left';
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('気圧hPa', 3, prTop + 12);
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'right';
+  [si.pressMin + 1, si.pressMax - 1].forEach(p => {
+    const y = py(p);
+    if (y > prTop + 10 && y < prPlotBottom + 4) ctx.fillText(Math.round(p), W - 4, y + 3);
+  });
 }
 
 /* ------ 昼間帯の算出（日の出〜日の入り。データなし時は5〜19時） ------ */
@@ -1607,6 +1662,23 @@ function drawTempOverlay(u) {
     if (data[i].time.getHours() % 6 !== 0) continue;
     ctx.font = `${13 * pr}px sans-serif`;
     ctx.fillText(weatherEmoji(data[i].wcode, isNightIdx(i)), u.valToPos(i, 'x', true), 30 * pr);
+  }
+  // 日の出・日の入り時刻
+  if (state.daily && state.daily.sunrise && state.daily.sunset) {
+    const d0 = data[0].time.getTime();
+    const mark = (iso, icon) => {
+      const frac = (new Date(iso).getTime() - d0) / 3600e3;
+      if (frac < -0.5 || frac > HOURS - 0.5) return;
+      const x = u.valToPos(frac, 'x', true);
+      const t = new Date(iso);
+      const txt = `${icon}${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`;
+      ctx.font = `bold ${9 * pr}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(txt, x, 46 * pr);
+    };
+    state.daily.sunrise.forEach(sr => mark(sr, '🌅'));
+    state.daily.sunset.forEach(ss => mark(ss, '🌇'));
   }
   // 日別 最高/最低 の注記
   const byDay = {};
