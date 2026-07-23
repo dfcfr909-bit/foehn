@@ -898,7 +898,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.18.0</span>
+    <span id="app-version">v4.19.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -1442,11 +1442,30 @@ function updateABC() {
    選択線は画面固定、下をチャートが流れる（シームレススライド）。
    描画はデータ取得・リサイズ時のみ
    ============================================================ */
-const CHART_H_SKY   = 150;
-const CHART_H_PREC  = 74;
-const CHART_H_WIND  = 92;
-const CHART_H_PRESS = 52;   // 気圧パネル（トレンド線用にコンパクト化）
+// パネル高さは表示領域の高さに応じてbuildChartsで再計算（下の余白を解消）
+let CHART_H_SKY   = 150;
+let CHART_H_PREC  = 74;
+let CHART_H_WIND  = 92;
+let CHART_H_PRESS = 52;
 function chartsTotalH() { return CHART_H_SKY + CHART_H_PREC + CHART_H_WIND + CHART_H_PRESS; }
+// 表示領域の高さを4パネルに配分（気圧は変化を見やすくするため厚めに）
+function computeChartHeights(outerH) {
+  const avail = Math.max(360, Math.floor(outerH) - 2);
+  CHART_H_SKY  = Math.round(avail * 0.37);
+  CHART_H_PREC = Math.round(avail * 0.18);
+  CHART_H_WIND = Math.round(avail * 0.21);
+  CHART_H_PRESS = avail - CHART_H_SKY - CHART_H_PREC - CHART_H_WIND;   // 残り（≒24%）
+}
+// データ配列から見やすいY軸レンジを算出（変化を強調。padで余白、minSpanで過剰ズーム防止）
+function niceRange(vals, pad, minSpan) {
+  const v = vals.filter(x => x != null);
+  if (!v.length) return [0, 1];
+  let mn = Math.min(...v), mx = Math.max(...v);
+  const p = Math.max(pad, (mx - mn) * 0.12);
+  mn -= p; mx += p;
+  if (mx - mn < minSpan) { const c = (mn + mx) / 2; mn = c - minSpan / 2; mx = c + minSpan / 2; }
+  return [mn, mx];
+}
 const PADDING_L     = 44;   // 左軸の単位・目盛りを読める幅を確保
 const PADDING_R     = 6;
 const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
@@ -1477,6 +1496,7 @@ function buildCharts() {
   const data = state.allData;
   const outer = document.getElementById('charts-outer');
   viewW = outer.clientWidth || window.innerWidth;
+  computeChartHeights(outer.clientHeight || 480);   // 表示領域の高さでパネル高を決定
   // 赤の選択線の画面内位置をSCRUB_POSに厳密一致させる（バッジ時刻とのズレ防止）
   document.getElementById('scrub-line').style.left = (SCRUB_POS * 100) + '%';
   // 24時間ぶんが画面幅に収まるpx/hを算出（1日≒1画面）
@@ -1498,6 +1518,12 @@ function buildCharts() {
   const winds    = data.map(d => d.wind);
   const pressures = data.map(d => d.pressure);
 
+  // 見やすいY軸レンジ（uPlotスケールとガター描画で共有し、位置ズレを防ぐ）
+  const tempRange  = niceRange(temps, 1.5, 5);        // 気温：変化を強調
+  const pressRange = niceRange(pressures, 0.6, 4);    // 気圧：小さな変化も見えるよう詰める
+  const windMaxV   = Math.max(8, Math.max(0, ...winds.map(v => v || 0)) * 1.15);
+  const precipMaxV = Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0));
+
   if (skyChart)    { skyChart.destroy();    skyChart = null; }
   if (precipChart) { precipChart.destroy(); precipChart = null; }
   if (windChart)   { windChart.destroy();   windChart = null; }
@@ -1518,7 +1544,7 @@ function buildCharts() {
     padding: [34, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
-      y: { range: (u, min, max) => [min - 3, max + 3] },
+      y: { range: tempRange },
     },
     axes: [{ show: false }, { show: false }],
     series: [
@@ -1549,7 +1575,7 @@ function buildCharts() {
     padding: [8, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
-      y: { range: (u, min, max) => [0, Math.max(5, max)] },
+      y: { range: [0, precipMaxV] },
     },
     axes: [{ show: false }, { show: false }],
     series: [
@@ -1570,7 +1596,7 @@ function buildCharts() {
     padding: [24, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
-      w: { range: (u, min, max) => [0, Math.max(20, max)] },
+      w: { range: [0, windMaxV] },
     },
     axes: [{ show: false }, { show: false, scale: 'w' }],
     series: [
@@ -1590,13 +1616,14 @@ function buildCharts() {
     padding: [10, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
-      p: { range: (u, min, max) => [min - 2, max + 2] },
+      p: { range: pressRange },
     },
     axes: [{ show: false }, { show: false, scale: 'p' }],
     series: [
       {},
-      { scale: 'p', stroke: '#7a7f8c', width: 2, spanGaps: true, points: { show: false },
-        fill: 'rgba(136,136,150,0.10)' },
+      // 線はhookで変化量ごとに色分け描画するため、uPlot本体は非表示（塗りのみ薄く）
+      { scale: 'p', stroke: 'rgba(0,0,0,0)', width: 0, spanGaps: true, points: { show: false },
+        fill: 'rgba(136,136,150,0.06)' },
     ],
     hooks: {
       drawClear: [drawDayBackground],
@@ -1604,16 +1631,12 @@ function buildCharts() {
     },
   }, [xs, pressures], document.getElementById('chart-press'));
 
-  // 固定Y軸ガター用のスケール情報（uPlotのrange関数と同一計算）
-  const validT = temps.filter(v => v != null);
-  const validP = pressures.filter(v => v != null);
+  // 固定Y軸ガター用のスケール情報（uPlotスケールと同一値を共有）
   scaleInfo = {
-    tempMin: (validT.length ? Math.min(...validT) : 0) - 3,
-    tempMax: (validT.length ? Math.max(...validT) : 10) + 3,
-    precipMax: Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0)),
-    windMax: Math.max(20, ...winds.map(v => v || 0)),
-    pressMin: (validP.length ? Math.min(...validP) : 1000) - 2,
-    pressMax: (validP.length ? Math.max(...validP) : 1020) + 2,
+    tempMin: tempRange[0], tempMax: tempRange[1],
+    precipMax: precipMaxV,
+    windMax: windMaxV,
+    pressMin: pressRange[0], pressMax: pressRange[1],
   };
   drawAxisGutter();
 
@@ -1621,20 +1644,75 @@ function buildCharts() {
   document.getElementById('scrub-bar').style.height = chartsTotalH() + 'px';
 }
 
-/* ------ PRESSURE hook: 気圧の急変化を強調 + 軸ラベルはガター ------ */
+/* ------ PRESSURE hook: 気圧の変化量で色分けした線＋急変化の警告（頭痛ール風） ------ */
+// 6時間変化量 dp から線の色・太さを決める（下降=暖色/上昇=寒色、急なほど濃く太く）
+function pressSegStyle(dp) {
+  const m = Math.abs(dp || 0);
+  if (m < 2)   return { c: '#8a8f9c', w: 2.0 };
+  const down = dp < 0;
+  if (m < 4.5) return { c: down ? '#f0932b' : '#3a9ad9', w: 2.6 };
+  if (m < 6)   return { c: down ? '#e8641e' : '#2f7fd0', w: 3.0 };
+  return { c: down ? '#e03010' : '#2570c9', w: 3.6 };
+}
 function drawPressOverlay(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
   const data = state.allData;
+  const plotH = u.ctx.canvas.height - TIME_AXIS_H * pr;
   ctx.save();
-  // 6時間で|ΔP|≧6hPaの急変化区間を赤帯でハイライト
+
+  // 1) 急変化の警告帯（|ΔP6h|≧3で段階的に色付け。下降=赤系/上昇=青系）
   for (let i = 0; i < data.length; i++) {
-    if (Math.abs(data[i].dpress || 0) < 6) continue;
+    const dp = data[i].dpress || 0;
+    const m = Math.abs(dp);
+    if (m < 3) continue;
+    const a = m >= 6 ? 0.16 : (m >= 4.5 ? 0.11 : 0.07);
+    ctx.fillStyle = dp < 0 ? `rgba(224,48,16,${a})` : `rgba(37,112,201,${a})`;
     const x0 = u.valToPos(i - 0.5, 'x', true);
     const x1 = u.valToPos(i + 0.5, 'x', true);
-    ctx.fillStyle = 'rgba(208,48,48,0.12)';
-    ctx.fillRect(x0, 0, x1 - x0, u.ctx.canvas.height - TIME_AXIS_H * pr);
+    ctx.fillRect(x0, 0, x1 - x0, plotH);
   }
+
+  // 2) 気圧ラインを変化量ごとに色分けして描画
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (let i = 1; i < data.length; i++) {
+    if (data[i - 1].pressure == null || data[i].pressure == null) continue;
+    const x0 = u.valToPos(i - 1, 'x', true), y0 = u.valToPos(data[i - 1].pressure, 'p', true);
+    const x1 = u.valToPos(i, 'x', true),     y1 = u.valToPos(data[i].pressure, 'p', true);
+    const st = pressSegStyle(data[i].dpress || 0);
+    ctx.strokeStyle = st.c;
+    ctx.lineWidth = st.w * pr;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  }
+
+  // 3) 最も急な変化に警告ラベル（|ΔP6h|≧4のとき、その地点の上部に表示）
+  let peak = 0, peakIdx = -1;
+  for (let i = 0; i < data.length; i++) {
+    const m = Math.abs(data[i].dpress || 0);
+    if (m > peak) { peak = m; peakIdx = i; }
+  }
+  if (peak >= 4 && peakIdx >= 0) {
+    const dp = data[peakIdx].dpress;
+    const down = dp < 0;
+    const label = `${down ? '⚠急降下' : '⚠急上昇'} ${dp > 0 ? '+' : ''}${dp.toFixed(1)}hPa/6h`;
+    ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
+    const tw = ctx.measureText(label).width;
+    let cx = u.valToPos(peakIdx, 'x', true);
+    const padX = 4 * pr;
+    cx = Math.max(PADDING_L * pr + tw / 2 + padX, Math.min(u.ctx.canvas.width - tw / 2 - padX, cx));
+    ctx.fillStyle = down ? '#e03010' : '#2570c9';
+    ctx.fillRect(cx - tw / 2 - padX, 2 * pr, tw + padX * 2, 14 * pr);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(label, cx, 12.5 * pr);
+    ctx.textAlign = 'left';
+  }
+
   drawTimeLabels(u, pr);
   ctx.restore();
 }
@@ -1670,7 +1748,8 @@ function drawAxisGutter() {
   ctx.fillText('気温℃', 3, 12);
   ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'right';
-  [si.tempMin + 2, (si.tempMin + si.tempMax) / 2, si.tempMax - 2].forEach(t => {
+  const tIn = (si.tempMax - si.tempMin) * 0.14;
+  [si.tempMin + tIn, (si.tempMin + si.tempMax) / 2, si.tempMax - tIn].forEach(t => {
     const y = ty(t);
     if (y > 22 && y < skyBottom) ctx.fillText(Math.round(t) + '°', W - 4, y + 3);
   });
@@ -1709,7 +1788,8 @@ function drawAxisGutter() {
   ctx.fillText('気圧hPa', 3, prTop + 12);
   ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'right';
-  [si.pressMin + 1, si.pressMax - 1].forEach(p => {
+  const pIn = (si.pressMax - si.pressMin) * 0.15;
+  [si.pressMin + pIn, si.pressMax - pIn].forEach(p => {
     const y = py(p);
     if (y > prTop + 10 && y < prPlotBottom + 4) ctx.fillText(Math.round(p), W - 4, y + 3);
   });
