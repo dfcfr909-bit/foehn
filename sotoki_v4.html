@@ -341,8 +341,7 @@ html, body {
 #time-badge {
   position: absolute;
   top: 1px;
-  left: 0;
-  transform: translateX(-50%);
+  left: 3px;            /* 選択線の右側に表示（左端でもY軸ガターと重ならない） */
   background: #e03010;
   color: #fff;
   font-family: var(--font-mono);
@@ -790,7 +789,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.13.0</span>
+    <span id="app-version">v4.14.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -1307,7 +1306,7 @@ const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
 const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
-const SCRUB_POS     = 0.40;  // 選択線の画面内位置（左からの割合）
+const SCRUB_POS     = 0.14;  // 選択線の画面内位置（左端寄り。Y軸ガター直後）
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
 let skyChart = null, precipChart = null, windChart = null;
@@ -1537,13 +1536,20 @@ function drawDayBackground(u) {
   // 下地（白）
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
-  // 昼間帯シェーディング（日の出〜日の入り）
-  ctx.fillStyle = 'rgba(255,206,84,0.14)';
-  dayBandsFracs().forEach(b => {
-    const x0 = u.valToPos(Math.max(-0.5, b.from), 'x', true);
-    const x1 = u.valToPos(Math.min(HOURS - 0.5, b.to), 'x', true);
-    if (x1 > x0) ctx.fillRect(x0, 0, x1 - x0, H);
-  });
+  // まず全体を夜色（薄暗い青）で塗る → 昼間帯を明るく戻す。
+  // 「夜=暗い / 昼=明るい」の直感に合わせる
+  ctx.fillStyle = 'rgba(40,52,96,0.16)';
+  ctx.fillRect(0, 0, W, H);
+  const bands = dayBandsFracs().map(b => ({
+    x0: u.valToPos(Math.max(-0.5, b.from), 'x', true),
+    x1: u.valToPos(Math.min(HOURS - 0.5, b.to), 'x', true),
+  }));
+  // 昼間帯を白へ戻す
+  ctx.fillStyle = '#ffffff';
+  bands.forEach(b => { if (b.x1 > b.x0) ctx.fillRect(b.x0, 0, b.x1 - b.x0, H); });
+  // 昼間帯にごく淡い暖色（陽の色）
+  ctx.fillStyle = 'rgba(255,214,150,0.14)';
+  bands.forEach(b => { if (b.x1 > b.x0) ctx.fillRect(b.x0, 0, b.x1 - b.x0, H); });
   // 水平グリッド
   ctx.strokeStyle = 'rgba(0,0,0,0.05)';
   ctx.lineWidth = pr;
