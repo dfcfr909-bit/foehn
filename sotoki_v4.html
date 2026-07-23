@@ -550,30 +550,31 @@ html, body {
    ============================================================ */
 #footer {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 2px solid var(--border);
+  gap: 6px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 .foot-btn {
   flex: 1;
-  padding: 10px 0;
-  border: 2px solid var(--border);
+  padding: 4px 0;
+  border: 1px solid var(--border);
   background: var(--surface);
-  border-radius: var(--radius);
-  font-size: 12px;
+  border-radius: 10px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
   font-family: var(--font-ui);
   color: var(--text);
   transition: background 0.15s, border-color 0.15s;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 3px;
 }
 .foot-btn:active { background: var(--bg2); }
-.foot-btn .icon { font-size: 18px; }
+.foot-btn .icon { font-size: 13px; }
 #btn-gps { border-color: var(--a-col); color: var(--a-col); }
 #btn-map { border-color: var(--b-col); color: var(--b-col); }
 #btn-fav { border-color: var(--text3); }
@@ -963,7 +964,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.20.1</span>
+    <span id="app-version">v4.21.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1010,7 +1011,6 @@ html, body {
       <div id="charts-inner">
         <div id="chart-sky"></div>
         <div id="chart-cloud"></div>
-        <div id="chart-precip"></div>
         <div id="chart-wind"></div>
         <div id="chart-press"></div>
       </div>
@@ -1149,6 +1149,7 @@ async function fetchWeather(lat, lon) {
     const json = await res.json();
     state.fullData = processData(json);          // dpressは全期間の文脈で算出済み
     state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
+    state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // 地点標高(m)
     state.lat = lat;
     state.lon = lon;
     applyRange();                                // rangeModeに応じてallDataを切り出し
@@ -1517,20 +1518,21 @@ function judgePoint(d) {
    ============================================================ */
 // パネル高さは表示領域の高さに応じてbuildChartsで再計算（下の余白を解消）
 let CHART_H_SKY   = 150;
-let CHART_H_CLOUD = 70;
-let CHART_H_PREC  = 74;
+let CHART_H_CLOUD = 140;   // 雲（高度）＋降水を重ねた統合パネル
 let CHART_H_WIND  = 92;
 let CHART_H_PRESS = 52;
-function chartsTotalH() { return CHART_H_SKY + CHART_H_CLOUD + CHART_H_PREC + CHART_H_WIND + CHART_H_PRESS; }
-// 表示領域の高さを5パネルに配分（気圧は変化を見やすくするため厚めに）
+function chartsTotalH() { return CHART_H_SKY + CHART_H_CLOUD + CHART_H_WIND + CHART_H_PRESS; }
+// 表示領域の高さを4パネルに配分（雲＋降水の統合パネルを厚めに）
 function computeChartHeights(outerH) {
-  const avail = Math.max(420, Math.floor(outerH) - 2);
+  const avail = Math.max(400, Math.floor(outerH) - 2);
   CHART_H_SKY   = Math.round(avail * 0.29);
-  CHART_H_CLOUD = Math.round(avail * 0.15);
-  CHART_H_PREC  = Math.round(avail * 0.15);
-  CHART_H_WIND  = Math.round(avail * 0.20);
-  CHART_H_PRESS = avail - CHART_H_SKY - CHART_H_CLOUD - CHART_H_PREC - CHART_H_WIND;   // 残り（≒21%）
+  CHART_H_CLOUD = Math.round(avail * 0.31);   // 雲＋降水（高度軸）を大きく
+  CHART_H_WIND  = Math.round(avail * 0.19);
+  CHART_H_PRESS = avail - CHART_H_SKY - CHART_H_CLOUD - CHART_H_WIND;   // 残り（≒21%）
 }
+// 雲の高度可視化の設定
+const ALT_TOP = 12000;   // 高度軸の上限(m)
+const CLOUD_BANDS = [['cloudHigh', 7000, 12000], ['cloudMid', 2000, 7000], ['cloudLow', 0, 2000]];
 // データ配列から見やすいY軸レンジを算出（変化を強調。padで余白、minSpanで過剰ズーム防止）
 function niceRange(vals, pad, minSpan) {
   const v = vals.filter(x => x != null);
@@ -1550,7 +1552,7 @@ const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
 const SCRUB_POS     = 0.14;  // 選択線の画面内位置（左端寄り。Y軸ガター直後）
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
-let skyChart = null, cloudChart = null, precipChart = null, windChart = null, pressChart = null;
+let skyChart = null, cloudChart = null, windChart = null, pressChart = null;
 let viewW = 360;            // 表示領域の幅（buildChartsで実測）
 let pxPerHourVal = 15;      // 1時間あたりのpx幅（24h≒画面幅になるよう算出）
 let chartPadL = 0, chartPadR = 0;   // 端の時刻も選択線に届くよう設ける余白
@@ -1601,7 +1603,6 @@ function buildCharts() {
 
   if (skyChart)    { skyChart.destroy();    skyChart = null; }
   if (cloudChart)  { cloudChart.destroy();  cloudChart = null; }
-  if (precipChart) { precipChart.destroy(); precipChart = null; }
   if (windChart)   { windChart.destroy();   windChart = null; }
   if (pressChart)  { pressChart.destroy();  pressChart = null; }
 
@@ -1644,7 +1645,7 @@ function buildCharts() {
     },
   }, [xs, temps], document.getElementById('chart-sky'));
 
-  // --- CLOUD（雲の高さ：低・中・高の帯を雲量で濃淡表示。hookで描画） ---
+  // --- CLOUD+PRECIP（縦=高度：低中高の雲を濃淡＋降水バー＋山の標高ライン） ---
   cloudChart = new uPlot({
     ...common,
     height: CHART_H_CLOUD,
@@ -1653,31 +1654,10 @@ function buildCharts() {
     axes: [{ show: false }, { show: false }],
     series: [ {}, { paths: () => null, points: { show: false } } ],
     hooks: {
-      drawClear: [drawCloudBands],
-      draw: [drawTimeLabelsHook, drawNowMarker],
+      drawClear: [drawCloudPrecip],
+      draw: [drawCloudOverlay, drawNowMarker],
     },
   }, [xs, xs.map(() => 0)], document.getElementById('chart-cloud'));
-
-  // --- PRECIP（降水・降雪バー、バー本体はhook描画） ---
-  precipChart = new uPlot({
-    ...common,
-    height: CHART_H_PREC,
-    padding: [8, PADDING_R, TIME_AXIS_H, PADDING_L],
-    scales: {
-      x: xScale,
-      y: { range: [0, precipMaxV] },
-    },
-    axes: [{ show: false }, { show: false }],
-    series: [
-      {},
-      { paths: () => null, points: { show: false } },  // 降水（スケール算出用）
-      { paths: () => null, points: { show: false } },  // 降雪（スケール算出用）
-    ],
-    hooks: {
-      drawClear: [drawDayBackground],
-      draw: [drawPrecipBars, drawNowMarker],
-    },
-  }, [xs, precips, snows], document.getElementById('chart-precip'));
 
   // --- WIND（風速バー + 風向矢印） ---
   windChart = new uPlot({
@@ -1844,34 +1824,23 @@ function drawAxisGutter() {
     if (y > 22 && y < skyBottom) ctx.fillText(Math.round(t) + '°', W - 4, y + 3);
   });
 
-  // 雲（cloudパネル: 高・中・低の帯）
+  // 雲＋降水（cloudパネル: 縦=高度。目盛りをm/kmで表示）
   const cTop = CHART_H_SKY;
   const cPlotTop = cTop + 4, cPlotBottom = cTop + CHART_H_CLOUD - TIME_AXIS_H;
-  const cBand = (cPlotBottom - cPlotTop) / 3;
+  const cyAlt = a => cPlotTop + (ALT_TOP - a) / ALT_TOP * (cPlotBottom - cPlotTop);
   ctx.fillStyle = '#5a6270';
   ctx.textAlign = 'left';
   ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
-  ctx.fillText('雲', 3, cTop + 12);
-  ctx.font = "bold 9px 'Noto Sans JP', sans-serif";
+  ctx.fillText('雲/雨', 3, cTop + 12);
+  ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'right';
-  ['高', '中', '低'].forEach((lab, k) => {
-    ctx.fillText(lab, W - 4, cPlotTop + cBand * (k + 0.5) + 3);
+  [[10000, '10km'], [5000, '5km'], [2000, '2km']].forEach(([a, lab]) => {
+    const y = cyAlt(a);
+    if (y > cTop + 14 && y < cPlotBottom) ctx.fillText(lab, W - 3, y + 3);
   });
 
-  // 降水（precipパネル）
-  const pTop = CHART_H_SKY + CHART_H_CLOUD;
-  ctx.fillStyle = '#3a7fc1';
-  ctx.textAlign = 'left';
-  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
-  ctx.fillText('降水mm', 3, pTop + 12);
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'right';
-  ctx.fillText(si.precipMax.toFixed(0), W - 4, pTop + 26);
-  ctx.fillStyle = 'rgba(58,127,193,0.6)';
-  ctx.fillText('0', W - 4, pTop + CHART_H_PREC - TIME_AXIS_H);
-
   // 風速（windパネル）
-  const wTop = CHART_H_SKY + CHART_H_CLOUD + CHART_H_PREC;
+  const wTop = CHART_H_SKY + CHART_H_CLOUD;
   ctx.fillStyle = '#6c5ce7';
   ctx.textAlign = 'left';
   ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
@@ -1883,7 +1852,7 @@ function drawAxisGutter() {
   ctx.fillText('0', W - 4, wTop + CHART_H_WIND - TIME_AXIS_H);
 
   // 気圧（pressパネル: 上10 / 下TIME_AXIS_H）
-  const prTop = CHART_H_SKY + CHART_H_CLOUD + CHART_H_PREC + CHART_H_WIND;
+  const prTop = CHART_H_SKY + CHART_H_CLOUD + CHART_H_WIND;
   const prPlotTop = prTop + 10, prPlotBottom = prTop + CHART_H_PRESS - TIME_AXIS_H;
   const py = p => prPlotTop + (si.pressMax - p) / (si.pressMax - si.pressMin) * (prPlotBottom - prPlotTop);
   ctx.fillStyle = '#5a5f6c';
@@ -1974,47 +1943,99 @@ function drawTimeLabels(u, pr) {
 
 function drawTimeLabelsHook(u) { drawTimeLabels(u, canvasRatio(u)); }
 
-/* ------ CLOUD hook: 低・中・高の雲を帯で表示（雲量で濃淡＝雲の高さが一目） ------ */
-function drawCloudBands(u) {
-  const ctx = u.ctx;
+/* ------ CLOUD+PRECIP hook（drawClear）: 縦=高度。雲を高度帯で濃淡＋降水バーを重ねる ------ */
+function cloudPlotBox(u) {
   const pr = canvasRatio(u);
-  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const H = u.ctx.canvas.height;
+  const top = 4 * pr, bottom = H - TIME_AXIS_H * pr;
+  return { pr, top, bottom, plotH: bottom - top,
+    yAlt: alt => top + (ALT_TOP - Math.max(0, Math.min(ALT_TOP, alt))) / ALT_TOP * (bottom - top) };
+}
+function drawCloudPrecip(u) {
+  const ctx = u.ctx;
+  const { pr, top, bottom, plotH, yAlt } = cloudPlotBox(u);
+  const W = ctx.canvas.width;
   const data = state.allData;
   ctx.save();
-  ctx.fillStyle = '#eef4fb';           // 薄い空色の下地（雲なし＝晴れ）
-  ctx.fillRect(0, 0, W, H);
-  const top = 4 * pr, bottom = H - TIME_AXIS_H * pr;
-  const bandH = (bottom - top) / 3;
-  const layers = [
-    { key: 'cloudHigh', y0: top },              // 上層＝上
-    { key: 'cloudMid',  y0: top + bandH },       // 中層
-    { key: 'cloudLow',  y0: top + bandH * 2 },    // 下層＝下
-  ];
+  // 下地：上ほど淡く（上空）、下ほど濃い空色（地上付近）
+  const grad = ctx.createLinearGradient(0, top, 0, bottom);
+  grad.addColorStop(0, '#f4f8fc');
+  grad.addColorStop(1, '#e4eef8');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, u.ctx.canvas.height);
+
+  // 雲を高度帯ごとに濃淡（低・中・高）
   for (let i = 0; i < data.length; i++) {
     const xa = u.valToPos(i - 0.5, 'x', true);
     const xb = u.valToPos(i + 0.5, 'x', true);
-    layers.forEach(L => {
-      const cov = data[i][L.key];
-      if (cov == null || cov <= 2) return;
-      ctx.fillStyle = `rgba(108,120,140,${Math.min(0.85, cov / 100 * 0.85)})`;
-      ctx.fillRect(xa, L.y0, xb - xa + 0.5, bandH);
+    CLOUD_BANDS.forEach(([key, a0, a1]) => {
+      const cov = data[i][key];
+      if (cov == null || cov <= 3) return;
+      ctx.fillStyle = `rgba(96,108,128,${Math.min(0.82, cov / 100 * 0.8)})`;
+      ctx.fillRect(xa, yAlt(a1), xb - xa + 0.5, yAlt(a0) - yAlt(a1));
     });
   }
-  // 帯の区切り線
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+
+  // 高度グリッド線（2000/5000/10000m）
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
   ctx.lineWidth = pr;
-  [1, 2].forEach(k => {
-    const y = Math.round(top + bandH * k) + 0.5;
+  ctx.setLineDash([3 * pr, 3 * pr]);
+  [2000, 5000, 10000].forEach(a => {
+    const y = Math.round(yAlt(a)) + 0.5;
     ctx.beginPath(); ctx.moveTo(PADDING_L * pr, y); ctx.lineTo(W - PADDING_R * pr, y); ctx.stroke();
   });
+  ctx.setLineDash([]);
+
+  // 降水バー（下から。teal、雲の上に重ねる半透明）
+  const pmax = scaleInfo ? Math.max(4, scaleInfo.precipMax) : 8;
+  const zone = plotH * 0.5;   // 降水は下半分の高さで強さを表現
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i].precip || 0;
+    if (p <= 0) continue;
+    const xa = u.valToPos(i - 0.5, 'x', true);
+    const xb = u.valToPos(i + 0.5, 'x', true);
+    const bh = Math.min(1, p / pmax) * zone;
+    ctx.fillStyle = 'rgba(30,150,170,0.80)';
+    ctx.fillRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
+  }
+
   // 日付区切り（0時）
   for (let i = 0; i < data.length; i++) {
     if (data[i].time.getHours() !== 0) continue;
     const x = u.valToPos(i - 0.5, 'x', true);
     ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, u.ctx.canvas.height); ctx.stroke();
   }
   ctx.restore();
+}
+
+/* ------ CLOUD+PRECIP hook（draw）: 山の標高ライン + 時刻ラベル ------ */
+function drawCloudOverlay(u) {
+  const ctx = u.ctx;
+  const { pr, yAlt } = cloudPlotBox(u);
+  const W = ctx.canvas.width;
+  // 選択中の山の標高ライン
+  if (state.elevation != null && state.elevation > 0) {
+    const y = yAlt(state.elevation);
+    ctx.save();
+    ctx.strokeStyle = '#8a5a2b';
+    ctx.lineWidth = 1.5 * pr;
+    ctx.setLineDash([5 * pr, 3 * pr]);
+    ctx.beginPath(); ctx.moveTo(PADDING_L * pr, y); ctx.lineTo(W - PADDING_R * pr, y); ctx.stroke();
+    ctx.setLineDash([]);
+    // ラベル「▲ 標高m」
+    const label = `▲${Math.round(state.elevation)}m`;
+    ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = '#8a5a2b';
+    ctx.fillRect(PADDING_L * pr + 2 * pr, y - 13 * pr, tw + 8 * pr, 12 * pr);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(label, PADDING_L * pr + 6 * pr, y - 3.5 * pr);
+    ctx.restore();
+  }
+  drawTimeLabels(u, pr);
 }
 
 /* ------ TEMP hook: 日付ヘッダー・天気アイコン・最高最低注記・軸 ------ */
@@ -2213,7 +2234,7 @@ function jumpToNow() {
 setInterval(() => {
   if (!skyChart) return;
   skyChart.redraw();
-  precipChart.redraw();
+  cloudChart.redraw();
   windChart.redraw();
   updateNowButton();
 }, 5 * 60 * 1000);
