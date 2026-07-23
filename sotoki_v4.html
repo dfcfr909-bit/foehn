@@ -320,10 +320,11 @@ html, body {
   pointer-events: none;
 }
 /* 選択時刻の固定インジケーター（画面の一定位置。下をチャートが流れる） */
+/* left位置はJSでSCRUB_POSと厳密に一致させる（バッジ時刻と線位置のズレ防止） */
 #scrub-line {
   position: absolute;
   top: 0;
-  left: 40%;
+  left: 14%;
   width: 0;
   height: 100%;
   overflow: visible;
@@ -786,7 +787,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.15.0</span>
+    <span id="app-version">v4.16.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -1330,6 +1331,8 @@ function buildCharts() {
   const data = state.allData;
   const outer = document.getElementById('charts-outer');
   viewW = outer.clientWidth || window.innerWidth;
+  // 赤の選択線の画面内位置をSCRUB_POSに厳密一致させる（バッジ時刻とのズレ防止）
+  document.getElementById('scrub-line').style.left = (SCRUB_POS * 100) + '%';
   // 24時間ぶんが画面幅に収まるpx/hを算出（1日≒1画面）
   pxPerHourVal = (viewW - PADDING_L - PADDING_R) / HOURS_PER_SCREEN;
   const totalW = chartTotalW();
@@ -1795,7 +1798,7 @@ function nowIndexFrac() {
   return frac;
 }
 
-// 過去域の薄いグレーアウト + 現在時刻の実線マーカー（uPlot draw hook）
+// 過去域の薄いグレーアウト（現在時刻＝赤の選択線に一致するため縦線は描かない）
 function drawNowMarker(u) {
   const frac = nowIndexFrac();
   if (frac == null) return;
@@ -1805,34 +1808,15 @@ function drawNowMarker(u) {
   const x0 = u.valToPos(-0.5, 'x', true);
   const xNow = u.valToPos(frac, 'x', true);
   ctx.save();
-  // 過去域をほんの少しグレーアウト
+  // 過去域をほんの少しグレーアウト（現在時刻より前）
   ctx.fillStyle = 'rgba(110,110,110,0.16)';
   ctx.fillRect(x0, 0, xNow - x0, H);
-  // 現在時刻線（実線・青）
-  ctx.strokeStyle = '#2570c9';
-  ctx.lineWidth = 2 * pr;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.moveTo(xNow, 0);
-  ctx.lineTo(xNow, H);
-  ctx.stroke();
-  // 「現在」ラベル（skyチャートのみ）
-  if (u === skyChart) {
-    const label = '現在';
-    ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = '#2570c9';
-    ctx.fillRect(xNow - tw / 2 - 3 * pr, 14 * pr, tw + 6 * pr, 13 * pr);
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.fillText(label, xNow, 24 * pr);
-    // 過去域が解析値（実測ではない）である旨の注記
-    if (state.rangeMode === 'full' && xNow - x0 > 40 * pr) {
-      ctx.fillStyle = 'rgba(90,90,90,0.8)';
-      ctx.font = `bold ${8.5 * pr}px 'Noto Sans JP', sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.fillText('◀ 過去=解析値（実測ではない）', x0 + 3 * pr, 42 * pr);
-    }
+  // 過去域が解析値（実測ではない）である旨の注記（skyチャートのみ）
+  if (u === skyChart && state.rangeMode === 'full' && xNow - x0 > 40 * pr) {
+    ctx.fillStyle = 'rgba(90,90,90,0.8)';
+    ctx.font = `bold ${8.5 * pr}px 'Noto Sans JP', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText('◀ 過去=解析値（実測ではない）', x0 + 3 * pr, 42 * pr);
   }
   ctx.restore();
 }
