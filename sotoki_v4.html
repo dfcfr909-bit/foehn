@@ -329,6 +329,77 @@ html, body {
 }
 
 /* ============================================================
+   AI全国概況カード（outlook.jsonから）
+   ============================================================ */
+#ai-outlook {
+  margin: 0 12px 3px;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+#ai-outlook-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#ai-outlook-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ai-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 5px;
+  margin-left: 5px;
+}
+#ai-outlook-pattern {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#ai-outlook-caret {
+  font-size: 11px;
+  color: var(--text3);
+  transition: transform 0.2s;
+}
+#ai-outlook.collapsed #ai-outlook-caret { transform: rotate(-90deg); }
+#ai-outlook.collapsed #ai-outlook-body,
+#ai-outlook.collapsed #ai-outlook-foot { display: none; }
+#ai-outlook-body { margin-top: 6px; }
+.ai-sec { margin-top: 6px; }
+.ai-sec:first-child { margin-top: 0; }
+.ai-sec-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 1px;
+}
+.ai-sec-text {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+}
+#ai-outlook-foot {
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--text3);
+  line-height: 1.3;
+}
+
+/* ============================================================
    CHARTS AREA
    ============================================================ */
 /* チャート領域（1日≒1画面の広い時間軸を横スクロール）。
@@ -827,7 +898,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.17.0</span>
+    <span id="app-version">v4.18.0</span>
     <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
     <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
@@ -877,6 +948,17 @@ html, body {
       <div id="abc-sub">──</div>
     </div>
     <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
+  </div>
+
+  <!-- AI全国概況カード（outlook.jsonを読むだけ。未生成時は非表示） -->
+  <div id="ai-outlook" class="collapsed" style="display:none" onclick="toggleOutlook()">
+    <div id="ai-outlook-head">
+      <span id="ai-outlook-title">🧭 AI全国概況<span class="ai-tag">参考</span></span>
+      <span id="ai-outlook-pattern"></span>
+      <span id="ai-outlook-caret">▾</span>
+    </div>
+    <div id="ai-outlook-body"></div>
+    <div id="ai-outlook-foot"></div>
   </div>
 
   <!-- Legend + 表示範囲トグル -->
@@ -2543,6 +2625,39 @@ window.addEventListener('resize', () => {
 /* ============================================================
    BOOT
    ============================================================ */
+/* ============================================================
+   AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）
+   ============================================================ */
+function toggleOutlook() {
+  document.getElementById('ai-outlook').classList.toggle('collapsed');
+}
+async function loadOutlook() {
+  const el = document.getElementById('ai-outlook');
+  try {
+    const res = await fetch('outlook.json?_=' + Math.floor(Date.now() / 3600e3), { cache: 'no-cache' });
+    if (!res.ok) return;
+    const o = await res.json();
+    if (!o || !Array.isArray(o.sections) || o.sections.length === 0) return;   // 未生成→非表示のまま
+    document.getElementById('ai-outlook-pattern').textContent = o.pattern || '';
+    document.getElementById('ai-outlook-body').innerHTML = o.sections.map(s =>
+      `<div class="ai-sec"><div class="ai-sec-label">${escapeHtml(s.label || '')}</div>` +
+      `<div class="ai-sec-text">${escapeHtml(s.text || '')}</div></div>`
+    ).join('');
+    const when = o.generatedAt ? new Date(o.generatedAt) : null;
+    const stamp = when ? `${when.getMonth() + 1}/${when.getDate()} ${when.getHours().toString().padStart(2, '0')}:00更新` : '';
+    document.getElementById('ai-outlook-foot').textContent =
+      `${stamp}　${o.disclaimer || ''}`.trim();
+    el.style.display = 'block';
+  } catch (e) {
+    /* 概況が無くてもアプリ本体は通常動作（非破壊） */
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+loadOutlook();
+
 (function boot() {
   hideLoading();
   const last = loadLast();
