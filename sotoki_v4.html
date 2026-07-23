@@ -106,11 +106,43 @@ html, body {
   padding-bottom: 3px;
 }
 
-#location-name {
+/* お気に入り地点ロータリー：水平スクロールスナップで地点を切替 */
+#fav-rotary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 0;
+}
+#fav-rotary::-webkit-scrollbar { display: none; }
+.fav-chip {
+  scroll-snap-align: center;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 15px;
+  background: var(--bg2);
+  color: var(--text2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.fav-chip.active { background: var(--text); color: #fff; }
+.fav-rotary-empty {
   flex: 1;
   font-size: 12px;
   font-weight: 700;
-  color: var(--text2);
+  color: var(--text3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -179,7 +211,16 @@ html, body {
 }
 #hud-temp { color: #e05020; }
 #hud-wind { color: var(--wind-col); }
-#hud-apparent { color: #e05020; opacity: 0.75; font-size: 28px; }
+#hud-precip { color: var(--rain-col); }
+/* 気温の横に体感を小さく併記 */
+.hud-temp-row { display: flex; align-items: baseline; gap: 3px; }
+#hud-apparent {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: #e05020;
+  opacity: 0.7;
+  line-height: 1;
+}
 
 /* ============================================================
    ABC CARD
@@ -745,8 +786,9 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.9.0</span>
-    <span id="location-name">──</span>
+    <span id="app-version">v4.10.0</span>
+    <!-- お気に入り地点ロータリー（水平スクロールで地点選択） -->
+    <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -760,12 +802,15 @@ html, body {
       <span class="hud-label">JST</span>
     </div>
     <div class="hud-item">
-      <span id="hud-temp" class="hud-val">--</span>
-      <span class="hud-label">気温 °C</span>
+      <span class="hud-temp-row">
+        <span id="hud-temp" class="hud-val">--</span>
+        <span id="hud-apparent">--</span>
+      </span>
+      <span class="hud-label">気温 / 体感 °C</span>
     </div>
     <div class="hud-item">
-      <span id="hud-apparent" class="hud-val">--</span>
-      <span class="hud-label">体感 °C</span>
+      <span id="hud-precip" class="hud-val">--</span>
+      <span class="hud-label">降水 mm</span>
     </div>
     <div class="hud-item">
       <span id="hud-wind" class="hud-val">--</span>
@@ -1057,8 +1102,88 @@ function render() {
 }
 
 function updateLocationName() {
-  document.getElementById('location-name').textContent = state.locationName;
+  renderFavRotary();
 }
+
+/* ------ お気に入り地点ロータリー（ヘッダー） ------ */
+let favScrollTimer = null;
+let favRotaryProgrammatic = false;   // プログラム的スクロールを無視するフラグ
+
+// 2地点が同一か（緯度経度の近接判定）
+function sameLoc(a, b) {
+  return Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lon - b.lon) < 1e-4;
+}
+
+function renderFavRotary() {
+  const el = document.getElementById('fav-rotary');
+  const favs = loadFavs();
+  // 現在地点がお気に入りに無ければ先頭に一時チップとして表示
+  const items = favs.slice();
+  const curIsFav = favs.some(f => sameLoc(f, state));
+  if (!curIsFav) items.unshift({ name: state.locationName, lat: state.lat, lon: state.lon });
+
+  if (!items.length) {
+    el.innerHTML = `<span class="fav-rotary-empty">${state.locationName || '──'}</span>`;
+    return;
+  }
+  el.innerHTML = '';
+  items.forEach(f => {
+    const chip = document.createElement('button');
+    chip.className = 'fav-chip' + (sameLoc(f, state) ? ' active' : '');
+    chip.textContent = f.name;
+    chip.dataset.lat = f.lat;
+    chip.dataset.lon = f.lon;
+    chip.dataset.name = f.name;
+    chip.addEventListener('click', () => selectFav(f.lat, f.lon, f.name));
+    el.appendChild(chip);
+  });
+  centerActiveChip();
+}
+
+// アクティブチップをロータリー中央へ（プログラム的スクロール）
+function centerActiveChip() {
+  const el = document.getElementById('fav-rotary');
+  const active = el.querySelector('.fav-chip.active');
+  if (!active) return;
+  favRotaryProgrammatic = true;
+  const target = active.offsetLeft - (el.clientWidth - active.offsetWidth) / 2;
+  el.scrollTo({ left: Math.max(0, target), behavior: 'auto' });
+  requestAnimationFrame(() => { favRotaryProgrammatic = false; });
+}
+
+// 地点選択（現在地点と同じなら中央合わせのみ、違えば天気取得）
+function selectFav(lat, lon, name) {
+  if (sameLoc({ lat, lon }, state)) { centerActiveChip(); return; }
+  state.lat = lat;
+  state.lon = lon;
+  state.locationName = name;
+  fetchWeather(lat, lon);
+}
+
+// スクロール中央にあるチップを返す
+function centeredChip() {
+  const el = document.getElementById('fav-rotary');
+  const cx = el.scrollLeft + el.clientWidth / 2;
+  let best = null, bestD = Infinity;
+  el.querySelectorAll('.fav-chip').forEach(chip => {
+    const c = chip.offsetLeft + chip.offsetWidth / 2;
+    const d = Math.abs(c - cx);
+    if (d < bestD) { bestD = d; best = chip; }
+  });
+  return best;
+}
+
+// 水平スクロールが止まったら中央のチップを選択（クルクル回して選択）
+document.getElementById('fav-rotary').addEventListener('scroll', () => {
+  if (favRotaryProgrammatic) return;
+  clearTimeout(favScrollTimer);
+  favScrollTimer = setTimeout(() => {
+    const chip = centeredChip();
+    if (chip && !chip.classList.contains('active')) {
+      selectFav(parseFloat(chip.dataset.lat), parseFloat(chip.dataset.lon), chip.dataset.name);
+    }
+  }, 220);
+}, { passive: true });
 
 /* ============================================================
    HUD
@@ -1070,7 +1195,10 @@ function updateHUD() {
   const mm = d.time.getMinutes().toString().padStart(2,'0');
   document.getElementById('hud-time').textContent = `${hh}:${mm}`;
   document.getElementById('hud-temp').textContent = d.temp != null ? Math.round(d.temp) : '--';
-  document.getElementById('hud-apparent').textContent = d.apparent != null ? Math.round(d.apparent) : '--';
+  document.getElementById('hud-apparent').textContent = d.apparent != null ? Math.round(d.apparent) + '°' : '--';
+  const p = d.precip || 0;
+  document.getElementById('hud-precip').textContent =
+    p === 0 ? '0' : (p < 10 ? p.toFixed(1) : Math.round(p));
   document.getElementById('hud-wind').textContent = d.wind != null ? Math.round(d.wind) : '--';
 }
 
@@ -1928,6 +2056,7 @@ function renderFavList() {
       favs2.splice(i, 1);
       saveFavs(favs2);
       renderFavList();
+      renderFavRotary();
     });
     el.addEventListener('click', () => {
       state.lat = f.lat;
@@ -1947,6 +2076,7 @@ function saveCurrentAsFav() {
   favs.push({ name, lat: state.lat, lon: state.lon });
   saveFavs(favs);
   renderFavList();
+  renderFavRotary();
   alert('保存しました');
 }
 
@@ -2010,9 +2140,15 @@ async function fetchRankData(dates) {
   const lats  = peaks.map(p => p.lat).join(',');
   const lons  = peaks.map(p => p.lon).join(',');
   const elevs = peaks.map(p => p.elev).join(',');
+  // start_date/end_dateではなくforecast_daysで取得（将来日の欠落を防ぐ確実な方式）。
+  // 今日から対象最終日までをカバーする日数を算出し、判定は日付でフィルタ
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const maxDate = new Date(dates[dates.length - 1] + 'T00:00');
+  const daysAhead = Math.round((maxDate - today0) / 86400e3);
+  const fdays = Math.min(16, Math.max(1, daysAhead + 1));
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&elevation=${elevs}` +
     `&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,weathercode,cloudcover` +
-    `&timezone=Asia%2FTokyo&start_date=${dates[0]}&end_date=${dates[dates.length - 1]}&models=jma_seamless`;
+    `&timezone=Asia%2FTokyo&forecast_days=${fdays}&models=jma_seamless`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   let json = await res.json();
