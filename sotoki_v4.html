@@ -1041,7 +1041,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.26.0</span>
+    <span id="app-version">v4.27.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1205,12 +1205,15 @@ const state = {
 const PAST_HOURS = 72;   // 「実績+予報」表示時に遡る時間数
 
 // ABC閾値
+// 判定閾値（A→B→Cの境界）。てんくら（登山指数）の水準に合わせて調整。
+//   風速: 日帰りは10m/sで注意(B)、15m/sで不適(C)。幕営はテントが風に弱いぶん厳しめ。
+//   ※判定ロジック本体（abcScore/abcScoreInv/judgePoint）は変更せず閾値のみで調整する
 const THRESH = {
-  day:  { windA:5,  windB:10 },
-  camp: { windA:3,  windB:8  },
+  day:  { windA:10, windB:15 },
+  camp: { windA:8,  windB:12 },
   apparentA: -3, apparentB: -15,
-  snowA: 0.5, snowB: 2,
-  rainA: 1,   rainB: 3,
+  snowA: 1,   snowB: 3,
+  rainA: 2,   rainB: 5,
   dpressA: 6, dpressB: 10,
 };
 
@@ -1264,7 +1267,9 @@ const CLOUD_LEVELS = [
 // 補助データ（気圧面ごとの雲量 + 突風）。JMAモデルは突風/気圧面雲量を返さないため
 // modelsを指定せず（best_match）に別リクエストで取得する。失敗しても本体に影響させない。
 async function fetchSupplemental(lat, lon) {
-  const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+  // メインと同じ標高を指定し、地形条件を揃える（突風が過大にならないように）
+  const elev = (typeof state.elevation === 'number') ? `&elevation=${Math.round(state.elevation)}` : '';
+  const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${elev}` +
     `&timezone=Asia%2FTokyo&past_days=3&forecast_days=4&hourly=`;
   const cloudVars = CLOUD_LEVELS.map(([hPa]) => `cloud_cover_${hPa}hPa`).join(',');
   const get = async vars => {
