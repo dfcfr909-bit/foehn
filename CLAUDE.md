@@ -18,8 +18,11 @@
 - `docs/handoff.md` — **引き継ぎメモ（現状・未完事項・経緯）**
 - `docs/requirements_renewal.md` — 全面改修 要件定義書
 - `docs/ai_outlook.md` — AI全国概況（GLM × GitHub Actions）
+- `docs/install.md` — PWAインストール手順・アイコン再生成
+- `manifest.webmanifest` / `sw.js` / `icons/` — PWA一式（アイコン原図は `icons/icon.svg`）
 - `tests/` — スモークテスト（改修のたびに全件実行する）
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
+- `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
 
 ## 改修計画
 

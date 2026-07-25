@@ -1,0 +1,35 @@
+<!-- SotoKi アプリアイコンの原図。ここからPNGを書き出す（scripts/gen-icons.mjs）。
+     配色はアプリ本体のテーマ変数に合わせている（朝焼け→空、山は文字色、日は橙）。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#87ceeb"/>
+      <stop offset="55%"  stop-color="#cfe4ee"/>
+      <stop offset="100%" stop-color="#f9a875"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景（マスカブル用に全面を塗る） -->
+  <rect width="512" height="512" fill="url(#sky)"/>
+
+  <!-- 太陽 -->
+  <circle cx="352" cy="168" r="52" fill="#e05020"/>
+
+  <!-- 奥の稜線 -->
+  <path d="M0 372 L118 244 L196 322 L268 240 L360 356 L420 300 L512 392 L512 512 L0 512 Z"
+        fill="#5b6672" opacity="0.55"/>
+
+  <!-- 主稜線（雪をいただいた峰） -->
+  <path d="M0 452 L150 268 L232 356 L318 232 L512 452 Z" fill="#1a1a1a"/>
+  <path d="M318 232 L366 287 L344 302 L318 284 L292 302 L266 310 Z" fill="#ffffff"/>
+  <path d="M150 268 L186 307 L168 318 L150 302 L130 318 L112 315 Z" fill="#ffffff"/>
+
+  <!-- 風（アプリの風速色） -->
+  <g stroke="#ffffff" stroke-width="15" stroke-linecap="round" opacity="0.9" fill="none">
+    <path d="M64 150 H190"/>
+    <path d="M96 200 H236"/>
+  </g>
+
+  <!-- 地面 -->
+  <rect y="452" width="512" height="60" fill="#1a1a1a"/>
+</svg>

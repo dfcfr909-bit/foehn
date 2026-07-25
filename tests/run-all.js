@@ -3,11 +3,13 @@ const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
 const TESTS = [
-  ['smoke_window',  '表示ウィンドウ（現在〜+72h・73点）'],
-  ['smoke_hscroll', 'スライダー操作・現在ボタン・4パネル'],
+  ['smoke_window',  '表示ウィンドウ（実績72h+予報168h・241点）・祝日判定'],
+  ['smoke_hscroll', 'スクラバー帯操作・現在ボタン・4パネル'],
   ['smoke_rank',    'ランキング（20山域・日付切替・峰タップ遷移）'],
   ['smoke_align',   '赤の選択線と選択indexの位置一致・タップ選択'],
   ['smoke_outlook', 'AI全国概況カードの表示/非表示'],
+  ['smoke_favpicker', 'お気に入り円柱ピッカー（円周配置・省スペース・選択確定）'],
+  ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
 ];
 
 let failed = 0;

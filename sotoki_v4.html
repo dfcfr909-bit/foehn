@@ -8,6 +8,13 @@
 <meta name="apple-mobile-web-app-title" content="SotoKi">
 <title>SotoKi v4</title>
 
+<!-- PWA（デスクトップ／ホーム画面へインストールするための情報） -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <!-- Leaflet JS -->
@@ -83,71 +90,84 @@ html, body {
 #header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px 8px;
+  gap: 6px;
+  padding: 4px 10px;
   background: var(--surface);
   border-bottom: 2px solid var(--border);
   flex-shrink: 0;
   z-index: 10;
 }
 
+/* ヘッダー左：小さいブランド行の下に、大きな日付を置く */
+#header-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+#app-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1;
+}
 #app-logo {
   font-family: var(--font-display);
-  font-size: 28px;
-  letter-spacing: 2px;
-  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text3);
   line-height: 1;
 }
 #app-version {
-  font-size: 9px;
+  font-size: 8px;
   font-family: var(--font-mono);
   color: var(--text3);
-  align-self: flex-end;
-  padding-bottom: 3px;
+  line-height: 1;
 }
 
-/* お気に入り地点バー（全幅・独立行）。中央のチップが選択地点 */
-#fav-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  position: relative;
-}
-.fav-edge {
-  flex-shrink: 0;
-  color: var(--text3);
-  font-size: 13px;
-  font-weight: 700;
-  pointer-events: none;
-}
-/* お気に入り地点ロータリー：水平スクロールスナップで地点を切替 */
+/* お気に入り地点ピッカー：縦軸まわりに回る円柱の側面に地点名が書いてあるイメージ。
+   スクロールは入力（慣性・スナップ）専用で、駒の見た目の位置はJSが円柱上の
+   座標として計算する。駒は左右で中央へ収束するため、地点数が増えても
+   横幅は円柱の直径（FAV_R*2）を超えない。 */
 #fav-rotary {
-  flex: 1;
+  /* 画面のおよそ半分を使い、右端（★の手前）へ寄せる */
+  flex: 0 0 50%;
+  margin-left: auto;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  height: 38px;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
-  padding: 2px 0;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  /* 枠が狭いので、端に回り込んだ駒はフェードして消す（窓から円柱を覗く見え方） */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
 }
 #fav-rotary::-webkit-scrollbar { display: none; }
-/* 両端スペーサー：端の地点も画面中央へ寄せられるようにする（幅はJSで設定） */
-.fav-spacer { flex: 0 0 auto; pointer-events: none; }
+/* スクロール量を作るだけの透明トラック（幅はJSで設定） */
+#fav-track { height: 100%; }
+/* 駒を載せる舞台。stickyで表示領域に貼り付き、中身はスクロールしない。
+   幅はJSが表示領域幅に合わせる（left:50%を効かせるため） */
+#fav-stage {
+  position: sticky;
+  left: 0;
+  height: 100%;
+  perspective: 300px;
+  perspective-origin: 50% 50%;
+  transform-style: preserve-3d;
+}
 .fav-chip {
-  scroll-snap-align: center;
-  flex: 0 0 auto;
-  min-height: 30px;
-  padding: 4px 11px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  padding: 3px 10px;
   border: 2px solid transparent;
-  border-radius: 15px;
+  border-radius: 13px;
   background: var(--bg2);
   color: var(--text2);
   font-family: var(--font-ui);
@@ -155,16 +175,17 @@ html, body {
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
-  opacity: 0.55;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+  /* transform / opacity はJSが毎フレーム書くのでtransition対象から外す */
+  transition: background 0.15s, color 0.15s;
 }
-/* 今見ている地点：濃い塗り＋枠＋不透明で明確に */
-.fav-chip.active {
+/* 円柱の正面（＝選択中）の駒。回している最中も正面の駒がこの見た目になる */
+.fav-chip.centered {
   background: var(--accent, #e05020);
   color: #fff;
   border-color: rgba(0,0,0,0.15);
-  opacity: 1;
-  font-size: 13px;
 }
 /* 現在地点のお気に入り登録トグル（ワンタップ） */
 #btn-fav-star {
@@ -180,38 +201,19 @@ html, body {
   padding: 0;
 }
 #btn-fav-star.on { color: var(--b-col); }
+/* 地点が1件も無いときの表示（stage上に中央寄せで置く） */
 .fav-rotary-empty {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 100%;
   font-size: 12px;
   font-weight: 700;
   color: var(--text3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.mode-toggle {
-  display: flex;
-  background: var(--bg2);
-  border-radius: 20px;
-  padding: 2px;
-  gap: 2px;
-}
-.mode-btn {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 9px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: 18px;
-  color: var(--text2);
-  transition: all 0.2s;
-  font-family: var(--font-ui);
-}
-.mode-btn.active {
-  background: var(--text);
-  color: #fff;
 }
 
 
@@ -472,7 +474,7 @@ html, body {
 #scrub-line {
   position: absolute;
   top: 0;
-  left: 14%;
+  left: 13%;
   width: 0;
   height: 100%;
   overflow: visible;
@@ -511,7 +513,7 @@ html, body {
 #scrub-popup {
   position: absolute;
   top: 4px;
-  left: 14%;
+  left: 13%;
   z-index: 8;
   min-width: 116px;
   background: rgba(28,32,40,0.92);
@@ -559,59 +561,55 @@ html, body {
 /* ============================================================
    FOOTER
    ============================================================ */
-/* 時間スライド用スクロールバー */
+/* 時間スクラバー帯。
+   細いスライダーでは1時間が約4.6pxしかなく狙った時刻に止められなかったため、
+   横スクロール帯に置き換えた。帯はチャートと同じ座標系（同じ余白・同じpx/h・
+   同じスクロール量）を使うので、帯の目盛りは真上のチャートの同じ時刻の真下に来る。
+   帯にはABC判定・降水・昼夜のミニマップを描く（どこが荒れるか一目で分かる）。 */
 #time-scroll {
   flex-shrink: 0;
-  padding: 2px 12px 0;
-  background: var(--surface);
+  position: relative;
+  height: 60px;
+  /* 両端余白（データの無い領域）はこの地色が見える。帯の描画域と区別できる */
+  background: var(--bg2);
   border-top: 1px solid var(--border);
 }
-#time-range {
-  width: 100%;
-  margin: 0;
-  height: 22px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
+#scrubber {
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;              /* 横のなぞりを確実に拾う */
+  overscroll-behavior-x: contain;   /* 端で画面全体が引っ張られないように */
 }
-#time-range::-webkit-slider-runnable-track {
-  height: 5px;
-  border-radius: 3px;
-  background: var(--bg2);
+#scrubber::-webkit-scrollbar { display: none; }
+#scrubber-inner {
+  height: 100%;
+  box-sizing: content-box;   /* 幅・両端余白はJSで設定 */
 }
-#time-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 26px;
-  height: 16px;
-  margin-top: -5.5px;
-  border-radius: 8px;
+#scrubber-canvas { display: block; height: 100%; }
+/* 選択インジケータ。leftはJSがチャートの赤い選択線とまったく同じxに設定する */
+#scrubber-center {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
   background: #e03010;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  pointer-events: none;
+  z-index: 2;
 }
-#time-range::-moz-range-track {
-  height: 5px;
-  border-radius: 3px;
-  background: var(--bg2);
-}
-#time-range::-moz-range-thumb {
-  width: 24px;
-  height: 15px;
-  border-radius: 8px;
-  background: #e03010;
-  border: 2px solid #fff;
-}
-#time-scroll-labels {
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--text3);
-  margin-top: -3px;
-  padding-bottom: 2px;
+#scrubber-center::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #e03010;
 }
 
 #footer {
@@ -994,12 +992,16 @@ html, body {
 /* ============================================================
    LEGEND
    ============================================================ */
+/* 凡例は下段（スクラバー帯とフッターの間）。上部は日付と地点に譲っている */
 #legend {
   display: flex;
   gap: 10px;
-  padding: 3px 14px 3px;
+  padding: 3px 14px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  justify-content: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
 }
 /* 雲量の濃淡凡例（淡→濃のグラデーション） */
 #cloud-legend {
@@ -1026,8 +1028,28 @@ html, body {
   border-radius: 2px;
   flex-shrink: 0;
 }
-#range-toggle { margin-left: auto; }
-#range-toggle .mode-btn { font-size: 10px; padding: 4px 8px; }
+/* 選択中の日付バッジ（ヘッダー左上。画面で一番目立つ位置） */
+#date-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  line-height: 1.05;
+}
+#date-main {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+}
+/* 日曜・祝日は赤、土曜は青 */
+#date-badge.sun #date-main, #date-badge.holiday #date-main { color: #d02020; }
+#date-badge.sat #date-main { color: #1f6fd0; }
+#date-holiday {
+  font-size: 12px;
+  font-weight: 700;
+  color: #d02020;
+}
 </style>
 </head>
 <body>
@@ -1039,21 +1061,15 @@ html, body {
     <div id="loading-text">気象データ取得中…</div>
   </div>
 
-  <!-- Header -->
+  <!-- Header。お気に入り円柱をロゴの右に同居させ、独立バーの1行ぶんを削っている -->
   <div id="header">
-    <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.29.0</span>
-    <div class="mode-toggle">
-      <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
-      <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
+    <!-- 左上：選択中の日付を一番大きく出す。休日・祝日は赤字、祝日は名称も -->
+    <div id="header-left">
+      <div id="app-brand"><span id="app-logo">SotoKi</span><span id="app-version">v4.35.0</span></div>
+      <div id="date-badge"><span id="date-main">--</span><span id="date-holiday"></span></div>
     </div>
-  </div>
-
-  <!-- お気に入り地点バー（全幅。中央のチップが選択地点） -->
-  <div id="fav-bar">
-    <span class="fav-edge">◂</span>
-    <div id="fav-rotary"><span class="fav-rotary-empty">──</span></div>
-    <span class="fav-edge">▸</span>
+    <!-- スクロールは入力専用。駒はstickyなstage上に絶対配置して円柱の側面に並べる -->
+    <div id="fav-rotary"><div id="fav-track"><div id="fav-stage"></div></div></div>
     <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
   </div>
 
@@ -1071,18 +1087,6 @@ html, body {
   </div>
 
   <!-- Legend + 表示範囲トグル -->
-  <div id="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#e05020"></div>気温</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#1abebe"></div>降水</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3c78dc"></div>降雪</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
-    <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <div id="range-toggle" class="mode-toggle">
-      <button class="mode-btn active" data-range="forecast" onclick="setRange('forecast')">予報</button>
-      <button class="mode-btn" data-range="full" onclick="setRange('full')">実績+予報</button>
-    </div>
-  </div>
 
   <!-- Charts（1日≒1画面の広い時間軸を横スクロール） -->
   <div id="charts-outer">
@@ -1118,9 +1122,19 @@ html, body {
 
   <!-- 時間スライド用スクロールバー（チャート下） -->
   <div id="time-scroll">
-    <input type="range" id="time-range" min="0" max="1000" value="0" step="1"
-           aria-label="時間スライド" oninput="onTimeRangeInput(this.value)">
-    <div id="time-scroll-labels"><span id="ts-start">--</span><span id="ts-end">--</span></div>
+    <div id="scrubber">
+      <div id="scrubber-inner"><canvas id="scrubber-canvas"></canvas></div>
+    </div>
+    <div id="scrubber-center"></div>
+  </div>
+
+  <div id="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#e05020"></div>気温</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1abebe"></div>降水</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3c78dc"></div>降雪</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
+    <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
   </div>
 
   <!-- Footer -->
@@ -1178,7 +1192,7 @@ html, body {
       <input type="date" id="rank-date-input" onchange="setRankDate('custom')" title="任意の日付を選択">
     </div>
     <div id="rank-note">
-      <span id="rank-window-label">6〜18時</span>の最悪値で判定（<span id="rank-mode-label">日帰り</span>モード） /
+      <span id="rank-window-label">6〜18時</span>の最悪値で判定（日帰り基準） /
       山域＝代表峰の最良値、括弧は平均 / 風:最大m/s 雨:合計mm 雪:合計cm 温:最低℃
     </div>
     <div id="rank-list"></div>
@@ -1194,14 +1208,13 @@ const state = {
   lat: 36.57,
   lon: 137.65,
   locationName: '立山・黒部',
-  mode: 'day',
-  allData: null,     // 表示データ（rangeModeでスライスした範囲）
+  mode: 'day',       // 日帰り固定（v4.30.0でモード切替UIを撤去。THRESH.campは復活用に温存）
+  allData: null,     // 表示データ（実績PAST_HOURS＋予報FORECAST_HOURSを切り出した範囲）
   fullData: null,    // 取得した全データ（過去含む。再取得なしで範囲切替）
   daily: null,       // 日の出・日の入り
   elevation: null,   // 地点標高(m)
   cloudProfiles: null,   // 時刻→[[高度m, 雲量%], ...]（気圧面データ。無ければ3層合成）
   sliderIndex: 0,    // デフォルト：現在時刻
-  rangeMode: 'forecast',  // 'forecast'=現在〜+72h / 'full'=-72h〜+72h
 };
 
 const PAST_HOURS = 72;   // 「実績+予報」表示時に遡る時間数
@@ -1212,7 +1225,7 @@ const PAST_HOURS = 72;   // 「実績+予報」表示時に遡る時間数
 //     単位を正した上で、当初のm/s基準の閾値に戻している。
 const THRESH = {
   day:  { windA:5,  windB:10 },
-  camp: { windA:3,  windB:8  },
+  camp: { windA:3,  windB:8  },   // 切替UIは撤去済み。judgePointの構造を変えないため定義は残す
   apparentA: -3, apparentB: -15,
   snowA: 0.5, snowB: 2,
   rainA: 1,   rainB: 3,
@@ -1220,23 +1233,14 @@ const THRESH = {
 };
 
 /* ============================================================
-   MODE
-   ============================================================ */
-function setMode(m) {
-  state.mode = m;
-  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-  if (!state.allData) return;
-  updatePopup();
-  if (windChart) windChart.redraw();   // 風速バーの閾値色のみ更新
-}
-
-/* ============================================================
    DATA FETCH
    ============================================================ */
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
-  // past_days=3で過去3日分（解析値）も取得。表示範囲はrangeModeでスライス
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=4&models=jma_seamless`;
+  // past_days=3で過去3日分（解析値）も、forecast_days=9で先7日ぶんに余裕を持たせて取得。
+  // 表示範囲は applyRange で切り出す。jma_seamlessが実際に何日先まで返すかはモデル依存
+  // （GSMの予報期間まで）なので、足りない分はprocessDataが末尾のnullを切り落とす
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=jma_seamless`;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1246,7 +1250,7 @@ async function fetchWeather(lat, lon) {
     state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // 地点標高(m)
     state.lat = lat;
     state.lon = lon;
-    applyRange();                                // rangeModeに応じてallDataを切り出し
+    applyRange();                                // 表示範囲を切り出し
     saveLast(lat, lon, state.locationName);
     // DOM反映後に描画
     requestAnimationFrame(() => {
@@ -1272,7 +1276,7 @@ async function fetchSupplemental(lat, lon) {
   // メインと同じ標高を指定し、地形条件を揃える（突風が過大にならないように）
   const elev = (typeof state.elevation === 'number') ? `&elevation=${Math.round(state.elevation)}` : '';
   const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${elev}` +
-    `&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=4&hourly=`;
+    `&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&hourly=`;
   const cloudVars = CLOUD_LEVELS.map(([hPa]) => `cloud_cover_${hPa}hPa`).join(',');
   const get = async vars => {
     const res = await fetch(base + vars);
@@ -1355,30 +1359,21 @@ function indexOfNow(data) {
   return 0;
 }
 
-// rangeModeに応じてfullDataから表示範囲を切り出す（再取得なし）
+// fullDataから表示範囲（実績PAST_HOURS＋予報FORECAST_HOURS）を切り出す（再取得なし）
 function applyRange() {
   const full = state.fullData;
   if (!full || !full.length) return;
   const nowIdx = indexOfNow(full);
-  const start = state.rangeMode === 'full' ? Math.max(0, nowIdx - PAST_HOURS) : nowIdx;
+  const start = Math.max(0, nowIdx - PAST_HOURS);
   const end = Math.min(full.length, nowIdx + FORECAST_HOURS + 1);
   state.allData = full.slice(start, end);
   HOURS = state.allData.length;
   state.sliderIndex = nowIdx - start;   // 現在時刻の位置にカーソルを合わせる
 }
 
-function setRange(mode) {
-  if (mode === state.rangeMode || !state.fullData) return;
-  state.rangeMode = mode;
-  document.querySelectorAll('#range-toggle .mode-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.range === mode));
-  applyRange();
-  render();
-}
-
 function processData(json) {
   const h = json.hourly;
-  const len = h.time.length; // 120h（past_days=1 + forecast_days=4）
+  const len = h.time.length; // past_days + forecast_days ぶん
   const data = [];
   for (let i = 0; i < len; i++) {
     const dt = new Date(h.time[i]);
@@ -1401,7 +1396,11 @@ function processData(json) {
       dpress: pres6,
     });
   }
-  return data;
+  // モデルの予報期間を超えた末尾はnullで返るため切り落とす。
+  // forecast_daysに何を指定しても「実際に値がある所まで」が表示範囲になる
+  let end = data.length;
+  while (end > 0 && data[end - 1].temp == null) end--;
+  return data.slice(0, end);
 }
 
 /* ============================================================
@@ -1445,9 +1444,10 @@ function render() {
     scrollToIndex(state.sliderIndex);   // 選択時刻が見える位置へスクロール
     positionScrubLine();                // 赤の選択線を選択時刻の位置へ
     updatePopup();
+    updateDateBadge();
     resetPopupPosition();
     updateNowButton();
-    updateTimeScrollLabels();
+    layoutScrubber();
     updateParticles();
     hideLoading();
   } catch (e) {
@@ -1461,47 +1461,163 @@ function updateLocationName() {
   renderFavRotary();
 }
 
-/* ------ お気に入り地点ロータリー（ヘッダー） ------ */
+/* ------ お気に入り地点ピッカー（縦軸まわりに回る円柱） ------ */
+// 円柱の側面に地点名が書いてあるイメージ。駒は円周上に置き、正面に来たものが選択地点。
+// スクロールは入力（慣性・スナップ）専用で、駒の位置はここで円柱の座標として計算する。
+const FAV_STEP  = 54;   // 駒1つぶんのスクロール量(px)。回す手応えの重さ
+const FAV_ANGLE = 42;   // 駒1つぶんの回転角(deg)。枠が広がったぶん駒を多めに見せる
+const FAV_R     = 96;   // 円柱の半径(px)。画面のおよそ半分を使う大きさ
+
 let favScrollTimer = null;
 let favRotaryProgrammatic = false;   // プログラム的スクロールを無視するフラグ
+let favRotaryKey = '';               // 今DOMが表している地点リスト（再構築の要否判定）
+let favRafPending = false;
 
 // 2地点が同一か（緯度経度の近接判定）
 function sameLoc(a, b) {
   return Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lon - b.lon) < 1e-4;
 }
 
+// 円柱に並べる地点（お気に入り＋未登録なら現在地点を先頭に）
+function favRotaryItems() {
+  const favs = loadFavs();
+  const items = favs.slice();
+  if (!favs.some(f => sameLoc(f, state))) {
+    items.unshift({ name: state.locationName, lat: state.lat, lon: state.lon });
+  }
+  return items;
+}
+
+// 現在の地点に対応する駒
+function currentFavChip() {
+  return Array.from(document.querySelectorAll('#fav-stage .fav-chip')).find(c =>
+    sameLoc({ lat: parseFloat(c.dataset.lat), lon: parseFloat(c.dataset.lon) }, state)) || null;
+}
+
+// スクロール量 → 何番目の駒が正面か（小数。0が先頭）
+function favPos() {
+  const el = document.getElementById('fav-rotary');
+  return el ? el.scrollLeft / FAV_STEP : 0;
+}
+
 function renderFavRotary() {
   const el = document.getElementById('fav-rotary');
-  const favs = loadFavs();
-  // 現在地点がお気に入りに無ければ先頭に一時チップとして表示
-  const items = favs.slice();
-  const curIsFav = favs.some(f => sameLoc(f, state));
-  if (!curIsFav) items.unshift({ name: state.locationName, lat: state.lat, lon: state.lon });
+  const stage = document.getElementById('fav-stage');
+  const track = document.getElementById('fav-track');
+  if (!el || !stage || !track) return;
+  const items = favRotaryItems();
+  const key = items.map(f => `${f.name}@${f.lat.toFixed(4)},${f.lon.toFixed(4)}`).join('|');
 
   if (!items.length) {
-    el.innerHTML = `<span class="fav-rotary-empty">${state.locationName || '──'}</span>`;
+    stage.innerHTML = `<span class="fav-rotary-empty">${state.locationName || '──'}</span>`;
+    track.style.width = '100%';
+    favRotaryKey = '';
     updateFavStar();
     return;
   }
-  el.innerHTML = '';
-  // 端のチップも中央に来られるよう、両端に半幅スペーサーを置く
-  const spL = document.createElement('span'); spL.className = 'fav-spacer';
-  el.appendChild(spL);
-  items.forEach(f => {
-    const isCur = sameLoc(f, state);
+  // 顔ぶれが変わっていなければDOMは作り直さず、正面合わせだけ行う。
+  // （地点選択のたびに全消し→再構築するとスクロール位置がリセットされて引っかかる）
+  if (key === favRotaryKey && stage.querySelector('.fav-chip')) {
+    centerActiveChip(true);
+    updateFavStar();
+    return;
+  }
+  favRotaryKey = key;
+
+  stage.innerHTML = '';
+  items.forEach((f, i) => {
     const chip = document.createElement('button');
-    chip.className = 'fav-chip' + (isCur ? ' active' : '');
-    chip.textContent = (isCur ? '📍' : '') + f.name;   // 今見ている地点は📍で明示
+    chip.className = 'fav-chip' + (sameLoc(f, state) ? ' centered' : '');
+    chip.textContent = f.name;
     chip.dataset.lat = f.lat;
     chip.dataset.lon = f.lon;
     chip.dataset.name = f.name;
-    chip.addEventListener('click', () => selectFav(f.lat, f.lon, f.name));
-    el.appendChild(chip);
+    chip.dataset.i = i;
+    // 側面の駒をタップしたらそこまで回して選択
+    chip.addEventListener('click', () => spinToIndex(i, true));
+    stage.appendChild(chip);
   });
-  const spR = document.createElement('span'); spR.className = 'fav-spacer';
-  el.appendChild(spR);
+  layoutFavRotary();
   centerActiveChip();
   updateFavStar();
+}
+
+// 表示領域の幅に合わせてstageとトラックの寸法を決める
+function layoutFavRotary() {
+  const el = document.getElementById('fav-rotary');
+  const stage = document.getElementById('fav-stage');
+  const track = document.getElementById('fav-track');
+  if (!el || !stage || !track) return;
+  const n = stage.querySelectorAll('.fav-chip').length;
+  const w = el.clientWidth || 200;
+  stage.style.width = w + 'px';
+  // 表示幅ぶん＋(駒数-1)*STEP。これで scrollLeft の範囲が 0〜(n-1)*STEP になる
+  track.style.width = (w + Math.max(0, n - 1) * FAV_STEP) + 'px';
+  updateFavRotaryTransforms();
+}
+
+// 各駒を円柱の側面上に配置する（スクロールのたびに毎フレーム呼ぶ）
+function updateFavRotaryTransforms() {
+  const stage = document.getElementById('fav-stage');
+  if (!stage) return;
+  const chips = stage.querySelectorAll('.fav-chip');
+  if (!chips.length) return;
+  const pos = favPos();
+  const half = (stage.clientWidth || 200) / 2;
+  let best = null, bestD = Infinity;
+  chips.forEach(chip => {
+    const d = Number(chip.dataset.i) - pos;          // 正面からの距離（駒数）
+    const ang = d * FAV_ANGLE;                       // 円柱の回転角
+    const ad = Math.abs(ang);
+    // 円柱の裏側、および枠の外へ完全に出た駒は消す
+    // （絶対配置なので出しっぱなしにするとスクロール範囲が狂う）
+    const rad0 = ang * Math.PI / 180;
+    const outX = Math.abs(FAV_R * Math.sin(rad0)) - (chip.offsetWidth / 2) * Math.cos(rad0);
+    if (ad >= 88 || outX > half) { chip.style.display = 'none'; return; }
+    chip.style.display = '';
+    const rad = ang * Math.PI / 180;
+    // 円柱の側面上の座標。左右の駒はsinで中央へ収束し、cosで奥へ引っ込む
+    const x = FAV_R * Math.sin(rad);
+    const z = FAV_R * Math.cos(rad) - FAV_R;
+    chip.style.transform =
+      `translate(-50%, -50%) translate3d(${x.toFixed(1)}px, 0, ${z.toFixed(1)}px) rotateY(${ang.toFixed(2)}deg)`;
+    chip.style.opacity = Math.max(0.15, Math.cos(rad) * 1.1 - 0.1).toFixed(3);
+    chip.style.zIndex = String(100 - Math.round(ad));
+    if (ad < bestD) { bestD = ad; best = chip; }
+  });
+  // 回している最中も正面の駒を即座に強調する（選択の確定はスクロール停止後）
+  chips.forEach(c => c.classList.toggle('centered', c === best));
+}
+
+// 指定番号の駒を正面へ回す。select=trueならその地点を選択する
+function spinToIndex(i, select) {
+  const el = document.getElementById('fav-rotary');
+  if (!el) return;
+  favRotaryProgrammatic = true;
+  clearTimeout(favScrollTimer);
+  el.scrollTo({ left: i * FAV_STEP, behavior: 'smooth' });
+  setTimeout(() => { favRotaryProgrammatic = false; updateFavRotaryTransforms(); }, 420);
+  if (!select) return;
+  const chip = el.querySelector(`.fav-chip[data-i="${i}"]`);
+  if (chip) selectFav(parseFloat(chip.dataset.lat), parseFloat(chip.dataset.lon), chip.dataset.name);
+}
+
+// 選択中の駒を円柱の正面へ固定（プログラム的スクロール）
+function centerActiveChip(smooth) {
+  const el = document.getElementById('fav-rotary');
+  if (!el) return;
+  const doCenter = () => {
+    const active = currentFavChip();
+    if (!active) return;
+    const target = Number(active.dataset.i) * FAV_STEP;
+    favRotaryProgrammatic = true;
+    clearTimeout(favScrollTimer);   // 直後のスクロール選択を抑止
+    el.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'auto' });
+    updateFavRotaryTransforms();
+    setTimeout(() => { favRotaryProgrammatic = false; updateFavRotaryTransforms(); }, smooth ? 420 : 60);
+  };
+  // レイアウト確定後に実行（駒の追加直後でも正しく寸法を取得）
+  requestAnimationFrame(() => requestAnimationFrame(doCenter));
 }
 
 // 現在地点のお気に入り登録トグル（名前入力なしのワンタップ）
@@ -1522,28 +1638,7 @@ function updateFavStar() {
   btn.classList.toggle('on', on);
 }
 
-// アクティブチップをロータリー中央へ固定（プログラム的スクロール）
-function centerActiveChip(smooth) {
-  const el = document.getElementById('fav-rotary');
-  const doCenter = () => {
-    const active = el.querySelector('.fav-chip.active');
-    if (!active) return;
-    // 両端スペーサー幅＝表示領域の半分。端の地点も中央へ寄せられるようにする
-    const half = Math.round(el.clientWidth / 2);
-    el.querySelectorAll('.fav-spacer').forEach(sp => { sp.style.width = half + 'px'; });
-    favRotaryProgrammatic = true;
-    // チップ中心を表示領域中心に合わせる
-    let target = active.offsetLeft + active.offsetWidth / 2 - el.clientWidth / 2;
-    target = Math.max(0, Math.min(el.scrollWidth - el.clientWidth, target));
-    el.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'auto' });
-    clearTimeout(favScrollTimer);   // 直後のスクロール選択を抑止
-    setTimeout(() => { favRotaryProgrammatic = false; }, smooth ? 400 : 60);
-  };
-  // レイアウト確定後に実行（チップ追加直後でも正しくoffsetを取得）
-  requestAnimationFrame(() => requestAnimationFrame(doCenter));
-}
-
-// 地点選択（現在地点と同じなら中央合わせのみ、違えば天気取得）
+// 地点選択（現在地点と同じなら正面合わせのみ、違えば天気取得）
 function selectFav(lat, lon, name) {
   if (sameLoc({ lat, lon }, state)) { centerActiveChip(); return; }
   state.lat = lat;
@@ -1552,35 +1647,117 @@ function selectFav(lat, lon, name) {
   fetchWeather(lat, lon);
 }
 
-// スクロール中央にあるチップを返す
+// 円柱の正面にある駒を返す
 function centeredChip() {
-  const el = document.getElementById('fav-rotary');
-  const cx = el.scrollLeft + el.clientWidth / 2;
+  const stage = document.getElementById('fav-stage');
+  if (!stage) return null;
+  const pos = favPos();
   let best = null, bestD = Infinity;
-  el.querySelectorAll('.fav-chip').forEach(chip => {
-    const c = chip.offsetLeft + chip.offsetWidth / 2;
-    const d = Math.abs(c - cx);
+  stage.querySelectorAll('.fav-chip').forEach(chip => {
+    const d = Math.abs(Number(chip.dataset.i) - pos);
     if (d < bestD) { bestD = d; best = chip; }
   });
   return best;
 }
 
-// 水平スクロールが止まったら中央のチップを選択（クルクル回して選択）
-document.getElementById('fav-rotary').addEventListener('scroll', () => {
-  if (favRotaryProgrammatic) return;
-  clearTimeout(favScrollTimer);
-  favScrollTimer = setTimeout(() => {
-    const chip = centeredChip();
-    if (chip && !chip.classList.contains('active')) {
-      selectFav(parseFloat(chip.dataset.lat), parseFloat(chip.dataset.lon), chip.dataset.name);
+// 回している間は毎フレーム角度を更新し、止まったら正面の駒に吸い付けて選択を確定する
+(function bindFavRotary() {
+  const el = document.getElementById('fav-rotary');
+  el.addEventListener('scroll', () => {
+    if (!favRafPending) {
+      favRafPending = true;
+      requestAnimationFrame(() => { favRafPending = false; updateFavRotaryTransforms(); });
     }
-  }, 220);
-}, { passive: true });
+    if (favRotaryProgrammatic) return;
+    clearTimeout(favScrollTimer);
+    favScrollTimer = setTimeout(() => {
+      const chip = centeredChip();
+      if (!chip) return;
+      const i = Number(chip.dataset.i);
+      // 駒の切れ目で止まった場合に備え、正面へきっちり吸い付ける
+      if (Math.abs(el.scrollLeft - i * FAV_STEP) > 0.5) spinToIndex(i, false);
+      const lat = parseFloat(chip.dataset.lat), lon = parseFloat(chip.dataset.lon);
+      if (!sameLoc({ lat, lon }, state)) selectFav(lat, lon, chip.dataset.name);
+    }, 160);
+  }, { passive: true });
+})();
 
 /* ============================================================
    HUD
    ============================================================ */
 const DOW_JP = ['日', '月', '火', '水', '木', '金', '土'];
+
+/* ------ 日本の国民の祝日 ------
+   日付固定・ハッピーマンデー・春分/秋分（近似式）に加え、振替休日と国民の休日も判定する。
+   近似式は1980〜2099年で有効。五輪年のような一度きりの特例日程には対応していないが、
+   このアプリが表示するのは前後10日ぶんなので実用上は問題にならない。 */
+const HOLIDAY_FIXED = {
+  '1-1': '元日',       '2-11': '建国記念の日', '2-23': '天皇誕生日',
+  '4-29': '昭和の日',  '5-3': '憲法記念日',    '5-4': 'みどりの日', '5-5': 'こどもの日',
+  '8-11': '山の日',    '11-3': '文化の日',     '11-23': '勤労感謝の日',
+};
+// ハッピーマンデー（月, 第n月曜, 名称）
+const HOLIDAY_NTH = [[1, 2, '成人の日'], [7, 3, '海の日'], [9, 3, '敬老の日'], [10, 2, 'スポーツの日']];
+
+// その月の第n月曜の日付
+function nthMondayDate(y, m, n) {
+  const first = new Date(y, m - 1, 1);
+  return 1 + ((8 - first.getDay()) % 7) + (n - 1) * 7;
+}
+// 春分（spring=true）／秋分の日付
+function equinoxDate(y, spring) {
+  const base = spring ? 20.8431 : 23.2488;
+  return Math.floor(base + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+}
+// 振替休日・国民の休日を除いた「その日そのものの祝日」名
+function jpHolidayBase(y, m, d) {
+  const fixed = HOLIDAY_FIXED[`${m}-${d}`];
+  if (fixed) return fixed;
+  for (const [mm, n, name] of HOLIDAY_NTH) {
+    if (m === mm && d === nthMondayDate(y, mm, n)) return name;
+  }
+  if (m === 3 && d === equinoxDate(y, true))  return '春分の日';
+  if (m === 9 && d === equinoxDate(y, false)) return '秋分の日';
+  return null;
+}
+// 祝日名（振替休日・国民の休日を含む）。祝日でなければ null
+function jpHoliday(date) {
+  const y = date.getFullYear(), mo = date.getMonth(), d = date.getDate();
+  const base = jpHolidayBase(y, mo + 1, d);
+  if (base) return base;
+  const nameOf = t => jpHolidayBase(t.getFullYear(), t.getMonth() + 1, t.getDate());
+  // 振替休日：日曜が祝日のとき、その後の最初の非祝日
+  if (date.getDay() !== 0) {
+    const t = new Date(y, mo, d);
+    for (let i = 0; i < 7; i++) {
+      t.setDate(t.getDate() - 1);
+      if (!nameOf(t)) break;
+      if (t.getDay() === 0) return '振替休日';
+    }
+  }
+  // 国民の休日：前後がともに祝日で、その日は祝日でも日曜でもない
+  if (date.getDay() !== 0 &&
+      nameOf(new Date(y, mo, d - 1)) && nameOf(new Date(y, mo, d + 1))) return '国民の休日';
+  return null;
+}
+// 休日（日曜または祝日）か
+function isRestDay(date) {
+  return date.getDay() === 0 || jpHoliday(date) != null;
+}
+
+// 選択中の日付バッジを更新（凡例の右端。休日は赤、祝日は名称も出す）
+function updateDateBadge() {
+  const badge = document.getElementById('date-badge');
+  if (!badge || !state.allData) return;
+  const t = state.allData[state.sliderIndex].time;
+  const hol = jpHoliday(t);
+  document.getElementById('date-main').textContent =
+    `${t.getMonth() + 1}月${t.getDate()}日(${DOW_JP[t.getDay()]})`;
+  document.getElementById('date-holiday').textContent = hol ? `（${hol}）` : '';
+  badge.classList.toggle('holiday', hol != null);
+  badge.classList.toggle('sun', t.getDay() === 0);
+  badge.classList.toggle('sat', t.getDay() === 6 && !hol);
+}
 // 雨の強さを擬音で（Yahoo天気風）
 function rainWord(mm) {
   if (!mm || mm <= 0) return '';
@@ -1652,9 +1829,12 @@ function positionPopupAt(clientX, clientY) {
   pop.style.left = x + 'px';
   pop.style.top = y + 'px';
 }
+// 指を離したときのポップアップの定位置。左寄りに置く
+// （選択線を画面中央へ移したので、SCRUB_POSに追従させると線と重なってしまう）
+const POPUP_HOME = 0.13;
 function resetPopupPosition() {
   const pop = document.getElementById('scrub-popup');
-  pop.style.left = (SCRUB_POS * 100) + '%';
+  pop.style.left = (POPUP_HOME * 100) + '%';
   pop.style.top = '4px';
 }
 
@@ -1749,11 +1929,11 @@ function niceRange(vals, pad, minSpan) {
 }
 const PADDING_L     = 44;   // 左軸の単位・目盛りを読める幅を確保
 const PADDING_R     = 32;   // 右軸（高度km等）の目盛りを読める幅を確保
-const FORECAST_HOURS = 72;  // 現在時刻から先の表示時間数
+const FORECAST_HOURS = 168; // 現在時刻から先の表示時間数（7日）
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
 const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
-const SCRUB_POS     = 0.14;  // 選択線の画面内位置（左端寄り。Y軸ガター直後）
+const SCRUB_POS     = 0.5;   // 選択線の画面内位置（画面のど真ん中）
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
 let skyChart = null, cloudChart = null, windChart = null, pressChart = null;
@@ -1781,9 +1961,12 @@ function buildCharts() {
   // 24時間ぶんが画面幅に収まるpx/hを算出（1日≒1画面）
   pxPerHourVal = (viewW - PADDING_L - PADDING_R) / HOURS_PER_SCREEN;
   const totalW = chartTotalW();
-  // 先頭・末尾の時刻も選択線（画面SCRUB_POS位置）に届くよう両端に余白
-  chartPadL = Math.max(0, Math.round(viewW * SCRUB_POS - idxToX(0)));
-  chartPadR = Math.max(0, Math.round(viewW * (1 - SCRUB_POS) - (totalW - idxToX(HOURS - 1))));
+  // 両端に余白は置かない。以前は先頭・末尾の時刻を選択線（画面SCRUB_POS位置）へ
+  // 届かせるため右に画面幅の86%ぶんの余白を作っており、末尾までスクロールすると
+  // そこが空白として見えていた。代わりに選択線の位置をcursorX()で可変にして、
+  // 末尾付近では選択線のほうが右へ寄るようにしてある。
+  chartPadL = 0;
+  chartPadR = 0;
   const inner = document.getElementById('charts-inner');
   inner.style.boxSizing = 'border-box';
   inner.style.paddingLeft = chartPadL + 'px';
@@ -2508,7 +2691,7 @@ function drawNowMarker(u) {
   ctx.fillStyle = 'rgba(110,110,110,0.16)';
   ctx.fillRect(x0, 0, xNow - x0, H);
   // 過去域が解析値（実測ではない）である旨の注記（skyチャートのみ）
-  if (u === skyChart && state.rangeMode === 'full' && xNow - x0 > 40 * pr) {
+  if (u === skyChart && xNow - x0 > 40 * pr) {
     ctx.fillStyle = 'rgba(90,90,90,0.8)';
     ctx.font = `bold ${8.5 * pr}px 'Noto Sans JP', sans-serif`;
     ctx.textAlign = 'left';
@@ -2667,7 +2850,6 @@ function drawSnowflake(ctx, p) {
    ・チャートをタップ … タップ位置の時刻を選択（スクロールはしない）
    ============================================================ */
 const chartsWrapper = document.getElementById('charts-wrapper');
-let scrollRafPending = false;
 let scrollEndTimer = null;
 
 // 画面x（charts-outer基準） → 選択index
@@ -2683,18 +2865,29 @@ function indexScreenX(idx) {
   return chartPadL + idxToX(idx) - chartsWrapper.scrollLeft;
 }
 
-// 赤の選択線を選択indexの位置へ配置（画面外なら隠す）
-function positionScrubLine() {
+// 赤の選択線を選択indexの位置へ配置（画面外なら隠す）。
+// 下部スクラバー帯の指標もまったく同じxに置くので、赤い線が帯までまっすぐ続く
+function positionScrubLine(at) {
   const line = document.getElementById('scrub-line');
   if (!line || !state.allData) return;
-  const x = indexScreenX(state.sliderIndex);
   const w = document.getElementById('charts-outer').clientWidth;
-  if (x < PADDING_L - 2 || x > w + 2) { line.style.display = 'none'; return; }
-  line.style.display = 'block';
-  line.style.left = x + 'px';
+  const put = (el, scrollLeft) => {
+    if (!el) return;
+    const x = idxToX(state.sliderIndex) - scrollLeft;
+    const visible = !(x < PADDING_L - 2 || x > w + 2);
+    el.style.display = visible ? 'block' : 'none';
+    if (visible) el.style.left = x + 'px';
+  };
+  // atは「この値で上下とも置く」指定（なぞり中は帯の実測値を渡して完全に一致させる）。
+  // 省略時は各パネルが自分のスクロール量を使う
+  const sChart = at != null ? at : chartsWrapper.scrollLeft;
+  const sStrip = at != null ? at : (scrubberEl ? scrubberEl.scrollLeft : sChart);
+  put(line, sChart);
+  put(document.getElementById('scrubber-center'), sStrip);
 }
 
 // 選択時刻を設定（scroll=trueなら選択線が画面SCRUB_POS位置に来るようスクロール）
+// 帯への同期はスクロール量の写し取り（mirrorScrollToScrubber）が行うため、ここでは不要
 function setSelectedIndex(idx, scroll = false, smooth = false) {
   if (!state.allData) return;
   const clamped = Math.max(0, Math.min(HOURS - 1, Math.round(idx)));
@@ -2702,50 +2895,208 @@ function setSelectedIndex(idx, scroll = false, smooth = false) {
   if (scroll) scrollToIndex(clamped, smooth);
   positionScrubLine();
   updatePopup();
+  updateDateBadge();
   updateNowButton();
-  syncRangeFromIndex();
 }
 
-// 指定indexを画面SCRUB_POS位置へスクロール
-function scrollToIndex(idx, smooth = false) {
-  const left = chartPadL + idxToX(idx) - viewW * SCRUB_POS;
+/* 選択線の画面内位置。
+   ふだんは画面のSCRUB_POS位置（＝ど真ん中）に固定だが、両端に近づくとその端へ寄る。
+   前後の余白をゼロにしたまま先頭・末尾の時刻まで選択できるようにするための仕掛けで、
+   寄り始めるのは両端の ramp px ぶんだけなので、大半のスクロールでは位置は動かない。 */
+function cursorX(scrollLeft) {
+  const base = viewW * SCRUB_POS;
+  if (!state.allData) return base;
   const max = Math.max(0, chartsWrapper.scrollWidth - chartsWrapper.clientWidth);
-  chartsWrapper.scrollTo({ left: Math.max(0, Math.min(max, left)), behavior: smooth ? 'smooth' : 'auto' });
+  if (max <= 0) return base;
+  const headX = idxToX(0);                                   // 先頭の時刻が左端に来る位置
+  const tailX = viewW - (chartTotalW() - idxToX(HOURS - 1)); // 末尾の時刻が右端に来る位置
+  // 先頭側：スクロール0で headX、rampH 進むと base に戻る
+  const rampH = Math.min(max / 2, Math.max(0, base - headX) * 2);
+  if (rampH > 0 && scrollLeft < rampH) {
+    return headX + (base - headX) * (scrollLeft / rampH);
+  }
+  // 末尾側：max - rampT から base → tailX へ寄る
+  const rampT = Math.min(max / 2, Math.max(0, tailX - base) * 2);
+  if (rampT > 0 && scrollLeft > max - rampT) {
+    return base + (tailX - base) * ((scrollLeft - (max - rampT)) / rampT);
+  }
+  return base;
 }
 
-/* ------ 下部スライダー（選択時刻の移動） ------ */
-const RANGE_MAX = 1000;
-let rangeProgrammatic = false;   // 相互更新のループ防止
+// 指定indexが選択線の位置に来るようスクロール。
+// cursorXがスクロール量に依存するので、不動点反復で解く（傾き0.5なので数回で収束）
+function scrollToIndex(idx, smooth = false) {
+  const max = Math.max(0, chartsWrapper.scrollWidth - chartsWrapper.clientWidth);
+  let left = Math.max(0, Math.min(max, idxToX(idx) - viewW * SCRUB_POS));
+  for (let k = 0; k < 6; k++) {
+    left = Math.max(0, Math.min(max, idxToX(idx) - cursorX(left)));
+  }
+  chartsWrapper.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+}
 
-// スライダー操作 → 選択時刻を移動
-function onTimeRangeInput(v) {
-  if (!state.allData) return;
-  rangeProgrammatic = true;
-  const idx = Math.round(Number(v) / RANGE_MAX * (HOURS - 1));
-  setSelectedIndex(idx, true);
-  requestAnimationFrame(() => { rangeProgrammatic = false; });
+/* ------ 下部スクラバー帯（選択時刻の移動） ------ */
+// 帯はチャートと「まったく同じ座標系」を使う。左右の余白・1時間あたりのpx・
+// スクロール量をチャートと共有するので、帯の目盛りは真上のチャートの同じ時刻の
+// 真下に来る。選択線もチャートから帯へまっすぐ続く。
+const scrubberEl = document.getElementById('scrubber');
+let scrubberProgrammatic = false;   // JSからのスクロールを選択に反映しないためのフラグ
+let scrubberSnapTimer = null;
+
+// 帯のスクロール量 → 選択index。
+// 選択線の位置（cursorX）に来ている時刻を選ぶ。チャートのscrollToIndexと同じ規約なので、
+// 末尾までスクロールするとちょうど最後の時刻が選ばれる
+function scrubberIndexFromScroll() {
+  const s = scrubberEl.scrollLeft;
+  const i = (s + cursorX(s) - chartPadL - PADDING_L) / pxPerHourVal - 0.5;
+  return Math.max(0, Math.min(HOURS - 1, Math.round(i)));
 }
-// 選択index → スライダー位置を反映
-function syncRangeFromIndex() {
-  if (rangeProgrammatic) return;
-  const el = document.getElementById('time-range');
-  if (!el || HOURS <= 1) return;
-  el.value = Math.round(state.sliderIndex / (HOURS - 1) * RANGE_MAX);
+
+// チャート→帯 / 帯→チャート のスクロール量の写し取り。
+// 値が一致したら何もしないので、相互に呼び合っても往復しない
+function mirrorScrollToScrubber() {
+  if (!scrubberEl) return;
+  if (Math.abs(scrubberEl.scrollLeft - chartsWrapper.scrollLeft) < 0.5) return;
+  scrubberProgrammatic = true;
+  scrubberEl.scrollLeft = chartsWrapper.scrollLeft;
+  requestAnimationFrame(() => { scrubberProgrammatic = false; });
 }
-// 両端の日時ラベルを更新（buildCharts後・レンジ切替後に呼ぶ）
-function updateTimeScrollLabels() {
-  const d = state.allData;
-  if (!d || !d.length) return;
-  const fmt = t => `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}時`;
-  document.getElementById('ts-start').textContent = fmt(d[0].time);
-  document.getElementById('ts-end').textContent = fmt(d[d.length - 1].time);
-  syncRangeFromIndex();
+
+// 帯のレイアウトと再描画（データ取得後・リサイズ後に呼ぶ）。
+// 余白・幅はチャートの #charts-inner と同一にする
+function layoutScrubber() {
+  if (!state.allData || !scrubberEl) return;
+  const inner = document.getElementById('scrubber-inner');
+  inner.style.boxSizing = 'border-box';
+  inner.style.paddingLeft = chartPadL + 'px';
+  inner.style.paddingRight = chartPadR + 'px';
+  inner.style.width = (chartTotalW() + chartPadL + chartPadR) + 'px';
+  drawScrubber();
+  mirrorScrollToScrubber();
 }
+
+// 帯にミニマップを描く：昼夜の地色 + ABC判定バー + 降水バー + 日付/時刻の目盛り。
+// x座標はチャートと同じ idxToX() を使うので、真上のチャートと列がそろう
+function drawScrubber() {
+  const cv = document.getElementById('scrubber-canvas');
+  if (!cv || !state.allData) return;
+  const data = state.allData;
+  const cssW = chartTotalW();
+  const cssH = scrubberEl.clientHeight || 60;
+  const pph = pxPerHourVal;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(cssW * dpr);
+  cv.height = Math.round(cssH * dpr);
+  cv.style.width = cssW + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sx = idxToX;                    // index（小数可）→ 帯上のx（チャートと共通）
+  const cell = i => idxToX(i) - pph / 2;   // その時刻の枠の左端
+
+  // 地色：夜は灰、昼は白（チャートの昼夜シェーディングと揃える）
+  ctx.fillStyle = '#e9edf3';
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillStyle = '#ffffff';
+  dayBandsFracs().forEach(b => {
+    const x0 = Math.max(0, sx(b.from)), x1 = Math.min(cssW, sx(b.to));
+    if (x1 > x0) ctx.fillRect(x0, 0, x1 - x0, cssH);
+  });
+
+  const GRADE_COL = { A: '#2a7d4f', B: '#e8a020', C: '#d03030' };
+  const barTop = 17, barH = 17;
+  const precBase = cssH - 2, precMax = 16;
+
+  for (let i = 0; i < data.length; i++) {
+    // ABC判定バー
+    ctx.fillStyle = GRADE_COL[judgePoint(data[i]).grade] || '#9aa4b2';
+    ctx.fillRect(cell(i) + 0.5, barTop, pph - 1, barH);
+    // 降水バー（5mm/hで振り切れ。雪は水色）
+    const mm = data[i].precip || 0;
+    if (mm > 0) {
+      const h = Math.max(2, Math.min(1, mm / 5) * precMax);
+      ctx.fillStyle = (data[i].snow || 0) > 0 ? '#7fb8e8' : '#2f6fd0';
+      ctx.fillRect(cell(i) + 1.5, precBase - h, pph - 3, h);
+    }
+  }
+
+  // 時刻の目盛り（6時間おき）。位置はチャートの時刻ラベルと同じ
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < data.length; i++) {
+    const h = data[i].time.getHours();
+    if (h === 0 || h % 6 !== 0) continue;
+    ctx.fillStyle = '#c2c9d3';
+    ctx.fillRect(cell(i), 0, 1, barTop);
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8a929d';
+    ctx.fillText(String(h), sx(i), 4);
+  }
+  // 日付区切りは最後に描いて目盛りより前に出す。先頭も0時とは限らないのでラベルを出す
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 10px ui-monospace, monospace';
+  for (let i = 0; i < data.length; i++) {
+    const t = data[i].time;
+    if (i !== 0 && t.getHours() !== 0) continue;
+    if (i !== 0) {
+      ctx.fillStyle = '#5a6572';
+      ctx.fillRect(cell(i), 0, 1, cssH);
+    }
+    // 休日（日曜・祝日）は赤字。祝日は名称も添える
+    const hol = jpHoliday(t);
+    ctx.fillStyle = isRestDay(t) ? '#d02020' : '#3c4653';
+    const label = `${t.getMonth() + 1}/${t.getDate()}(${DOW_JP[t.getDay()]})` + (hol ? ` ${hol}` : '');
+    ctx.fillText(label, cell(i) + 3, 3);
+  }
+
+  // 現在時刻の位置に印
+  const nf = nowIndexFrac();
+  if (nf != null) {
+    ctx.fillStyle = '#1f6fd0';
+    ctx.fillRect(sx(nf) - 1, barTop - 4, 2, barH + 8);
+  }
+}
+
+// 帯をなぞる → チャートも同じ量だけスクロールし、SCRUB_POS位置の時刻を選択
+/* 帯をなぞっている間の同期。
+   帯はコンポジタ側で滑らかにスクロールするのに対し、scrollイベントはiOSなどで
+   間引かれる。イベント駆動でチャートを追従させると、帯だけが先行して
+   上の選択線が遅れて追いかける見え方になる。そこで最初のイベントで
+   requestAnimationFrameのループを起こし、以降は毎フレーム帯の実測値を読んで
+   チャートと上下の選択線を同じ値で更新する。 */
+let scrubRafId = 0, scrubLastLeft = -1, scrubIdleFrames = 0;
+
+function scrubFrame() {
+  const sLeft = scrubberEl.scrollLeft;
+  if (sLeft !== scrubLastLeft) {
+    scrubLastLeft = sLeft;
+    scrubIdleFrames = 0;
+    if (Math.abs(chartsWrapper.scrollLeft - sLeft) >= 0.5) chartsWrapper.scrollLeft = sLeft;
+    const idx = scrubberIndexFromScroll();
+    if (idx !== state.sliderIndex) setSelectedIndex(idx, false);   // なぞり中はスクロールを指に任せる
+    positionScrubLine(sLeft);   // 上下とも帯の実測値で置く＝ズレようがない
+  } else if (++scrubIdleFrames > 6) {
+    // 止まった → 選択時刻を選択線の位置へ吸い付かせて終了。
+    // ずれは最大でも半コマ（数px）なので即時でよい（smoothは慣性と競合する）
+    scrubRafId = 0;
+    setSelectedIndex(scrubberIndexFromScroll(), true, false);
+    return;
+  }
+  scrubRafId = requestAnimationFrame(scrubFrame);
+}
+
+scrubberEl.addEventListener('scroll', () => {
+  if (scrubberProgrammatic || !state.allData) return;
+  if (!scrubRafId) {
+    scrubLastLeft = -1;
+    scrubIdleFrames = 0;
+    scrubRafId = requestAnimationFrame(scrubFrame);
+  }
+}, { passive: true });
 
 chartsWrapper.addEventListener('scroll', () => {
-  if (!scrollRafPending) {
-    scrollRafPending = true;
-    requestAnimationFrame(() => { scrollRafPending = false; positionScrubLine(); });
+  // 帯のなぞり中はscrubFrameが主導するので触らない
+  if (!scrubRafId) {
+    mirrorScrollToScrubber();
+    positionScrubLine();
   }
   // パーティクルはスクロール停止後にのみ更新（重いため）
   clearTimeout(scrollEndTimer);
@@ -2768,14 +3119,14 @@ chartsWrapper.addEventListener('touchmove', e => {
 }, { passive: true });
 chartsWrapper.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
 
-// スライダー操作中もポップアップを指の位置へ追従（指はスライダー上にあるため）
-(function bindRangePopup() {
-  const el = document.getElementById('time-range');
-  if (!el) return;
+// 帯をなぞっている間もポップアップを指の位置へ追従（指は帯の上にあるため）。
+// positionPopupAtはチャート領域内に収めるので、実際には帯のすぐ上に出る
+(function bindScrubberPopup() {
+  if (!scrubberEl) return;
   const at = e => { if (e.touches && e.touches[0]) positionPopupAt(e.touches[0].clientX, e.touches[0].clientY); };
-  el.addEventListener('touchstart', at, { passive: true });
-  el.addEventListener('touchmove', at, { passive: true });
-  el.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
+  scrubberEl.addEventListener('touchstart', at, { passive: true });
+  scrubberEl.addEventListener('touchmove', at, { passive: true });
+  scrubberEl.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
 })();
 
 /* ============================================================
@@ -3177,7 +3528,6 @@ function gotoPeak(name, lat, lon) {
 
 async function refreshRanking() {
   const list = document.getElementById('rank-list');
-  document.getElementById('rank-mode-label').textContent = state.mode === 'day' ? '日帰り' : '幕営';
   if (!rankDates.length) {
     list.innerHTML = '<div class="rank-msg">日付を選択してください</div>';
     return;
@@ -3257,12 +3607,26 @@ window.addEventListener('resize', () => {
     scrollToIndex(state.sliderIndex);
     positionScrubLine();
     updatePopup();
+    updateDateBadge();
     resetPopupPosition();
     updateNowButton();
-    updateTimeScrollLabels();
+    layoutScrubber();
     updateParticles();
+    layoutFavRotary();    // 幅が変わると円柱の舞台とトラック幅も変わる
+    centerActiveChip();
   }, 150);
 });
+
+/* ============================================================
+   SERVICE WORKER（インストール可能にする／圏外でも起動できるようにする）
+   HTMLはネットワーク優先なので、更新が古いまま残ることはない。
+   登録に失敗してもアプリの動作には影響させない。
+   ============================================================ */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
 
 /* ============================================================
    BOOT
