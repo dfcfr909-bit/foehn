@@ -554,6 +554,7 @@ html, body {
 .pop-v { font-size: 15px; font-weight: 700; font-family: var(--font-display); }
 .pop-sub { font-size: 10px; color: rgba(255,255,255,0.7); }
 #pop-rain { font-weight: 700; color: #8fd0ff; }
+#pop-windw { font-weight: 700; color: #b6aaff; }
 
 /* ============================================================
    FOOTER
@@ -1041,7 +1042,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.28.0</span>
+    <span id="app-version">v4.29.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1108,7 +1109,8 @@ html, body {
         <div class="pop-row"><span class="pop-ico" id="pop-wx">☀️</span><span class="pop-grade" id="pop-grade">A</span></div>
         <div class="pop-row"><span class="pop-k">気温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
         <div class="pop-row"><span class="pop-k">降水</span><span class="pop-v" id="pop-prec">--</span><span class="pop-sub" id="pop-rain">—</span></div>
-        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-gust"></span></div>
+        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windw">—</span></div>
+        <div class="pop-row" id="pop-gust-row"><span class="pop-k">突風</span><span class="pop-v" id="pop-gust">--</span><span class="pop-sub">m/s</span></div>
         <div class="pop-row"><span class="pop-k">気圧</span><span class="pop-v" id="pop-dp">--</span><span class="pop-sub">hPa/6h</span></div>
       </div>
     </div>
@@ -1587,6 +1589,16 @@ function rainWord(mm) {
   if (mm < 10) return 'ザーザー';
   return 'ゴーゴー';
 }
+// 風の強さを擬音で（m/s）。境目はABC判定の閾値（5/10/15）に合わせる
+function windWord(ms) {
+  if (ms == null) return '';
+  if (ms < 1)  return 'ほぼ無風';
+  if (ms < 3)  return 'ソヨソヨ';
+  if (ms < 5)  return 'サワサワ';
+  if (ms < 10) return 'ヒューヒュー';
+  if (ms < 15) return 'ビュービュー';
+  return 'ゴウゴウ';
+}
 // 選択情報ポップアップの中身を更新（時刻→天気→ABC→気温→降水+強さ→風速→気圧）
 function updatePopup() {
   const d = state.allData[state.sliderIndex];
@@ -1614,7 +1626,15 @@ function updatePopup() {
   document.getElementById('pop-rain').textContent = rw || '—';
 
   document.getElementById('pop-wind').textContent = d.wind != null ? Math.round(d.wind) : '--';
-  document.getElementById('pop-gust').textContent = d.gust != null ? `突風${Math.round(d.gust)}` : '';
+  document.getElementById('pop-windw').textContent = windWord(d.wind) || '—';
+  // 突風は取得できたときのみ行を表示
+  const gustRow = document.getElementById('pop-gust-row');
+  if (d.gust != null) {
+    document.getElementById('pop-gust').textContent = Math.round(d.gust);
+    gustRow.style.display = '';
+  } else {
+    gustRow.style.display = 'none';
+  }
 
   const dp = d.dpress != null ? d.dpress : 0;
   document.getElementById('pop-dp').textContent = (dp > 0 ? '+' : '') + dp.toFixed(1);
