@@ -468,8 +468,7 @@ html, body {
   z-index: 5;
   pointer-events: none;
 }
-/* 選択時刻の固定インジケーター（画面の一定位置。下をチャートが流れる） */
-/* left位置はJSでSCRUB_POSと厳密に一致させる（バッジ時刻と線位置のズレ防止） */
+/* 選択時刻インジケーター（選択中の時刻の位置を指す。left位置はJSで更新） */
 #scrub-line {
   position: absolute;
   top: 0;
@@ -479,6 +478,7 @@ html, body {
   overflow: visible;
   z-index: 6;
   pointer-events: none;
+  transition: left 0.08s linear;
 }
 #scrub-bar {
   position: absolute;
@@ -1041,7 +1041,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.23.0</span>
+    <span id="app-version">v4.24.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1410,7 +1410,8 @@ function render() {
   try {
     updateLocationName();
     buildCharts();          // データ取得・リサイズ時のみの1回描画
-    scrollToIndex(state.sliderIndex);   // 選択線の下に現在時刻を配置
+    scrollToIndex(state.sliderIndex);   // 選択時刻が見える位置へスクロール
+    positionScrubLine();                // 赤の選択線を選択時刻の位置へ
     updatePopup();
     resetPopupPosition();
     updateNowButton();
@@ -1727,8 +1728,6 @@ function buildCharts() {
   const outer = document.getElementById('charts-outer');
   viewW = outer.clientWidth || window.innerWidth;
   computeChartHeights(outer.clientHeight || 480);   // 表示領域の高さでパネル高を決定
-  // 赤の選択線の画面内位置をSCRUB_POSに厳密一致させる（バッジ時刻とのズレ防止）
-  document.getElementById('scrub-line').style.left = (SCRUB_POS * 100) + '%';
   // 24時間ぶんが画面幅に収まるpx/hを算出（1日≒1画面）
   pxPerHourVal = (viewW - PADDING_L - PADDING_R) / HOURS_PER_SCREEN;
   const totalW = chartTotalW();
@@ -2478,7 +2477,7 @@ function updateNowButton() {
 function jumpToNow() {
   const frac = nowIndexFrac();
   if (frac == null) return;
-  scrollToIndex(Math.round(frac), true);   // 現在時刻を選択線の下へスムーズスクロール
+  setSelectedIndex(Math.round(frac), true, true);   // 現在時刻を選択してスムーズスクロール
 }
 
 // 現在時刻線の位置を定期更新（5分ごと。軽量な再描画のみ、再構築はしない）
@@ -2612,56 +2611,76 @@ function drawSnowflake(ctx, p) {
 }
 
 /* ============================================================
-   時刻選択（横スクロール）
-   固定の選択線（画面SCRUB_POS位置）の下にある時刻を選択時刻とし、
-   スクロールに追従してHUD・判定・バッジを更新（canvas再描画なし）
+   時刻選択
+   選択index（state.sliderIndex）が主。赤の選択線はその時刻の位置を指す。
+   ・下部スライダー … 選択時刻を移動（選択線が画面SCRUB_POS位置に来るようスクロール）
+   ・チャートをタップ … タップ位置の時刻を選択（スクロールはしない）
    ============================================================ */
 const chartsWrapper = document.getElementById('charts-wrapper');
 let scrollRafPending = false;
 let scrollEndTimer = null;
 
-// スクロール位置 → 選択index（chartPadL分を差し引く）
-function scrollToIndexValue() {
-  const cx = chartsWrapper.scrollLeft + viewW * SCRUB_POS - chartPadL;   // 選択線の下の論理x
+// 画面x（charts-outer基準） → 選択index
+function indexFromClientX(clientX) {
+  const r = document.getElementById('charts-outer').getBoundingClientRect();
+  const cx = (clientX - r.left) + chartsWrapper.scrollLeft - chartPadL;   // 論理x
   const raw = Math.round((cx - PADDING_L) / pxPerHourVal - 0.5);
   return Math.max(0, Math.min(HOURS - 1, raw));
 }
 
-// 指定indexを選択線の下に配置
-function scrollToIndex(idx, smooth = false) {
-  const left = chartPadL + idxToX(idx) - viewW * SCRUB_POS;
-  chartsWrapper.scrollTo({ left: Math.max(0, left), behavior: smooth ? 'smooth' : 'auto' });
+// 選択indexの画面x（charts-outer基準）
+function indexScreenX(idx) {
+  return chartPadL + idxToX(idx) - chartsWrapper.scrollLeft;
 }
 
-// スクロール追従（rAFスロットルの軽量DOM更新のみ）
-function syncFromScroll() {
+// 赤の選択線を選択indexの位置へ配置（画面外なら隠す）
+function positionScrubLine() {
+  const line = document.getElementById('scrub-line');
+  if (!line || !state.allData) return;
+  const x = indexScreenX(state.sliderIndex);
+  const w = document.getElementById('charts-outer').clientWidth;
+  if (x < PADDING_L - 2 || x > w + 2) { line.style.display = 'none'; return; }
+  line.style.display = 'block';
+  line.style.left = x + 'px';
+}
+
+// 選択時刻を設定（scroll=trueなら選択線が画面SCRUB_POS位置に来るようスクロール）
+function setSelectedIndex(idx, scroll = false, smooth = false) {
   if (!state.allData) return;
-  const idx = scrollToIndexValue();
-  if (idx === state.sliderIndex) return;
-  state.sliderIndex = idx;
+  const clamped = Math.max(0, Math.min(HOURS - 1, Math.round(idx)));
+  state.sliderIndex = clamped;
+  if (scroll) scrollToIndex(clamped, smooth);
+  positionScrubLine();
   updatePopup();
   updateNowButton();
+  syncRangeFromIndex();
 }
 
-/* ------ 下部スクロールバー（時間スライド）とチャートの相互同期 ------ */
+// 指定indexを画面SCRUB_POS位置へスクロール
+function scrollToIndex(idx, smooth = false) {
+  const left = chartPadL + idxToX(idx) - viewW * SCRUB_POS;
+  const max = Math.max(0, chartsWrapper.scrollWidth - chartsWrapper.clientWidth);
+  chartsWrapper.scrollTo({ left: Math.max(0, Math.min(max, left)), behavior: smooth ? 'smooth' : 'auto' });
+}
+
+/* ------ 下部スライダー（選択時刻の移動） ------ */
 const RANGE_MAX = 1000;
 let rangeProgrammatic = false;   // 相互更新のループ防止
 
-// スライダー操作 → チャートをスクロール
+// スライダー操作 → 選択時刻を移動
 function onTimeRangeInput(v) {
-  const max = chartsWrapper.scrollWidth - chartsWrapper.clientWidth;
-  if (max <= 0) return;
+  if (!state.allData) return;
   rangeProgrammatic = true;
-  chartsWrapper.scrollLeft = (Number(v) / RANGE_MAX) * max;
+  const idx = Math.round(Number(v) / RANGE_MAX * (HOURS - 1));
+  setSelectedIndex(idx, true);
   requestAnimationFrame(() => { rangeProgrammatic = false; });
 }
-// チャートのスクロール → スライダー位置を反映
-function syncRangeFromScroll() {
+// 選択index → スライダー位置を反映
+function syncRangeFromIndex() {
   if (rangeProgrammatic) return;
   const el = document.getElementById('time-range');
-  if (!el) return;
-  const max = chartsWrapper.scrollWidth - chartsWrapper.clientWidth;
-  el.value = max > 0 ? Math.round(chartsWrapper.scrollLeft / max * RANGE_MAX) : 0;
+  if (!el || HOURS <= 1) return;
+  el.value = Math.round(state.sliderIndex / (HOURS - 1) * RANGE_MAX);
 }
 // 両端の日時ラベルを更新（buildCharts後・レンジ切替後に呼ぶ）
 function updateTimeScrollLabels() {
@@ -2670,25 +2689,32 @@ function updateTimeScrollLabels() {
   const fmt = t => `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}時`;
   document.getElementById('ts-start').textContent = fmt(d[0].time);
   document.getElementById('ts-end').textContent = fmt(d[d.length - 1].time);
-  syncRangeFromScroll();
+  syncRangeFromIndex();
 }
 
 chartsWrapper.addEventListener('scroll', () => {
   if (!scrollRafPending) {
     scrollRafPending = true;
-    requestAnimationFrame(() => { scrollRafPending = false; syncFromScroll(); syncRangeFromScroll(); });
+    requestAnimationFrame(() => { scrollRafPending = false; positionScrubLine(); });
   }
   // パーティクルはスクロール停止後にのみ更新（重いため）
   clearTimeout(scrollEndTimer);
   scrollEndTimer = setTimeout(() => updateParticles(), 130);
 }, { passive: true });
 
-// 指の位置にポップアップを追従（タッチ中）。離したら選択線付近の上部へ戻す
+/* ------ チャートをタップ／ドラッグ → その位置の時刻を選択 ------ */
+function selectFromPointer(clientX, clientY) {
+  setSelectedIndex(indexFromClientX(clientX), false);
+  positionPopupAt(clientX, clientY);
+}
+chartsWrapper.addEventListener('click', e => selectFromPointer(e.clientX, e.clientY));
+
+// タッチした位置の時刻を選択し、ポップアップを指へ追従（なぞって選択も可）
 chartsWrapper.addEventListener('touchstart', e => {
-  if (e.touches[0]) positionPopupAt(e.touches[0].clientX, e.touches[0].clientY);
+  if (e.touches[0]) selectFromPointer(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
 chartsWrapper.addEventListener('touchmove', e => {
-  if (e.touches[0]) positionPopupAt(e.touches[0].clientX, e.touches[0].clientY);
+  if (e.touches[0]) selectFromPointer(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
 chartsWrapper.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
 
@@ -3156,6 +3182,7 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     buildCharts();
     scrollToIndex(state.sliderIndex);
+    positionScrubLine();
     updatePopup();
     resetPopupPosition();
     updateNowButton();
