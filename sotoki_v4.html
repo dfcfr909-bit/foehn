@@ -439,13 +439,15 @@ html, body {
   background: #ffffff;
   overflow: hidden;
 }
+/* 時間移動は下部スライダーのみ。指スワイプでの横スクロールは無効
+   （overflow:hiddenでもJSからのscrollLeft制御は有効） */
 #charts-wrapper {
   height: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   overscroll-behavior-x: contain;
 }
 #charts-wrapper::-webkit-scrollbar { display: none; }
@@ -1039,7 +1041,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.22.0</span>
+    <span id="app-version">v4.23.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1073,6 +1075,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#1abebe"></div>降水</div>
     <div class="legend-item"><div class="legend-dot" style="background:#3c78dc"></div>降雪</div>
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
     <div id="range-toggle" class="mode-toggle">
       <button class="mode-btn active" data-range="forecast" onclick="setRange('forecast')">予報</button>
@@ -1105,7 +1108,7 @@ html, body {
         <div class="pop-row"><span class="pop-ico" id="pop-wx">☀️</span><span class="pop-grade" id="pop-grade">A</span></div>
         <div class="pop-row"><span class="pop-k">気温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
         <div class="pop-row"><span class="pop-k">降水</span><span class="pop-v" id="pop-prec">--</span><span class="pop-sub" id="pop-rain">—</span></div>
-        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span></div>
+        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-gust"></span></div>
         <div class="pop-row"><span class="pop-k">気圧</span><span class="pop-v" id="pop-dp">--</span><span class="pop-sub">hPa/6h</span></div>
       </div>
     </div>
@@ -1227,7 +1230,7 @@ function setMode(m) {
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
   // past_days=3で過去3日分（解析値）も取得。表示範囲はrangeModeでスライス
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=3&forecast_days=4&models=jma_seamless`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high&daily=sunrise,sunset&timezone=Asia%2FTokyo&past_days=3&forecast_days=4&models=jma_seamless`;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1357,6 +1360,7 @@ function processData(json) {
       pressure: h.surface_pressure[i],
       wind: h.windspeed_10m[i],
       wdir: h.winddirection_10m ? h.winddirection_10m[i] : null,
+      gust: h.windgusts_10m ? h.windgusts_10m[i] : null,   // 突風(m/s)
       wcode: h.weathercode[i],
       cloud: h.cloudcover[i],
       cloudLow: h.cloud_cover_low ? h.cloud_cover_low[i] : null,
@@ -1579,6 +1583,7 @@ function updatePopup() {
   document.getElementById('pop-rain').textContent = rw || '—';
 
   document.getElementById('pop-wind').textContent = d.wind != null ? Math.round(d.wind) : '--';
+  document.getElementById('pop-gust').textContent = d.gust != null ? `突風${Math.round(d.gust)}` : '';
 
   const dp = d.dpress != null ? d.dpress : 0;
   document.getElementById('pop-dp').textContent = (dp > 0 ? '+' : '') + dp.toFixed(1);
@@ -1741,12 +1746,16 @@ function buildCharts() {
   const precips  = data.map(d => d.precip);
   const snows    = data.map(d => d.snow);
   const winds    = data.map(d => d.wind);
+  const gusts    = data.map(d => d.gust);
   const pressures = data.map(d => d.pressure);
 
   // 見やすいY軸レンジ（uPlotスケールとガター描画で共有し、位置ズレを防ぐ）
   const tempRange  = niceRange(temps, 1.5, 5);        // 気温：変化を強調
   const pressRange = niceRange(pressures, 0.6, 4);    // 気圧：小さな変化も見えるよう詰める
   const windMaxV   = Math.max(8, Math.max(0, ...winds.map(v => v || 0)) * 1.15);
+  // 突風は風速より大きいので独立スケール（右軸）
+  const gustVals   = gusts.filter(v => v != null);
+  const gustMaxV   = Math.max(10, (gustVals.length ? Math.max(...gustVals) : 0) * 1.12);
   const precipMaxV = Math.max(5, ...precips.map(v => v || 0), ...snows.map(v => v || 0));
 
   if (skyChart)    { skyChart.destroy();    skyChart = null; }
@@ -1807,7 +1816,7 @@ function buildCharts() {
     },
   }, [xs, xs.map(() => 0)], document.getElementById('chart-cloud'));
 
-  // --- WIND（風速バー + 風向矢印） ---
+  // --- WIND（左軸=風速バー + 風向矢印 / 右軸=突風ライン） ---
   windChart = new uPlot({
     ...common,
     height: CHART_H_WIND,
@@ -1815,17 +1824,19 @@ function buildCharts() {
     scales: {
       x: xScale,
       w: { range: [0, windMaxV] },
+      g: { range: [0, gustMaxV] },     // 突風は独立スケール（右軸）
     },
     axes: [{ show: false }, { show: false, scale: 'w' }],
     series: [
       {},
       { scale: 'w', paths: () => null, points: { show: false } },        // 風速（スケール算出用）
+      { scale: 'g', paths: () => null, points: { show: false } },        // 突風（スケール算出用）
     ],
     hooks: {
       drawClear: [drawDayBackground],
       draw: [drawWindOverlay, drawNowMarker],
     },
-  }, [xs, winds], document.getElementById('chart-wind'));
+  }, [xs, winds, gusts], document.getElementById('chart-wind'));
 
   // --- PRESSURE（気圧ライン。変化＝傾きで一目、急降下は赤系で強調） ---
   pressChart = new uPlot({
@@ -1854,6 +1865,8 @@ function buildCharts() {
     tempMin: tempRange[0], tempMax: tempRange[1],
     precipMax: precipMaxV,
     windMax: windMaxV,
+    gustMax: gustMaxV,
+    hasGust: gustVals.length > 0,
     pressMin: pressRange[0], pressMax: pressRange[1],
   };
   drawAxisGutter();
@@ -2057,6 +2070,27 @@ function drawAxisGutterRight() {
   });
   ctx.fillStyle = 'rgba(90,98,112,0.65)';
   ctx.fillText('0', 2, cPlotBottom);
+
+  // 風パネルの右軸＝突風 m/s（meteoblue同様に右端）
+  const si = scaleInfo;
+  if (si && si.hasGust) {
+    const wTop = CHART_H_SKY + CHART_H_CLOUD;
+    const wPlotTop = wTop + 24, wPlotBottom = wTop + CHART_H_WIND - TIME_AXIS_H;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(0, wTop, W, CHART_H_WIND);
+    ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+    ctx.beginPath(); ctx.moveTo(0.5, wTop); ctx.lineTo(0.5, wTop + CHART_H_WIND); ctx.stroke();
+    ctx.fillStyle = '#1f9d8f';
+    ctx.textAlign = 'left';
+    ctx.font = "bold 8.5px 'Noto Sans JP', sans-serif";
+    ctx.fillText('突風', 2, wTop + 11);
+    ctx.fillText('m/s', 2, wTop + 20);
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(String(Math.round(si.gustMax)), 2, wPlotTop + 8);
+    ctx.fillText(String(Math.round(si.gustMax / 2)), 2, (wPlotTop + wPlotBottom) / 2 + 3);
+    ctx.fillStyle = 'rgba(31,157,143,0.65)';
+    ctx.fillText('0', 2, wPlotBottom);
+  }
 }
 
 /* ------ 昼間帯の算出（日の出〜日の入り。データなし時は5〜19時） ------ */
@@ -2360,6 +2394,22 @@ function drawWindOverlay(u) {
     ctx.fillRect(x0, y, x1 - x0, bottom - y);
   }
   ctx.globalAlpha = 1;
+  // 突風ライン（右軸スケール。meteoblue同様のteal）
+  if (data.some(d => d.gust != null)) {
+    ctx.strokeStyle = '#1f9d8f';
+    ctx.lineWidth = 2 * pr;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < data.length; i++) {
+      const g = data[i].gust;
+      if (g == null) { started = false; continue; }
+      const x = u.valToPos(i, 'x', true);
+      const y = u.valToPos(g, 'g', true);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
   // 風向矢印（6hごと、上部）
   for (let i = 0; i < data.length; i++) {
     if (data[i].time.getHours() % 6 !== 0 || data[i].wdir == null) continue;
@@ -2641,6 +2691,16 @@ chartsWrapper.addEventListener('touchmove', e => {
   if (e.touches[0]) positionPopupAt(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
 chartsWrapper.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
+
+// スライダー操作中もポップアップを指の位置へ追従（指はスライダー上にあるため）
+(function bindRangePopup() {
+  const el = document.getElementById('time-range');
+  if (!el) return;
+  const at = e => { if (e.touches && e.touches[0]) positionPopupAt(e.touches[0].clientX, e.touches[0].clientY); };
+  el.addEventListener('touchstart', at, { passive: true });
+  el.addEventListener('touchmove', at, { passive: true });
+  el.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
+})();
 
 /* ============================================================
    MAP
