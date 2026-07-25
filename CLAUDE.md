@@ -1,6 +1,9 @@
 # SotoKi
 
-バックカントリー気象PWA（単一HTML / Netlify / Open-Meteo JMAモデル / Leaflet）
+バックカントリー気象PWA（単一HTML / GitHub Pages / Open-Meteo JMAモデル / Leaflet）
+
+> **新しいセッションを始めたら、まず `docs/handoff.md` を読むこと。**
+> 現状・未完事項・過去の失敗（風速の単位取り違え等）がまとまっている。
 
 ## 規約
 
@@ -12,21 +15,22 @@
 ## 構成
 
 - `sotoki_v4.html` — 現行版（改修ベース）
+- `docs/handoff.md` — **引き継ぎメモ（現状・未完事項・経緯）**
 - `docs/requirements_renewal.md` — 全面改修 要件定義書
+- `docs/ai_outlook.md` — AI全国概況（GLM × GitHub Actions）
+- `tests/` — スモークテスト（改修のたびに全件実行する）
+- `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 
 ## 改修計画
 
-`docs/requirements_renewal.md` に従い、以下の順で実装する:
-
-1. uPlot移行 + スクロール性能改善（コア）
-2. 過去48h統合 + 現在時刻線
-3. 昼夜シェーディング
-4. テーマ自動追従 + 視認性再設計
-5. 地図: 雨雲タイル → 格子点マーカー
+`docs/requirements_renewal.md` の1〜5（uPlot移行／過去統合／昼夜シェーディング／
+視認性再設計／地図）は**実施済み**。以降の変更履歴と現行仕様は `docs/handoff.md` を参照。
 
 ## 技術スタック
 
 - 単一HTML構成（バンドラなし）
-- 外部ライブラリはCDN読み込み: Leaflet 1.9.x, uPlot 1.6.x
-- デプロイ: Netlify（静的ファイル直接配信）
+- uPlot 1.6.32 は `vendor/` に同梱（CDNは403等で失敗した実績があるため）。Leaflet 1.9.x はCDN
+- デプロイ: GitHub Pages（静的ファイル直接配信。Netlifyは無料枠停止のため移行済み）
 - データ: Open-Meteo Forecast API（JMAモデル）
+  - **風速は `wind_speed_unit=ms` を必ず指定**（既定はkm/h。過去に取り違えて不具合を出した）
+  - 突風・気圧面ごとの雲量はJMAが返さないため、models未指定の補助リクエストで取得

@@ -1,0 +1,12 @@
+{
+  "name": "sotoki-tests",
+  "private": true,
+  "description": "SotoKi スモークテスト（ヘッドレスChromium）",
+  "scripts": {
+    "test": "node run-all.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0",
+    "uplot": "1.6.32"
+  }
+}
