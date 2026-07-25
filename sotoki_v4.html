@@ -1041,7 +1041,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.24.0</span>
+    <span id="app-version">v4.25.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1170,9 +1170,10 @@ html, body {
       <button id="btn-rank-close" onclick="closeRank()">✕</button>
     </div>
     <div id="rank-date-row">
-      <button class="rank-date-btn active" data-kind="weekend" onclick="setRankDate('weekend')">今週末</button>
+      <button class="rank-date-btn active" data-kind="today" onclick="setRankDate('today')">今日</button>
       <button class="rank-date-btn" data-kind="tomorrow" onclick="setRankDate('tomorrow')">明日</button>
-      <input type="date" id="rank-date-input" onchange="setRankDate('custom')">
+      <button class="rank-date-btn" data-kind="weekend" onclick="setRankDate('weekend')">週末</button>
+      <input type="date" id="rank-date-input" onchange="setRankDate('custom')" title="任意の日付を選択">
     </div>
     <div id="rank-note">
       6〜18時の最悪値で判定（<span id="rank-mode-label">日帰り</span>モード） /
@@ -2903,7 +2904,7 @@ const RANK_MAX_AHEAD    = 6;    // カレンダー選択の上限（JMAモデル
 let areasData = null;           // areas.json（初回fetch後キャッシュ）
 const rankFetchCache = {};      // 「日付レンジ+地点セット」→ 生の取得結果
 let rankDates = [];             // 表示中の対象日（YYYY-MM-DD配列、週末は2要素）
-let rankKind = 'weekend';
+let rankKind = 'today';         // 既定は今日（今日→明日→週末→任意日）
 
 async function loadAreas() {
   if (areasData) return areasData;
@@ -2918,9 +2919,12 @@ function fmtDateISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 種別 → 対象日配列。今週末=直近の土日（日曜当日は残りの日曜のみ）
+// 種別 → 対象日配列。週末=直近の土日（日曜当日は残りの日曜のみ）
 function resolveRankDates(kind) {
   const today = new Date();
+  if (kind === 'today') {
+    return [fmtDateISO(today)];
+  }
   if (kind === 'tomorrow') {
     const t = new Date(today);
     t.setDate(t.getDate() + 1);
@@ -3129,6 +3133,8 @@ function setRankDate(kind) {
   rankKind = kind;
   document.querySelectorAll('.rank-date-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.kind === kind));
+  // プリセット選択時は任意日付の入力をクリア（どれを見ているか明確にする）
+  if (kind !== 'custom') document.getElementById('rank-date-input').value = '';
   rankDates = resolveRankDates(kind);
   refreshRanking();
 }
