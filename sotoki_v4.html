@@ -1041,7 +1041,7 @@ html, body {
   <!-- Header -->
   <div id="header">
     <span id="app-logo">SotoKi</span>
-    <span id="app-version">v4.25.0</span>
+    <span id="app-version">v4.26.0</span>
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="day" onclick="setMode('day')">日帰</button>
       <button class="mode-btn" data-mode="camp" onclick="setMode('camp')">幕営</button>
@@ -1176,7 +1176,7 @@ html, body {
       <input type="date" id="rank-date-input" onchange="setRankDate('custom')" title="任意の日付を選択">
     </div>
     <div id="rank-note">
-      6〜18時の最悪値で判定（<span id="rank-mode-label">日帰り</span>モード） /
+      <span id="rank-window-label">6〜18時</span>の最悪値で判定（<span id="rank-mode-label">日帰り</span>モード） /
       山域＝代表峰の最良値、括弧は平均 / 風:最大m/s 雨:合計mm 雪:合計cm 温:最低℃
     </div>
     <div id="rank-list"></div>
@@ -1247,8 +1247,8 @@ async function fetchWeather(lat, lon) {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => render());
     });
-    // 気圧面ごとの雲量（高度方向の細かい濃淡用）は任意取得。失敗しても本体に影響させない
-    fetchCloudLevels(lat, lon);
+    // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
+    fetchSupplemental(lat, lon);
   } catch (e) {
     hideLoading();
     alert('データ取得失敗: ' + e.message);
@@ -1261,38 +1261,62 @@ const CLOUD_LEVELS = [
   [1000, 110], [950, 540], [900, 990], [850, 1460], [800, 1950], [700, 3010],
   [600, 4200], [500, 5570], [400, 7180], [300, 9160], [250, 10360], [200, 11780],
 ];
-async function fetchCloudLevels(lat, lon) {
-  const vars = CLOUD_LEVELS.map(([hPa]) => `cloud_cover_${hPa}hPa`).join(',');
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=${vars}&timezone=Asia%2FTokyo&past_days=3&forecast_days=4`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return;                        // 未対応なら3層フォールバックのまま
+// 補助データ（気圧面ごとの雲量 + 突風）。JMAモデルは突風/気圧面雲量を返さないため
+// modelsを指定せず（best_match）に別リクエストで取得する。失敗しても本体に影響させない。
+async function fetchSupplemental(lat, lon) {
+  const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&timezone=Asia%2FTokyo&past_days=3&forecast_days=4&hourly=`;
+  const cloudVars = CLOUD_LEVELS.map(([hPa]) => `cloud_cover_${hPa}hPa`).join(',');
+  const get = async vars => {
+    const res = await fetch(base + vars);
+    if (!res.ok) return null;
     const json = await res.json();
-    const h = json.hourly;
-    if (!h || !h.time) return;
-    // time文字列 -> {alt: 雲量} の索引を作る（メインデータと時刻で突き合わせる）
-    const map = new Map();
+    return (json && json.hourly && json.hourly.time) ? json.hourly : null;
+  };
+  let h = null;
+  try { h = await get(`${cloudVars},wind_gusts_10m`); } catch (e) { h = null; }
+  if (!h) { try { h = await get('wind_gusts_10m'); } catch (e) { h = null; } }   // 突風だけでも取得
+  if (!h) return;
+
+  // 突風：時刻→値の索引を作り、メインデータへ突き合わせる
+  if (h.wind_gusts_10m) {
+    const gmap = new Map();
     for (let i = 0; i < h.time.length; i++) {
-      const prof = [];
-      for (const [hPa, alt] of CLOUD_LEVELS) {
-        const arr = h[`cloud_cover_${hPa}hPa`];
-        if (arr && arr[i] != null) prof.push([alt, arr[i]]);
-      }
-      if (prof.length) map.set(h.time[i], prof);
+      if (h.wind_gusts_10m[i] != null) gmap.set(h.time[i], h.wind_gusts_10m[i]);
     }
-    if (!map.size) return;
-    state.cloudProfiles = map;
-    if (cloudChart) cloudChart.redraw();         // 取得できたら高精細表示に差し替え
-  } catch (e) {
-    /* 取得失敗時は低・中・高の3層表示のまま（非破壊） */
+    if (gmap.size) {
+      // fullDataとallDataは同じオブジェクト参照を共有するためfullDataへの反映で足りる
+      if (state.fullData) {
+        state.fullData.forEach(d => { const v = gmap.get(isoHour(d.time)); if (v != null) d.gust = v; });
+      }
+    }
   }
+
+  // 気圧面ごとの雲量：time文字列 -> [[高度, 雲量], ...]
+  const map = new Map();
+  for (let i = 0; i < h.time.length; i++) {
+    const prof = [];
+    for (const [hPa, alt] of CLOUD_LEVELS) {
+      const arr = h[`cloud_cover_${hPa}hPa`];
+      if (arr && arr[i] != null) prof.push([alt, arr[i]]);
+    }
+    if (prof.length) map.set(h.time[i], prof);
+  }
+  if (map.size) state.cloudProfiles = map;
+
+  // 取得できた分を反映（チャート再構築で突風スケール・右軸も更新）
+  if (state.allData) {
+    try { buildCharts(); positionScrubLine(); updatePopup(); } catch (e) { /* 描画前なら無視 */ }
+  }
+}
+// Open-Meteoのhourly時刻キー（YYYY-MM-DDTHH:00）に整形
+function isoHour(t) {
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}T${String(t.getHours()).padStart(2, '0')}:00`;
 }
 // 指定時刻の高度プロファイルを返す（無ければ低中高から合成）
 function cloudProfileAt(d) {
   if (state.cloudProfiles) {
-    const key = `${d.time.getFullYear()}-${String(d.time.getMonth()+1).padStart(2,'0')}-${String(d.time.getDate()).padStart(2,'0')}T${String(d.time.getHours()).padStart(2,'0')}:00`;
-    const p = state.cloudProfiles.get(key);
+    const p = state.cloudProfiles.get(isoHour(d.time));
     if (p) return p;
   }
   // フォールバック：低(1km)・中(4.5km)・高(9.5km)の代表高度に配置
@@ -2971,13 +2995,26 @@ async function fetchRankData(dates) {
   return json;
 }
 
-// 1峰×1日の評価: 6〜18時をjudgePointで判定し最悪ランクと集計値を返す
+// 判定対象の時間帯を返す。当日は「今から先」のみを見る
+//   ・当日で18時前  … max(6, 現在時) 〜 18時
+//   ・当日で18時以降 … 現在時 〜 23時（日中は終了しているため残り時間で判定）
+//   ・当日以外       … 6〜18時
+function rankHourWindow(dateStr) {
+  const now = new Date();
+  if (dateStr !== fmtDateISO(now)) return [RANK_WINDOW_START, RANK_WINDOW_END];
+  const h = now.getHours();
+  if (h > RANK_WINDOW_END) return [h, 23];
+  return [Math.max(RANK_WINDOW_START, h), RANK_WINDOW_END];
+}
+
+// 1峰×1日の評価: 対象時間帯をjudgePointで判定し最悪ランクと集計値を返す
 function judgePeakDay(hourData, dateStr) {
+  const [winStart, winEnd] = rankHourWindow(dateStr);
   let worst = null, worstReasons = [], maxWind = 0, sumPrecip = 0, sumSnow = 0, minTemp = null;
   for (const d of hourData) {
     if (fmtDateISO(d.time) !== dateStr) continue;
     const h = d.time.getHours();
-    if (h < RANK_WINDOW_START || h > RANK_WINDOW_END) continue;
+    if (h < winStart || h > winEnd) continue;
     const { grade, reasons } = judgePoint(d);
     const r = { A: 0, B: 1, C: 2 }[grade];
     if (worst == null || r > worst) { worst = r; worstReasons = reasons; }   // 最悪グレード時の理由を保持
@@ -3120,6 +3157,11 @@ async function refreshRanking() {
     list.innerHTML = '<div class="rank-msg">日付を選択してください</div>';
     return;
   }
+  // 判定に使う時間帯を表示（当日は「今から先」に絞る）
+  const [ws, we] = rankHourWindow(rankDates[0]);
+  const isToday = rankDates[0] === fmtDateISO(new Date());
+  document.getElementById('rank-window-label').textContent =
+    `${ws}〜${we}時` + (isToday ? '（今から先）' : '');
   list.innerHTML = '<div class="rank-msg">全国の気象データ取得中…</div>';
   try {
     const rows = await buildRanking(rankDates);
