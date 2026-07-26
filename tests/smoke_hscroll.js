@@ -26,7 +26,7 @@ function fakeWeather() {
 }
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true });
-  const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, hasTouch: true });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/*', route => {
@@ -44,7 +44,9 @@ function fakeWeather() {
   const init = await page.evaluate(() => {
     const wrap = document.getElementById('charts-wrapper');
     return {
-      hasHScroll: wrap.scrollWidth > wrap.clientWidth + 5,          // 横スクロール可能
+      // チャートはtransformで動かす（scrollLeftではない）。内容が画面より広いこと
+      hasHScroll: document.getElementById('charts-inner').getBoundingClientRect().width
+                > wrap.clientWidth + 5,
       innerCanvases: document.querySelectorAll("#charts-inner canvas").length,
       hasGutter: !!document.getElementById('axis-gutter'),
       idx: state.sliderIndex,          // 初期=現在（実績72hぶん後ろなので72）
@@ -59,8 +61,8 @@ function fakeWeather() {
       })(),
       scrubLeft: document.getElementById('scrubber').scrollLeft,
       hasScrubCanvas: !!document.getElementById('scrubber-canvas'),
-      // 帯とチャートは同じ座標系＝同じスクロール量・同じ内容幅
-      scrollMatched: Math.abs(document.getElementById('scrubber').scrollLeft - wrap.scrollLeft) < 1,
+      // 帯とチャートは同じ座標系＝同じ移動量・同じ内容幅
+      scrollMatched: Math.abs(document.getElementById('scrubber').scrollLeft - chartOffset) < 1,
       // 両端の余白はゼロ（末尾の空白の原因だったので置かない）
       padL: chartPadL, padR: chartPadR,
       widthMatched: Math.abs(document.getElementById('scrubber-inner').getBoundingClientRect().width
@@ -80,8 +82,7 @@ function fakeWeather() {
     btnNow: document.getElementById('btn-now').style.display,
     hud: document.getElementById('pop-time').textContent,
     // 帯を動かすとチャートも同じ量だけ動くこと
-    scrollMatched: Math.abs(document.getElementById('scrubber').scrollLeft
-                          - document.getElementById('charts-wrapper').scrollLeft) < 1.5,
+    scrollMatched: Math.abs(document.getElementById('scrubber').scrollLeft - chartOffset) < 1.5,
     // 赤の選択線と帯の指標が同じx＝上下でズレないこと（今回の修正点）
     lineX: parseFloat(document.getElementById('scrub-line').style.left),
     markX: parseFloat(document.getElementById('scrubber-center').style.left),
@@ -98,7 +99,7 @@ function fakeWeather() {
       sc.scrollLeft = base + k * 37;                       // 指で動かしている想定
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       samples.push({
-        dScroll: Math.abs(sc.scrollLeft - wrap.scrollLeft),
+        dScroll: Math.abs(sc.scrollLeft - chartOffset),
         dLine: Math.abs(parseFloat(document.getElementById('scrub-line').style.left)
                       - parseFloat(document.getElementById('scrubber-center').style.left)),
       });
@@ -113,8 +114,7 @@ function fakeWeather() {
   });
   await page.waitForTimeout(700);
   const atEnd = await page.evaluate(() => {
-    const wrap = document.getElementById('charts-wrapper');
-    const max = wrap.scrollWidth - wrap.clientWidth;
+    const max = chartMaxOffset();
     return {
       idx: state.sliderIndex,
       lastIdx: HOURS - 1,
@@ -139,20 +139,49 @@ function fakeWeather() {
     markX: parseFloat(document.getElementById('scrubber-center').style.left),
   }));
 
-  // 「現在」ボタンで現在時刻へ戻る
+  // 「現在」ボタンで現在時刻へ戻る。
+  // 帯をなぞった直後に押すと、チャートだけをsmoothスクロールしていたせいで
+  // 帯のscrollイベントが「なぞり」と誤検出され、元の位置へ引き戻されていた（回帰テスト）
   await page.click('#btn-now');
-  await page.waitForTimeout(700);
-  await page.waitForTimeout(200);
-  const afterNow = await page.evaluate(() => ({
-    idx: state.sliderIndex,
-    nowRound: Math.round(nowIndexFrac()),
-    btnNow: document.getElementById('btn-now').style.display,
-  }));
+  await page.waitForTimeout(900);
+  const afterNow = await page.evaluate(() => {
+    const sc = document.getElementById('scrubber');
+    // 現在時刻を選んだときに本来あるべき位置を解き直して比較する
+    const idxNow = Math.round(nowIndexFrac());
+    const max = chartMaxOffset();
+    let want = Math.max(0, Math.min(max, idxToX(idxNow) - viewW * SCRUB_POS));
+    for (let k = 0; k < 6; k++) want = Math.max(0, Math.min(max, idxToX(idxNow) - cursorX(want)));
+    return {
+      idx: state.sliderIndex,
+      nowRound: idxNow,
+      btnNow: document.getElementById('btn-now').style.display,
+      // 上下が同じ位置に着地し、そこに留まっていること
+      dScroll: Math.abs(chartOffset - sc.scrollLeft),
+      dTarget: Math.abs(chartOffset - want),
+      dLine: Math.abs(parseFloat(document.getElementById('scrub-line').style.left)
+                    - parseFloat(document.getElementById('scrubber-center').style.left)),
+    };
+  });
+
+  // 画面をタッチして指を離しても、評価ポップアップがその場に留まること
+  await page.touchscreen.tap(300, 300);
+  await page.waitForTimeout(400);
+  const popup = await page.evaluate(() => {
+    const pop = document.getElementById('scrub-popup');
+    const outer = document.getElementById('charts-outer').getBoundingClientRect();
+    const r = pop.getBoundingClientRect();
+    return {
+      left: r.left,
+      // 既定位置（左から13%）へ戻っていないこと
+      homeLeft: outer.left + outer.width * 0.13,
+      opacity: getComputedStyle(pop).backgroundColor,
+    };
+  });
 
   await page.screenshot({ path: __dirname + '/smoke_hscroll.png' });
   await browser.close();
 
-  console.log(JSON.stringify({ init, afterScroll, midScrub, atEnd, atStart, afterNow, errors }, null, 2));
+  console.log(JSON.stringify({ init, afterScroll, midScrub, atEnd, atStart, afterNow, popup, errors }, null, 2));
   const ok = errors.length === 0 &&
     init.hasHScroll && init.innerCanvases === 4 && init.hasGutter &&
     init.idx === Math.floor(init.nowFrac) && init.btnNow === 'none' &&
@@ -175,7 +204,11 @@ function fakeWeather() {
     // 先頭：最初の時刻が選べ、選択線は左寄りに来る（中央固定だと届かない範囲を救う）
     atStart.idx === 0 && atStart.firstX < atStart.viewW * 0.4 && atStart.firstX > 0 &&
     Math.abs(atStart.lineX - atStart.markX) < 0.5 &&
-    afterNow.idx === afterNow.nowRound && afterNow.btnNow === 'none';
+    afterNow.idx === afterNow.nowRound && afterNow.btnNow === 'none' &&
+    // 「現在」で上下とも本来の位置へ着地し、引き戻されないこと
+    afterNow.dScroll < 1.5 && afterNow.dTarget < 2 && afterNow.dLine < 0.5 &&
+    // タッチ後のポップアップが既定位置へ戻っていないこと
+    Math.abs(popup.left - popup.homeLeft) > 20;
   console.log(ok ? 'HSCROLL SMOKE PASSED' : 'HSCROLL SMOKE FAILED');
   process.exit(ok ? 0 : 1);
 })();

@@ -95,10 +95,61 @@ function fakeWeather() {
     };
   });
 
+  // 判定の根拠になった数値の色分け（B相当=lv1 / C相当=lv2）。
+  // judgePoint は変更禁止なので、内訳は同じTHRESH・同じ式を使う judgeBreakdown で出している
+  const grades = await page.evaluate(() => {
+    const d = state.allData[state.sliderIndex];
+    const probe = (over) => {
+      const keep = { ...d };
+      Object.assign(d, over);
+      updatePopup();
+      const cls = id => {
+        const e = document.getElementById(id);
+        return e.classList.contains('lv2') ? 2 : e.classList.contains('lv1') ? 1 : 0;
+      };
+      const r = { grade: document.getElementById('pop-grade').textContent,
+                  wind: cls('pop-wind'), app: cls('pop-app'),
+                  prec: cls('pop-prec'), dp: cls('pop-dp') };
+      Object.assign(d, keep);
+      updatePopup();
+      return r;
+    };
+    return {
+      // 穏やか＝どこも着色されない
+      calm:    probe({ wind: 1, apparent: 10, precip: 0, snow: 0, dpress: 0 }),
+      // 風だけB相当（日帰り閾値 B:5 / C:10 m/s）
+      windB:   probe({ wind: 7,  apparent: 10, precip: 0, snow: 0, dpress: 0 }),
+      // 風がC相当
+      windC:   probe({ wind: 12, apparent: 10, precip: 0, snow: 0, dpress: 0 }),
+      // 体感がC相当（apparentB=-15）
+      coldC:   probe({ wind: 1, apparent: -20, precip: 0, snow: 0, dpress: 0 }),
+      // 降水がC相当（rainB=3）
+      rainC:   probe({ wind: 1, apparent: 10, precip: 5, snow: 0, dpress: 0 }),
+      // 気圧変化がB相当（dpressA=6 / dpressB=10）
+      pressB:  probe({ wind: 1, apparent: 10, precip: 0, snow: 0, dpress: -8 }),
+    };
+  });
+
+  // 月齢の近似式。既知の新月・満月と突き合わせる（平均朔望月の近似なので±0.6日を許容）
+  const moon = await page.evaluate(() => {
+    const dist = (p, target) => { const d = Math.abs(p - target); return Math.min(d, 1 - d); };
+    const days = f => f * 29.530588853;
+    return {
+      newMoon1: days(dist(moonPhase(new Date('2026-01-19T02:52Z')), 0)),
+      fullMoon1: days(dist(moonPhase(new Date('2026-02-02T00:09Z')), 0.5)),
+      newMoon2: days(dist(moonPhase(new Date('2026-07-14T09:44Z')), 0)),
+      fullMoon2: days(dist(moonPhase(new Date('2026-07-29T14:36Z')), 0.5)),
+      newMoon3: days(dist(moonPhase(new Date('2025-03-29T10:58Z')), 0)),
+      // 位相は必ず0〜1に収まること（基準より前の日付でも負にならない）
+      inRange: [new Date('1990-05-05'), new Date('2035-11-11')]
+        .every(d => { const p = moonPhase(d); return p >= 0 && p < 1; }),
+    };
+  });
+
   await page.screenshot({ path: __dirname + '/smoke_window.png' });
   await browser.close();
 
-  console.log(JSON.stringify({ r, hol, errors }, null, 2));
+  console.log(JSON.stringify({ r, hol, grades, moon, errors }, null, 2));
   const ok = errors.length === 0 && r.dayTabsGone && r.len === 241 &&
     r.firstIsPast72 && r.selectedIsNow && r.rangeToggleGone &&
     r.spanHours === 240 && r.sliderIdx === 72 &&
@@ -111,7 +162,19 @@ function fakeWeather() {
     hol.badgeHoliday.text === '8月11日(火)' && hol.badgeHoliday.holText === '（山の日）' &&
     hol.badgeHoliday.cls === 'holiday' &&
     hol.badgeSunday.cls === 'sun' && hol.badgeSat.cls === 'sat' &&
-    hol.badgeWeekday.cls === '' && hol.badgeWeekday.holText === '';
+    hol.badgeWeekday.cls === '' && hol.badgeWeekday.holText === '' &&
+    // 判定の根拠になった数値だけが着色され、総合判定とも整合すること
+    grades.calm.grade === 'A' &&
+    [grades.calm.wind, grades.calm.app, grades.calm.prec, grades.calm.dp].every(v => v === 0) &&
+    grades.windB.grade === 'B' && grades.windB.wind === 1 && grades.windB.app === 0 &&
+    grades.windC.grade === 'C' && grades.windC.wind === 2 &&
+    grades.coldC.grade === 'C' && grades.coldC.app === 2 && grades.coldC.wind === 0 &&
+    grades.rainC.grade === 'C' && grades.rainC.prec === 2 &&
+    grades.pressB.grade === 'B' && grades.pressB.dp === 1 &&
+    // 月齢：既知の朔望とのズレが0.6日以内、位相は0〜1に収まる
+    moon.inRange &&
+    [moon.newMoon1, moon.fullMoon1, moon.newMoon2, moon.fullMoon2, moon.newMoon3]
+      .every(d => d < 0.6);
   console.log(ok ? 'WINDOW SMOKE PASSED' : 'WINDOW SMOKE FAILED');
   process.exit(ok ? 0 : 1);
 })();

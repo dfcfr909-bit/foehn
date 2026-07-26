@@ -87,9 +87,30 @@ function fakeWeather() {
       dateInHeader: document.getElementById('header').contains(document.getElementById('date-badge')),
       legendBelow: !!(document.getElementById('time-scroll').compareDocumentPosition(
         document.getElementById('legend')) & Node.DOCUMENT_POSITION_FOLLOWING),
-      // 円柱は画面のおよそ半分の幅を占め、右端（★の手前）に寄っている
+      // 円柱は日付＋時刻と★を置いた残りを使い、右端（★の手前）に寄っている
       rotaryFrac: el.getBoundingClientRect().width / window.innerWidth,
       rotaryRightGap: window.innerWidth - el.getBoundingClientRect().right,
+      // ヘッダーがはみ出していないこと（日付を大きくしたので幅が競合しやすい）
+      headerOverflow: document.getElementById('header').scrollWidth
+                    - document.getElementById('header').clientWidth,
+      // バージョンは下段（凡例行）の右端にある
+      versionInLegend: document.getElementById('legend')
+                        .contains(document.getElementById('app-version')),
+      versionRightmost: (() => {
+        const v = document.getElementById('app-version').getBoundingClientRect();
+        const l = document.getElementById('legend').getBoundingClientRect();
+        return l.right - v.right < 16;      // 行の右端に寄っている
+      })(),
+      // ★は日付・時刻と同じ塊の中（時刻の右）。「現在」はヘッダー右端へ移した
+      starInBadge: document.getElementById('date-badge')
+                     .contains(document.getElementById('btn-fav-star')),
+      starRightOfTime: document.getElementById('btn-fav-star').getBoundingClientRect().left
+                     >= document.getElementById('date-time').getBoundingClientRect().right - 1,
+      nowInHeader: document.getElementById('header')
+                     .contains(document.getElementById('btn-now')),
+      // 日付の隣に選択時刻が出ている
+      dateText: document.getElementById('date-main').textContent,
+      timeText: document.getElementById('date-time').textContent,
     };
   });
 
@@ -130,8 +151,12 @@ function fakeWeather() {
     Math.max(...init.opacities) - Math.min(...init.opacities) > 0.1 &&
     init.favBarGone && init.inHeader && init.headerH < 56 &&  // ヘッダー同居で省スペース化
     init.dateInHeader && init.legendBelow &&                  // 日付は上・凡例は下段
-    init.rotaryFrac > 0.45 && init.rotaryFrac < 0.55 &&       // 画面のおよそ半分
-    init.rotaryRightGap < 60 &&                               // 右端寄せ（★のぶんだけ空く）
+    init.rotaryFrac > 0.28 && init.headerOverflow === 0 &&    // 残り幅を使い、はみ出さない
+    init.versionInLegend && init.versionRightmost &&           // バージョンは下段の右端
+    init.starInBadge && init.starRightOfTime && init.nowInHeader &&   // ★は時刻の右、現在はヘッダー
+    /^\d+月\d+日\(.\)$/.test(init.dateText) &&               // 日付
+    /^\d{2}:00$/.test(init.timeText) &&                       // その隣に選択時刻
+    init.rotaryRightGap < 80 &&                               // 右端寄せ（★＋バージョンの列ぶんだけ空く）
     after.centered.length === 1 && after.centered[0] === '槍ヶ岳' &&
     after.locationName === '槍ヶ岳' && Math.abs(after.lat - 36.3417) < 1e-3 &&
     after.domReused && after.count === 4;

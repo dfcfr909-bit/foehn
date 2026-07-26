@@ -98,33 +98,23 @@ html, body {
   z-index: 10;
 }
 
-/* ヘッダー左：小さいブランド行の下に、大きな日付を置く */
+/* ヘッダー左：日付＋選択時刻を大きく。祝日名だけ2行目に落とす */
 #header-left {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
   min-width: 0;
   flex-shrink: 0;
 }
-#app-brand {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  line-height: 1;
-}
-#app-logo {
-  font-family: var(--font-display);
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: var(--text3);
-  line-height: 1;
-}
+/* バージョンは下段（凡例行）の右端に置く */
 #app-version {
-  font-size: 8px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
   font-family: var(--font-mono);
   color: var(--text3);
   line-height: 1;
+  white-space: nowrap;
 }
 
 /* お気に入り地点ピッカー：縦軸まわりに回る円柱の側面に地点名が書いてあるイメージ。
@@ -132,8 +122,9 @@ html, body {
    座標として計算する。駒は左右で中央へ収束するため、地点数が増えても
    横幅は円柱の直径（FAV_R*2）を超えない。 */
 #fav-rotary {
-  /* 画面のおよそ半分を使い、右端（★の手前）へ寄せる */
-  flex: 0 0 50%;
+  /* 日付＋時刻と★を置いた残りを使い、右端（★の手前）へ寄せる。
+     枠の広さに応じて円柱の半径と1駒の角度はJSが決める（layoutFavRotary） */
+  flex: 1 1 0;
   margin-left: auto;
   min-width: 0;
   height: 38px;
@@ -190,8 +181,8 @@ html, body {
 /* 現在地点のお気に入り登録トグル（ワンタップ） */
 #btn-fav-star {
   flex-shrink: 0;
-  width: 32px;
-  min-height: 32px;
+  width: 26px;
+  min-height: 24px;
   border: none;
   background: transparent;
   font-size: 20px;
@@ -453,7 +444,13 @@ html, body {
   overscroll-behavior-x: contain;
 }
 #charts-wrapper::-webkit-scrollbar { display: none; }
-#charts-inner { position: relative; }   /* 幅はJSで設定（全時間ぶん） */
+/* チャート本体。scrollLeftではなくtransformで動かす（再描画を避けるため）。
+   幅はJSで設定（全時間ぶん） */
+#charts-inner {
+  position: relative;
+  will-change: transform;
+  transform: translate3d(0,0,0);
+}
 /* 固定Y軸ガター（左端。スクロールしても単位・目盛りが残る） */
 #axis-gutter {
   position: absolute;
@@ -491,20 +488,19 @@ html, body {
   /* 高さはJSでチャート合計に合わせる */
 }
 /* 「現在へ戻る」浮動ボタン（チャート右上。選択が現在から離れたときのみ表示） */
+/* 「現在」ボタン。ヘッダー右端（★が抜けた場所）に置く */
 #btn-now {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  z-index: 7;
-  min-height: 30px;
-  padding: 0 12px;
+  flex-shrink: 0;
+  min-height: 28px;
+  padding: 0 9px;
   border: none;
   border-radius: 15px;
   background: var(--text);
   color: #fff;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   display: none;
@@ -516,7 +512,11 @@ html, body {
   left: 13%;
   z-index: 8;
   min-width: 116px;
-  background: rgba(28,32,40,0.92);
+  /* 指を離した位置にそのまま留まる（毎回左上へ戻すと読みづらいため）。
+     背後のグラフが少し透けるが、blurで文字の可読性は保つ */
+  background: rgba(28,32,40,0.84);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   color: #fff;
   border-radius: 10px;
   padding: 6px 9px 7px;
@@ -557,6 +557,9 @@ html, body {
 .pop-sub { font-size: 10px; color: rgba(255,255,255,0.7); }
 #pop-rain { font-weight: 700; color: #8fd0ff; }
 #pop-windw { font-weight: 700; color: #b6aaff; }
+/* 判定の根拠になった数値。B相当は黄、C相当は赤（暗い地色でも読める明るさにする） */
+#scrub-popup .lv1 { color: #ffd24a; }
+#scrub-popup .lv2 { color: #ff7166; }
 
 /* ============================================================
    FOOTER
@@ -995,11 +998,13 @@ html, body {
 /* 凡例は下段（スクラバー帯とフッターの間）。上部は日付と地点に譲っている */
 #legend {
   display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 3px 14px;
+  padding: 3px 12px;
   flex-shrink: 0;
   flex-wrap: wrap;
-  justify-content: center;
+  /* 凡例は左寄せ、バージョンは margin-left:auto で右端。行の幅いっぱいを使う */
+  justify-content: flex-start;
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
@@ -1028,28 +1033,39 @@ html, body {
   border-radius: 2px;
   flex-shrink: 0;
 }
-/* 選択中の日付バッジ（ヘッダー左上。画面で一番目立つ位置） */
+/* 選択中の日付＋時刻（ヘッダー左上。画面で一番目立つ位置） */
 #date-badge {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 5px;
   font-family: var(--font-ui);
   white-space: nowrap;
   line-height: 1.05;
 }
 #date-main {
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--text);
+}
+/* 選択中の時刻。日付の隣に、日付と同じ大きさで並べる */
+#date-time {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.5px;
 }
 /* 日曜・祝日は赤、土曜は青 */
 #date-badge.sun #date-main, #date-badge.holiday #date-main { color: #d02020; }
 #date-badge.sat #date-main { color: #1f6fd0; }
 #date-holiday {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #d02020;
+  line-height: 1.1;
+  white-space: nowrap;
 }
+#date-holiday:empty { display: none; }
 </style>
 </head>
 <body>
@@ -1065,12 +1081,16 @@ html, body {
   <div id="header">
     <!-- 左上：選択中の日付を一番大きく出す。休日・祝日は赤字、祝日は名称も -->
     <div id="header-left">
-      <div id="app-brand"><span id="app-logo">SotoKi</span><span id="app-version">v4.35.0</span></div>
-      <div id="date-badge"><span id="date-main">--</span><span id="date-holiday"></span></div>
+      <div id="date-badge">
+        <span id="date-main">--</span><span id="date-time">--:--</span>
+        <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
+      </div>
+      <div id="date-holiday"></div>
     </div>
     <!-- スクロールは入力専用。駒はstickyなstage上に絶対配置して円柱の側面に並べる -->
     <div id="fav-rotary"><div id="fav-track"><div id="fav-stage"></div></div></div>
-    <button id="btn-fav-star" onclick="toggleFavStar()" title="現在地点をお気に入り登録／解除">☆</button>
+    <!-- ★が抜けた右端へ「現在」を置く。選択が現在から離れたときだけ出る -->
+    <button id="btn-now" onclick="jumpToNow()">⏱現在</button>
   </div>
 
   <!-- 上部の日付/HUD/ABCは撤去し、選択情報は指追従ポップアップに集約 -->
@@ -1105,7 +1125,6 @@ html, body {
       <div id="scrub-bar"></div>
     </div>
     <!-- 現在へ戻る（浮動ボタン） -->
-    <button id="btn-now" onclick="jumpToNow()">⏱ 現在</button>
     <!-- 選択情報ポップアップ（指の右上に追従。既定は選択線付近の上部） -->
     <div id="scrub-popup">
       <div id="pop-time">--/-- (-) --:--</div>
@@ -1135,6 +1154,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
+    <span id="app-version">v4.42.0</span>
   </div>
 
   <!-- Footer -->
@@ -1465,8 +1485,9 @@ function updateLocationName() {
 // 円柱の側面に地点名が書いてあるイメージ。駒は円周上に置き、正面に来たものが選択地点。
 // スクロールは入力（慣性・スナップ）専用で、駒の位置はここで円柱の座標として計算する。
 const FAV_STEP  = 54;   // 駒1つぶんのスクロール量(px)。回す手応えの重さ
-const FAV_ANGLE = 42;   // 駒1つぶんの回転角(deg)。枠が広がったぶん駒を多めに見せる
-const FAV_R     = 96;   // 円柱の半径(px)。画面のおよそ半分を使う大きさ
+// 半径と1駒の角度は枠の広さと駒の幅から layoutFavRotary が決める（下は初期値）
+let FAV_ANGLE = 42;     // 駒1つぶんの回転角(deg)。枠が狭いほど大きくする
+let FAV_R     = 96;     // 円柱の半径(px)。枠の半分を上限にする
 
 let favScrollTimer = null;
 let favRotaryProgrammatic = false;   // プログラム的スクロールを無視するフラグ
@@ -1548,9 +1569,24 @@ function layoutFavRotary() {
   const stage = document.getElementById('fav-stage');
   const track = document.getElementById('fav-track');
   if (!el || !stage || !track) return;
-  const n = stage.querySelectorAll('.fav-chip').length;
+  const chips = stage.querySelectorAll('.fav-chip');
+  const n = chips.length;
   const w = el.clientWidth || 200;
   stage.style.width = w + 'px';
+
+  // 枠の広さと駒の幅から円柱の寸法を決める。
+  // 隣の駒が正面と重ならない条件 R*sinθ − (cw/2)cosθ ≧ cw/2 を満たす最小の角度を採る。
+  // 枠が狭いほど半径は小さく角度は大きくなる（角度を広げると隣が外側かつ強く圧縮されるため）
+  let chipW = 0;
+  chips.forEach(c => { chipW = Math.max(chipW, c.offsetWidth); });
+  chipW = chipW || 70;
+  FAV_R = Math.max(30, Math.min(96, (w / 2) * 0.98));   // 「現在」表示時は枠がさらに狭くなる
+  const cw = (chipW / 2) / FAV_R;
+  FAV_ANGLE = 78;
+  for (let a = 40; a <= 78; a += 2) {
+    const r = a * Math.PI / 180;
+    if (Math.sin(r) - cw * Math.cos(r) >= cw) { FAV_ANGLE = a; break; }
+  }
   // 表示幅ぶん＋(駒数-1)*STEP。これで scrollLeft の範囲が 0〜(n-1)*STEP になる
   track.style.width = (w + Math.max(0, n - 1) * FAV_STEP) + 'px';
   updateFavRotaryTransforms();
@@ -1660,6 +1696,21 @@ function centeredChip() {
   return best;
 }
 
+// 枠の幅は日付の文字数（祝日名の有無など）で変わるので、変化を監視して寸法を取り直す。
+// 取り直さないと、広い枠のときに決めた半径のまま狭い枠に描いてはみ出す
+(function watchFavRotaryWidth() {
+  const el = document.getElementById('fav-rotary');
+  if (!el || !window.ResizeObserver) return;
+  let lastW = 0;
+  new ResizeObserver(() => {
+    const w = el.clientWidth;
+    if (!w || Math.abs(w - lastW) < 2) return;
+    lastW = w;
+    layoutFavRotary();
+    centerActiveChip();
+  }).observe(el);
+})();
+
 // 回している間は毎フレーム角度を更新し、止まったら正面の駒に吸い付けて選択を確定する
 (function bindFavRotary() {
   const el = document.getElementById('fav-rotary');
@@ -1753,6 +1804,9 @@ function updateDateBadge() {
   const hol = jpHoliday(t);
   document.getElementById('date-main').textContent =
     `${t.getMonth() + 1}月${t.getDate()}日(${DOW_JP[t.getDay()]})`;
+  // 選択中の時刻を日付の隣に
+  document.getElementById('date-time').textContent =
+    `${String(t.getHours()).padStart(2, '0')}:00`;
   document.getElementById('date-holiday').textContent = hol ? `（${hol}）` : '';
   badge.classList.toggle('holiday', hol != null);
   badge.classList.toggle('sun', t.getDay() === 0);
@@ -1792,6 +1846,21 @@ function updatePopup() {
   const g = document.getElementById('pop-grade');
   g.textContent = grade;
   g.className = 'pop-grade g-' + grade;
+
+  // 判定の根拠になった数値を色分けする（B相当=黄 / C相当=赤）
+  const bd = judgeBreakdown(d);
+  const mark = (id, lv) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('lv1', lv === 1);
+    el.classList.toggle('lv2', lv === 2);
+  };
+  mark('pop-app',   bd.apparent);   // 判定に使うのは気温ではなく体感
+  mark('pop-prec',  bd.precip);
+  mark('pop-rain',  bd.precip);
+  mark('pop-wind',  bd.wind);
+  mark('pop-windw', bd.wind);
+  mark('pop-dp',    bd.dpress);
 
   document.getElementById('pop-temp').textContent = (d.temp != null ? Math.round(d.temp) : '--') + '°';
   document.getElementById('pop-app').textContent = '体感' + (d.apparent != null ? Math.round(d.apparent) : '--') + '°';
@@ -1894,6 +1963,23 @@ function judgePoint(d) {
   return { grade, reasons };
 }
 
+/* 各項目のABCスコア（ポップアップで根拠の数値を色分けするため）。
+   判定式・閾値は judgePoint とまったく同じものを使う（同じ THRESH・同じ abcScore）。
+   judgePoint は規約により変更禁止なので、内訳は読み取り専用のこちらに分けてある。
+   閾値を調整するときは THRESH だけを触ること（両方が同じ THRESH を見ている）。 */
+function judgeBreakdown(d) {
+  const t = THRESH;
+  const modeT = THRESH[state.mode];
+  return {
+    wind:     abcScore(d.wind, modeT.windA, modeT.windB),
+    apparent: abcScoreInv(d.apparent, t.apparentA, t.apparentB),
+    precip:   Math.max(
+                d.snow   > 0 ? abcScore(d.snow, t.snowA, t.snowB) : 0,
+                d.precip > 0 ? abcScore(d.precip, t.rainA, t.rainB) : 0),
+    dpress:   abcScore(Math.abs(d.dpress || 0), t.dpressA, t.dpressB),
+  };
+}
+
 
 /* ============================================================
    CHARTS (uPlot)  ── 1日≒1画面の広い時間軸を横スクロール。
@@ -1927,8 +2013,9 @@ function niceRange(vals, pad, minSpan) {
   if (mx - mn < minSpan) { const c = (mn + mx) / 2; mn = c - minSpan / 2; mx = c + minSpan / 2; }
   return [mn, mx];
 }
-const PADDING_L     = 44;   // 左軸の単位・目盛りを読める幅を確保
+const PADDING_L     = 36;   // 左軸の幅。単位を2段組みにしたぶん詰めてある
 const PADDING_R     = 32;   // 右軸（高度km等）の目盛りを読める幅を確保
+const SKY_TOP_PAD   = 46;   // 気温パネル上部。日付ラベル＋天気アイコンを重ねずに置く高さ
 const FORECAST_HOURS = 168; // 現在時刻から先の表示時間数（7日）
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
@@ -2007,7 +2094,7 @@ function buildCharts() {
   skyChart = new uPlot({
     ...common,
     height: CHART_H_SKY,
-    padding: [34, PADDING_R, TIME_AXIS_H, PADDING_L],
+    padding: [SKY_TOP_PAD, PADDING_R, TIME_AXIS_H, PADDING_L],
     scales: {
       x: xScale,
       y: { range: tempRange },
@@ -2202,15 +2289,17 @@ function drawAxisGutter() {
   if (!scaleInfo) return;
   const si = scaleInfo;
 
-  // 気温（skyパネル: 上34 / 下TIME_AXIS_H）
-  const skyTop = 34, skyBottom = CHART_H_SKY - TIME_AXIS_H;
+  // 気温（skyパネル: 上SKY_TOP_PAD / 下TIME_AXIS_H）
+  const skyTop = SKY_TOP_PAD, skyBottom = CHART_H_SKY - TIME_AXIS_H;
   const ty = t => skyTop + (si.tempMax - t) / (si.tempMax - si.tempMin) * (skyBottom - skyTop);
+  // 名前と単位も数値と同じ右寄せに揃える（左寄せだと数値と横でぶつかる）
   ctx.fillStyle = '#e05020';
-  ctx.textAlign = 'left';
-  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
-  ctx.fillText('気温℃', 3, 12);
-  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'right';
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('気温', W - 4, 11);
+  ctx.font = 'bold 8.5px monospace';
+  ctx.fillText('℃', W - 4, 21);
+  ctx.font = 'bold 11.5px monospace';
   const tIn = (si.tempMax - si.tempMin) * 0.14;
   [si.tempMin + tIn, (si.tempMin + si.tempMax) / 2, si.tempMax - tIn].forEach(t => {
     const y = ty(t);
@@ -2222,16 +2311,15 @@ function drawAxisGutter() {
   const cPlotTop = cTop + 4, cPlotBottom = cTop + CHART_H_CLOUD - TIME_AXIS_H;
   const cZone = (cPlotBottom - cPlotTop) * 0.62;   // 降水バーのフルスケール高さ
   ctx.fillStyle = '#12a3ad';
-  ctx.textAlign = 'left';
-  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
-  ctx.fillText('降水', 3, cTop + 12);
-  ctx.font = 'bold 8.5px monospace';
-  ctx.fillText('mm/h', 3, cTop + 21);
-  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'right';
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('降水', W - 4, cTop + 11);
+  ctx.font = 'bold 8.5px monospace';
+  ctx.fillText('mm/h', W - 4, cTop + 21);
+  ctx.font = 'bold 11.5px monospace';
   [0.5, 1].forEach(f => {                          // 中間値と最大値
     const y = cPlotBottom - cZone * f;
-    if (y > cTop + 22) ctx.fillText((si.precipMax * f).toFixed(si.precipMax < 10 ? 1 : 0), W - 4, y + 3);
+    if (y > cTop + 30) ctx.fillText((si.precipMax * f).toFixed(si.precipMax < 10 ? 1 : 0), W - 4, y + 3);
   });
   ctx.fillStyle = 'rgba(18,163,173,0.65)';
   ctx.fillText('0', W - 4, cPlotBottom);
@@ -2239,29 +2327,31 @@ function drawAxisGutter() {
   // 風速（windパネル）
   const wTop = CHART_H_SKY + CHART_H_CLOUD;
   ctx.fillStyle = '#6c5ce7';
-  ctx.textAlign = 'left';
-  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
-  ctx.fillText('風m/s', 3, wTop + 14);
-  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'right';
-  ctx.fillText(String(Math.round(si.windMax)), W - 4, wTop + 28);
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('風', W - 4, wTop + 11);
+  ctx.font = 'bold 8.5px monospace';
+  ctx.fillText('m/s', W - 4, wTop + 21);
+  ctx.font = 'bold 11.5px monospace';
+  ctx.fillText(String(Math.round(si.windMax)), W - 4, wTop + 34);   // 単位2段のぶん下げる
   ctx.fillStyle = 'rgba(108,92,231,0.6)';
   ctx.fillText('0', W - 4, wTop + CHART_H_WIND - TIME_AXIS_H);
 
   // 気圧（pressパネル: 上10 / 下TIME_AXIS_H）
   const prTop = CHART_H_SKY + CHART_H_CLOUD + CHART_H_WIND;
   const prPlotTop = prTop + 10, prPlotBottom = prTop + CHART_H_PRESS - TIME_AXIS_H;
-  const py = p => prPlotTop + (si.pressMax - p) / (si.pressMax - si.pressMin) * (prPlotBottom - prPlotTop);
   ctx.fillStyle = '#5a5f6c';
-  ctx.textAlign = 'left';
-  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
-  ctx.fillText('気圧hPa', 3, prTop + 12);
-  ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'right';
-  const pIn = (si.pressMax - si.pressMin) * 0.15;
-  [si.pressMin + pIn, si.pressMax - pIn].forEach(p => {
-    const y = py(p);
-    if (y > prTop + 10 && y < prPlotBottom + 4) ctx.fillText(Math.round(p), W - 4, y + 3);
+  ctx.font = "bold 10px 'Noto Sans JP', sans-serif";
+  ctx.fillText('気圧', W - 4, prTop + 11);
+  ctx.font = 'bold 8.5px monospace';
+  ctx.fillText('hPa', W - 4, prTop + 21);
+  ctx.font = 'bold 10.5px monospace';
+  // 値から位置を決めると単位（hPa）と重なる高さに来ることがあるので、
+  // 先に「単位より下の安全な位置」を決めて、そこに対応する値を書く
+  [0.45, 0.82].forEach(f => {
+    const y = prPlotTop + (prPlotBottom - prPlotTop) * f;
+    ctx.fillText(Math.round(si.pressMax - (si.pressMax - si.pressMin) * f), W - 4, y + 3);
   });
   drawAxisGutterRight();
 }
@@ -2340,6 +2430,48 @@ function dayBandsFracs() {
 }
 
 /* ------ 共通背景hook: 白地 + 昼夜シェーディング + グリッド + 日付区切り ------ */
+/* ------ 昼夜のシェーディング（共通） ------
+   境界はぼかす。朝夕の変わり目は本来なだらかで、くっきり引くと
+   「現在／過去の境目」の線と紛らわしいため。
+   夜だけを塗る方式にしてあるので、白地でも空色のグラデ地でも同じように使える。 */
+const NIGHT_RGB = '40,52,96';
+const NIGHT_ALPHA = 0.30;
+
+function softEdgePx(pr) { return Math.min(22, pxPerHourVal * 1.6) * pr; }
+
+// x0〜x1 を塗るための、両端がフェードする横グラデーション
+function softGradient(ctx, x0, x1, soft, rgb, alpha) {
+  const gx0 = x0 - soft, gx1 = x1 + soft, total = gx1 - gx0;
+  const f = Math.min(0.49, soft / total);
+  const g = ctx.createLinearGradient(gx0, 0, gx1, 0);
+  g.addColorStop(0, `rgba(${rgb},0)`);
+  g.addColorStop(f, `rgba(${rgb},${alpha})`);
+  g.addColorStop(1 - f, `rgba(${rgb},${alpha})`);
+  g.addColorStop(1, `rgba(${rgb},0)`);
+  return g;
+}
+
+// 夜（昼間帯の補集合）を暗く塗る
+function paintNightOverlay(u, ctx, H) {
+  const pr = canvasRatio(u);
+  const soft = softEdgePx(pr);
+  const xL = u.valToPos(-0.5, 'x', true);
+  const xR = u.valToPos(HOURS - 0.5, 'x', true);
+  const days = dayBandsFracs()
+    .map(b => [u.valToPos(Math.max(-0.5, b.from), 'x', true),
+               u.valToPos(Math.min(HOURS - 0.5, b.to), 'x', true)])
+    .filter(([a, b]) => b > a)
+    .sort((p, q) => p[0] - q[0]);
+  const nights = [];
+  let cur = xL;
+  days.forEach(([a, b]) => { if (a > cur) nights.push([cur, a]); cur = Math.max(cur, b); });
+  if (cur < xR) nights.push([cur, xR]);
+  nights.forEach(([a, b]) => {
+    ctx.fillStyle = softGradient(ctx, a, b, soft, NIGHT_RGB, NIGHT_ALPHA);
+    ctx.fillRect(a - soft, 0, (b + soft) - (a - soft), H);
+  });
+}
+
 function drawDayBackground(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
@@ -2350,20 +2482,19 @@ function drawDayBackground(u) {
   // 下地（白）
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
-  // まず全体を夜色（薄暗い青）で塗る → 昼間帯を明るく戻す。
-  // 「夜=暗い / 昼=明るい」の直感に合わせる
-  ctx.fillStyle = 'rgba(40,52,96,0.16)';
-  ctx.fillRect(0, 0, W, H);
   const bands = dayBandsFracs().map(b => ({
     x0: u.valToPos(Math.max(-0.5, b.from), 'x', true),
     x1: u.valToPos(Math.min(HOURS - 0.5, b.to), 'x', true),
   }));
-  // 昼間帯を白へ戻す
-  ctx.fillStyle = '#ffffff';
-  bands.forEach(b => { if (b.x1 > b.x0) ctx.fillRect(b.x0, 0, b.x1 - b.x0, H); });
   // 昼間帯にごく淡い暖色（陽の色）
-  ctx.fillStyle = 'rgba(255,214,150,0.14)';
-  bands.forEach(b => { if (b.x1 > b.x0) ctx.fillRect(b.x0, 0, b.x1 - b.x0, H); });
+  const soft = softEdgePx(pr);
+  bands.forEach(b => {
+    if (b.x1 <= b.x0) return;
+    ctx.fillStyle = softGradient(ctx, b.x0, b.x1, soft, '255,214,150', 0.16);
+    ctx.fillRect(b.x0 - soft, 0, (b.x1 + soft) - (b.x0 - soft), H);
+  });
+  // 夜を暗く（境界はぼかす）
+  paintNightOverlay(u, ctx, H);
   // 水平グリッド
   ctx.strokeStyle = 'rgba(0,0,0,0.05)';
   ctx.lineWidth = pr;
@@ -2393,7 +2524,7 @@ function drawTimeLabels(u, pr) {
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
   for (let i = 0; i < data.length; i++) {
     const h = data[i].time.getHours();
-    if (h % 6 !== 0) continue;
+    if (h % 2 !== 0) continue;      // 2時間ごと
     ctx.fillText(String(h), u.valToPos(i, 'x', true), H - 3.5 * pr);
   }
 }
@@ -2420,6 +2551,8 @@ function drawCloudPrecip(u) {
   grad.addColorStop(1, '#e4eef8');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, u.ctx.canvas.height);
+  // 夜のシェーディングは他のパネルと揃える（雲・降水の上には被せず下地だけ暗くする）
+  paintNightOverlay(u, ctx, u.ctx.canvas.height);
 
   // 雲を高度方向に細かく濃淡表示（気圧面プロファイルを高度で線形補間）
   const STEP = 2 * pr;                       // 縦の描画刻み（px）
@@ -2521,13 +2654,26 @@ function drawTempOverlay(u) {
     const dow = ['日','月','火','水','木','金','土'][t.getDay()];
     ctx.font = `bold ${11 * pr}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = 'rgba(0,0,0,0.72)';
-    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}（${dow}）`, x, 12 * pr);
+    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}（${dow}）`, x, 12 * pr);   // アイコンの上
   }
-  // 天気アイコン（6hごと）
+  // 天気アイコン（2hごと）。
+  // 絵文字は色を変えられないので、背景（昼夜シェーディングや気温の塗り）に紛れないよう
+  // 白い座布団を敷いてコントラストを作る。大きさは1時間あたりのpxに合わせて隣と接しない範囲で決める
+  // 2時間間隔なので隣との中心間距離は pxPerHourVal*2。接しないギリギリまで大きくする。
+  // 記号は自前で描くので（drawWeatherGlyph）、丸の中心にきっちり合う
+  const icoR = Math.max(9, pxPerHourVal - 0.6) * pr;   // 座布団の半径
+  const icoCY = 16 * pr + icoR;                        // 丸の中心y（日付ラベルの下）
   for (let i = 0; i < data.length; i++) {
-    if (data[i].time.getHours() % 6 !== 0) continue;
-    ctx.font = `${13 * pr}px sans-serif`;
-    ctx.fillText(weatherEmoji(data[i].wcode, isNightIdx(i)), u.valToPos(i, 'x', true), 30 * pr);
+    if (data[i].time.getHours() % 2 !== 0) continue;
+    const ix = u.valToPos(i, 'x', true);
+    ctx.beginPath();
+    ctx.arc(ix, icoCY, icoR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fill();
+    ctx.lineWidth = pr;
+    ctx.strokeStyle = 'rgba(40,50,60,0.25)';
+    ctx.stroke();
+    drawWeatherGlyph(ctx, data[i].wcode, isNightIdx(i), ix, icoCY, icoR * 0.78, data[i].time);
   }
   // 日の出・日の入り時刻
   if (state.daily && state.daily.sunrise && state.daily.sunset) {
@@ -2541,7 +2687,7 @@ function drawTempOverlay(u) {
       ctx.font = `bold ${9 * pr}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillText(txt, x, 46 * pr);
+      ctx.fillText(txt, x, (SKY_TOP_PAD + 10) * pr);   // アイコンの下に置く
     };
     state.daily.sunrise.forEach(sr => mark(sr, '🌅'));
     state.daily.sunset.forEach(ss => mark(ss, '🌇'));
@@ -2751,6 +2897,158 @@ function getSkyColor(hour, cloud, wcode) {
    WEATHER EMOJI
    ============================================================ */
 // 昼夜対応の天気アイコン（晴れ/薄曇りは太陽↔月で区別）
+
+/* ------ 天気の記号を自分で描く ------
+   絵文字は淡くて小さいと判別しづらく、字形ごとに重心が違うので丸の中心にも合わない。
+   同じ天気区分を、原色寄りのべた塗りで描き直して「パキッと」見せる。
+   cx,cy が中心、r が外接半径。 */
+const WX = {
+  sun:  '#f5a623', moon: '#e8b93a', moonDark: '#dfe3ea',
+  cloud:'#7c8894', cloudHi:'#aeb9c6',
+  rain: '#2f7fd0', snow: '#4aa3e0', bolt: '#f2b705', fog: '#9aa5b1',
+};
+
+// 太陽（円＋放射状の光条）
+function wxSun(ctx, cx, cy, r) {
+  ctx.fillStyle = WX.sun;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.44, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = WX.sun;
+  ctx.lineWidth = Math.max(1, r * 0.13);
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62);
+    ctx.lineTo(cx + Math.cos(a) * r * 0.92, cy + Math.sin(a) * r * 0.92);
+    ctx.stroke();
+  }
+}
+/* 月齢（0=新月 / 0.25=上弦 / 0.5=満月 / 0.75=下弦）。
+   基準の新月からの経過を平均朔望月で割るだけの近似。実際の朔望は月の軌道が
+   楕円なので前後するため、誤差は概ね±0.5日ほど出る（実測: 既知の新月・満月と
+   比べて0.05〜0.51日）。形を見て「満月に近い」と分かれば十分という用途なので
+   この精度で足りる。潮汐や暦の用途には使わないこと。 */
+const SYNODIC_MONTH = 29.530588853;                 // 朔望月（日）
+const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14); // 基準の新月
+function moonPhase(date) {
+  const days = (date.getTime() - NEW_MOON_EPOCH) / 86400000;
+  const p = (days / SYNODIC_MONTH) % 1;
+  return p < 0 ? p + 1 : p;
+}
+
+/* 月。実際の満ち欠けに合わせて明るい側を描く。
+   輪郭の半円＋ターミネーター（楕円）を1つのパスにして塗る。
+   destination-out で抜く方式は下に敷いた白い座布団ごと消えるので使わない。 */
+function wxMoon(ctx, cx, cy, r, phase) {
+  const R = r * 0.76;
+  const p = phase == null ? 0.5 : phase;
+  const k = (1 - Math.cos(2 * Math.PI * p)) / 2;   // 照らされている割合（0=新月, 1=満月）
+  const waxing = p < 0.5;                          // 満ちていく側は右が明るい
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (!waxing) ctx.scale(-1, 1);                   // 欠けていく側は左右反転
+  // 暗い側（うっすら見せて欠けが分かるように）
+  ctx.fillStyle = WX.moonDark;
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+  // 明るい側
+  ctx.fillStyle = WX.moon;
+  ctx.beginPath();
+  ctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, false);          // 右half（外周）
+  const rx = R * Math.abs(1 - 2 * k);                          // ターミネーターの膨らみ
+  ctx.ellipse(0, 0, rx, R, 0, Math.PI / 2, -Math.PI / 2, k < 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+// 雲（3つの円＋底の角丸）
+function wxCloud(ctx, cx, cy, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.42, cy + r * 0.12, r * 0.36, 0, Math.PI * 2);
+  ctx.arc(cx - r * 0.02, cy - r * 0.16, r * 0.48, 0, Math.PI * 2);
+  ctx.arc(cx + r * 0.46, cy + r * 0.10, r * 0.34, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  const bw = r * 1.62, bh = r * 0.42, bx = cx - bw / 2, by = cy + r * 0.06;
+  if (ctx.roundRect) { ctx.roundRect(bx, by, bw, bh, bh / 2); } else { ctx.rect(bx, by, bw, bh); }
+  ctx.fill();
+}
+// 降水の粒（雨は斜めの線、雪は小さな円）
+function wxDrops(ctx, cx, cy, r, isSnow) {
+  const y0 = cy + r * 0.52;
+  ctx.strokeStyle = WX.rain;
+  ctx.fillStyle = WX.snow;
+  ctx.lineWidth = Math.max(1, r * 0.16);
+  ctx.lineCap = 'round';
+  [-0.44, 0, 0.44].forEach(dx => {
+    const x = cx + r * dx;
+    if (isSnow) { ctx.beginPath(); ctx.arc(x, y0 + r * 0.18, r * 0.13, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.beginPath(); ctx.moveTo(x + r * 0.08, y0); ctx.lineTo(x - r * 0.06, y0 + r * 0.36); ctx.stroke(); }
+  });
+}
+// 雷
+function wxBolt(ctx, cx, cy, r) {
+  ctx.fillStyle = WX.bolt;
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.10, cy + r * 0.34);
+  ctx.lineTo(cx - r * 0.20, cy + r * 0.92);
+  ctx.lineTo(cx + r * 0.02, cy + r * 0.86);
+  ctx.lineTo(cx - r * 0.10, cy + r * 1.18);
+  ctx.lineTo(cx + r * 0.30, cy + r * 0.66);
+  ctx.lineTo(cx + r * 0.06, cy + r * 0.70);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// 天気コード → 記号。weatherEmoji と同じ区分で描き分ける
+function drawWeatherGlyph(ctx, code, night, cx, cy, r, date) {
+  if (code == null) {
+    ctx.fillStyle = WX.fog;
+    ctx.font = `bold ${r * 1.2}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('?', cx, cy);
+    return;
+  }
+  const clear = () => (night ? wxMoon(ctx, cx, cy, r, date ? moonPhase(date) : null)
+                             : wxSun(ctx, cx, cy, r));
+  if (code === 0) { clear(); return; }                                  // 快晴
+  if (code <= 3) {                                                      // 薄曇り
+    ctx.save(); ctx.translate(r * 0.22, -r * 0.24); clear(); ctx.restore();
+    wxCloud(ctx, cx - r * 0.10, cy + r * 0.24, r * 0.78, WX.cloudHi);
+    return;
+  }
+  if (code <= 49) {                                                     // 霧
+    ctx.strokeStyle = WX.fog;
+    ctx.lineWidth = Math.max(1, r * 0.16);
+    ctx.lineCap = 'round';
+    [-0.5, -0.1, 0.3, 0.7].forEach((dy, k) => {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * (k % 2 ? 0.62 : 0.78), cy + r * dy);
+      ctx.lineTo(cx + r * (k % 2 ? 0.78 : 0.62), cy + r * dy);
+      ctx.stroke();
+    });
+    return;
+  }
+  const shower = code >= 80 && code <= 86;      // にわか＝日/月を覗かせる
+  if (shower) { ctx.save(); ctx.translate(r * 0.34, -r * 0.34); clear(); ctx.restore(); }
+  if (code >= 95) {                                                     // 雷雨
+    wxCloud(ctx, cx, cy - r * 0.24, r * 0.86, WX.cloud);
+    wxBolt(ctx, cx, cy - r * 0.10, r * 0.72);
+    return;
+  }
+  if (code <= 67 || (code >= 80 && code <= 82)) {                       // 雨
+    wxCloud(ctx, cx, cy - r * 0.22, r * 0.82, WX.cloud);
+    wxDrops(ctx, cx, cy - r * 0.10, r * 0.82, false);
+    return;
+  }
+  if (code <= 86) {                                                     // 雪
+    wxCloud(ctx, cx, cy - r * 0.22, r * 0.82, WX.cloud);
+    wxDrops(ctx, cx, cy - r * 0.10, r * 0.82, true);
+    return;
+  }
+  wxCloud(ctx, cx, cy, r * 0.94, WX.cloud);                             // 曇り
+}
+
 function weatherEmoji(code, night) {
   if (code == null) return '？';
   if (code === 0) return night ? '🌙' : '☀️';       // 快晴
@@ -2796,9 +3094,17 @@ function updateParticles() {
     return;
   }
 
+  // 風の強さと向きに合わせて横に流す。
+  // 風向は「風が吹いてくる方角」なので、進む向きは -sin(風向)（西風270°なら右へ）
+  const windMs = d.wind || 0;
+  const dirX = d.wdir != null ? -Math.sin(d.wdir * Math.PI / 180) : -1;
+  const drift = dirX * windMs * (isSnow ? 0.55 : 0.75);   // 雪は軽いぶん流されるが遅い
+
   const count = isHeavy ? 60 : 25;
   if (particles.length !== count) {
-    particles = Array.from({ length: count }, () => makeParticle(pc.width, pc.height, isSnow));
+    particles = Array.from({ length: count }, () => makeParticle(pc.width, pc.height, isSnow, false, drift));
+  } else {
+    particles.forEach(p => { p.vx = drift + p.jitter; });   // 風だけ変わったときも即反映
   }
 
   cancelAnimationFrame(particleAnim);
@@ -2808,7 +3114,10 @@ function updateParticles() {
     particles.forEach(p => {
       p.y += p.vy;
       p.x += p.vx;
-      if (p.y > pc.height) Object.assign(p, makeParticle(pc.width, pc.height, isSnow, true));
+      // 横殴りのときは横に流れ切るので、左右にはみ出したら反対側から出し直す
+      if (p.y > pc.height || p.x < -40 || p.x > pc.width + 40) {
+        Object.assign(p, makeParticle(pc.width, pc.height, isSnow, true, drift));
+      }
       if (isSnow) drawSnowflake(ctx, p);
       else drawRaindrop(ctx, p);
     });
@@ -2817,11 +3126,17 @@ function updateParticles() {
   loop();
 }
 
-function makeParticle(W, H, isSnow, reset = false) {
+function makeParticle(W, H, isSnow, reset = false, drift = 0) {
+  // drift=風による横方向の速度。jitterは粒ごとのばらつき（風が変わっても保つ）
+  const jitter = isSnow ? (Math.random() - 0.5) * 0.8 : (Math.random() - 0.5) * 0.6;
+  // 横殴りのときは画面の横からも降ってこないと隙間ができるので、
+  // 風上側の外から湧かせる
+  const fromSide = reset && Math.abs(drift) > 3 && Math.random() < 0.5;
   return {
-    x: Math.random() * W,
-    y: reset ? -10 : Math.random() * H,
-    vx: isSnow ? (Math.random() - 0.5) * 0.8 : -0.5 + Math.random() * 0.3,
+    x: fromSide ? (drift > 0 ? -20 : W + 20) : Math.random() * W,
+    y: reset ? (fromSide ? Math.random() * H : -10) : Math.random() * H,
+    vx: drift + jitter,
+    jitter,
     vy: isSnow ? 0.8 + Math.random() * 1.2 : 4 + Math.random() * 3,
     size: isSnow ? 3 + Math.random() * 4 : 1 + Math.random() * 1.5,
     alpha: 0.35 + Math.random() * 0.35,
@@ -2850,19 +3165,32 @@ function drawSnowflake(ctx, p) {
    ・チャートをタップ … タップ位置の時刻を選択（スクロールはしない）
    ============================================================ */
 const chartsWrapper = document.getElementById('charts-wrapper');
+const chartsInner = document.getElementById('charts-inner');
+
+/* チャートは scrollLeft ではなく CSS transform で動かす。
+   幅3,000pxを超えるcanvasを4枚抱えているため、scrollLeftで動かすと毎フレーム
+   再描画が走って重い（ゆっくりなぞるとカクつく原因はこれ）。
+   transformならコンポジタが動かすだけなので再描画が要らない。
+   入力は下部スクラバー帯（小さいcanvas1枚）のネイティブスクロールが担う。 */
+let chartOffset = 0;                       // チャートの論理スクロール量
+function chartMaxOffset() { return Math.max(0, chartTotalW() - viewW); }
+function setChartOffset(x) {
+  chartOffset = Math.max(0, Math.min(chartMaxOffset(), x));
+  chartsInner.style.transform = `translate3d(${-chartOffset}px,0,0)`;
+}
 let scrollEndTimer = null;
 
 // 画面x（charts-outer基準） → 選択index
 function indexFromClientX(clientX) {
   const r = document.getElementById('charts-outer').getBoundingClientRect();
-  const cx = (clientX - r.left) + chartsWrapper.scrollLeft - chartPadL;   // 論理x
+  const cx = (clientX - r.left) + chartOffset - chartPadL;   // 論理x
   const raw = Math.round((cx - PADDING_L) / pxPerHourVal - 0.5);
   return Math.max(0, Math.min(HOURS - 1, raw));
 }
 
 // 選択indexの画面x（charts-outer基準）
 function indexScreenX(idx) {
-  return chartPadL + idxToX(idx) - chartsWrapper.scrollLeft;
+  return chartPadL + idxToX(idx) - chartOffset;
 }
 
 // 赤の選択線を選択indexの位置へ配置（画面外なら隠す）。
@@ -2880,7 +3208,7 @@ function positionScrubLine(at) {
   };
   // atは「この値で上下とも置く」指定（なぞり中は帯の実測値を渡して完全に一致させる）。
   // 省略時は各パネルが自分のスクロール量を使う
-  const sChart = at != null ? at : chartsWrapper.scrollLeft;
+  const sChart = at != null ? at : chartOffset;
   const sStrip = at != null ? at : (scrubberEl ? scrubberEl.scrollLeft : sChart);
   put(line, sChart);
   put(document.getElementById('scrubber-center'), sStrip);
@@ -2906,7 +3234,7 @@ function setSelectedIndex(idx, scroll = false, smooth = false) {
 function cursorX(scrollLeft) {
   const base = viewW * SCRUB_POS;
   if (!state.allData) return base;
-  const max = Math.max(0, chartsWrapper.scrollWidth - chartsWrapper.clientWidth);
+  const max = chartMaxOffset();
   if (max <= 0) return base;
   const headX = idxToX(0);                                   // 先頭の時刻が左端に来る位置
   const tailX = viewW - (chartTotalW() - idxToX(HOURS - 1)); // 末尾の時刻が右端に来る位置
@@ -2926,12 +3254,55 @@ function cursorX(scrollLeft) {
 // 指定indexが選択線の位置に来るようスクロール。
 // cursorXがスクロール量に依存するので、不動点反復で解く（傾き0.5なので数回で収束）
 function scrollToIndex(idx, smooth = false) {
-  const max = Math.max(0, chartsWrapper.scrollWidth - chartsWrapper.clientWidth);
+  const max = chartMaxOffset();
   let left = Math.max(0, Math.min(max, idxToX(idx) - viewW * SCRUB_POS));
   for (let k = 0; k < 6; k++) {
     left = Math.max(0, Math.min(max, idxToX(idx) - cursorX(left)));
   }
-  chartsWrapper.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+  if (smooth) animateScrollTo(left);
+  else { cancelScrollAnim(); setScrollBoth(left); positionScrubLine(left); }
+}
+
+/* ------ プログラム的スクロール（「現在」ボタンなど） ------
+   ブラウザ標準の scrollTo({behavior:'smooth'}) は片方の要素しか動かせない。
+   チャートだけをアニメーションさせると、ミラーで動いた帯のscrollイベントが
+   「なぞり」と誤検出されて scrubFrame が起動し、チャートのアニメーションを
+   打ち切って元の位置へ引き戻していた（「現在」を押しても飛ばない不具合）。
+   自前のアニメーションで両方を毎フレーム同じ値へ動かし、その間は
+   スクロールハンドラを止める。 */
+let scrollAnimId = 0;
+let programmaticScroll = false;
+
+function setScrollBoth(left) {
+  setChartOffset(left);
+  if (scrubberEl) scrubberEl.scrollLeft = left;
+}
+
+function cancelScrollAnim() {
+  if (scrollAnimId) cancelAnimationFrame(scrollAnimId);
+  scrollAnimId = 0;
+  programmaticScroll = false;
+}
+
+function animateScrollTo(target, ms = 320) {
+  cancelScrollAnim();
+  const from = chartOffset;
+  const dist = target - from;
+  if (Math.abs(dist) < 1) { setScrollBoth(target); positionScrubLine(target); return; }
+  const t0 = performance.now();
+  programmaticScroll = true;
+  const step = now => {
+    const p = Math.min(1, (now - t0) / ms);
+    const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;   // easeInOutQuad
+    const cur = from + dist * e;
+    setScrollBoth(cur);
+    positionScrubLine(cur);
+    if (p < 1) { scrollAnimId = requestAnimationFrame(step); return; }
+    scrollAnimId = 0;
+    // 直後に届くscrollイベントを「なぞり」と誤検出させないため1フレーム置いて解除
+    requestAnimationFrame(() => { programmaticScroll = false; });
+  };
+  scrollAnimId = requestAnimationFrame(step);
 }
 
 /* ------ 下部スクラバー帯（選択時刻の移動） ------ */
@@ -2955,9 +3326,9 @@ function scrubberIndexFromScroll() {
 // 値が一致したら何もしないので、相互に呼び合っても往復しない
 function mirrorScrollToScrubber() {
   if (!scrubberEl) return;
-  if (Math.abs(scrubberEl.scrollLeft - chartsWrapper.scrollLeft) < 0.5) return;
+  if (Math.abs(scrubberEl.scrollLeft - chartOffset) < 0.5) return;
   scrubberProgrammatic = true;
-  scrubberEl.scrollLeft = chartsWrapper.scrollLeft;
+  scrubberEl.scrollLeft = chartOffset;
   requestAnimationFrame(() => { scrubberProgrammatic = false; });
 }
 
@@ -3069,7 +3440,7 @@ function scrubFrame() {
   if (sLeft !== scrubLastLeft) {
     scrubLastLeft = sLeft;
     scrubIdleFrames = 0;
-    if (Math.abs(chartsWrapper.scrollLeft - sLeft) >= 0.5) chartsWrapper.scrollLeft = sLeft;
+    setChartOffset(sLeft);
     const idx = scrubberIndexFromScroll();
     if (idx !== state.sliderIndex) setSelectedIndex(idx, false);   // なぞり中はスクロールを指に任せる
     positionScrubLine(sLeft);   // 上下とも帯の実測値で置く＝ズレようがない
@@ -3078,29 +3449,21 @@ function scrubFrame() {
     // ずれは最大でも半コマ（数px）なので即時でよい（smoothは慣性と競合する）
     scrubRafId = 0;
     setSelectedIndex(scrubberIndexFromScroll(), true, false);
+    // パーティクルは止まってから更新（重いため移動中は触らない）
+    clearTimeout(scrollEndTimer);
+    scrollEndTimer = setTimeout(() => updateParticles(), 60);
     return;
   }
   scrubRafId = requestAnimationFrame(scrubFrame);
 }
 
 scrubberEl.addEventListener('scroll', () => {
-  if (scrubberProgrammatic || !state.allData) return;
+  if (scrubberProgrammatic || programmaticScroll || !state.allData) return;
   if (!scrubRafId) {
     scrubLastLeft = -1;
     scrubIdleFrames = 0;
     scrubRafId = requestAnimationFrame(scrubFrame);
   }
-}, { passive: true });
-
-chartsWrapper.addEventListener('scroll', () => {
-  // 帯のなぞり中はscrubFrameが主導するので触らない
-  if (!scrubRafId) {
-    mirrorScrollToScrubber();
-    positionScrubLine();
-  }
-  // パーティクルはスクロール停止後にのみ更新（重いため）
-  clearTimeout(scrollEndTimer);
-  scrollEndTimer = setTimeout(() => updateParticles(), 130);
 }, { passive: true });
 
 /* ------ チャートをタップ／ドラッグ → その位置の時刻を選択 ------ */
@@ -3117,16 +3480,16 @@ chartsWrapper.addEventListener('touchstart', e => {
 chartsWrapper.addEventListener('touchmove', e => {
   if (e.touches[0]) selectFromPointer(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
-chartsWrapper.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
 
 // 帯をなぞっている間もポップアップを指の位置へ追従（指は帯の上にあるため）。
 // positionPopupAtはチャート領域内に収めるので、実際には帯のすぐ上に出る
 (function bindScrubberPopup() {
   if (!scrubberEl) return;
   const at = e => { if (e.touches && e.touches[0]) positionPopupAt(e.touches[0].clientX, e.touches[0].clientY); };
+  // 指が触れたらアニメーション中でも即座に操作を優先する
+  scrubberEl.addEventListener('touchstart', () => cancelScrollAnim(), { passive: true });
   scrubberEl.addEventListener('touchstart', at, { passive: true });
   scrubberEl.addEventListener('touchmove', at, { passive: true });
-  scrubberEl.addEventListener('touchend', () => resetPopupPosition(), { passive: true });
 })();
 
 /* ============================================================
