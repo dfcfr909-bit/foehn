@@ -35,6 +35,7 @@ node smoke_align.js       # 個別実行（詳細なJSONが出る）
 | `smoke_outlook.js` | AI全国概況カードが `sections` ありで表示・空で非表示、折りたたみトグル |
 | `smoke_pwa.js` | manifestのインストール要件、アイコンの実在と寸法、HTMLからの参照、Service Workerのfetchハンドラと更新方針（HTMLはネットワーク優先） |
 | `smoke_favpicker.js` | お気に入り円柱ピッカー：駒が円周上（1つ=FAV_ANGLE deg）に並び横幅が半径以内に収まる、回すと正面の駒が変わり地点が確定、確定時にDOMを作り直さない |
+| `smoke_kyt.js` | KYT分析用紙（`kyt_form.html`）：様式の寸法（列幅52/12/116mm・各行高・A4）、上限字数を入れても枠内に収まること（余裕もpxで実測）、事例Aの表示、ヘッダ項目を全て隠しても崩れないこと、印刷でA4 1枚・画面UIが消えること、記号挿入・プレーンテキスト貼り付け・溢れ検知・第1Rの表記チェック |
 
 ## 注意
 

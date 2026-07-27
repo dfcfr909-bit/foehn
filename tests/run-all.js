@@ -10,6 +10,7 @@ const TESTS = [
   ['smoke_outlook', 'AI全国概況カードの表示/非表示'],
   ['smoke_favpicker', 'お気に入り円柱ピッカー（円周配置・省スペース・選択確定）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
+  ['smoke_kyt',    'KYT分析用紙（様式寸法・上限字数・印刷1枚・溢れ検知）'],
 ];
 
 let failed = 0;
