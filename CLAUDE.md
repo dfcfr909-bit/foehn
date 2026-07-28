@@ -21,6 +21,7 @@
 - `docs/install.md` — PWAインストール手順・アイコン再生成
 - `kyt_form.html` — インシデントレポートKYT分析用紙（A4印刷用）。**気象アプリとは独立した別物**
 - `docs/kyt_form.md` — 上記の様式仕様・寸法定数・次段階（生成API連携）の差し込み口
+- `docs/kyt_generate.md` — 下書き生成の契約（サーバ関数とのやり取り・プロンプト）
 - `manifest.webmanifest` / `sw.js` / `icons/` — PWA一式（アイコン原図は `icons/icon.svg`）
 - `tests/` — スモークテスト（改修のたびに全件実行する）
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
