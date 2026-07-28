@@ -1,6 +1,7 @@
 // スモークテストを一括実行し、結果をまとめて表示する
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
+const fs = require('node:fs');
 
 const TESTS = [
   ['smoke_window',  '表示ウィンドウ（実績72h+予報168h・241点）・祝日判定'],
@@ -11,13 +12,16 @@ const TESTS = [
   ['smoke_favpicker', 'お気に入り円柱ピッカー（円周配置・省スペース・選択確定）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_kyt',    'KYT分析用紙（様式寸法・上限字数・印刷1枚・溢れ検知）'],
+  ['smoke_worker', '下書き生成Worker（秘密パス・CORS・日次上限・内部を漏らさない）'],
 ];
 
 let failed = 0;
 for (const [name, desc] of TESTS) {
   process.stdout.write(`${name.padEnd(14)} ${desc} ... `);
   try {
-    execFileSync(process.execPath, [path.join(__dirname, name + '.js')], { stdio: 'pipe' });
+    // WorkerのテストはESM（.mjs）。拡張子は存在する方を使う
+    const file = ['.js', '.mjs'].map(ext => path.join(__dirname, name + ext)).find(fs.existsSync);
+    execFileSync(process.execPath, [file], { stdio: 'pipe' });
     console.log('PASS');
   } catch (e) {
     failed++;
