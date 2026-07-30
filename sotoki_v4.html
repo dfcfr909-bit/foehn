@@ -1008,7 +1008,7 @@ html, body {
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
-/* 雲量の濃淡凡例（淡→濃のグラデーション） */
+/* 雲量の濃淡凡例（無段階。JS側の cloudAlpha() と同じ濃さを並べる） */
 #cloud-legend {
   display: inline-block;
   width: 44px;
@@ -1017,8 +1017,9 @@ html, body {
   vertical-align: middle;
   border: 1px solid rgba(0,0,0,0.15);
   background: linear-gradient(to right,
-    rgba(92,104,122,0.09), rgba(92,104,122,0.22), rgba(92,104,122,0.43),
-    rgba(92,104,122,0.65), rgba(92,104,122,0.86));
+    rgba(88,96,110,0.00), rgba(88,96,110,0.11), rgba(88,96,110,0.23),
+    rgba(88,96,110,0.34), rgba(88,96,110,0.44), rgba(88,96,110,0.54),
+    rgba(88,96,110,0.64), rgba(88,96,110,0.73), rgba(88,96,110,0.82));
 }
 .legend-item {
   display: flex;
@@ -1154,7 +1155,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.42.0</span>
+    <span id="app-version">v4.43.0</span>
   </div>
 
   <!-- Footer -->
@@ -1287,8 +1288,9 @@ async function fetchWeather(lat, lon) {
 /* ------ 気圧面ごとの雲量（高度方向の細かい表示用。任意・失敗許容） ------
    標準大気での各気圧面のおおよその高度(m)。低い面ほど地上寄り。 */
 const CLOUD_LEVELS = [
-  [1000, 110], [950, 540], [900, 990], [850, 1460], [800, 1950], [700, 3010],
-  [600, 4200], [500, 5570], [400, 7180], [300, 9160], [250, 10360], [200, 11780],
+  [1000, 110], [975, 320], [950, 540], [925, 760], [900, 990], [850, 1460],
+  [800, 1950], [700, 3010], [600, 4200], [500, 5570], [400, 7180], [300, 9160],
+  [250, 10360], [200, 11780],
 ];
 // 補助データ（気圧面ごとの雲量 + 突風）。JMAモデルは突風/気圧面雲量を返さないため
 // modelsを指定せず（best_match）に別リクエストで取得する。失敗しても本体に影響させない。
@@ -1356,18 +1358,42 @@ function cloudProfileAt(d) {
           [8000, d.cloudHigh], [9500, d.cloudHigh], [11500, d.cloudHigh]]
          .filter(([, v]) => v != null);
 }
-// プロファイルから任意高度の雲量を線形補間
-function cloudAt(prof, alt) {
-  if (!prof.length) return 0;
-  if (alt <= prof[0][0]) return prof[0][1];
-  for (let k = 1; k < prof.length; k++) {
-    if (alt <= prof[k][0]) {
-      const [a0, v0] = prof[k - 1], [a1, v1] = prof[k];
-      const t = (alt - a0) / (a1 - a0 || 1);
-      return v0 + (v1 - v0) * t;
-    }
+// プロファイル各点の傾き（単調3次補間 Fritsch–Carlson）。
+// 直線補間だと気圧面のところで折れ線の角が出て「段」に見えるため滑らかにする。
+// 単調性を保つ制限つきなので、雲量が 0〜100 の外へ行き過ぎることがない。
+function cloudSlopes(prof) {
+  const n = prof.length;
+  const m = new Float64Array(n);
+  if (n < 2) return m;
+  const d = new Float64Array(n - 1);
+  for (let i = 0; i < n - 1; i++) {
+    d[i] = (prof[i + 1][1] - prof[i][1]) / ((prof[i + 1][0] - prof[i][0]) || 1);
   }
-  return prof[prof.length - 1][1];
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i] / d[i], b = m[i + 1] / d[i];
+    const s = a * a + b * b;
+    if (s > 9) { const t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+  }
+  return m;
+}
+// プロファイルから任意高度の雲量を補間する（slopes省略時は従来どおり線形）
+function cloudAt(prof, alt, slopes) {
+  const n = prof.length;
+  if (!n) return 0;
+  if (n === 1 || alt <= prof[0][0]) return prof[0][1];
+  if (alt >= prof[n - 1][0]) return prof[n - 1][1];
+  let k = 1;
+  while (k < n - 1 && alt > prof[k][0]) k++;
+  const [a0, v0] = prof[k - 1], [a1, v1] = prof[k];
+  const h = (a1 - a0) || 1, t = (alt - a0) / h;
+  if (!slopes) return v0 + (v1 - v0) * t;
+  const t2 = t * t, t3 = t2 * t;
+  const v = (2 * t3 - 3 * t2 + 1) * v0 + (t3 - 2 * t2 + t) * h * slopes[k - 1]
+          + (-2 * t3 + 3 * t2) * v1 + (t3 - t2) * h * slopes[k];
+  return Math.max(0, Math.min(100, v));
 }
 
 // 現在時刻を含む1時間の開始index（表示開始位置）
@@ -2531,6 +2557,75 @@ function drawTimeLabels(u, pr) {
 
 function drawTimeLabelsHook(u) { drawTimeLabels(u, canvasRatio(u)); }
 
+/* ------ 雲の無段階描画 ------
+   雲は「1時間ぶんの箱を6段階の濃さで塗る」形だと、時刻の境目に縦線が出て
+   濃さも階段状に見える。そこで
+     ・高度方向: 気圧面のあいだを単調3次補間（cloudSlopes）でなめらかに
+     ・濃さ:     しきい値ではなく連続関数（cloudAlpha）で
+     ・時刻方向: 1時間=1画素の小さなラスタを作り、drawImageの補間で引き伸ばす
+   の3点で境界を消す。ラスタ化は組み立て時に一度だけなので描画は軽い。 */
+const CLOUD_RGB = [88, 96, 110];
+const CLOUD_ROWS = 192;        // ラスタの高さ（高度方向のサンプル数）
+const CLOUD_SUB = 8;           // 1時間を横に何分割するか
+// 雲量(%)→不透明度。従来の6段階とほぼ同じ濃さを通る連続カーブ
+function cloudAlpha(cov) {
+  if (cov == null) return 0;
+  const t = Math.max(0, Math.min(1, (cov - 3) / 97));
+  return 0.82 * Math.pow(t, 0.85);
+}
+let cloudRasterCache = null;   // { data, profiles, canvas }
+// 縦CLOUD_ROWS段・横1時間あたりCLOUD_SUB画素のラスタを作る。
+// 引き伸ばし倍率を小さくしておかないと、drawImageの拡大補間が
+// ブラウザによっては縞（ミップマップ由来のむら）を出すため自前で刻む。
+function buildCloudRaster(data) {
+  const hours = Math.max(1, data.length), rows = CLOUD_ROWS;
+  // まず1時間ごとの不透明度を高度方向に作る
+  const perHour = new Uint8Array(hours * rows);
+  for (let i = 0; i < data.length; i++) {
+    const prof = cloudProfileAt(data[i]);
+    if (!prof.length) continue;
+    const sl = cloudSlopes(prof);
+    for (let r = 0; r < rows; r++) {
+      const alt = ALT_TOP * (1 - (r + 0.5) / rows);
+      perHour[r * hours + i] = Math.round(cloudAlpha(cloudAt(prof, alt, sl)) * 255);
+    }
+  }
+  // 時刻方向はsmoothstepで混ぜる（直線混ぜだと毎正時に折れ目が残る）
+  const cols = hours * CLOUD_SUB;
+  const cv = document.createElement('canvas');
+  cv.width = cols; cv.height = rows;
+  const c = cv.getContext('2d');
+  const img = c.createImageData(cols, rows);
+  const px = img.data;
+  const [R, G, B] = CLOUD_RGB;
+  // RGBは透明な画素にも入れておく（補間で黒い縁が出るのを防ぐため）
+  for (let o = 0; o < px.length; o += 4) { px[o] = R; px[o + 1] = G; px[o + 2] = B; }
+  const h0s = new Int32Array(cols), h1s = new Int32Array(cols), ws = new Float32Array(cols);
+  for (let j = 0; j < cols; j++) {
+    const hp = (j + 0.5) / CLOUD_SUB - 0.5;                 // 実数の時刻index
+    const h0 = Math.max(0, Math.min(hours - 1, Math.floor(hp)));
+    const h1 = Math.max(0, Math.min(hours - 1, h0 + 1));
+    const t = Math.max(0, Math.min(1, hp - h0));
+    h0s[j] = h0; h1s[j] = h1; ws[j] = t * t * (3 - 2 * t);
+  }
+  for (let r = 0; r < rows; r++) {
+    const base = r * hours, out = r * cols;
+    for (let j = 0; j < cols; j++) {
+      const a0 = perHour[base + h0s[j]], a1 = perHour[base + h1s[j]];
+      px[(out + j) * 4 + 3] = a0 + (a1 - a0) * ws[j];
+    }
+  }
+  c.putImageData(img, 0, 0);
+  return cv;
+}
+function cloudRasterFor(data) {
+  if (cloudRasterCache && cloudRasterCache.data === data &&
+      cloudRasterCache.profiles === state.cloudProfiles) return cloudRasterCache.canvas;
+  const canvas = buildCloudRaster(data);
+  cloudRasterCache = { data, profiles: state.cloudProfiles, canvas };
+  return canvas;
+}
+
 /* ------ CLOUD+PRECIP hook（drawClear）: 縦=高度。雲を高度帯で濃淡＋降水バーを重ねる ------ */
 function cloudPlotBox(u) {
   const pr = canvasRatio(u);
@@ -2554,23 +2649,26 @@ function drawCloudPrecip(u) {
   // 夜のシェーディングは他のパネルと揃える（雲・降水の上には被せず下地だけ暗くする）
   paintNightOverlay(u, ctx, u.ctx.canvas.height);
 
-  // 雲を高度方向に細かく濃淡表示（気圧面プロファイルを高度で線形補間）
-  const STEP = 2 * pr;                       // 縦の描画刻み（px）
-  for (let i = 0; i < data.length; i++) {
-    const xa = u.valToPos(i - 0.5, 'x', true);
-    const xb = u.valToPos(i + 0.5, 'x', true);
-    const prof = cloudProfileAt(data[i]);
-    if (!prof.length) continue;
-    for (let y = top; y < bottom; y += STEP) {
-      // このピクセル行の高度 → 雲量
-      const alt = ALT_TOP * (1 - (y - top) / (bottom - top));
-      const cov = cloudAt(prof, alt);
-      if (cov == null || cov <= 8) continue;
-      // 参考図に近い段階的な濃さ（10/25/50/75/90/100%で濃くなる）
-      const a = cov >= 90 ? 0.80 : cov >= 75 ? 0.62 : cov >= 50 ? 0.45 : cov >= 25 ? 0.28 : 0.15;
-      ctx.fillStyle = `rgba(88,96,110,${a})`;
-      ctx.fillRect(xa, y, xb - xa + 0.6, STEP + 0.6);
-    }
+  // 雲：小さなラスタを引き伸ばして描く。拡大時の補間で時刻方向の境目も溶ける。
+  if (data.length) {
+    const raster = cloudRasterFor(data);
+    // ラスタの列iの中心が時刻iの位置に来るように、両端を半コマ外へ広げて貼る
+    const x0 = u.valToPos(-0.5, 'x', true);
+    const x1 = u.valToPos(data.length - 0.5, 'x', true);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, top, W, bottom - top);
+    ctx.clip();                                  // 時刻軸や上端へにじませない
+    const smooth = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    // 追いボカシ（対応していないブラウザでは引き伸ばし補間だけで十分なめらか）
+    const canBlur = typeof ctx.filter === 'string';
+    if (canBlur) ctx.filter = `blur(${1.2 * pr}px)`;
+    ctx.drawImage(raster, x0, top, x1 - x0, bottom - top);
+    if (canBlur) ctx.filter = 'none';
+    ctx.imageSmoothingEnabled = smooth;
+    ctx.restore();
   }
 
   // 高度グリッド線（1.5/3.5/6/9km）
