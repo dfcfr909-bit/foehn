@@ -1547,7 +1547,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.53.0</span>
+    <span id="app-version">v4.54.0</span>
   </div>
 
   <!-- Footer -->
@@ -5083,7 +5083,13 @@ function setHeadingUp(on) {
 const SPOT_CLEAR_PX = 46;    // 完全に晴れている半径
 const SPOT_FADE_PX = 130;    // ここまでで元の濃さに戻る
 
+let spotRaf = null;
 function updateMeSpotlight() {
+  // 地図の移動中に毎回貼り直すと重い（maskはpane全体を描き直させる）ので1フレーム1回に間引く
+  if (spotRaf) return;
+  spotRaf = requestAnimationFrame(() => { spotRaf = null; paintMeSpotlight(); });
+}
+function paintMeSpotlight() {
   if (!leafletMap) return;
   const pane = leafletMap.getPane('mapNowcast');
   if (!pane) return;
@@ -5099,50 +5105,89 @@ function updateMeSpotlight() {
 
 /* ------ ダブルタップ＋上下ドラッグで拡大縮小（Googleマップと同じ操作） ------
    Leafletに無い操作なので自前で足す。2回目のタップを押したまま上下に動かすと、
-   離すまで連続的にズームする。片手で操作できるのが利点。 */
+   離すまで連続的にズームする。片手で操作できるのが利点。
+
+   なめらかに動かすための肝が2つある（どちらも欠けるとガクガクになる）:
+   1) 毎フレーム setZoom を呼ばない。ピンチズームと同じく map._move(..., {pinch:true})
+      で変形だけ動かし、指を離したときに一度だけ確定させる。
+      setZoom はそのつどタイルを組み直すので、指の動きに追いつかない
+   2) 操作中はLeafletのパンを止める。止めないと同じ指の動きでパンとズームが同時に走り、
+      引っぱり合って震える。そのためイベントは地図の親要素でキャプチャして、
+      Leafletのハンドラへ渡さない（stopPropagation）
+   Leafletの内部関数（_move / _animateZoom）を使っている。Leafletは1.9系に固定。 */
 const DTAP_MS = 300;         // 2回目のタップとみなす間隔
 const DTAP_SLOP_PX = 30;     // 2回目が同じ場所とみなすズレ
-const DTAP_PX_PER_ZOOM = 70; // 1段ズームするのに要る指の移動量
+const DTAP_PX_PER_ZOOM = 90; // 1段ズームするのに要る指の移動量
+
+// 拡大縮小の基準点。追跡中は自分の位置を中心にする
+function zoomAnchor(map, fallbackLatLng) {
+  if (geoWatchId != null && myPos) return L.latLng(myPos.lat, myPos.lon);
+  return fallbackLatLng || map.getCenter();
+}
 
 function bindDoubleTapZoom(map) {
   const el = map.getContainer();
+  const host = el.parentNode || el;       // ここでキャプチャしてLeafletより先に受ける
   let lastTapAt = 0, lastPt = null;
-  let zooming = false, startY = 0, startZoom = 0, moved = 0;
+  let zooming = false, moved = false, panePrepared = false;
+  let startY = 0, startZoom = 0, curZoom = 0;
+  let anchor = null, animReq = null, tapLatLng = null;
 
-  el.addEventListener('touchstart', e => {
+  const stop = e => { e.preventDefault(); e.stopPropagation(); };
+
+  host.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) { zooming = false; return; }
     const t = e.touches[0];
     const now = Date.now();
     const near = lastPt && Math.abs(t.clientX - lastPt.x) < DTAP_SLOP_PX
                         && Math.abs(t.clientY - lastPt.y) < DTAP_SLOP_PX;
     if (now - lastTapAt < DTAP_MS && near) {
-      zooming = true;
+      zooming = true; moved = false; panePrepared = false;
       startY = t.clientY;
       startZoom = map.getZoom();
-      moved = 0;
-      e.preventDefault();          // 地図のパンに取られないようにする
+      curZoom = startZoom;
+      tapLatLng = map.containerPointToLatLng(map.mouseEventToContainerPoint(t));
+      anchor = zoomAnchor(map, tapLatLng);
+      map._stop();
+      stop(e);                     // Leafletのパンに渡さない
     }
     lastTapAt = now;
     lastPt = { x: t.clientX, y: t.clientY };
-  }, { passive: false });
+  }, { capture: true, passive: false });
 
-  el.addEventListener('touchmove', e => {
+  host.addEventListener('touchmove', e => {
     if (!zooming || e.touches.length !== 1) return;
-    e.preventDefault();
-    const dy = startY - e.touches[0].clientY;   // 上へ引くと拡大
-    moved = Math.abs(dy);
-    map.setZoom(startZoom + dy / DTAP_PX_PER_ZOOM, { animate: false });
-  }, { passive: false });
+    stop(e);
+    const dy = startY - e.touches[0].clientY;    // 上へ引くと拡大
+    if (Math.abs(dy) > 6) moved = true;
+    curZoom = map._limitZoom(startZoom + dy / DTAP_PX_PER_ZOOM);
+    if (!moved) return;
+    if (!panePrepared) { map._moveStart(true, false); panePrepared = true; }
+    if (animReq) L.Util.cancelAnimFrame(animReq);
+    // 変形だけ動かす。タイルの組み直しは指を離すまでしない
+    animReq = L.Util.requestAnimFrame(
+      () => map._move(anchor, curZoom, { pinch: true, round: false }), null, true);
+  }, { capture: true, passive: false });
 
-  const end = () => {
+  const end = e => {
     if (!zooming) return;
-    // ほとんど動かさずに離したら、ふつうのダブルタップとして1段拡大する
-    if (moved < 8) map.setZoom(Math.round(map.getZoom()) + 1);
-    else map.setZoom(map.getZoom());            // 小数のまま止める
     zooming = false;
+    if (animReq) { L.Util.cancelAnimFrame(animReq); animReq = null; }
+    if (!moved) {
+      // ほとんど動かさずに離したら、ふつうのダブルタップとして1段拡大
+      // 小数ズームの途中から押しても、きりのよい段に着地させる
+      const z = map._limitZoom(Math.floor(map.getZoom()) + 1);
+      if (geoWatchId != null && myPos) map.setView(anchor, z);
+      else map.setZoomAround(tapLatLng, z);
+    } else if (map.options.zoomAnimation) {
+      map._animateZoom(anchor, map._limitZoom(curZoom), true, map.options.zoomSnap);
+    } else {
+      map._resetView(anchor, map._limitZoom(curZoom));
+    }
+    if (e) stop(e);
   };
-  el.addEventListener('touchend', end);
-  el.addEventListener('touchcancel', end);
+  host.addEventListener('touchend', end, { capture: true, passive: false });
+  host.addEventListener('touchcancel', end, { capture: true, passive: false });
 }
 
 /* 地図を回すとLeafletの座標変換が狂う（getBoundingClientRectが回転後の外接矩形になるため）。

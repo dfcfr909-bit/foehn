@@ -665,16 +665,28 @@ function fakeWeather() {
     fire('touchstart', x, y); fire('touchend', x, y);       // 1回目
     await new Promise(r2 => setTimeout(r2, 60));
     const start = fire('touchstart', x, y);                  // 2回目（押したまま）
-    fire('touchmove', x, y - 140);                           // 上へ140px＝2段ぶん
+    fire('touchmove', x, y - 180);                           // 上へ180px＝2段ぶん
+    // 変形の更新はrequestAnimationFrameに載せているので1フレーム待つ
+    await new Promise(r2 => requestAnimationFrame(() => requestAnimationFrame(r2)));
     const during = leafletMap.getZoom();
-    fire('touchend', x, y - 140);
+    fire('touchend', x, y - 180);
+    await new Promise(r2 => setTimeout(r2, 400));
+    const c = leafletMap.getCenter();
     return { before, during, after: leafletMap.getZoom(), prevented: start.defaultPrevented,
-             snap: leafletMap.options.zoomSnap };
+             snap: leafletMap.options.zoomSnap,
+             tracking: geoWatchId != null,
+             centerOffMe: myPos ? Math.max(Math.abs(c.lat - myPos.lat), Math.abs(c.lng - myPos.lon)) : null,
+             // ピンチと同じ道（_move）を通しているか。setZoomを毎フレーム呼ぶとカクつく
+             usesPinchPath: typeof leafletMap._move === 'function' && typeof leafletMap._animateZoom === 'function' };
   });
-  ok(dtap.during > dtap.before + 1.5, 'ダブルタップ＋上ドラッグで拡大する', dtap);
+  ok(dtap.during > dtap.before + 1.5, 'ダブルタップ＋上ドラッグで拡大する（指を動かしている最中に効く）', dtap);
   ok(Math.abs(dtap.during - dtap.after) < 0.01, '指を離した位置のズームで止まる', dtap);
   ok(dtap.prevented, '2回目のタップは地図のパンに取られない', dtap.prevented);
   ok(dtap.snap === 0, '小数ズームを許してなめらかにする', dtap.snap);
+  ok(dtap.usesPinchPath, 'ピンチズームと同じ内部経路が使える（Leaflet 1.9系）', dtap.usesPinchPath);
+  // ★追跡中は自分の位置を中心に拡大縮小する
+  ok(dtap.tracking && dtap.centerOffMe != null && dtap.centerOffMe < 1e-4,
+    '追跡中は自位置を中心に拡大縮小する', dtap);
 
   // 動かさずに離せば、ふつうのダブルタップとして1段拡大
   const dtapPlain = await page.evaluate(async () => {
@@ -686,7 +698,8 @@ function fakeWeather() {
       ev.touches = type === 'touchend' ? [] : [{ clientX: tx, clientY: ty, identifier: 1, target: el }];
       el.dispatchEvent(ev);
     };
-    leafletMap.setZoom(10);
+    leafletMap.setZoom(10, { animate: false });
+    await new Promise(r2 => setTimeout(r2, 200));
     const before = leafletMap.getZoom();
     fire('touchstart', x, y); fire('touchend', x, y);
     await new Promise(r2 => setTimeout(r2, 60));
