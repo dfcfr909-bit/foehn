@@ -403,11 +403,13 @@ function fakeWeather() {
   await page.waitForTimeout(900);
   const thunder = await page.evaluate(() => ({
     url: overlayTileLayers.thunder ? overlayTileLayers.thunder._url : null,
+    maxNative: overlayTileLayers.thunder ? overlayTileLayers.thunder.options.maxNativeZoom : null,
   }));
   ok(timesHits.some(u => u.includes('targetTimes_N1')), '降水はN1のtargetTimes', timesHits);
   ok(timesHits.some(u => u.includes('targetTimes_N2')), '雷はN2のtargetTimes（降水とは別）', timesHits);
   ok(thunder.url && /20260131123000/.test(thunder.url) && /surf\/thns/.test(thunder.url),
     '雷はN2の時刻でURLを組む', thunder.url);
+  ok(thunder.maxNative === 8, '雷はズーム上限が低い（降水より粗いメッシュ）', thunder.maxNative);
   await page.evaluate(() => toggleOverlay('thunder'));
   await page.waitForTimeout(200);
 
