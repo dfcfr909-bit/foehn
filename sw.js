@@ -21,6 +21,8 @@ const PRECACHE = [
   './sotoki_v4.html',
   './manifest.webmanifest',
   './areas.json',
+  './snowRanking.js',
+  './data/spots.json',
   './vendor/uPlot.iife.min.js',
   './vendor/uPlot.min.css',
   './icons/icon-192.png',

@@ -1,0 +1,43 @@
+{
+  "_readme": [
+    "新雪ランキングの地点シード。ここの bbox / coord は概算値であり、",
+    "scripts/buildSpots.mjs が OSM(Overpass) と国土地理院で確定座標・標高に解決する。",
+    "",
+    "resort … bbox [南緯, 西経, 北緯, 東経] の範囲から索道を拾い、最上部（標高最大）を採る",
+    "bc     … coord [緯度, 経度] をそのまま使い、標高だけ GSI で取る。",
+    "         expectedAlt と 100m 以上ずれたら座標ミスの疑いとして警告する",
+    "",
+    "coord を書いた resort は Overpass を叩かず、その座標を手動指定として採用する",
+    "（OSMに索道データが無い地点の逃げ道）。その場合 bbox は無視される。"
+  ],
+  "spots": [
+    { "id": "hakkoda-rw",    "name": "八甲田ロープウェー",     "area": "青森",   "type": "resort", "bbox": [40.61, 140.82, 40.69, 140.92] },
+    { "id": "hakkoda-odake", "name": "八甲田 大岳",           "area": "青森",   "type": "bc",     "coord": [40.659, 140.878], "expectedAlt": 1585 },
+    { "id": "geto",          "name": "夏油高原",               "area": "岩手",   "type": "resort", "bbox": [39.11, 140.83, 39.20, 140.95] },
+    { "id": "kyozuka",       "name": "経塚山",                 "area": "岩手",   "type": "bc",     "coord": [39.163, 140.803], "expectedAlt": 1373 },
+    { "id": "zao",           "name": "蔵王温泉",               "area": "山形",   "type": "resort", "bbox": [38.11, 140.37, 38.20, 140.47] },
+    { "id": "zao-kumano",    "name": "蔵王 熊野岳",           "area": "山形",   "type": "bc",     "coord": [38.144, 140.442], "expectedAlt": 1841 },
+    { "id": "tengendai",     "name": "天元台高原",             "area": "山形",   "type": "resort", "bbox": [37.73, 140.04, 37.81, 140.14] },
+    { "id": "nishiazuma",    "name": "西吾妻山",               "area": "山形",   "type": "bc",     "coord": [37.734, 140.030], "expectedAlt": 2035 },
+    { "id": "grandeco",      "name": "グランデコ",             "area": "裏磐梯", "type": "resort", "bbox": [37.66, 139.98, 37.74, 140.07] },
+    { "id": "nekoma",        "name": "ネコマ マウンテン",       "area": "裏磐梯", "type": "resort", "bbox": [37.55, 139.96, 37.66, 140.09] },
+    { "id": "daikura",       "name": "会津だいくら",           "area": "南会津", "type": "resort", "bbox": [37.16, 139.71, 37.27, 139.84] },
+    { "id": "nango",         "name": "会津高原南郷",           "area": "南会津", "type": "resort", "bbox": [37.09, 139.49, 37.21, 139.63] },
+    { "id": "takahata",      "name": "会津高原高畑",           "area": "南会津", "type": "resort", "bbox": [36.99, 139.36, 37.10, 139.49] },
+    { "id": "kagura",        "name": "かぐら・みつまた・田代",   "area": "上越",   "type": "resort", "bbox": [36.82, 138.75, 36.92, 138.88] },
+    { "id": "naeba",         "name": "苗場",                   "area": "上越",   "type": "resort", "bbox": [36.75, 138.74, 36.83, 138.84] },
+    { "id": "kandatsu",      "name": "神立高原",               "area": "上越",   "type": "resort", "bbox": [36.89, 138.80, 36.95, 138.87] },
+    { "id": "iwappara",      "name": "岩原",                   "area": "上越",   "type": "resort", "bbox": [36.92, 138.79, 36.98, 138.86] },
+    { "id": "nakazato",      "name": "湯沢中里",               "area": "上越",   "type": "resort", "bbox": [36.85, 138.80, 36.91, 138.87] },
+    { "id": "tairappyo",     "name": "平標山",                 "area": "上越",   "type": "bc",     "coord": [36.812, 138.858], "expectedAlt": 1984 },
+    { "id": "marunuma",      "name": "丸沼高原",               "area": "群馬",   "type": "resort", "bbox": [36.79, 139.30, 36.88, 139.41] },
+    { "id": "kawaba",        "name": "川場",                   "area": "群馬",   "type": "resort", "bbox": [36.71, 139.11, 36.79, 139.21] },
+    { "id": "oguna",         "name": "オグナほたか",           "area": "群馬",   "type": "resort", "bbox": [36.75, 139.15, 36.83, 139.25] },
+    { "id": "iwakura",       "name": "尾瀬岩鞍",               "area": "群馬",   "type": "resort", "bbox": [36.77, 139.14, 36.85, 139.24] },
+    { "id": "houdaigi",      "name": "水上宝台樹",             "area": "群馬",   "type": "resort", "bbox": [36.81, 139.00, 36.89, 139.10] },
+    { "id": "norn",          "name": "ノルン水上",             "area": "群馬",   "type": "resort", "bbox": [36.75, 138.95, 36.83, 139.04] },
+    { "id": "maehotaka",     "name": "前武尊",                 "area": "群馬",   "type": "bc",     "coord": [36.792, 139.140], "expectedAlt": 2040 },
+    { "id": "shibutsu",      "name": "至仏山",                 "area": "尾瀬",   "type": "bc",     "coord": [36.903, 139.174], "expectedAlt": 2228 },
+    { "id": "hiuchi",        "name": "燧ヶ岳",                 "area": "尾瀬",   "type": "bc",     "coord": [36.955, 139.286], "expectedAlt": 2356 }
+  ]
+}

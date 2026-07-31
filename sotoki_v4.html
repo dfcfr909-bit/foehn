@@ -22,6 +22,8 @@
 <!-- uPlot CSS/JS（v1.6.32 同梱。CDN配信されていないためセルフホスト） -->
 <link rel="stylesheet" href="vendor/uPlot.min.css">
 <script src="vendor/uPlot.iife.min.js"></script>
+<!-- 新雪ランキングの推定エンジン（ABC評価とは独立。読めなくても本体は動く） -->
+<script src="snowRanking.js"></script>
 
 <style>
 /* ============================================================
@@ -956,6 +958,133 @@ html, body {
 .pd-reason { font-size: 10px; font-weight: 700; color: var(--c-col); margin-top: 1px; }
 
 /* ============================================================
+   SNOW RANKING（新雪ランキング。ABC評価とは独立した別タブ）
+   ============================================================ */
+#rank-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  flex-shrink: 0;
+}
+.rank-tab {
+  flex: 1;
+  min-height: 40px;              /* グローブ操作前提のタップ領域 */
+  border: 2px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--text2);
+}
+.rank-tab.active { background: var(--text); color: #fff; border-color: var(--text); }
+/* タブの中身。縦に伸びてリストだけがスクロールする */
+.rank-pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.rank-pane.active { display: flex; }
+
+#snow-filter-row { display: flex; gap: 8px; padding: 10px 12px 6px; flex-shrink: 0; }
+.snow-filter-btn {
+  flex: 1;
+  min-height: 44px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--text2);
+}
+.snow-filter-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+#snow-note {
+  padding: 2px 14px 6px;
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+#snow-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.snow-msg { color: var(--text3); text-align: center; margin-top: 24px; font-size: 13px; line-height: 1.7; }
+.snow-msg code {
+  font-family: var(--font-mono);
+  background: var(--bg2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--text);
+}
+.snow-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+/* 信頼度を見た目で区別する。lowは推定の確度が低いことを淡さと破線で示す */
+.snow-row.conf-high { border-left: 6px solid var(--a-col); }
+.snow-row.conf-mid  { border-left: 6px solid var(--b-col); }
+.snow-row.conf-low  { border-left: 6px dashed var(--text3); opacity: 0.66; }
+.snow-pos {
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1;
+  width: 30px;
+  text-align: center;
+  color: var(--text2);
+  align-self: center;
+  flex-shrink: 0;
+}
+.snow-main { flex: 1; min-width: 0; }
+.snow-name-line { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.snow-name { font-weight: 700; font-size: 14px; }
+.snow-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.snow-tag.resort { background: var(--rain-col); }
+.snow-tag.bc { background: var(--wind-col); }
+.snow-area, .snow-alt { font-size: 10px; color: var(--text3); }
+.snow-split, .snow-cond {
+  font-size: 10px;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.snow-cond .warn { color: var(--c-col); font-weight: 700; }
+.snow-src { font-size: 9px; color: var(--text3); margin-top: 2px; }
+.snow-total {
+  align-self: center;
+  text-align: right;
+  flex-shrink: 0;
+  min-width: 62px;
+}
+.snow-total b {
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1;
+  display: block;
+  color: var(--text);
+}
+.snow-total span { font-size: 9px; color: var(--text3); }
+
+/* ============================================================
    LOADING / ERROR
    ============================================================ */
 #loading-overlay {
@@ -1155,7 +1284,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.43.0</span>
+    <span id="app-version">v4.44.0</span>
   </div>
 
   <!-- Footer -->
@@ -1203,20 +1332,42 @@ html, body {
   <!-- Ranking Overlay -->
   <div id="rank-overlay">
     <div id="rank-header">
-      <h2>全国山域ランキング</h2>
+      <h2>ランキング</h2>
       <button id="btn-rank-close" onclick="closeRank()">✕</button>
     </div>
-    <div id="rank-date-row">
-      <button class="rank-date-btn active" data-kind="today" onclick="setRankDate('today')">今日</button>
-      <button class="rank-date-btn" data-kind="tomorrow" onclick="setRankDate('tomorrow')">明日</button>
-      <button class="rank-date-btn" data-kind="weekend" onclick="setRankDate('weekend')">週末</button>
-      <input type="date" id="rank-date-input" onchange="setRankDate('custom')" title="任意の日付を選択">
+    <div id="rank-tabs">
+      <button class="rank-tab active" data-tab="index" onclick="setRankTab('index')">🏔️ 指数</button>
+      <button class="rank-tab" data-tab="snow" onclick="setRankTab('snow')">❄️ 新雪</button>
     </div>
-    <div id="rank-note">
-      <span id="rank-window-label">6〜18時</span>の最悪値で判定（日帰り基準） /
-      山域＝代表峰の最良値、括弧は平均 / 風:最大m/s 雨:合計mm 雪:合計cm 温:最低℃
+
+    <!-- 既存のABC指数ランキング（ロジックは変更していない） -->
+    <div id="rank-pane-index" class="rank-pane active">
+      <div id="rank-date-row">
+        <button class="rank-date-btn active" data-kind="today" onclick="setRankDate('today')">今日</button>
+        <button class="rank-date-btn" data-kind="tomorrow" onclick="setRankDate('tomorrow')">明日</button>
+        <button class="rank-date-btn" data-kind="weekend" onclick="setRankDate('weekend')">週末</button>
+        <input type="date" id="rank-date-input" onchange="setRankDate('custom')" title="任意の日付を選択">
+      </div>
+      <div id="rank-note">
+        <span id="rank-window-label">6〜18時</span>の最悪値で判定（日帰り基準） /
+        山域＝代表峰の最良値、括弧は平均 / 風:最大m/s 雨:合計mm 雪:合計cm 温:最低℃
+      </div>
+      <div id="rank-list"></div>
     </div>
-    <div id="rank-list"></div>
+
+    <!-- 新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪） -->
+    <div id="rank-pane-snow" class="rank-pane">
+      <div id="snow-filter-row">
+        <button class="snow-filter-btn active" data-filter="all" onclick="setSnowFilter('all')">全部</button>
+        <button class="snow-filter-btn" data-filter="resort" onclick="setSnowFilter('resort')">ゲレンデ</button>
+        <button class="snow-filter-btn" data-filter="bc" onclick="setSnowFilter('bc')">BC</button>
+      </div>
+      <div id="snow-note">
+        直近24hの新雪＋今夜〜明朝12hの予想降雪。気温から雪水比を引き直した<b>推定値</b>で、
+        近傍アメダスの実測降雪でモデルを補正している。左の帯＝信頼度（緑=高 / 橙=中 / 灰破線=低）。
+      </div>
+      <div id="snow-list"></div>
+    </div>
   </div>
 
 </div><!-- #app -->
@@ -4031,6 +4182,127 @@ function openRank() {
 
 function closeRank() {
   document.getElementById('rank-overlay').classList.remove('open');
+}
+
+/* ============================================================
+   新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）
+
+   推定は snowRanking.js が担う。ここは表示だけ。
+   既存のABC評価（judgePoint / THRESH / abcScore）には一切触れない。
+   ============================================================ */
+let snowSpots = null;      // data/spots.json（初回fetch後キャッシュ）
+let snowResult = null;     // 直近の推定結果
+let snowFilter = 'all';    // all / resort / bc
+let snowLoading = false;
+
+function setRankTab(tab) {
+  document.querySelectorAll('.rank-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.rank-pane').forEach(p =>
+    p.classList.toggle('active', p.id === `rank-pane-${tab}`));
+  // 新雪タブは開いたときに初めて取りに行く（毎回の起動を重くしない）
+  if (tab === 'snow' && !snowResult && !snowLoading) refreshSnowRanking();
+}
+
+function setSnowFilter(kind) {
+  snowFilter = kind;
+  document.querySelectorAll('.snow-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.filter === kind));
+  renderSnowList();
+}
+
+// 地点リストはビルド時に確定させた静的ファイル。ランタイムではOSM/GSIを叩かない
+async function loadSnowSpots() {
+  if (snowSpots) return snowSpots;
+  const res = await fetch('data/spots.json');
+  if (!res.ok) throw new Error(`spots.json HTTP ${res.status}`);
+  const json = await res.json();
+  snowSpots = (json && json.spots) || [];
+  return snowSpots;
+}
+
+async function refreshSnowRanking() {
+  const list = document.getElementById('snow-list');
+  if (typeof snowRanking === 'undefined') {
+    list.innerHTML = '<div class="snow-msg">推定エンジン（snowRanking.js）を読み込めませんでした。</div>';
+    return;
+  }
+  snowLoading = true;
+  list.innerHTML = '<div class="snow-msg">推定中…</div>';
+  try {
+    const spots = await loadSnowSpots();
+    if (!spots.length) {
+      list.innerHTML = '<div class="snow-msg">地点データが空です。<br>' +
+        '<code>node scripts/buildSpots.mjs</code> を実行してください。</div>';
+      return;
+    }
+    snowResult = await snowRanking.fetchSnowRanking(spots);
+    renderSnowList();
+  } catch (e) {
+    // spots.json が未生成のときはここに来る。次にやることを具体的に出す
+    const hint = /spots\.json/.test(e.message)
+      ? '<br>地点データが未生成です。<code>node scripts/buildSpots.mjs</code> を実行して<br>' +
+        '<code>data/spots.json</code> をコミットしてください。'
+      : '';
+    list.innerHTML = `<div class="snow-msg">取得失敗: ${e.message}${hint}</div>`;
+  } finally {
+    snowLoading = false;
+  }
+}
+
+function renderSnowList() {
+  const list = document.getElementById('snow-list');
+  if (!snowResult) return;
+  const rows = snowResult.rows.filter(r => snowFilter === 'all' || r.type === snowFilter);
+  if (!rows.length) {
+    list.innerHTML = '<div class="snow-msg">該当する地点がありません。</div>';
+    return;
+  }
+  const CONF_LABEL = { high: '高', mid: '中', low: '低' };
+  const html = rows.map((r, i) => {
+    const tag = r.type === 'bc' ? 'BC' : 'ゲレンデ';
+    const slr = r.avgSlr == null ? '—' : `${r.slrLabel} SLR${r.avgSlr}`;
+    const temp = r.avgTemp == null ? '—' : `${r.avgTemp.toFixed(1)}℃`;
+    const wind = r.windMax == null ? '—'
+      : `${r.windWarn ? '⚠' : ''}${r.windMax.toFixed(1)}m/s ${degToDir(r.windDir)}`;
+    const src = r.stationName
+      ? `基準 ${r.stationName} ${r.stationDistKm}km ` +
+        `${r.stationAltDiff >= 0 ? '+' : ''}${r.stationAltDiff}m ／ 補正×${r.k.toFixed(2)}`
+      : '近傍に積雪観測アメダスなし（補正なし）';
+    return `
+      <div class="snow-row conf-${r.confidence}">
+        <div class="snow-pos">${i + 1}</div>
+        <div class="snow-main">
+          <div class="snow-name-line">
+            <span class="snow-name">${escapeHtml(r.name)}</span>
+            <span class="snow-tag ${r.type}">${tag}</span>
+            <span class="snow-area">${escapeHtml(r.area)}</span>
+            <span class="snow-alt">${r.elevation}m</span>
+          </div>
+          <div class="snow-split">
+            <span>24h ${r.past24hCm.toFixed(1)}cm</span>
+            <span>12h ${r.next12hCm.toFixed(1)}cm</span>
+          </div>
+          <div class="snow-cond">
+            <span>${slr}</span><span>${temp}</span>
+            <span class="${r.windWarn ? 'warn' : ''}">${wind}</span>
+          </div>
+          <div class="snow-src">${escapeHtml(src)} ／ 信頼度 ${CONF_LABEL[r.confidence]}</div>
+        </div>
+        <div class="snow-total"><b>${r.totalCm.toFixed(1)}</b><span>cm 合計</span></div>
+      </div>`;
+  }).join('');
+  const notes = (snowResult.notes || []).length
+    ? `<div class="snow-msg">${snowResult.notes.map(escapeHtml).join('<br>')}</div>` : '';
+  list.innerHTML = html + notes;
+}
+
+// 風向（度）を16方位に。0°=北から時計回り
+function degToDir(deg) {
+  if (deg == null) return '';
+  const dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東',
+                '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+  return dirs[Math.round(deg / 22.5) % 16];
 }
 
 /* ============================================================
