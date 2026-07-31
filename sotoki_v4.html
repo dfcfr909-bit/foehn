@@ -48,6 +48,7 @@
   --snow-col: #7bb8e8;
   --wind-col: #6c5ce7;
   --press-col: #888;
+  --gps-col: #1a73e8;   /* 現在地まわり（マーカーと現在地ボタン）で共通 */
 
   --sky-dawn:  #f9a875;
   --sky-day:   #87ceeb;
@@ -773,14 +774,6 @@ html, body {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
-#btn-map-gps {
-  min-height: 44px; padding: 0 12px;
-  display: flex; align-items: center; gap: 4px;
-  border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface); color: var(--text);
-  font-family: var(--font-ui); font-size: 12px; font-weight: 700;
-  cursor: pointer; flex-shrink: 0;
-}
 /* 円柱はヘッダーから引っ越してくるので、残りの幅いっぱいを使わせる */
 #map-fav-slot { flex: 1 1 0; min-width: 0; display: flex; }
 #map-fav-slot > #fav-rotary { flex: 1 1 0; }
@@ -804,7 +797,50 @@ html, body {
   cursor: pointer;
   box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
-#map-tools button[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
+#btn-layers[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
+
+/* 方位・現在地は丸ボタン（スーパー地形のような地図上のアイコン操作） */
+#map-tools button.map-round {
+  width: 44px; height: 44px; min-height: 44px;
+  padding: 0; gap: 0;
+  border-radius: 50%;
+  justify-content: center;
+  position: relative;
+}
+.map-round svg { width: 34px; height: 34px; display: block; overflow: visible; }
+
+/* --- 方位バッジ --- */
+.orient-rim { fill: none; stroke: var(--text3); stroke-width: 1.8; }
+/* Nは環の線の上に載るので、白フチを付けて線が文字を横切らないようにする */
+.orient-nt {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 700;
+  fill: var(--text3); text-anchor: middle;
+  stroke: var(--surface); stroke-width: 3.4; paint-order: stroke;
+}
+.orient-phone { fill: var(--surface); stroke: var(--text); stroke-width: 1.9; }
+.orient-phone-top { stroke: var(--text); stroke-width: 1.6; stroke-linecap: round; }
+/* ヘディングアップ中は赤。北がどこを向いていても「今は北向きではない」と一目で分かる */
+#btn-orient[aria-pressed="true"] .orient-rim { stroke: var(--c-col); stroke-width: 2.4; }
+#btn-orient[aria-pressed="true"] .orient-nt { fill: var(--c-col); }
+
+/* --- 現在地ボタン（off → 現在地へ → 追跡） --- */
+.loc-ring { fill: none; stroke: var(--text3); stroke-width: 2.2; }
+.loc-dot { fill: var(--text3); }
+.loc-tick { stroke: var(--text3); stroke-width: 2.2; stroke-linecap: round; }
+#btn-locate[data-mode="once"] .loc-ring,
+#btn-locate[data-mode="follow"] .loc-ring { stroke: var(--gps-col); }
+#btn-locate[data-mode="once"] .loc-tick,
+#btn-locate[data-mode="follow"] .loc-tick { stroke: var(--gps-col); }
+#btn-locate[data-mode="once"] .loc-dot,
+#btn-locate[data-mode="follow"] .loc-dot { fill: var(--gps-col); }
+/* 追跡中だけ隅に印を出す（押しっぱなしで追い続けている合図） */
+#locate-badge { display: none; }
+#btn-locate[data-mode="follow"] #locate-badge {
+  display: block;
+  position: absolute; right: 1px; bottom: 1px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--gps-col); border: 2px solid var(--surface);
+}
 
 /* 現在地（追跡中）。選択地点のピンとは別物 */
 .me-dot {
@@ -988,6 +1024,7 @@ html, body {
     --text2: #c7ccd4;     /* 約10:1 */
     --text3: #9aa2ad;     /* 約6.4:1（AA本文4.5:1を満たす） */
     --c-col: #ff8a8a;
+    --gps-col: #6aa8ff;   /* 暗い地に#1a73e8では沈むので明るめの青にする */
     background: #16181c;
   }
   #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
@@ -1568,7 +1605,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.57.0</span>
+    <span id="app-version">v4.58.0</span>
   </div>
 
   <!-- Footer -->
@@ -1610,10 +1647,34 @@ html, body {
         <button id="btn-layers" onclick="toggleLayerPanel()" aria-label="地図レイヤーを選ぶ">
           <span aria-hidden="true">🗂️</span>レイヤー
         </button>
-        <button id="btn-track" onclick="toggleTracking()" aria-pressed="false"
-                aria-label="現在地を追跡"><span aria-hidden="true">◎</span>追跡</button>
-        <button id="btn-orient" onclick="toggleOrientation()" aria-pressed="false"
-                aria-label="地図の向き"><span id="orient-icon" aria-hidden="true">🧭</span><span id="orient-label">北</span></button>
+        <!-- 方位。環と北の印が実際の北を向いて回り、スマホの絵は常に上を向く。
+             ヘディングアップだと N が真横を向くので、ノースアップとの違いが一目で分かる -->
+        <button id="btn-orient" class="map-round" onclick="toggleOrientation()" aria-pressed="false"
+                aria-label="ヘディングアップにする">
+          <svg viewBox="0 0 44 44" aria-hidden="true">
+            <g id="orient-ring">
+              <circle class="orient-rim" cx="22" cy="22" r="15"/>
+              <!-- Nは環の上に載せる。位置そのものが「北はこっち」を表す -->
+              <text id="orient-n-label" class="orient-nt" x="22" y="10.6">N</text>
+            </g>
+            <!-- 回らない側＝手に持っている端末 -->
+            <rect class="orient-phone" x="17.8" y="15" width="8.4" height="13.5" rx="2"/>
+            <line class="orient-phone-top" x1="20.2" y1="17.6" x2="23.8" y2="17.6"/>
+          </svg>
+        </button>
+        <!-- 現在地。押すたび「現在地へ」→「追跡（隅に印）」→「解除」と回る -->
+        <button id="btn-locate" class="map-round" onclick="cycleLocate()" data-mode="off"
+                aria-pressed="false" aria-label="現在地へ">
+          <svg viewBox="0 0 44 44" aria-hidden="true">
+            <circle class="loc-ring" cx="22" cy="22" r="8.5"/>
+            <circle class="loc-dot" cx="22" cy="22" r="3.2"/>
+            <line class="loc-tick" x1="22" y1="4.5" x2="22" y2="10.5"/>
+            <line class="loc-tick" x1="22" y1="33.5" x2="22" y2="39.5"/>
+            <line class="loc-tick" x1="4.5" y1="22" x2="10.5" y2="22"/>
+            <line class="loc-tick" x1="33.5" y1="22" x2="39.5" y2="22"/>
+          </svg>
+          <span id="locate-badge" aria-hidden="true"></span>
+        </button>
       </div>
 
       <!-- レイヤーパネル（ボトムシート） -->
@@ -1639,7 +1700,7 @@ html, body {
       </div>
     </div>
     <div id="map-bottom">
-      <button id="btn-map-gps" onclick="gpsFromMap()"><span aria-hidden="true">📍</span>現在地</button>
+      <!-- 「現在地」ボタンは右上の丸ボタンに統合した（v4.58.0） -->
       <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
       <div id="map-fav-slot"></div>
     </div>
@@ -5024,10 +5085,6 @@ function mapFlyTo(lat, lon, zoom) {
 }
 
 // 地図画面の「現在地」。取得したらそこへなめらかに寄る
-function gpsFromMap() {
-  fetchGPS({ keepMap: true });
-}
-
 /* ============================================================
    現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）
 
@@ -5049,23 +5106,66 @@ let headingDeg = 0;               // 端末が向いている方位(deg, 真北=
 let headingHandler = null;
 
 function updateMapToolButtons() {
-  const t = document.getElementById('btn-track');
+  const loc = document.getElementById('btn-locate');
+  if (loc) {
+    loc.dataset.mode = locateMode;
+    loc.setAttribute('aria-pressed', String(locateMode !== 'off'));
+    // 次に押すと何が起きるかを読み上げる（見た目は隅の印で分かる）
+    loc.setAttribute('aria-label',
+      locateMode === 'off' ? '現在地へ' :
+      locateMode === 'once' ? '現在地を追跡する' : '現在地の追跡をやめる');
+  }
   const o = document.getElementById('btn-orient');
-  if (t) t.setAttribute('aria-pressed', String(geoWatchId != null));
   if (o) {
     o.setAttribute('aria-pressed', String(mapHeadingUp));
-    const label = document.getElementById('orient-label');
-    if (label) label.textContent = mapHeadingUp ? '進行' : '北';
+    o.setAttribute('aria-label', mapHeadingUp ? 'ノースアップに戻す' : 'ヘディングアップにする');
   }
+  paintCompass();
 }
 
-function toggleTracking() {
-  if (geoWatchId != null) stopTracking(); else startTracking();
+/* 方位環を実際の北へ向ける。**スマホの絵は動かさない**ので、
+   「端末に対して北がどっちか」がそのまま絵になる。
+   ノースアップならNは真上、ヘディングアップなら北を向いた方向へ回る。 */
+function paintCompass() {
+  const ring = document.getElementById('orient-ring');
+  if (!ring) return;
+  ring.setAttribute('transform', `rotate(${mapRotationDeg.toFixed(1)} 22 22)`);
+  // 文字だけは立てておく（一緒に回すと読めない）
+  const n = document.getElementById('orient-n-label');
+  if (n) n.setAttribute('transform', `rotate(${(-mapRotationDeg).toFixed(1)} 22 7)`);
 }
 
-function startTracking() {
+/* 現在地ボタンは押すたびに3段階で回る:
+     off    … 何もしていない
+     once   … 現在地へ寄り、その地点を選ぶ（下部にあった「現在地」ボタンの役目）
+     follow … 追跡。地図が現在地を追い続け、ボタンの隅に印が出る
+   地図のタップでピンを立てないようにした代わりに、**現在地を選ぶのはこのボタンの役目**。
+   ボタンを押すのは意思のある操作なので、長押しの決まりとは矛盾しない。 */
+let locateMode = 'off';
+
+function cycleLocate() {
+  if (locateMode === 'off') setLocateMode('once');
+  else if (locateMode === 'once') setLocateMode('follow');
+  else setLocateMode('off');
+}
+
+function setLocateMode(mode) {
+  if (mode === 'off') { stopTracking(); return; }
+  locateMode = mode;
+  mapFollow = (mode === 'follow');
+  if (geoWatchId == null) startTracking(mapFollow);
+  if (mode === 'once') {
+    fetchGPS({ keepMap: true });          // 現在地へ寄って、その地点を選ぶ
+  } else if (myPos && leafletMap) {
+    mapFlyTo(myPos.lat, myPos.lon, Math.max(leafletMap.getZoom(), 13));
+  }
+  updateMapToolButtons();
+}
+
+function startTracking(follow) {
   if (!navigator.geolocation) { alert('Geolocation非対応'); return; }
-  mapFollow = true;
+  mapFollow = follow !== false;           // 既定は追従（ヘディングアップから呼ばれる場合）
+  if (locateMode === 'off') locateMode = mapFollow ? 'follow' : 'once';
   geoWatchId = navigator.geolocation.watchPosition(
     onGeoUpdate,
     () => { alert('現在地を取得できませんでした'); stopTracking(); },
@@ -5078,6 +5178,7 @@ function stopTracking() {
   if (geoWatchId != null) navigator.geolocation.clearWatch(geoWatchId);
   geoWatchId = null;
   mapFollow = false;
+  locateMode = 'off';
   setHeadingUp(false);            // 向きだけ残しても意味がないので一緒に戻す
   if (meMarker) { leafletMap.removeLayer(meMarker); meMarker = null; }
   if (meCircle) { leafletMap.removeLayer(meCircle); meCircle = null; }
@@ -5153,11 +5254,13 @@ function applyMapRotation(deg) {
   // 自前のラベルは逆回転して立てる（地図が回っても文字が読めるように）
   stage.style.setProperty('--map-rot', `${-deg}deg`);
   drawMe();
+  paintCompass();          // 方位環も一緒に回す（北がどっちかを出し続ける）
 }
 
 async function toggleOrientation() {
   if (mapHeadingUp) { setHeadingUp(false); return; }
-  if (geoWatchId == null) startTracking();      // 向きだけ変えても使いにくいので追跡も入れる
+  if (geoWatchId == null) setLocateMode('follow');   // 向きだけ変えても使いにくいので追跡も入れる
+  else { locateMode = 'follow'; mapFollow = true; }
   if (!await enableHeading()) { alert('方位センサーを使えませんでした'); return; }
   setHeadingUp(true);
 }

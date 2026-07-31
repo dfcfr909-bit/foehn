@@ -571,13 +571,15 @@ function fakeWeather() {
     return {
       count: document.querySelectorAll('#fav-rotary').length,
       inMap: document.getElementById('map-fav-slot').contains(el),
-      gpsBtn: !!document.getElementById('btn-map-gps'),
-      gpsH: document.getElementById('btn-map-gps').getBoundingClientRect().height,
+      // 「現在地」は右上の丸ボタンに統合した（下部からは消えている）
+      gpsBtn: !!document.getElementById('btn-locate'),
+      oldGpsBtn: !!document.getElementById('btn-map-gps'),
+      gpsH: document.getElementById('btn-locate').getBoundingClientRect().height,
       // 実際に押せるか（高さだけ見ても、上に何かが被っていたら押せない）
       gpsHit: (() => {
-        const b = document.getElementById('btn-map-gps').getBoundingClientRect();
+        const b = document.getElementById('btn-locate').getBoundingClientRect();
         const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-        return !!t && document.getElementById('btn-map-gps').contains(t);
+        return !!t && document.getElementById('btn-locate').contains(t);
       })(),
       rotaryHit: (() => {
         const b = el.getBoundingClientRect();
@@ -590,6 +592,7 @@ function fakeWeather() {
   ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
   ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
   ok(rotary.gpsBtn && rotary.gpsH >= 44, '地図に「現在地」ボタンがある（44px以上）', rotary);
+  ok(!rotary.oldGpsBtn, '下部の「現在地」ボタンは消えている（右上に統合）', rotary.oldGpsBtn);
   // ★閉じたレイヤーパネルが覆いかぶさって押せなくなっていたことがある
   ok(rotary.gpsHit, '「現在地」ボタンが他の要素に覆われていない', rotary.gpsHit);
   ok(rotary.rotaryHit, 'お気に入り円柱が他の要素に覆われていない', rotary.rotaryHit);
@@ -685,19 +688,73 @@ function fakeWeather() {
 
   /* ================= 5e. 現在地の追跡とヘディングアップ ================= */
   await page.evaluate(() => { if (mapHeadingUp) setHeadingUp(false); if (geoWatchId != null) stopTracking(); });
-  await page.click('#btn-track');
+
+  /* 現在地ボタンは押すたびに off → 現在地へ → 追跡 → off と回る（v4.58.0） */
+  const locOff = await page.evaluate(() => ({
+    mode: document.getElementById('btn-locate').dataset.mode,
+    badge: getComputedStyle(document.getElementById('locate-badge')).display,
+  }));
+  ok(locOff.mode === 'off' && locOff.badge === 'none', '最初は何もしていない状態', locOff);
+
+  await page.click('#btn-locate');
   await page.waitForTimeout(900);
-  const tracking = await page.evaluate(() => ({
+  const locOnce = await page.evaluate(() => ({
+    mode: document.getElementById('btn-locate').dataset.mode,
     watching: geoWatchId != null,
-    pressed: document.getElementById('btn-track').getAttribute('aria-pressed'),
+    follow: mapFollow,
+    badge: getComputedStyle(document.getElementById('locate-badge')).display,
     dot: document.querySelectorAll('.me-dot').length,
     circle: !!meCircle,
+    picked: document.getElementById('map-picked-name').textContent,
     // 現在地マーカーは「選択地点のピン」とは別物
     separateFromPin: !!meMarker && !!leafletMarker && meMarker !== leafletMarker,
   }));
-  ok(tracking.watching && tracking.pressed === 'true', '追跡が始まる', tracking);
-  ok(tracking.dot === 1 && tracking.circle, '現在地マーカーと誤差の輪が出る', tracking);
-  ok(tracking.separateFromPin, '現在地は選択地点のピンとは別のマーカー', tracking.separateFromPin);
+  ok(locOnce.mode === 'once' && locOnce.watching, '1回目は現在地へ寄る', locOnce);
+  ok(locOnce.follow === false, '1回目はまだ追跡しない（見に行くだけ）', locOnce.follow);
+  ok(locOnce.badge === 'none', '追跡していないので隅の印は出ない', locOnce.badge);
+  ok(locOnce.dot === 1 && locOnce.circle, '現在地マーカーと誤差の輪が出る', locOnce);
+  ok(locOnce.separateFromPin, '現在地は選択地点のピンとは別のマーカー', locOnce.separateFromPin);
+  ok(locOnce.picked && locOnce.picked !== '—',
+    '★現在地ボタンで地点も選べる（下部の「現在地」ボタンの役目を引き継ぐ）', locOnce.picked);
+
+  await page.click('#btn-locate');
+  await page.waitForTimeout(700);
+  const locFollow = await page.evaluate(() => ({
+    mode: document.getElementById('btn-locate').dataset.mode,
+    follow: mapFollow,
+    badge: getComputedStyle(document.getElementById('locate-badge')).display,
+    pressed: document.getElementById('btn-locate').getAttribute('aria-pressed'),
+  }));
+  ok(locFollow.mode === 'follow' && locFollow.follow === true, '★2回目で追跡モードになる', locFollow);
+  ok(locFollow.badge !== 'none', '★追跡中はボタンの隅に印が出る', locFollow.badge);
+  ok(locFollow.pressed === 'true', '押されている状態として読み上げる', locFollow.pressed);
+
+  await page.click('#btn-locate');
+  await page.waitForTimeout(400);
+  const locBack = await page.evaluate(() => ({
+    mode: document.getElementById('btn-locate').dataset.mode,
+    watching: geoWatchId != null,
+    dot: document.querySelectorAll('.me-dot').length,
+  }));
+  ok(locBack.mode === 'off' && !locBack.watching && locBack.dot === 0,
+    '3回目で解除される（マーカーも消える）', locBack);
+
+  // 以降のヘディングアップの検査のため、追跡に戻しておく
+  await page.click('#btn-locate');
+  await page.waitForTimeout(700);
+  await page.click('#btn-locate');
+  await page.waitForTimeout(700);
+  const tracking = await page.evaluate(() => ({ watching: geoWatchId != null, follow: mapFollow }));
+  ok(tracking.watching && tracking.follow, '追跡が始まる', tracking);
+
+  // ノースアップのときの方位環の色（ヘディングアップと見分けが付くかの比較用）
+  const northRim = await page.evaluate(() => {
+    const r = document.querySelector('.orient-rim');
+    return getComputedStyle(r).stroke;
+  });
+  const northRing = await page.evaluate(() =>
+    document.getElementById('orient-ring').getAttribute('transform'));
+  ok(/rotate\(0/.test(northRing || ''), 'ノースアップではNは真上（環は回らない）', northRing);
 
   // ヘディングアップ：地図が回り、手動パンは止まり、ラベルは逆回転で立つ
   const heading = await page.evaluate(async () => {
@@ -715,7 +772,13 @@ function fakeWeather() {
       counterRot: getComputedStyle(stage).getPropertyValue('--map-rot').trim(),
       dragging: leafletMap.dragging.enabled(),
       rotating: stage.classList.contains('rotating'),
-      label: document.getElementById('orient-label').textContent,
+      // 方位バッジ：環は北へ向いて回り、Nの文字だけは立てておく
+      ring: document.getElementById('orient-ring').getAttribute('transform'),
+      nLabel: document.getElementById('orient-n-label').getAttribute('transform'),
+      rimColor: getComputedStyle(document.querySelector('.orient-rim')).stroke,
+      // スマホの絵は回らない（＝手に持っている端末の向き）
+      phoneRotated: !!document.querySelector('.orient-phone').getAttribute('transform'),
+      pressed: document.getElementById('btn-orient').getAttribute('aria-pressed'),
     };
   });
   ok(heading.headingUp, 'ヘディングアップに切り替わる', heading);
@@ -723,8 +786,14 @@ function fakeWeather() {
   ok(/rotate\(-90deg\)/.test(heading.mapTransform), '地図にrotateが掛かる', heading.mapTransform);
   ok(heading.counterRot === '90deg', '自前ラベルは逆回転で立てる', heading.counterRot);
   ok(heading.dragging === false, '★回転中は手動パンを止める（座標がねじれるため）', heading.dragging);
+  /* ★方位バッジ（スーパー地形のような見た目）。ヘディングアップだと
+     Nが真横を向くので、ノースアップとの違いが一目で分かる */
+  ok(/rotate\(-90/.test(heading.ring || ''), '★方位環が北の方へ回る（東を向けば-90度）', heading.ring);
+  ok(/rotate\(90/.test(heading.nLabel || ''), 'Nの文字だけは逆回転で立てる（読めるように）', heading.nLabel);
+  ok(!heading.phoneRotated, '★スマホの絵は回さない（端末の向きを表すため）', heading.phoneRotated);
+  ok(heading.pressed === 'true', 'ヘディングアップ中だと分かる状態にする', heading.pressed);
+  ok(heading.rimColor !== northRim, '★ヘディングアップでは方位環の色が変わる', { heading: heading.rimColor, north: northRim });
   ok(heading.rotating, '地図の実体を広げるクラスが付く');
-  ok(heading.label === '進行', 'ボタンの表示が「進行」になる', heading.label);
 
   // ★回転中でもタップした場所が正しく取れること（補正が効いているか）
   const rotTap = await page.evaluate(() => {
@@ -746,11 +815,15 @@ function fakeWeather() {
     headingUp: mapHeadingUp,
     rotation: mapRotationDeg,
     dragging: leafletMap.dragging.enabled(),
-    label: document.getElementById('orient-label').textContent,
+    ring: document.getElementById('orient-ring').getAttribute('transform'),
+    rimColor: getComputedStyle(document.querySelector('.orient-rim')).stroke,
+    pressed: document.getElementById('btn-orient').getAttribute('aria-pressed'),
   }));
   ok(!northUp.headingUp && northUp.rotation === 0, 'ノースアップに戻る', northUp);
   ok(northUp.dragging === true, '戻したら手動パンが復活する', northUp.dragging);
-  ok(northUp.label === '北', 'ボタンの表示が「北」に戻る', northUp.label);
+  ok(/rotate\(0/.test(northUp.ring || ''), '戻したらNも真上へ戻る', northUp.ring);
+  ok(northUp.rimColor === northRim && northUp.pressed === 'false',
+    '戻したら方位環の色も元に戻る', northUp);
 
   // ★雨雲の中でも自位置が分かるよう、現在地のまわりだけ雨雲を抜く
   const spot = await page.evaluate(() => {
