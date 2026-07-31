@@ -1480,7 +1480,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.47.0</span>
+    <span id="app-version">v4.48.0</span>
   </div>
 
   <!-- Footer -->
@@ -4079,24 +4079,31 @@ const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
    ※Windyのようなアニメーション風速は leaflet-velocity が禁止のため実装していない。
      代わりに風は「Open-Meteoの値を格子状に矢印で置く」方式（windArrows）にしてある。 */
 const JMA_NOWCAST_BASE = 'https://www.jma.go.jp/bosai/jmatile/data/nowc';
-const JMA_NOWCAST_TIMES = `${JMA_NOWCAST_BASE}/targetTimes_N1.json`;
+/* targetTimes は種別ごとに別ファイル。降水は N1、雷・竜巻は N2。
+   実機で降水(N1/hrpns)は出たが雷は出なかったので、雷だけ N2 を見に行く。 */
+const JMA_TIMES_PRECIP = 'targetTimes_N1.json';
+const JMA_TIMES_THUNDER = 'targetTimes_N2.json';
 
 const MAP_WEATHER = [
   /* 気象庁ナウキャスト。basetime/validtime を targetTimes から取ってURLを組み立てる。
      開発環境から到達できずURLの形を実機で確認できていないので unverified にしてある
      （タイルが1枚も取れなければパネルに「取得できません」と出る）。 */
-  { id: 'radar', name: '降雨レーダー', kind: 'jmaNowcast', element: 'hrpns', opacity: 0.65,
+  // 実機で表示を確認済み（v4.48.0）
+  { id: 'radar', name: '降雨レーダー', kind: 'jmaNowcast', element: 'hrpns',
+    timesFile: JMA_TIMES_PRECIP, opacity: 0.65,
     minNativeZoom: 4, maxNativeZoom: 10, attribution: '気象庁ナウキャスト',
-    note: '高解像度降水ナウキャスト（実況）', unverified: true },
-  { id: 'thunder', name: '雷', kind: 'jmaNowcast', element: 'thns', opacity: 0.80,
+    note: '高解像度降水ナウキャスト（実況）' },
+  // 雷はN1では出なかったのでN2を見る。実機で未確認なので要確認のまま
+  { id: 'thunder', name: '雷', kind: 'jmaNowcast', element: 'thns',
+    timesFile: JMA_TIMES_THUNDER, opacity: 0.80,
     minNativeZoom: 4, maxNativeZoom: 10, attribution: '気象庁ナウキャスト',
     note: '雷ナウキャスト（実況）', unverified: true },
   // アメダス。新雪ランキングで使っている取得口と同じ（snowRanking.js のヘルパを再利用）
   { id: 'amedas', name: 'アメダス', kind: 'amedas', opacity: 1,
-    attribution: '気象庁アメダス', note: '気温／風速の実測。z8以上で表示' },
+    attribution: '気象庁アメダス', note: '気温／風速の実測。地図を拡大すると表示' },
   // 風。Open-Meteoの値を格子状に矢印で置く（leaflet-velocity禁止のためアニメーションはしない）
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
-    attribution: 'Open-Meteo', note: '選択時刻の風。z7以上で表示' },
+    attribution: 'Open-Meteo', note: '選択時刻の風。地図を拡大すると表示' },
 ];
 
 function findBase(id) { return MAP_BASES.find(b => b.id === id) || null; }
@@ -4208,23 +4215,23 @@ function applyOverlays() {
 /* ------ 気象庁ナウキャスト（降雨レーダー・雷） ------
    タイルURLに basetime と validtime が要るので、先に targetTimes を引く。
    時間で中身が変わるためSWのキャッシュ対象には入れていない（TILE_HOSTSに無い）。 */
-let nowcastTimesPromise = null;
-function jmaNowcastTimes() {
-  if (nowcastTimesPromise) return nowcastTimesPromise;
-  nowcastTimesPromise = fetch(JMA_NOWCAST_TIMES)
+const nowcastTimesPromises = {};
+function jmaNowcastTimes(file) {
+  if (nowcastTimesPromises[file]) return nowcastTimesPromises[file];
+  nowcastTimesPromises[file] = fetch(`${JMA_NOWCAST_BASE}/${file}`)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(list => {
       if (!Array.isArray(list) || !list.length) throw new Error('targetTimesが空');
       // 実況＝basetimeとvalidtimeが同じもの。無ければ先頭を使う
       return list.find(t => t.basetime === t.validtime) || list[0];
     })
-    .catch(e => { nowcastTimesPromise = null; throw e; });
-  return nowcastTimesPromise;
+    .catch(e => { delete nowcastTimesPromises[file]; throw e; });
+  return nowcastTimesPromises[file];
 }
 
 async function addNowcastLayer(def, opacity) {
   try {
-    const t = await jmaNowcastTimes();
+    const t = await jmaNowcastTimes(def.timesFile);
     if (!isOverlayOn(def.id)) return;                  // 待っている間に外されていたら何もしない
     const url = `${JMA_NOWCAST_BASE}/${t.basetime}/none/${t.validtime}/surf/${def.element}/{z}/{x}/{y}.png`;
     const layer = L.tileLayer(url, tileOpts(def, { pane: 'mapWeather', opacity })).addTo(leafletMap);
@@ -4297,7 +4304,7 @@ async function loadAmedas() {
 }
 
 function drawAmedas(bounds, opacity) {
-  if (leafletMap.getZoom() < AMEDAS_MIN_ZOOM) { setLayerStatus('amedas', `z${AMEDAS_MIN_ZOOM}以上で表示`); return; }
+  if (leafletMap.getZoom() < AMEDAS_MIN_ZOOM) { setLayerStatus('amedas', 'もう少し拡大すると表示されます'); return; }
   if (!amedasData) {
     loadAmedas()
       .then(() => { setLayerStatus('amedas', ''); refreshWeatherPoints(); })
@@ -4309,6 +4316,8 @@ function drawAmedas(bounds, opacity) {
   let n = 0;
   for (const s of amedasData.stations) {
     if (!bounds.contains([s.lat, s.lon])) continue;
+    // 雨量計だけの地点は気温も風も持たない。「—」のピンが散らかるので出さない
+    if (s.temp == null && s.wind == null && s.snow == null) continue;
     if (++n > 140) break;                       // 出しすぎない
     const t = (s.temp != null) ? `${s.temp}℃` : '';
     const w = (s.wind != null) ? `${s.wind}m/s` : '';
@@ -4318,7 +4327,7 @@ function drawAmedas(bounds, opacity) {
       opacity,
       icon: L.divIcon({
         className: 'amedas-pin',
-        html: `<div class="amedas-box"><b>${t || w || '—'}</b>` +
+        html: `<div class="amedas-box"><b>${t || w}</b>` +
               `<span>${escapeHtml(s.name)}${sn ? ' 積' + sn : ''}</span></div>`,
         iconSize: null,
       }),
@@ -4377,7 +4386,7 @@ async function loadWindGrid(bounds) {
 }
 
 function drawWindArrows(bounds, opacity) {
-  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerStatus('windArrows', `z${WIND_MIN_ZOOM}以上で表示`); return; }
+  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerStatus('windArrows', 'もう少し拡大すると表示されます'); return; }
   loadWindGrid(bounds)
     .then(g => {
       if (!isOverlayOn('windArrows')) return;

@@ -65,11 +65,13 @@ const AMEDAS_TABLE = {
   '55102': { kjName: '富山',   lat: [36, 42.0], lon: [137, 12.0], alt: 9 },
   '55136': { kjName: '立山',   lat: [36, 34.0], lon: [137, 39.0], alt: 420 },
   '55396': { kjName: '大山',   lat: [36, 33.0], lon: [137, 24.0], alt: 60 },
+  '55999': { kjName: '雨量のみ', lat: [36, 35.0], lon: [137, 38.0], alt: 300 },
 };
 const AMEDAS_MAP = {
   '55102': { temp: [2.4, 0], wind: [3.1, 0], windDirection: [8, 0] },
   '55136': { temp: [-4.8, 0], wind: [6.2, 0], windDirection: [12, 0], snow: [180, 0] },
   '55396': { temp: [1.1, 0], wind: [2.0, 0] },
+  '55999': { precipitation1h: [0, 0] },        // 雨量計のみ＝気温も風も無い地点
 };
 
 // 風の格子レスポンス（座標ごとに1つ。1点だけ強風にして警告表示も見る）
@@ -118,6 +120,7 @@ function fakeWeather() {
   const tileHits = [];
   const demHits = [];
   const nowcastHits = [];
+  const timesHits = [];
 
   async function newPage(initLocalStorage) {
     const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
@@ -134,8 +137,15 @@ function fakeWeather() {
       if (url.endsWith('areas.json')) return route.fulfill({ contentType: 'application/json', body: AREAS });
       if (url.includes('data/spots.json')) return route.fulfill({ status: 404, body: '' });
       if (url.includes('/dem_png/')) { demHits.push(url); return route.fulfill({ contentType: 'image/png', body: DEM_PNG }); }
-      if (url.includes('targetTimes_N1.json')) return route.fulfill({ contentType: 'application/json',
-        body: JSON.stringify([{ basetime: '20260131120000', validtime: '20260131120000', elements: ['hrpns'] }]) });
+      if (url.includes('targetTimes_')) {
+        timesHits.push(url);
+        const isN2 = url.includes('_N2');
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify([{
+          basetime: isN2 ? '20260131123000' : '20260131120000',
+          validtime: isN2 ? '20260131123000' : '20260131120000',
+          elements: [isN2 ? 'thns' : 'hrpns'],
+        }]) });
+      }
       if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: TILE_PNG }); }
       if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
       if (url.includes('/amedas/const/amedastable.json')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_TABLE) });
@@ -376,6 +386,19 @@ function fakeWeather() {
   ok(radar.pane === 'mapWeather', '気象は専用paneに載る（地形図より上）', radar.pane);
   ok(radar.attribution.includes('気象庁'), '出典に気象庁が入る', radar.attribution);
 
+  // 雷は降水とは別のtargetTimes（N2）を見に行く
+  await page.evaluate(() => toggleOverlay('thunder'));
+  await page.waitForTimeout(900);
+  const thunder = await page.evaluate(() => ({
+    url: overlayTileLayers.thunder ? overlayTileLayers.thunder._url : null,
+  }));
+  ok(timesHits.some(u => u.includes('targetTimes_N1')), '降水はN1のtargetTimes', timesHits);
+  ok(timesHits.some(u => u.includes('targetTimes_N2')), '雷はN2のtargetTimes（降水とは別）', timesHits);
+  ok(thunder.url && /20260131123000/.test(thunder.url) && /surf\/thns/.test(thunder.url),
+    '雷はN2の時刻でURLを組む', thunder.url);
+  await page.evaluate(() => toggleOverlay('thunder'));
+  await page.waitForTimeout(200);
+
   // アメダス：z8以上で実測ピンが出る
   await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('amedas'); });
   await page.waitForTimeout(1200);
@@ -390,6 +413,8 @@ function fakeWeather() {
   ok(amedas.count >= 2, 'アメダスの実測ピンが出る', amedas);
   ok(amedas.texts.some(t => /-4.8℃/.test(t)), '気温の実測値を出す', amedas.texts);
   ok(amedas.texts.some(t => /積180cm/.test(t)), '積雪も出す', amedas.texts);
+  ok(!amedas.texts.some(t => /雨量のみ/.test(t)),
+    '気温も風も無い地点（雨量計のみ）は出さない', amedas.texts);
 
   // ズームを引くと出さない（点が多すぎるため）。理由をパネルに出す
   await page.evaluate(() => leafletMap.setView([36.57, 137.65], 6));
@@ -399,7 +424,7 @@ function fakeWeather() {
     status: (document.querySelector('.layer-status[data-id="amedas"]') || {}).textContent,
   }));
   ok(zoomedOut.pins === 0, 'ズームを引いたらアメダスは出さない', zoomedOut);
-  ok(/z8以上/.test(zoomedOut.status || ''), '出さない理由をパネルに出す', zoomedOut.status);
+  ok(/拡大/.test(zoomedOut.status || ''), '出さない理由を平易な言葉で出す', zoomedOut.status);
 
   // 風の矢印（leaflet-velocityは使わない＝アニメーションなし）
   await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('windArrows'); });
