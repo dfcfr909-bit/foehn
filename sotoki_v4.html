@@ -746,19 +746,42 @@ html, body {
   border-top-left-radius: 6px;
   pointer-events: none;
 }
-#map-elev {
+/* 選択中の地点（名前＋標高）。地図を閉じずに選べるようにしたので常に出す */
+#map-picked {
   position: absolute;
   left: 8px; bottom: 8px;
   z-index: 500;
+  max-width: 65%;
   padding: 4px 9px;
   border-radius: 8px;
   font-size: 12px;
-  font-weight: 700;
   color: var(--text);
   background: rgba(255,255,255,0.9);
   box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   pointer-events: none;
+  display: flex; align-items: baseline; gap: 6px;
 }
+#map-picked b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#map-elev { font-size: 11px; color: var(--text2); flex-shrink: 0; }
+#map-elev:empty { display: none; }
+/* 地図の下のコントロール（現在地＋お気に入り円柱） */
+#map-bottom {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#btn-map-gps {
+  min-height: 44px; padding: 0 12px;
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0;
+}
+/* 円柱はヘッダーから引っ越してくるので、残りの幅いっぱいを使わせる */
+#map-fav-slot { flex: 1 1 0; min-width: 0; display: flex; }
+#map-fav-slot > #fav-rotary { flex: 1 1 0; }
 #btn-layers {
   position: absolute;
   right: 8px; top: 8px;
@@ -1496,7 +1519,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.50.0</span>
+    <span id="app-version">v4.51.0</span>
   </div>
 
   <!-- Footer -->
@@ -1531,7 +1554,7 @@ html, body {
       <div id="map"></div>
       <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
       <div id="map-attribution"></div>
-      <div id="map-elev" style="display:none"></div>
+      <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
       <button id="btn-layers" onclick="toggleLayerPanel()" aria-label="地図レイヤーを選ぶ">
         <span aria-hidden="true">🗂️</span>レイヤー
       </button>
@@ -1558,7 +1581,12 @@ html, body {
         </div>
       </div>
     </div>
-    <div id="map-hint">地図をタップ、または上の検索窓で地点を選択</div>
+    <div id="map-bottom">
+      <button id="btn-map-gps" onclick="gpsFromMap()"><span aria-hidden="true">📍</span>現在地</button>
+      <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
+      <div id="map-fav-slot"></div>
+    </div>
+    <div id="map-hint">地図をタップして地点を選ぶ（画面は開いたまま）</div>
   </div>
 
   <!-- Favorites Overlay -->
@@ -1848,7 +1876,7 @@ function processData(json) {
 /* ============================================================
    GPS
    ============================================================ */
-function fetchGPS() {
+function fetchGPS(opts) {
   if (!navigator.geolocation) { alert('Geolocation非対応'); return; }
   showLoading('GPS取得中…');
   navigator.geolocation.getCurrentPosition(
@@ -1856,8 +1884,15 @@ function fetchGPS() {
       state.lat = pos.coords.latitude;
       state.lon = pos.coords.longitude;
       state.locationName = `${state.lat.toFixed(3)}, ${state.lon.toFixed(3)}`;
+      // 地図から呼ばれたときは閉じずに、現在地へなめらかに寄る
+      if (opts && opts.keepMap && isMapOpen()) {
+        setPickedName('取得中…');
+        mapFlyTo(state.lat, state.lon, Math.max(leafletMap.getZoom(), 12));
+        fetchPointElevation(state.lat, state.lon);
+      }
       reverseGeocode(state.lat, state.lon).then(name => {
         state.locationName = name;
+        setPickedName(name);
         fetchWeather(state.lat, state.lon);
       });
     },
@@ -2102,6 +2137,8 @@ function selectFav(lat, lon, name) {
   state.lat = lat;
   state.lon = lon;
   state.locationName = name;
+  // 地図を見ている最中なら、その地点へなめらかに寄る（一瞬で飛ばさない）
+  if (isMapOpen()) { setPickedName(name); mapFlyTo(lat, lon); }
   fetchWeather(lat, lon);
 }
 
@@ -4554,10 +4591,32 @@ function setOverlayOpacity(id, value) {
   if (label) label.textContent = Math.round(item.opacity * 100) + '%';
 }
 
+/* お気に入り円柱はDOMを1つだけ持ち、地図を開いている間だけ地図の下へ移す。
+   2つ作ると寸法計算（layoutFavRotary）と選択確定が二重になって必ず食い違うため。
+   幅が変わるので寸法は取り直すが、#fav-rotary のResizeObserverが拾ってくれる。 */
+let favRotaryHome = null;      // { parent, next } 元の居場所
+function moveFavRotaryTo(slot) {
+  const el = document.getElementById('fav-rotary');
+  if (!el || !slot || el.parentNode === slot) return;
+  if (!favRotaryHome) favRotaryHome = { parent: el.parentNode, next: el.nextSibling };
+  slot.appendChild(el);
+  layoutFavRotary();
+  centerActiveChip();
+}
+function restoreFavRotary() {
+  const el = document.getElementById('fav-rotary');
+  if (!el || !favRotaryHome || el.parentNode === favRotaryHome.parent) return;
+  favRotaryHome.parent.insertBefore(el, favRotaryHome.next);
+  layoutFavRotary();
+  centerActiveChip();
+}
+
 function openMap() {
   document.getElementById('map-overlay').classList.add('open');
   document.getElementById('map-results').innerHTML = '';   // 前回の検索結果をクリア
   document.getElementById('map-search-input').value = '';
+  setPickedName(state.locationName);
+  moveFavRotaryTo(document.getElementById('map-fav-slot'));
   if (!leafletMap) {
     setTimeout(() => {
       mapPrefs = loadMapPrefs();
@@ -4576,17 +4635,20 @@ function openMap() {
       applyBaseLayer();
       applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
+      // タップしても地図は閉じない。続けて別の地点を見比べられるようにするため
+      // （閉じてメテオグラムに戻る挙動は「ウザい」という指摘で v4.51.0 に変更）
       leafletMap.on('click', e => {
         const { lat, lng } = e.latlng;
         leafletMarker.setLatLng([lat, lng]);
         state.lat = lat;
         state.lon = lng;
+        setPickedName('取得中…');
         // 標高は非同期で取りに行き、地図描画も地点確定もブロックしない
         fetchPointElevation(lat, lng);
         reverseGeocode(lat, lng).then(name => {
           state.locationName = name;
-          closeMap();
-          fetchWeather(lat, lng);
+          setPickedName(name);
+          fetchWeather(lat, lng);      // 裏でメテオグラムを更新する。閉じたときに最新が見える
         });
       });
       renderLayerPanel();
@@ -4603,6 +4665,11 @@ function openMap() {
 function closeMap() {
   document.getElementById('map-overlay').classList.remove('open');
   closeLayerPanel();
+  restoreFavRotary();
+}
+function isMapOpen() {
+  const el = document.getElementById('map-overlay');
+  return !!el && el.classList.contains('open');
 }
 
 /* ------ レイヤーパネル（ボトムシート） ------ */
@@ -4733,9 +4800,8 @@ function updateElevationLabel() {
   const el = document.getElementById('map-elev');
   if (!el) return;
   const v = state.demElevation;
-  // 取得失敗・無効値なら欄ごと隠す
-  if (typeof v !== 'number' || !isFinite(v)) { el.textContent = ''; el.style.display = 'none'; return; }
-  el.style.display = '';
+  // 取得失敗・無効値なら標高だけ空にする（:emptyで消える。地点名は残す）
+  if (typeof v !== 'number' || !isFinite(v)) { el.textContent = ''; return; }
   el.textContent = `標高 ${Math.round(v)}m`;
   try { if (leafletMap) buildCharts(); } catch (e) { /* 描画前なら無視 */ }
 }
@@ -4786,12 +4852,30 @@ function pickMapPoint(lat, lon, name) {
   state.lat = lat;
   state.lon = lon;
   state.locationName = name;
-  if (leafletMap) {
-    leafletMap.setView([lat, lon], Math.max(leafletMap.getZoom(), 11));
-    if (leafletMarker) leafletMarker.setLatLng([lat, lon]);
-  }
-  closeMap();
-  fetchWeather(lat, lon);
+  setPickedName(name);
+  document.getElementById('map-results').innerHTML = '';   // 選んだら候補は畳む
+  mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : 11, 11));
+  fetchWeather(lat, lon);            // 地図は開いたまま。閉じるのは利用者の操作で
+}
+
+// 地点名の表示（地図を開いたまま選べるので、今どこを選んでいるか常に出す）
+function setPickedName(name) {
+  const el = document.getElementById('map-picked-name');
+  if (el) el.textContent = name || '—';
+}
+
+/* 一瞬でジャンプせず、なめらかに寄っていく。
+   どこからどこへ動いたのかが分かるようにするため（v4.51.0）。 */
+function mapFlyTo(lat, lon, zoom) {
+  if (!leafletMap) return;
+  const z = zoom != null ? zoom : leafletMap.getZoom();
+  leafletMap.flyTo([lat, lon], z, { duration: 0.8 });
+  if (leafletMarker) leafletMarker.setLatLng([lat, lon]);
+}
+
+// 地図画面の「現在地」。取得したらそこへなめらかに寄る
+function gpsFromMap() {
+  fetchGPS({ keepMap: true });
 }
 
 async function doMapSearch() {
@@ -5326,6 +5410,8 @@ function loadLast() {
    ============================================================ */
 function showLoading(msg) {
   document.getElementById('loading-text').textContent = msg || '読込中…';
+  // 地図を開いている間は全画面で覆わない。タップのたびに地図が隠れて操作できなくなるため
+  if (isMapOpen()) { setPickedName(msg || '読込中…'); return; }
   document.getElementById('loading-overlay').style.display = 'flex';
 }
 function hideLoading() {

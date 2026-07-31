@@ -4,7 +4,7 @@
 
 ## 現状
 
-- **バージョン**: v4.50.0
+- **バージョン**: v4.51.0
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/sotoki-development-bpquml`
@@ -154,6 +154,22 @@
   重なるので別定数にしてある。**指を離してもその場に留まる**（毎回定位置へ戻すと
   読めないため。`resetPopupPosition()` を呼ぶのは初期表示とリサイズ時だけ）
 - `cursorX` がスクロール量に依存するため、`scrollToIndex` は不動点反復で解く
+
+**地図選択画面の操作**（v4.51.0）:
+- **地点を選んでも地図は閉じない。** 以前はタップ→逆ジオコーディング→`closeMap()` で
+  メテオグラムに戻っていたが「非常にウザい」との指摘で変更した。
+  続けて別の地点を見比べられる。閉じるのは✕を押したときだけ
+- 裏で `fetchWeather` は走るので、閉じたときには最新のメテオグラムが出ている
+- **地図を開いている間は全画面の読込オーバーレイを出さない**（`showLoading` が
+  `isMapOpen()` を見て抑止する）。タップのたびに地図が覆われて操作できなくなるため。
+  代わりに左下のバッジに状態を出す
+- 地図の下に**「現在地」ボタンとお気に入り円柱**を置いた
+- **円柱のDOMは1つだけ。** 地図を開いている間だけ `#map-fav-slot` へ引っ越し、
+  閉じたらヘッダーへ戻す（`moveFavRotaryTo` / `restoreFavRotary`）。
+  **2つ作らないこと**——寸法計算（`layoutFavRotary`）と選択確定が二重になって必ず食い違う。
+  幅が変わるぶんの再計算は `#fav-rotary` のResizeObserverが拾う
+- **地点への移動は `mapFlyTo()`（`flyTo`, duration 0.8s）。`setView` の瞬間移動は使わない。**
+  どこからどこへ動いたか分かるようにするため
 
 **地図選択画面**（v4.46.0。詳細は `docs/map-selector-requirements.md`）:
 - レイヤー定義は `MAP_BASES` / `MAP_OVERLAYS` の2つの表に外出ししてある。

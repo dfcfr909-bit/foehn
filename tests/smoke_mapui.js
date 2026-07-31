@@ -486,6 +486,66 @@ function fakeWeather() {
 
   await page.screenshot({ path: __dirname + '/smoke_mapui.png' });
 
+  /* ================= 5d. 地図を閉じずに地点を選べる ================= */
+  await page.evaluate(() => { closeLayerPanel(); leafletMap.setView([36.57, 137.65], 11); });
+  await page.waitForTimeout(300);
+  // お気に入り円柱がヘッダーから地図の下へ引っ越していること（実体は1つ）
+  const rotary = await page.evaluate(() => {
+    const el = document.getElementById('fav-rotary');
+    return {
+      count: document.querySelectorAll('#fav-rotary').length,
+      inMap: document.getElementById('map-fav-slot').contains(el),
+      gpsBtn: !!document.getElementById('btn-map-gps'),
+      gpsH: document.getElementById('btn-map-gps').getBoundingClientRect().height,
+      width: el.getBoundingClientRect().width,
+    };
+  });
+  ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
+  ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
+  ok(rotary.gpsBtn && rotary.gpsH >= 44, '地図に「現在地」ボタンがある（44px以上）', rotary);
+  ok(rotary.width > 100, '円柱は地図の幅を使える', rotary.width);
+
+  // 地図をタップしても閉じない（以前は閉じてメテオグラムに戻っていた）
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('map').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.click(box.x + 30, box.y - 20);
+  await page.waitForTimeout(1200);
+  const afterTap = await page.evaluate(() => ({
+    open: document.getElementById('map-overlay').classList.contains('open'),
+    picked: document.getElementById('map-picked-name').textContent,
+    loading: getComputedStyle(document.getElementById('loading-overlay')).display,
+    markerMoved: !!leafletMarker,
+  }));
+  ok(afterTap.open, '★地図をタップしても地図は閉じない');
+  ok(afterTap.picked && afterTap.picked !== '—', '選んだ地点の名前が出る', afterTap.picked);
+  ok(afterTap.loading === 'none', '地図を覆う読込オーバーレイを出さない', afterTap.loading);
+
+  // 円柱で地点を選ぶと、一瞬で飛ばずになめらかに寄る
+  const fly = await page.evaluate(() => {
+    const calls = [];
+    const orig = leafletMap.flyTo.bind(leafletMap);
+    leafletMap.flyTo = (ll, z, o) => { calls.push({ ll, z, o }); return orig(ll, z, o); };
+    selectFav(36.7583, 137.7583, '白馬岳');
+    return { calls, open: document.getElementById('map-overlay').classList.contains('open') };
+  });
+  ok(fly.calls.length === 1, '円柱の選択でflyToが呼ばれる（setViewの瞬間移動ではない）', fly.calls);
+  ok(fly.calls[0] && fly.calls[0].o && fly.calls[0].o.duration > 0, 'アニメーション時間が指定されている', fly.calls[0]);
+  ok(fly.open, '円柱で選んでも地図は開いたまま');
+  await page.waitForTimeout(1200);
+
+  // 閉じると円柱はヘッダーへ戻る
+  await page.evaluate(() => closeMap());
+  await page.waitForTimeout(300);
+  const rotaryHome = await page.evaluate(() => ({
+    inHeader: document.getElementById('header').contains(document.getElementById('fav-rotary')),
+    count: document.querySelectorAll('#fav-rotary').length,
+  }));
+  ok(rotaryHome.inHeader && rotaryHome.count === 1, '地図を閉じると円柱はヘッダーへ戻る', rotaryHome);
+  await page.evaluate(() => openMap());
+  await page.waitForTimeout(600);
+
   /* ================= 6. 永続化と復元 ================= */
   const saved = await page.evaluate(() => ({
     base: localStorage.getItem('sotoki.map.baseLayer'),
