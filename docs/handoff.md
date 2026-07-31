@@ -4,7 +4,7 @@
 
 ## 現状
 
-- **バージョン**: v4.55.0
+- **バージョン**: v4.56.0
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/sotoki-development-bpquml`
@@ -196,6 +196,21 @@
 - 方位は iOS が `webkitCompassHeading`、他は `alpha`（反時計回りなので 360−alpha）。
   **iOSは利用者の操作の中で `DeviceOrientationEvent.requestPermission()` が要る**。
   センサーが使えないときは GPS の `heading` で代用する
+
+**ピンは長押しで立てる**（v4.56.0。詳細は `docs/map-selector-requirements.md` §19）:
+- ⚠**`map.on('click')` での地点確定はもう無い。** 「触れたところにすぐ置かれちゃうのが不快。
+  意思を持ってタップした時だけピンが立つようにして欲しい」との指摘で変更した。
+  地図はまず見るためのもので、拡大・パン・レイヤー確認のたびに指が触れる
+- 短いタップ＝何も起きない（下の案内文を光らせる）／`PIN_HOLD_MS`(500ms) 押し続ける＝ピンが立つ／
+  `PIN_HOLD_SLOP_PX`(12px) 超えて動かす＝取り消し（パンとして扱う）
+- 押している間は輪（`#pin-hold`）が締まるので、あとどれくらいで確定するか見える。
+  **閉じる時間はJSから `animationDuration` に入れる**（CSSに秒数を二重に持たない）
+- ⚠**緯度経度は押した時点で控える。** 離してから求めると、その間に地図が動いていた場合ずれる
+- ⚠**ダブルタップ拡大の1回目のタップは「短いタップ」に見える。** そのまま案内を光らせると
+  拡大のたびにチカチカするので、`flashPinHint()` は `dtapLastAt` を見て抑止する
+- **長押しは地図コンテナのバブリング側**、ダブルタップ拡大は**親要素のキャプチャ側**。
+  拡大の2回目以降は親で `stopPropagation` されるので長押し側に届かない＝誤爆しない
+- `passive: true` で聞く（`preventDefault` しない）。**Leafletのパンを邪魔しないこと**
 
 **地図選択画面の操作**（v4.51.0）:
 - **地点を選んでも地図は閉じない。** 以前はタップ→逆ジオコーディング→`closeMap()` で

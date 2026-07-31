@@ -1000,6 +1000,27 @@ html, body {
   color: var(--text2);
   text-align: center;
   flex-shrink: 0;
+  transition: color .2s, background .2s;
+}
+/* 長押しせずにタップしたときだけ光らせる。「押しても何も起きない」で迷わせないため */
+#map-hint.flash { color: var(--a-col); background: rgba(42,125,79,0.12); font-weight: 700; }
+
+/* 長押しの手応え。押している間だけ輪が締まっていき、閉じ切るとピンが立つ。
+   閉じる時間は PIN_HOLD_MS からJSで入れる（CSSに数字を二重に持たない） */
+#pin-hold {
+  position: absolute;
+  width: 60px; height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  border: 3px solid var(--a-col);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 500;
+}
+#pin-hold.on { animation-name: pinHold; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes pinHold {
+  from { opacity: .15; transform: scale(1.5); }
+  to   { opacity: .95; transform: scale(.75); }
 }
 
 /* ============================================================
@@ -1547,7 +1568,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.55.0</span>
+    <span id="app-version">v4.56.0</span>
   </div>
 
   <!-- Footer -->
@@ -1580,6 +1601,8 @@ html, body {
     <div id="map-results"></div>
     <div id="map-stage">
       <div id="map"></div>
+      <!-- 長押し中に出す輪。押し切るとピンが立つ -->
+      <div id="pin-hold" aria-hidden="true"></div>
       <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
       <div id="map-attribution"></div>
       <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
@@ -1620,7 +1643,7 @@ html, body {
       <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
       <div id="map-fav-slot"></div>
     </div>
-    <div id="map-hint">地図をタップして地点を選ぶ（画面は開いたまま）</div>
+    <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
   </div>
 
   <!-- Favorites Overlay -->
@@ -4757,22 +4780,8 @@ function openMap() {
       applyBaseLayer();
       applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
-      // タップしても地図は閉じない。続けて別の地点を見比べられるようにするため
-      // （閉じてメテオグラムに戻る挙動は「ウザい」という指摘で v4.51.0 に変更）
-      leafletMap.on('click', e => {
-        const { lat, lng } = e.latlng;
-        leafletMarker.setLatLng([lat, lng]);
-        state.lat = lat;
-        state.lon = lng;
-        setPickedName('取得中…');
-        // 標高は非同期で取りに行き、地図描画も地点確定もブロックしない
-        fetchPointElevation(lat, lng);
-        reverseGeocode(lat, lng).then(name => {
-          state.locationName = name;
-          setPickedName(name);
-          fetchWeather(lat, lng);      // 裏でメテオグラムを更新する。閉じたときに最新が見える
-        });
-      });
+      // ピンは長押しでだけ立てる（触れただけで動くのは不快、という指摘で v4.56.0 に変更）
+      bindPinLongPress(leafletMap);
       renderLayerPanel();
       refreshTileCacheUsage();
       startWxRefresh();
@@ -4792,6 +4801,7 @@ function closeMap() {
   document.getElementById('map-overlay').classList.remove('open');
   closeLayerPanel();
   restoreFavRotary();
+  cancelPinHold();                          // 押しっぱなしのまま閉じても後からピンが立たないように
   stopWxRefresh();                          // 見ていない間は取りに行かない（通信量のため）
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
 }
@@ -5210,6 +5220,7 @@ function paintMeSpotlight() {
 const DTAP_MS = 300;         // 2回目のタップとみなす間隔
 const DTAP_SLOP_PX = 30;     // 2回目が同じ場所とみなすズレ
 const DTAP_PX_PER_ZOOM = 90; // 1段ズームするのに要る指の移動量
+let dtapLastAt = 0;          // 直近でダブルタップ拡大を操作した時刻（長押し案内の抑制に使う）
 
 // 拡大縮小の基準点。追跡中は自分の位置を中心にする
 function zoomAnchor(map, fallbackLatLng) {
@@ -5235,6 +5246,7 @@ function bindDoubleTapZoom(map) {
                         && Math.abs(t.clientY - lastPt.y) < DTAP_SLOP_PX;
     if (now - lastTapAt < DTAP_MS && near) {
       zooming = true; moved = false; panePrepared = false;
+      dtapLastAt = now;
       startY = t.clientY;
       startZoom = map.getZoom();
       curZoom = startZoom;
@@ -5264,6 +5276,7 @@ function bindDoubleTapZoom(map) {
   const end = e => {
     if (!zooming) return;
     zooming = false;
+    dtapLastAt = Date.now();
     if (animReq) { L.Util.cancelAnimFrame(animReq); animReq = null; }
     if (!moved) {
       // ほとんど動かさずに離したら、ふつうのダブルタップとして1段拡大
@@ -5280,6 +5293,118 @@ function bindDoubleTapZoom(map) {
   };
   host.addEventListener('touchend', end, { capture: true, passive: false });
   host.addEventListener('touchcancel', end, { capture: true, passive: false });
+}
+
+/* ------ 地点は「長押し」で選ぶ（v4.56.0） ------
+   タップしただけでピンが動くのは「触れたところにすぐ置かれて不快」という指摘への対応。
+   地図はまず見るためのものなので、ピンが立つのは押し続けたときだけにする
+   （Googleマップの「長押しでピンを落とす」と同じ操作）。
+
+   押している間は輪が締まっていくので、あとどれくらいで確定するかが分かる。
+   途中で動かせば取り消し＝地図を動かしたいだけ、という意思表示になる。 */
+const PIN_HOLD_MS = 500;      // これだけ押し続けたらピンを立てる
+const PIN_HOLD_SLOP_PX = 12;  // これを超えて動いたら「地図を動かしたい」とみなして取り消す
+
+let pinHoldTimer = null;
+let pinHintTimer = null;
+
+function showPinHold(clientX, clientY) {
+  const ring = document.getElementById('pin-hold');
+  const stage = document.getElementById('map-stage');
+  if (!ring || !stage) return;
+  const r = stage.getBoundingClientRect();
+  ring.style.left = (clientX - r.left) + 'px';
+  ring.style.top = (clientY - r.top) + 'px';
+  ring.style.animationDuration = PIN_HOLD_MS + 'ms';   // CSSに秒数を二重に持たない
+  ring.classList.remove('on');
+  void ring.offsetWidth;                               // アニメーションを頭から流し直す
+  ring.classList.add('on');
+}
+function hidePinHold() {
+  const ring = document.getElementById('pin-hold');
+  if (ring) ring.classList.remove('on');
+}
+function cancelPinHold() {
+  if (pinHoldTimer) { clearTimeout(pinHoldTimer); pinHoldTimer = null; }
+  hidePinHold();
+}
+
+/* 長押しせずに離したときの案内。押しても何も起きないと迷うので下の文言を光らせる。
+   ただしダブルタップ拡大の1回目のタップでも「短いタップ」に見えるので、
+   少し待って、直前に拡大操作をしていたら出さない。 */
+function flashPinHint() {
+  clearTimeout(pinHintTimer);
+  pinHintTimer = setTimeout(() => {
+    if (Date.now() - dtapLastAt < 600) return;
+    const el = document.getElementById('map-hint');
+    if (!el) return;
+    el.classList.add('flash');
+    pinHintTimer = setTimeout(() => el.classList.remove('flash'), 1200);
+  }, DTAP_MS + 60);
+}
+
+// 地点の確定。地図は閉じない（続けて別の地点を見比べられるようにするため v4.51.0）
+function pickMapPoint(lat, lng) {
+  leafletMarker.setLatLng([lat, lng]);
+  state.lat = lat;
+  state.lon = lng;
+  setPickedName('取得中…');
+  // 標高は非同期で取りに行き、地図描画も地点確定もブロックしない
+  fetchPointElevation(lat, lng);
+  reverseGeocode(lat, lng).then(name => {
+    state.locationName = name;
+    setPickedName(name);
+    fetchWeather(lat, lng);      // 裏でメテオグラムを更新する。閉じたときに最新が見える
+  });
+}
+
+function bindPinLongPress(map) {
+  const el = map.getContainer();
+  let startX = 0, startY = 0, target = null;
+
+  /* 押した時点で緯度経度を控える。離してから求めると、その間に地図が動いていた場合に
+     押した場所とずれる（回転中は patchRotatedInput の補正も要る） */
+  const begin = (clientX, clientY, srcEvent) => {
+    cancelPinHold();
+    startX = clientX; startY = clientY;
+    target = map.containerPointToLatLng(map.mouseEventToContainerPoint(srcEvent));
+    showPinHold(clientX, clientY);
+    pinHoldTimer = setTimeout(() => {
+      pinHoldTimer = null;
+      hidePinHold();
+      if (navigator.vibrate) navigator.vibrate(15);   // 手袋でも確定が分かるように
+      pickMapPoint(target.lat, target.lng);
+    }, PIN_HOLD_MS);
+  };
+  const moveCheck = (clientX, clientY) => {
+    if (!pinHoldTimer) return;
+    if (Math.abs(clientX - startX) < PIN_HOLD_SLOP_PX &&
+        Math.abs(clientY - startY) < PIN_HOLD_SLOP_PX) return;
+    cancelPinHold();                 // 動かしたなら「地図を動かしたい」ということ
+  };
+  // 押し切らずに離したときだけ案内を出す（動かして取り消した場合は timer が無いので出ない）
+  const finish = () => {
+    if (pinHoldTimer) { cancelPinHold(); flashPinHint(); }
+    else hidePinHold();
+  };
+
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { cancelPinHold(); return; }   // 2本指はピンチ操作
+    const t = e.touches[0];
+    begin(t.clientX, t.clientY, t);
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1) { cancelPinHold(); return; }
+    moveCheck(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  el.addEventListener('touchend', finish, { passive: true });
+  el.addEventListener('touchcancel', () => cancelPinHold(), { passive: true });
+
+  // マウス（PCで確認するとき用）。右クリック・中クリックでは反応しない
+  el.addEventListener('mousedown', e => { if (e.button === 0) begin(e.clientX, e.clientY, e); });
+  el.addEventListener('mousemove', e => moveCheck(e.clientX, e.clientY));
+  el.addEventListener('mouseup', finish);
+  el.addEventListener('mouseleave', () => cancelPinHold());
 }
 
 /* 地図を回すとLeafletの座標変換が狂う（getBoundingClientRectが回転後の外接矩形になるため）。

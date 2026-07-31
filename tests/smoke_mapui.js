@@ -592,20 +592,67 @@ function fakeWeather() {
   ok(rotary.rotaryHit, 'お気に入り円柱が他の要素に覆われていない', rotary.rotaryHit);
   ok(rotary.width > 100, '円柱は地図の幅を使える', rotary.width);
 
-  // 地図をタップしても閉じない（以前は閉じてメテオグラムに戻っていた）
+  /* ピンは長押しでだけ立つ（触れたところにすぐ置かれるのは不快、という指摘 v4.56.0）。
+     まず「ただのタップでは動かない」ことを見る。 */
   const box = await page.evaluate(() => {
     const r = document.getElementById('map').getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   });
+  const beforeTap = await page.evaluate(() => ({
+    ll: leafletMarker.getLatLng(), picked: document.getElementById('map-picked-name').textContent,
+  }));
   await page.mouse.click(box.x + 30, box.y - 20);
+  await page.waitForTimeout(1000);
+  const shortTap = await page.evaluate(() => ({
+    ll: leafletMarker.getLatLng(),
+    picked: document.getElementById('map-picked-name').textContent,
+    hint: document.getElementById('map-hint').classList.contains('flash'),
+    hintText: document.getElementById('map-hint').textContent,
+    open: document.getElementById('map-overlay').classList.contains('open'),
+  }));
+  ok(shortTap.ll.lat === beforeTap.ll.lat && shortTap.ll.lng === beforeTap.ll.lng,
+    '★ただのタップではピンが動かない', { before: beforeTap.ll, after: shortTap.ll });
+  ok(shortTap.picked === beforeTap.picked, 'ただのタップでは地点も変わらない', shortTap.picked);
+  ok(shortTap.hint, '押しても何も起きない理由を案内する（長押しの文言を光らせる）', shortTap);
+  ok(/長押し/.test(shortTap.hintText), '案内の文言が「長押し」になっている', shortTap.hintText);
+  ok(shortTap.open, 'タップで地図は閉じない');
+
+  // 途中で動かしたら取り消す（地図を動かしたいだけのとき）
+  await page.mouse.move(box.x - 40, box.y + 10);
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  await page.mouse.move(box.x - 40 + 40, box.y + 10 + 40);   // SLOPを超えて動かす
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const dragged = await page.evaluate(() => leafletMarker.getLatLng());
+  ok(dragged.lat === beforeTap.ll.lat && dragged.lng === beforeTap.ll.lng,
+    '★押している途中で動かしたらピンは立たない（パンと取り合わない）', dragged);
+
+  // 長押しすると立つ。押している間は輪が出る
+  await page.mouse.move(box.x + 30, box.y - 20);
+  await page.mouse.down();
+  await page.waitForTimeout(200);
+  const holding = await page.evaluate(() => ({
+    on: document.getElementById('pin-hold').classList.contains('on'),
+    dur: document.getElementById('pin-hold').style.animationDuration,
+  }));
+  ok(holding.on, '押している間は輪が出る（あとどれくらいで確定するか分かる）', holding);
+  ok(holding.dur === '500ms', '輪が閉じる時間は PIN_HOLD_MS と同じ', holding.dur);
+  await page.waitForTimeout(500);
+  await page.mouse.up();
   await page.waitForTimeout(1200);
   const afterTap = await page.evaluate(() => ({
     open: document.getElementById('map-overlay').classList.contains('open'),
     picked: document.getElementById('map-picked-name').textContent,
     loading: getComputedStyle(document.getElementById('loading-overlay')).display,
-    markerMoved: !!leafletMarker,
+    ll: leafletMarker.getLatLng(),
+    ring: document.getElementById('pin-hold').classList.contains('on'),
   }));
-  ok(afterTap.open, '★地図をタップしても地図は閉じない');
+  ok(afterTap.ll.lat !== beforeTap.ll.lat || afterTap.ll.lng !== beforeTap.ll.lng,
+    '★長押しならピンが立つ', { before: beforeTap.ll, after: afterTap.ll });
+  ok(!afterTap.ring, '確定したら輪は消える', afterTap.ring);
+  ok(afterTap.open, '★地点を選んでも地図は閉じない');
   ok(afterTap.picked && afterTap.picked !== '—', '選んだ地点の名前が出る', afterTap.picked);
   ok(afterTap.loading === 'none', '地図を覆う読込オーバーレイを出さない', afterTap.loading);
 
