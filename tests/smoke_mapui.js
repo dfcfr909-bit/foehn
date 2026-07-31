@@ -61,6 +61,34 @@ const DEM_EXPECTED_M = 1845.67;
 const DEM_PNG = solidPng(256, 256, ...DEM_RGB);
 const TILE_PNG = solidPng(8, 8, 200, 200, 200);
 
+const AMEDAS_TABLE = {
+  '55102': { kjName: '富山',   lat: [36, 42.0], lon: [137, 12.0], alt: 9 },
+  '55136': { kjName: '立山',   lat: [36, 34.0], lon: [137, 39.0], alt: 420 },
+  '55396': { kjName: '大山',   lat: [36, 33.0], lon: [137, 24.0], alt: 60 },
+};
+const AMEDAS_MAP = {
+  '55102': { temp: [2.4, 0], wind: [3.1, 0], windDirection: [8, 0] },
+  '55136': { temp: [-4.8, 0], wind: [6.2, 0], windDirection: [12, 0], snow: [180, 0] },
+  '55396': { temp: [1.1, 0], wind: [2.0, 0] },
+};
+
+// 風の格子レスポンス（座標ごとに1つ。1点だけ強風にして警告表示も見る）
+function windGridResponse(n) {
+  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 1);
+  const time = [];
+  for (let i = 0; i < 72; i++) {
+    const d = new Date(start.getTime() + i * 3600e3);
+    time.push(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:00`);
+  }
+  return Array.from({ length: n }, (_, i) => ({
+    hourly: {
+      time,
+      wind_speed_10m: time.map(() => (i === 0 ? 18 : 6)),
+      wind_direction_10m: time.map(() => 270),
+    },
+  }));
+}
+
 function fakeWeather() {
   const h = { time: [], temperature_2m: [], apparent_temperature: [], precipitation: [], snowfall: [], surface_pressure: [], windspeed_10m: [], winddirection_10m: [], weathercode: [], cloudcover: [] };
   const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 3);
@@ -89,6 +117,7 @@ function fakeWeather() {
   const errors = [];
   const tileHits = [];
   const demHits = [];
+  const nowcastHits = [];
 
   async function newPage(initLocalStorage) {
     const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
@@ -105,12 +134,25 @@ function fakeWeather() {
       if (url.endsWith('areas.json')) return route.fulfill({ contentType: 'application/json', body: AREAS });
       if (url.includes('data/spots.json')) return route.fulfill({ status: 404, body: '' });
       if (url.includes('/dem_png/')) { demHits.push(url); return route.fulfill({ contentType: 'image/png', body: DEM_PNG }); }
+      if (url.includes('targetTimes_N1.json')) return route.fulfill({ contentType: 'application/json',
+        body: JSON.stringify([{ basetime: '20260131120000', validtime: '20260131120000', elements: ['hrpns'] }]) });
+      if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: TILE_PNG }); }
+      if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
+      if (url.includes('/amedas/const/amedastable.json')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_TABLE) });
+      if (url.includes('/amedas/data/map/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_MAP) });
       if (url.includes('cyberjapandata.gsi.go.jp') || url.includes('tile.openstreetmap.org') ||
           url.includes('server.arcgisonline.com')) {
         tileHits.push(url);
         return route.fulfill({ contentType: 'image/png', body: TILE_PNG });
       }
-      if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather()) });
+      if (url.includes('api.open-meteo.com')) {
+        // 風の格子（複数座標・wind_speed_10m）は配列で返す
+        if (url.includes('wind_speed_10m')) {
+          const n = new URL(url).searchParams.get('latitude').split(',').length;
+          return route.fulfill({ contentType: 'application/json', body: JSON.stringify(windGridResponse(n)) });
+        }
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather()) });
+      }
       return route.abort();
     });
     await page.addInitScript(ls => {
@@ -296,6 +338,89 @@ function fakeWeather() {
     return { v, mapAlive: !!leafletMap && !!leafletMap.getCenter() };
   });
   ok(failElev.mapAlive, '標高取得の後も地図は生きている');
+
+  /* ================= 5b. 複数レイヤーの重ね合わせ ================= */
+  await page.evaluate(() => {
+    // いったん全部外してから3枚重ねる
+    mapPrefs.overlays.slice().forEach(o => toggleOverlay(o.id));
+    toggleOverlay('hillshade'); toggleOverlay('relief'); toggleOverlay('gazo1');
+  });
+  await page.waitForTimeout(400);
+  const stacked = await page.evaluate(() => {
+    const ids = mapPrefs.overlays.map(o => o.id);
+    const live = ids.filter(id => !!overlayTileLayers[id]);
+    const onMap = ids.filter(id => leafletMap.hasLayer(overlayTileLayers[id]));
+    return { ids, live, onMap, saved: JSON.parse(localStorage.getItem('sotoki.map.overlays') || '[]').map(o => o.id) };
+  });
+  ok(stacked.ids.length === 3, 'オーバーレイは同時に3枚載る', stacked.ids);
+  ok(stacked.live.length === 3 && stacked.onMap.length === 3, '3枚とも地図に載っている', stacked);
+  ok(stacked.saved.length === 3, '重ねた状態が保存される', stacked.saved);
+
+  /* ================= 5c. 気象レイヤー ================= */
+  const wxDefs = await page.evaluate(() => MAP_WEATHER.map(w => ({ id: w.id, kind: w.kind })));
+  ok(wxDefs.length === 4, '気象レイヤーは4種', wxDefs);
+
+  // 降雨レーダー：targetTimes を引いてから basetime/validtime 入りのURLを組む
+  await page.evaluate(() => toggleOverlay('radar'));
+  await page.waitForTimeout(900);
+  const radar = await page.evaluate(() => ({
+    on: isOverlayOn('radar'),
+    url: overlayTileLayers.radar ? overlayTileLayers.radar._url : null,
+    opacity: overlayTileLayers.radar ? overlayTileLayers.radar.options.opacity : null,
+    pane: overlayTileLayers.radar ? overlayTileLayers.radar.options.pane : null,
+    attribution: document.getElementById('map-attribution').textContent,
+  }));
+  ok(radar.on && radar.url, '降雨レーダーが載る', radar);
+  ok(/20260131120000/.test(radar.url) && /surf\/hrpns/.test(radar.url),
+    'targetTimesのbasetime/validtimeでURLを組む', radar.url);
+  ok(radar.pane === 'mapWeather', '気象は専用paneに載る（地形図より上）', radar.pane);
+  ok(radar.attribution.includes('気象庁'), '出典に気象庁が入る', radar.attribution);
+
+  // アメダス：z8以上で実測ピンが出る
+  await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('amedas'); });
+  await page.waitForTimeout(1200);
+  const amedas = await page.evaluate(() => {
+    const pins = [...document.querySelectorAll('.amedas-box')];
+    return {
+      count: pins.length,
+      texts: pins.map(p => p.textContent),
+      status: (document.querySelector('.layer-status[data-id="amedas"]') || {}).textContent,
+    };
+  });
+  ok(amedas.count >= 2, 'アメダスの実測ピンが出る', amedas);
+  ok(amedas.texts.some(t => /-4.8℃/.test(t)), '気温の実測値を出す', amedas.texts);
+  ok(amedas.texts.some(t => /積180cm/.test(t)), '積雪も出す', amedas.texts);
+
+  // ズームを引くと出さない（点が多すぎるため）。理由をパネルに出す
+  await page.evaluate(() => leafletMap.setView([36.57, 137.65], 6));
+  await page.waitForTimeout(700);
+  const zoomedOut = await page.evaluate(() => ({
+    pins: document.querySelectorAll('.amedas-box').length,
+    status: (document.querySelector('.layer-status[data-id="amedas"]') || {}).textContent,
+  }));
+  ok(zoomedOut.pins === 0, 'ズームを引いたらアメダスは出さない', zoomedOut);
+  ok(/z8以上/.test(zoomedOut.status || ''), '出さない理由をパネルに出す', zoomedOut.status);
+
+  // 風の矢印（leaflet-velocityは使わない＝アニメーションなし）
+  await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('windArrows'); });
+  await page.waitForTimeout(1200);
+  const wind = await page.evaluate(() => {
+    const boxes = [...document.querySelectorAll('.wind-box')];
+    return {
+      count: boxes.length,
+      rotated: boxes.filter(b => /rotate/.test(b.querySelector('.wind-a').style.transform)).length,
+      usesVelocity: typeof L.velocityLayer !== 'undefined',
+    };
+  });
+  ok(wind.count > 0, '風の矢印が出る', wind);
+  ok(wind.rotated === wind.count, '矢印が風向に回っている', wind);
+  ok(!wind.usesVelocity, 'leaflet-velocityは使っていない（禁止ライブラリ）');
+
+  // 気象レイヤーはSWのキャッシュ対象に入れない（時間で中身が変わるため）
+  const wxHosts = await page.evaluate(() => ({
+    nowcast: JMA_NOWCAST_BASE,
+  }));
+  ok(/www\.jma\.go\.jp/.test(wxHosts.nowcast), 'ナウキャストは気象庁ホスト', wxHosts);
 
   await page.screenshot({ path: __dirname + '/smoke_mapui.png' });
 

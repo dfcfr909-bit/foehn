@@ -125,9 +125,11 @@ function fakeSupplemental(reqUrl) {
     // 雲(100%)と晴れ(0%)を隣り合う時刻で比べる。fixtureは偶数時=100% / 奇数時=0%
     const iCloud = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() % 2 === 0);
     const iClear = iCloud + 1;
-    // 昼と夜を、雲のない高度(6000m)で比べる（日の出04:40 / 日の入19:00のfixture）
+    // 昼と夜を、雲のない高度(6000m)で比べる（日の出04:40 / 日の入19:00のfixture）。
+    // ★fixtureは「indexの偶奇」で雲を出し分けているので、比べる2点は偶奇をそろえること。
+    //   ずれると雲の量の差を夜の暗さと取り違える（1時と12時で比べて実際に落ちた）。
     const iNight = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 1);
-    const iDay = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 12);
+    const iDay = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 13);
     let maxJump = 0;
     for (let i = 1; i < lum.length; i++) maxJump = Math.max(maxJump, Math.abs(lum[i] - lum[i - 1]));
     const distinct = new Set(lum).size;

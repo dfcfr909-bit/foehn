@@ -854,6 +854,44 @@ html, body {
 .layer-ov.on .layer-ov-box { background: var(--text); border-color: var(--text); }
 .layer-ov-name { min-width: 0; }
 .layer-ov-note { display: block; font-size: 9px; font-weight: 400; color: var(--text3); }
+.layer-ov-name em {
+  font-style: normal; font-size: 9px; font-weight: 700;
+  color: var(--b-col); border: 1px solid var(--b-col);
+  border-radius: 4px; padding: 0 3px; vertical-align: 1px;
+}
+/* 取得できないレイヤーは黙って空にせず理由を出す（URL未確認のものがあるため） */
+.layer-status { display: block; font-size: 9px; font-weight: 700; color: var(--c-col); }
+.layer-status:empty { display: none; }
+
+/* アメダスの実測ピンと風の矢印（タイルではなくマーカーで置く） */
+.amedas-pin, .wind-arrow { background: none; border: none; }
+.amedas-box {
+  transform: translate(-50%, -50%);
+  display: inline-flex; flex-direction: column; align-items: center;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(0,0,0,0.28);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.28);
+  white-space: nowrap;
+  line-height: 1.15;
+}
+.amedas-box b { font-size: 11px; color: #c1440e; font-family: var(--font-mono); }
+.amedas-box span { font-size: 8px; color: #444; }
+.wind-box {
+  transform: translate(-50%, -50%);
+  display: inline-flex; align-items: center; gap: 1px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(0,0,0,0.25);
+  white-space: nowrap;
+}
+.wind-box b { font-size: 10px; font-family: var(--font-mono); color: #2a3a8a; }
+.wind-box .wind-a { display: inline-block; font-size: 14px; line-height: 1; color: #2a3a8a; }
+/* 15m/s超は赤（吹き飛び・ウインドスラブの目安。チャート側と同じしきい値） */
+.wind-box.strong { border-color: var(--c-col); }
+.wind-box.strong b, .wind-box.strong .wind-a { color: var(--c-col); }
 .layer-ov-op { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .layer-ov-op input[type=range] { width: 92px; height: 44px; }
 .layer-ov-op input[type=range]:disabled { opacity: 0.35; }
@@ -1442,7 +1480,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.46.0</span>
+    <span id="app-version">v4.47.0</span>
   </div>
 
   <!-- Footer -->
@@ -1493,6 +1531,8 @@ html, body {
           <div id="layer-bases" role="radiogroup" aria-labelledby="layer-bases-title"></div>
           <div class="layer-section-title" id="layer-overlays-title">重ねる地形図</div>
           <div id="layer-overlays" aria-labelledby="layer-overlays-title"></div>
+          <div class="layer-section-title" id="layer-weather-title">気象を重ねる</div>
+          <div id="layer-weather" aria-labelledby="layer-weather-title"></div>
           <div class="layer-section-title">保存した地図タイル</div>
           <div id="layer-cache">
             <div id="layer-cache-usage">—</div>
@@ -4032,10 +4072,40 @@ const RRIM_CONFLICTS = [RRIM_SHADE, RRIM_SLOPE];
 const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 
+/* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
+
+   ※要件定義 §2 は「気象データはOpen-Meteoのみ」だが、降雨レーダー・雷・アメダスは
+     Open-Meteoに配信が無いため気象庁を使う。利用者の依頼で制約を緩めた箇所。
+   ※Windyのようなアニメーション風速は leaflet-velocity が禁止のため実装していない。
+     代わりに風は「Open-Meteoの値を格子状に矢印で置く」方式（windArrows）にしてある。 */
+const JMA_NOWCAST_BASE = 'https://www.jma.go.jp/bosai/jmatile/data/nowc';
+const JMA_NOWCAST_TIMES = `${JMA_NOWCAST_BASE}/targetTimes_N1.json`;
+
+const MAP_WEATHER = [
+  /* 気象庁ナウキャスト。basetime/validtime を targetTimes から取ってURLを組み立てる。
+     開発環境から到達できずURLの形を実機で確認できていないので unverified にしてある
+     （タイルが1枚も取れなければパネルに「取得できません」と出る）。 */
+  { id: 'radar', name: '降雨レーダー', kind: 'jmaNowcast', element: 'hrpns', opacity: 0.65,
+    minNativeZoom: 4, maxNativeZoom: 10, attribution: '気象庁ナウキャスト',
+    note: '高解像度降水ナウキャスト（実況）', unverified: true },
+  { id: 'thunder', name: '雷', kind: 'jmaNowcast', element: 'thns', opacity: 0.80,
+    minNativeZoom: 4, maxNativeZoom: 10, attribution: '気象庁ナウキャスト',
+    note: '雷ナウキャスト（実況）', unverified: true },
+  // アメダス。新雪ランキングで使っている取得口と同じ（snowRanking.js のヘルパを再利用）
+  { id: 'amedas', name: 'アメダス', kind: 'amedas', opacity: 1,
+    attribution: '気象庁アメダス', note: '気温／風速の実測。z8以上で表示' },
+  // 風。Open-Meteoの値を格子状に矢印で置く（leaflet-velocity禁止のためアニメーションはしない）
+  { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
+    attribution: 'Open-Meteo', note: '選択時刻の風。z7以上で表示' },
+];
+
 function findBase(id) { return MAP_BASES.find(b => b.id === id) || null; }
-function findOverlay(id) { return MAP_OVERLAYS.find(o => o.id === id) || null; }
+function findOverlay(id) {
+  return MAP_OVERLAYS.find(o => o.id === id) || MAP_WEATHER.find(o => o.id === id) || null;
+}
 // UIに出すオーバーレイ（URL未確認のものは出さない）
 function usableOverlays() { return MAP_OVERLAYS.filter(o => !o.pending); }
+function usableWeather() { return MAP_WEATHER.filter(o => !o.pending); }
 
 /* ------ 永続化（不正値はデフォルトへ落とす） ------ */
 function loadMapPrefs() {
@@ -4122,12 +4192,224 @@ function applyOverlays() {
     if (!def || def.pending) return;
     if (def.composite) {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
+    } else if (def.kind === 'jmaNowcast') {
+      addNowcastLayer(def, item.opacity);
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows') {
+      weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
       overlayTileLayers[def.id] = L.tileLayer(def.url,
         tileOpts(def, { pane: 'mapOverlays', opacity: item.opacity })).addTo(leafletMap);
     }
   });
+  refreshWeatherPoints();
   updateMapAttribution();
+}
+
+/* ------ 気象庁ナウキャスト（降雨レーダー・雷） ------
+   タイルURLに basetime と validtime が要るので、先に targetTimes を引く。
+   時間で中身が変わるためSWのキャッシュ対象には入れていない（TILE_HOSTSに無い）。 */
+let nowcastTimesPromise = null;
+function jmaNowcastTimes() {
+  if (nowcastTimesPromise) return nowcastTimesPromise;
+  nowcastTimesPromise = fetch(JMA_NOWCAST_TIMES)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(list => {
+      if (!Array.isArray(list) || !list.length) throw new Error('targetTimesが空');
+      // 実況＝basetimeとvalidtimeが同じもの。無ければ先頭を使う
+      return list.find(t => t.basetime === t.validtime) || list[0];
+    })
+    .catch(e => { nowcastTimesPromise = null; throw e; });
+  return nowcastTimesPromise;
+}
+
+async function addNowcastLayer(def, opacity) {
+  try {
+    const t = await jmaNowcastTimes();
+    if (!isOverlayOn(def.id)) return;                  // 待っている間に外されていたら何もしない
+    const url = `${JMA_NOWCAST_BASE}/${t.basetime}/none/${t.validtime}/surf/${def.element}/{z}/{x}/{y}.png`;
+    const layer = L.tileLayer(url, tileOpts(def, { pane: 'mapWeather', opacity })).addTo(leafletMap);
+    // URLの形が違えば1枚も出ない。黙って空になるとわからないのでパネルに出す
+    let errors = 0, loaded = 0;
+    layer.on('tileerror', () => { errors++; if (loaded === 0 && errors >= 3) setLayerStatus(def.id, '取得できません'); });
+    layer.on('tileload', () => { loaded++; setLayerStatus(def.id, ''); });
+    overlayTileLayers[def.id] = layer;
+  } catch (e) {
+    setLayerStatus(def.id, `取得できません（${e.message}）`);
+  }
+}
+
+// レイヤーごとの状態表示（取得できない等）
+const layerStatus = {};
+function setLayerStatus(id, text) {
+  if (layerStatus[id] === text) return;
+  layerStatus[id] = text;
+  const el = document.querySelector(`.layer-status[data-id="${id}"]`);
+  if (el) el.textContent = text;
+}
+
+/* ============================================================
+   点で描く気象レイヤー（アメダス実測・風の矢印）
+
+   タイルではないので、地図を動かすたびに表示範囲ぶんだけ描き直す。
+   数が増えると重いので、上限を決めて間引く。
+   ============================================================ */
+let weatherPointsDirty = false;
+let amedasData = null;        // { stations: [...], time: '...' }
+let windGrid = null;          // { key, points: [{lat,lon,speed,dir}] }
+let weatherMarkers = [];
+const AMEDAS_MIN_ZOOM = 8;    // これ未満は点が多すぎるので出さない
+const WIND_MIN_ZOOM = 7;
+const WIND_GRID_N = 5;        // 画面を N×N に割って風を取る（1リクエストで済む数）
+
+function clearWeatherMarkers() {
+  weatherMarkers.forEach(m => leafletMap.removeLayer(m));
+  weatherMarkers = [];
+}
+
+/* アメダス全地点。新雪ランキングと同じ取得口なので snowRanking.js のヘルパを使い回す */
+async function loadAmedas() {
+  if (amedasData) return amedasData;
+  if (typeof snowRanking === 'undefined') throw new Error('snowRanking.js 未読込');
+  const base = 'https://www.jma.go.jp/bosai/amedas';
+  const [txt, table] = await Promise.all([
+    fetch(`${base}/data/latest_time.txt`).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }),
+    fetch(`${base}/const/amedastable.json`).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+  ]);
+  const stamp = snowRanking.parseLatestTime(txt);
+  if (!stamp) throw new Error('latest_timeを解釈できない');
+  const map = await fetch(`${base}/data/map/${stamp}.json`).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status); return r.json();
+  });
+  const stations = [];
+  for (const id of Object.keys(map)) {
+    const meta = table[id], obs = map[id];
+    if (!meta || !obs) continue;
+    const lat = snowRanking.dmsToDeg(meta.lat), lon = snowRanking.dmsToDeg(meta.lon);
+    if (lat == null || lon == null) continue;
+    const pick = k => (Array.isArray(obs[k]) ? obs[k][0] : null);
+    stations.push({
+      id, name: meta.kjName || id, lat, lon, alt: meta.alt,
+      temp: pick('temp'), wind: pick('wind'), dir: pick('windDirection'), snow: pick('snow'),
+    });
+  }
+  amedasData = { stations, stamp };
+  return amedasData;
+}
+
+function drawAmedas(bounds, opacity) {
+  if (leafletMap.getZoom() < AMEDAS_MIN_ZOOM) { setLayerStatus('amedas', `z${AMEDAS_MIN_ZOOM}以上で表示`); return; }
+  if (!amedasData) {
+    loadAmedas()
+      .then(() => { setLayerStatus('amedas', ''); refreshWeatherPoints(); })
+      .catch(e => setLayerStatus('amedas', `取得できません（${e.message}）`));
+    setLayerStatus('amedas', '取得中…');
+    return;
+  }
+  setLayerStatus('amedas', '');
+  let n = 0;
+  for (const s of amedasData.stations) {
+    if (!bounds.contains([s.lat, s.lon])) continue;
+    if (++n > 140) break;                       // 出しすぎない
+    const t = (s.temp != null) ? `${s.temp}℃` : '';
+    const w = (s.wind != null) ? `${s.wind}m/s` : '';
+    const sn = (s.snow != null) ? `${s.snow}cm` : '';
+    const m = L.marker([s.lat, s.lon], {
+      pane: 'mapWeather',
+      opacity,
+      icon: L.divIcon({
+        className: 'amedas-pin',
+        html: `<div class="amedas-box"><b>${t || w || '—'}</b>` +
+              `<span>${escapeHtml(s.name)}${sn ? ' 積' + sn : ''}</span></div>`,
+        iconSize: null,
+      }),
+    }).addTo(leafletMap);
+    m.bindTooltip(`${escapeHtml(s.name)}（${s.alt ?? '?'}m）<br>気温 ${t || '—'} / 風 ${w || '—'}` +
+                  (sn ? `<br>積雪 ${sn}` : ''));
+    weatherMarkers.push(m);
+  }
+}
+
+/* 風の矢印。leaflet-velocity（禁止）を使わないので、Open-Meteoの値を
+   画面を格子に割った代表点で取り、矢印を置く方式にしている。
+   アニメーションはしないが、風向と強さは読める。 */
+async function loadWindGrid(bounds) {
+  const z = leafletMap.getZoom();
+  const key = [bounds.getSouth(), bounds.getWest(), bounds.getNorth(), bounds.getEast(), z, state.sliderIndex]
+    .map(v => Number(v).toFixed(3)).join(',');
+  if (windGrid && windGrid.key === key) return windGrid;
+  const lats = [], lons = [];
+  for (let i = 0; i < WIND_GRID_N; i++) {
+    for (let j = 0; j < WIND_GRID_N; j++) {
+      lats.push(bounds.getSouth() + (bounds.getNorth() - bounds.getSouth()) * (i + 0.5) / WIND_GRID_N);
+      lons.push(bounds.getWest() + (bounds.getEast() - bounds.getWest()) * (j + 0.5) / WIND_GRID_N);
+    }
+  }
+  const sel = state.allData && state.allData[state.sliderIndex];
+  const q = new URLSearchParams({
+    latitude: lats.map(v => v.toFixed(4)).join(','),
+    longitude: lons.map(v => v.toFixed(4)).join(','),
+    hourly: 'wind_speed_10m,wind_direction_10m',
+    models: 'jma_seamless',
+    timezone: 'Asia/Tokyo',
+    wind_speed_unit: 'ms',       // ★既定はkm/h。付け忘れると3.6倍になる
+    forecast_days: '2',
+  });
+  const json = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  const arr = Array.isArray(json) ? json : [json];
+  // 選択時刻に一致する行を使う（無ければ現在時刻に最も近い行）
+  const at = sel ? sel.time : new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const wantKey = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:00`;
+  const points = [];
+  arr.forEach((r, i) => {
+    const h = r && r.hourly;
+    if (!h || !h.time || !h.wind_speed_10m) return;
+    let k = h.time.indexOf(wantKey);
+    if (k < 0) { for (let j = 0; j < h.time.length; j++) if (h.time[j] <= wantKey) k = j; }
+    if (k < 0) k = 0;
+    const speed = h.wind_speed_10m[k];
+    if (speed == null) return;
+    points.push({ lat: lats[i], lon: lons[i], speed, dir: h.wind_direction_10m ? h.wind_direction_10m[k] : 0 });
+  });
+  windGrid = { key, points };
+  return windGrid;
+}
+
+function drawWindArrows(bounds, opacity) {
+  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerStatus('windArrows', `z${WIND_MIN_ZOOM}以上で表示`); return; }
+  loadWindGrid(bounds)
+    .then(g => {
+      if (!isOverlayOn('windArrows')) return;
+      setLayerStatus('windArrows', '');
+      g.points.forEach(p => {
+        if (p.speed == null) return;
+        // 風向は「吹いてくる方角」なので、矢印は+180°側へ進む
+        const to = (p.dir + 180) % 360;
+        const strong = p.speed >= 15;
+        const m = L.marker([p.lat, p.lon], {
+          pane: 'mapWeather', opacity,
+          icon: L.divIcon({
+            className: 'wind-arrow',
+            html: `<div class="wind-box${strong ? ' strong' : ''}">` +
+                  `<span class="wind-a" style="transform:rotate(${to}deg)">↑</span>` +
+                  `<b>${p.speed.toFixed(0)}</b></div>`,
+            iconSize: null,
+          }),
+        }).addTo(leafletMap);
+        weatherMarkers.push(m);
+      });
+    })
+    .catch(e => setLayerStatus('windArrows', `取得できません（${e.message}）`));
+}
+
+function refreshWeatherPoints() {
+  if (!leafletMap) return;
+  clearWeatherMarkers();
+  const bounds = leafletMap.getBounds();
+  if (isOverlayOn('amedas')) drawAmedas(bounds, overlayOpacity('amedas'));
+  if (isOverlayOn('windArrows')) drawWindArrows(bounds, overlayOpacity('windArrows'));
+  weatherPointsDirty = false;
 }
 
 // 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
@@ -4192,6 +4474,8 @@ function setOverlayOpacity(id, value) {
   } else if (layer) {
     layer.setOpacity(item.opacity);
   }
+  const def = findOverlay(id);
+  if (def && (def.kind === 'amedas' || def.kind === 'windArrows')) refreshWeatherPoints();
   const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
   if (label) label.textContent = Math.round(item.opacity * 100) + '%';
 }
@@ -4212,6 +4496,9 @@ function openMap() {
       const slopePane = leafletMap.createPane('rrimSlope');
       slopePane.style.zIndex = 361;
       slopePane.style.mixBlendMode = 'multiply';
+      leafletMap.createPane('mapWeather').style.zIndex = 400;   // 気象は地形図より上
+      // 点で描く気象レイヤーは表示範囲ぶんしか出さないので、動かすたびに描き直す
+      leafletMap.on('moveend zoomend', () => refreshWeatherPoints());
       applyBaseLayer();
       applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
@@ -4265,16 +4552,18 @@ function renderLayerPanel() {
       <span class="layer-swatch" style="background:${b.swatch}"></span>
       <span class="layer-base-name">${escapeHtml(b.name)}</span>
     </button>`).join('');
-  ovWrap.innerHTML = usableOverlays().map(o => {
+  const row = o => {
     const on = isOverlayOn(o.id);
     const op = overlayOpacity(o.id);
+    const st = layerStatus[o.id] || '';
     return `
       <div class="layer-ov${on ? ' on' : ''}">
         <button class="layer-ov-toggle" role="switch" aria-checked="${on}"
                 onclick="toggleOverlay('${o.id}')">
           <span class="layer-ov-box">${on ? '✓' : ''}</span>
-          <span class="layer-ov-name">${escapeHtml(o.name)}
-            ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}</span>
+          <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
+            ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
+            <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
         </button>
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
@@ -4283,7 +4572,10 @@ function renderLayerPanel() {
           <span class="layer-op-val" data-id="${o.id}">${Math.round(op * 100)}%</span>
         </div>
       </div>`;
-  }).join('');
+  };
+  ovWrap.innerHTML = usableOverlays().map(row).join('');
+  const wxWrap = document.getElementById('layer-weather');
+  if (wxWrap) wxWrap.innerHTML = usableWeather().map(row).join('');
   updateMapAttribution();
 }
 
