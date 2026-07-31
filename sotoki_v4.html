@@ -1547,7 +1547,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.54.0</span>
+    <span id="app-version">v4.55.0</span>
   </div>
 
   <!-- Footer -->
@@ -4181,6 +4181,7 @@ function amedasDirDeg(i) { return (i >= 1 && i <= 16) ? i * 22.5 : null; }
 const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
+const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -4191,8 +4192,25 @@ const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const JMA_NOWCAST_BASE = 'https://www.jma.go.jp/bosai/jmatile/data/nowc';
 /* targetTimes は種別ごとに別ファイル。降水は N1、雷・竜巻は N2。
    実機で降水(N1/hrpns)は出たが雷は出なかったので、雷だけ N2 を見に行く。 */
-const JMA_TIMES_PRECIP = 'targetTimes_N1.json';
-const JMA_TIMES_THUNDER = 'targetTimes_N2.json';
+const JMA_TIMES_PRECIP = `${JMA_NOWCAST_BASE}/targetTimes_N1.json`;
+const JMA_TIMES_THUNDER = `${JMA_NOWCAST_BASE}/targetTimes_N2.json`;
+
+/* ひまわり（衛星の雲）。レーダーは降っている所しか映らないので、
+   「曇っているが降っていない」を見るにはこちらが要る。
+   ナウキャストと同じ作りだが基準URLとバンドの指定が違う。 */
+const JMA_SAT_BASE = 'https://www.jma.go.jp/bosai/himawari/data/satimg';
+const JMA_TIMES_SAT = `${JMA_SAT_BASE}/targetTimes_jp.json`;
+// 表示するバンド。実機でURLの形を確認できていないので unverified 扱い
+const SAT_BANDS = [
+  { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC' },  // リアルカラー再現画像
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB' },  // 雲の高さが分かる
+  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC' },  // 雲頂強調
+];
+const SAT_BAND_DEFAULT = 'REP';
+function satBandDef(id) { return SAT_BANDS.find(b => b.id === id) || SAT_BANDS[0]; }
+
+// 気象レイヤーの自動更新の間隔。ナウキャストは5分、衛星は10分ごとに更新される
+const WX_REFRESH_MS = 5 * 60 * 1000;
 
 const MAP_WEATHER = [
   /* 気象庁ナウキャスト。basetime/validtime を targetTimes から取ってURLを組み立てる。
@@ -4202,7 +4220,13 @@ const MAP_WEATHER = [
   { id: 'radar', name: '降雨レーダー', kind: 'jmaNowcast', element: 'hrpns',
     timesFile: JMA_TIMES_PRECIP, opacity: 0.65,
     minNativeZoom: 4, maxNativeZoom: 10, attribution: '気象庁ナウキャスト',
-    note: '高解像度降水ナウキャスト（実況）' },
+    note: '高解像度降水ナウキャスト（実況）。5分ごとに自動更新' },
+  /* 衛星の雲。レーダーに映らない「降っていない雲」を見るため。
+     URLの形は実機で未確認なので unverified（取れなければパネルに理由が出る）。 */
+  { id: 'satellite', name: '衛星の雲', kind: 'jmaSat',
+    timesFile: JMA_TIMES_SAT, opacity: 0.55,
+    minNativeZoom: 3, maxNativeZoom: 6, attribution: '気象庁 ひまわり',
+    note: 'ひまわりの雲画像。10分ごとに自動更新', unverified: true },
   /* 雷。N1では出ずN2に変えたが、実機ではまだタイルが404だった（時刻表は取れている）。
      雷ナウキャストは降水より粗いメッシュでズーム上限が低いと見て 10→8 に下げてある。
      加えて、雷が観測されていない時間帯はタイル自体が無い可能性がある。 */
@@ -4252,13 +4276,19 @@ function loadMapPrefs() {
     const raw = localStorage.getItem(MAP_LS_AMEDAS_EL);
     if (raw && AMEDAS_ELEMENTS.some(e => e.id === raw)) amedasElement = raw;
   } catch (e) { /* 読めなければ既定 */ }
-  return { base, overlays, amedasElement };
+  let satBand = SAT_BAND_DEFAULT;
+  try {
+    const raw = localStorage.getItem(MAP_LS_SAT_BAND);
+    if (raw && SAT_BANDS.some(b => b.id === raw)) satBand = raw;
+  } catch (e) { /* 読めなければ既定 */ }
+  return { base, overlays, amedasElement, satBand };
 }
 function saveMapPrefs() {
   try {
     localStorage.setItem(MAP_LS_BASE, mapPrefs.base);
     localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(mapPrefs.overlays));
     localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
+    localStorage.setItem(MAP_LS_SAT_BAND, mapPrefs.satBand);
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -4267,7 +4297,8 @@ function saveMapPrefs() {
    ============================================================ */
 let leafletMap = null;
 let leafletMarker = null;
-let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT };
+let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
+                 satBand: SAT_BAND_DEFAULT };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -4318,8 +4349,8 @@ function applyOverlays() {
     if (!def || def.pending) return;
     if (def.composite) {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
-    } else if (def.kind === 'jmaNowcast') {
-      addNowcastLayer(def, item.opacity);
+    } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
+      addTimedTileLayer(def, item.opacity);
     } else if (def.kind === 'amedas' || def.kind === 'windArrows') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
@@ -4331,45 +4362,94 @@ function applyOverlays() {
   updateMapAttribution();
 }
 
-/* ------ 気象庁ナウキャスト（降雨レーダー・雷） ------
+/* ------ 時刻つきタイル（気象庁ナウキャスト・ひまわり） ------
    タイルURLに basetime と validtime が要るので、先に targetTimes を引く。
-   時間で中身が変わるためSWのキャッシュ対象には入れていない（TILE_HOSTSに無い）。 */
-const nowcastTimesPromises = {};
-function jmaNowcastTimes(file) {
-  if (nowcastTimesPromises[file]) return nowcastTimesPromises[file];
-  nowcastTimesPromises[file] = fetch(`${JMA_NOWCAST_BASE}/${file}`)
+   時間で中身が変わるためSWのキャッシュ対象には入れていない（TILE_HOSTSに無い）。
+   自動更新のたびに時刻表を引き直せるよう、キャッシュはURLをキーにして捨てられるようにする。 */
+let wxTimesPromises = {};
+function jmaTimes(url) {
+  if (wxTimesPromises[url]) return wxTimesPromises[url];
+  wxTimesPromises[url] = fetch(url)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(list => {
       if (!Array.isArray(list) || !list.length) throw new Error('targetTimesが空');
       // 実況＝basetimeとvalidtimeが同じもの。無ければ先頭を使う
       return list.find(t => t.basetime === t.validtime) || list[0];
     })
-    .catch(e => { delete nowcastTimesPromises[file]; throw e; });
-  return nowcastTimesPromises[file];
+    .catch(e => { delete wxTimesPromises[url]; throw e; });
+  return wxTimesPromises[url];
+}
+// 次の自動更新で新しい時刻を取りに行くため、覚えている時刻表を捨てる
+function clearWxTimes() { wxTimesPromises = {}; }
+
+/* 種別ごとのタイルURL。ナウキャストはPNG、ひまわりはJPEGで階層の形も違う */
+function timedTileUrl(def, t) {
+  if (def.kind === 'jmaSat') {
+    const b = satBandDef(mapPrefs.satBand);
+    return `${JMA_SAT_BASE}/${t.basetime}/jp/${t.validtime}/${b.band}/${b.prod}/{z}/{x}/{y}.jpg`;
+  }
+  return `${JMA_NOWCAST_BASE}/${t.basetime}/none/${t.validtime}/surf/${def.element}/{z}/{x}/{y}.png`;
 }
 
-async function addNowcastLayer(def, opacity) {
+/* 時刻つきタイルを載せる。
+   replace=true（自動更新・バンド切替）のときは、新しいタイルが1枚出るまで
+   古いレイヤーを残す。先に消すと更新のたびに一瞬まっさらになるため。 */
+async function addTimedTileLayer(def, opacity, replace) {
+  const prev = replace ? overlayTileLayers[def.id] : null;
   try {
-    const t = await jmaNowcastTimes(def.timesFile);
+    const t = await jmaTimes(def.timesFile);
     if (!isOverlayOn(def.id)) return;                  // 待っている間に外されていたら何もしない
-    const url = `${JMA_NOWCAST_BASE}/${t.basetime}/none/${t.validtime}/surf/${def.element}/{z}/{x}/{y}.png`;
-    const layer = L.tileLayer(url, tileOpts(def, { pane: 'mapNowcast', opacity })).addTo(leafletMap);
+    const layer = L.tileLayer(timedTileUrl(def, t),
+      tileOpts(def, { pane: 'mapNowcast', opacity })).addTo(leafletMap);
     // URLの形が違えば1枚も出ない。黙って空になるとわからないのでパネルに出す。
     // 失敗したタイルのズームも添える（ズーム上限が原因かの切り分けに要る）
     let errors = 0, loaded = 0, badZ = null;
+    const dropPrev = () => {
+      if (!prev || prev === layer) return;
+      leafletMap.removeLayer(prev);
+    };
     layer.on('tileerror', e => {
       errors++;
       if (e && e.coords) badZ = e.coords.z;
       if (loaded > 0 || errors < 3) return;
+      dropPrev();                                      // 新しい方が出ないなら古い方も用済み
       setLayerStatus(def.id, def.mayBeEmpty
         ? `この範囲に表示なし（z${badZ}のタイルが無い）`
         : `取得できません（z${badZ}のタイルが無い）`);
     });
-    layer.on('tileload', () => { loaded++; setLayerStatus(def.id, ''); });
+    layer.on('tileload', () => { loaded++; dropPrev(); setLayerStatus(def.id, ''); });
     overlayTileLayers[def.id] = layer;
   } catch (e) {
+    if (prev) { leafletMap.removeLayer(prev); delete overlayTileLayers[def.id]; }
     setLayerStatus(def.id, `取得できません（${e.message}）`);
   }
+}
+
+/* ------ 気象レイヤーの自動更新 ------
+   雨雲も衛星も数分で更新される。地図を開けっぱなしにしていても
+   古い絵のままにならないよう、開いている間だけ定期的に貼り直す。 */
+let wxRefreshTimer = null;
+function startWxRefresh() {
+  if (wxRefreshTimer) return;
+  wxRefreshTimer = setInterval(refreshWeatherLayers, WX_REFRESH_MS);
+}
+function stopWxRefresh() {
+  if (!wxRefreshTimer) return;
+  clearInterval(wxRefreshTimer);
+  wxRefreshTimer = null;
+}
+function refreshWeatherLayers() {
+  if (!leafletMap || !isMapOpen()) return;
+  clearWxTimes();
+  mapPrefs.overlays.forEach(item => {
+    const def = findOverlay(item.id);
+    if (!def) return;
+    if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
+      addTimedTileLayer(def, item.opacity, true);
+    }
+  });
+  // アメダスは点で描くので、実測値そのものを取り直してから描き直す
+  if (isOverlayOn('amedas')) { amedasData = null; refreshWeatherPoints(); }
 }
 
 // レイヤーごとの状態表示（取得できない等）
@@ -4695,12 +4775,16 @@ function openMap() {
       });
       renderLayerPanel();
       refreshTileCacheUsage();
+      startWxRefresh();
     }, 100);
   } else {
     leafletMap.setView([state.lat, state.lon], leafletMap.getZoom());
     leafletMarker.setLatLng([state.lat, state.lon]);
     setTimeout(() => leafletMap.invalidateSize(), 100);
     refreshTileCacheUsage();
+    // 閉じている間に古くなっているので、開いた時点で一度貼り直す
+    refreshWeatherLayers();
+    startWxRefresh();
   }
 }
 
@@ -4708,6 +4792,7 @@ function closeMap() {
   document.getElementById('map-overlay').classList.remove('open');
   closeLayerPanel();
   restoreFavRotary();
+  stopWxRefresh();                          // 見ていない間は取りに行かない（通信量のため）
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
 }
 function isMapOpen() {
@@ -4730,6 +4815,13 @@ function amedasElementChips() {
   return `<div class="amedas-els">` + AMEDAS_ELEMENTS.map(e =>
     `<button class="amedas-el${e.id === mapPrefs.amedasElement ? ' active' : ''}"
              onclick="setAmedasElement('${e.id}')">${e.name}</button>`).join('') + `</div>`;
+}
+
+// ひまわりのバンド切り替え（カラー／赤外／雲頂）。アメダスの要素チップと同じ見た目
+function satBandChips() {
+  return `<div class="amedas-els">` + SAT_BANDS.map(b =>
+    `<button class="amedas-el${b.id === mapPrefs.satBand ? ' active' : ''}"
+             onclick="setSatBand('${b.id}')">${b.name}</button>`).join('') + `</div>`;
 }
 
 function renderLayerPanel() {
@@ -4755,7 +4847,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
@@ -5620,6 +5712,15 @@ function setAmedasElement(id) {
   mapPrefs.amedasElement = amedasElementDef(id).id;
   saveMapPrefs();
   refreshWeatherPoints();
+  renderLayerPanel();
+}
+
+// 衛星のバンド切替（カラー／赤外／雲頂）。新しいタイルが出るまで今の絵は残す
+function setSatBand(id) {
+  mapPrefs.satBand = satBandDef(id).id;
+  saveMapPrefs();
+  const def = findOverlay('satellite');
+  if (def && isOverlayOn('satellite')) addTimedTileLayer(def, overlayOpacity('satellite'), true);
   renderLayerPanel();
 }
 

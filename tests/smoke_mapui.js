@@ -120,6 +120,7 @@ function fakeWeather() {
   const tileHits = [];
   const demHits = [];
   const nowcastHits = [];
+  const satHits = [];
   const timesHits = [];
 
   async function newPage(initLocalStorage) {
@@ -143,14 +144,20 @@ function fakeWeather() {
       if (url.includes('/dem_png/')) { demHits.push(url); return route.fulfill({ contentType: 'image/png', body: DEM_PNG }); }
       if (url.includes('targetTimes_')) {
         timesHits.push(url);
+        // 自動更新で時刻表を引き直しているか見るため、2回目以降は別の時刻を返す
+        const isJp = url.includes('_jp');
         const isN2 = url.includes('_N2');
+        const nth = timesHits.filter(u => u === url).length;
+        const stamp = isJp ? (nth > 1 ? '20260131124000' : '20260131123000')
+                    : isN2 ? '20260131123000'
+                    : (nth > 1 ? '20260131121000' : '20260131120000');
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify([{
-          basetime: isN2 ? '20260131123000' : '20260131120000',
-          validtime: isN2 ? '20260131123000' : '20260131120000',
+          basetime: stamp, validtime: stamp,
           elements: [isN2 ? 'thns' : 'hrpns'],
         }]) });
       }
       if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: TILE_PNG }); }
+      if (url.includes('/himawari/')) { satHits.push(url); return route.fulfill({ contentType: 'image/jpeg', body: TILE_PNG }); }
       if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
       if (url.includes('/amedas/const/amedastable.json')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_TABLE) });
       if (url.includes('/amedas/data/map/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_MAP) });
@@ -384,7 +391,7 @@ function fakeWeather() {
 
   /* ================= 5c. 気象レイヤー ================= */
   const wxDefs = await page.evaluate(() => MAP_WEATHER.map(w => ({ id: w.id, kind: w.kind })));
-  ok(wxDefs.length === 4, '気象レイヤーは4種', wxDefs);
+  ok(wxDefs.length === 5, '気象レイヤーは5種', wxDefs);
 
   // 降雨レーダー：targetTimes を引いてから basetime/validtime 入りのURLを組む
   await page.evaluate(() => toggleOverlay('radar'));
@@ -416,6 +423,67 @@ function fakeWeather() {
     '雷はN2の時刻でURLを組む', thunder.url);
   ok(thunder.maxNative === 8, '雷はズーム上限が低い（降水より粗いメッシュ）', thunder.maxNative);
   await page.evaluate(() => toggleOverlay('thunder'));
+  await page.waitForTimeout(200);
+
+  /* 衛星の雲（ひまわり）。レーダーは降っている所しか映らないので、
+     「曇っているが降っていない」を見るのはこちらの役目。 */
+  await page.evaluate(() => toggleOverlay('satellite'));
+  await page.waitForTimeout(900);
+  const sat = await page.evaluate(() => ({
+    url: overlayTileLayers.satellite ? overlayTileLayers.satellite._url : null,
+    pane: overlayTileLayers.satellite ? overlayTileLayers.satellite.options.pane : null,
+    chips: [...document.querySelectorAll('.amedas-el')].map(b => b.textContent),
+  }));
+  ok(sat.url && /himawari\/data\/satimg/.test(sat.url), '衛星タイルはひまわりの配信を見る', sat.url);
+  ok(sat.url && /20260131123000/.test(sat.url), '衛星も targetTimes の時刻でURLを組む', sat.url);
+  ok(sat.url && /\/jp\/.*\/REP\/ETC\//.test(sat.url), '既定はカラー（REP/ETC）', sat.url);
+  ok(sat.pane === 'mapNowcast', '衛星も雨雲と同じpane（現在地マスクの対象）', sat.pane);
+  ok(timesHits.some(u => u.includes('targetTimes_jp')), '衛星は日本域の targetTimes', timesHits);
+  ok(sat.chips.includes('赤外'), 'バンド切替のチップが出る', sat.chips);
+  ok(satHits.length > 0, '衛星タイルを実際に取りに行っている', satHits.length);
+
+  // バンドを変えるとURLが変わり、選択は保存される
+  await page.evaluate(() => setSatBand('B13'));
+  await page.waitForTimeout(700);
+  const satBand = await page.evaluate(() => ({
+    url: overlayTileLayers.satellite ? overlayTileLayers.satellite._url : null,
+    saved: localStorage.getItem('sotoki.map.satBand'),
+  }));
+  ok(satBand.url && /\/B13\/TBB\//.test(satBand.url), '赤外に切り替わる（B13/TBB）', satBand.url);
+  ok(satBand.saved === 'B13', '選んだバンドが保存される', satBand.saved);
+  await page.evaluate(() => setSatBand('REP'));
+  await page.waitForTimeout(500);
+
+  /* 自動更新：時刻表を引き直して新しい basetime のレイヤーに貼り替える。
+     雨雲も衛星も数分で更新されるので、開けっぱなしで古い絵のままにしない。 */
+  const beforeRefresh = await page.evaluate(() => ({
+    radar: overlayTileLayers.radar._url,
+    sat: overlayTileLayers.satellite._url,
+    interval: WX_REFRESH_MS,
+    timerOn: wxRefreshTimer !== null,
+  }));
+  ok(beforeRefresh.interval === 5 * 60 * 1000, '自動更新は5分間隔', beforeRefresh.interval);
+  ok(beforeRefresh.timerOn, '地図を開いている間はタイマーが動く', beforeRefresh.timerOn);
+  await page.evaluate(() => refreshWeatherLayers());
+  await page.waitForTimeout(1000);
+  const afterRefresh = await page.evaluate(() => ({
+    radar: overlayTileLayers.radar._url,
+    sat: overlayTileLayers.satellite._url,
+    layers: (() => { let n = 0; leafletMap.eachLayer(l => { if (l._url && /jmatile|himawari/.test(l._url)) n++; }); return n; })(),
+  }));
+  ok(/20260131121000/.test(afterRefresh.radar), '更新後は新しいbasetimeで貼り直す', afterRefresh.radar);
+  ok(/20260131124000/.test(afterRefresh.sat), '衛星も新しいbasetimeで貼り直す', afterRefresh.sat);
+  ok(afterRefresh.layers === 2, '古いレイヤーは残さない（重ならない）', afterRefresh.layers);
+
+  // 閉じたらタイマーを止める（見ていない間は通信しない）
+  await page.evaluate(() => closeMap());
+  await page.waitForTimeout(200);
+  const wxTimerStopped = await page.evaluate(() => wxRefreshTimer === null);
+  ok(wxTimerStopped, '地図を閉じたら自動更新を止める', wxTimerStopped);
+  await page.evaluate(() => openMap());
+  await page.waitForTimeout(900);
+
+  await page.evaluate(() => toggleOverlay('satellite'));
   await page.waitForTimeout(200);
 
   // アメダス：z8以上で実測ピンが出る
