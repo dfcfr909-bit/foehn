@@ -1137,7 +1137,9 @@ html, body {
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
-/* 雲量の濃淡凡例（無段階。JS側の cloudAlpha() と同じ濃さを並べる） */
+/* 雲量の凡例（無段階。青空0% → 白い雲100%）。
+   JS側の SKY_BOTTOM に cloudAlpha() で白を重ねた色をそのまま並べてある。
+   カーブを変えたら両方直すこと。 */
 #cloud-legend {
   display: inline-block;
   width: 44px;
@@ -1146,9 +1148,7 @@ html, body {
   vertical-align: middle;
   border: 1px solid rgba(0,0,0,0.15);
   background: linear-gradient(to right,
-    rgba(88,96,110,0.00), rgba(88,96,110,0.11), rgba(88,96,110,0.23),
-    rgba(88,96,110,0.34), rgba(88,96,110,0.44), rgba(88,96,110,0.54),
-    rgba(88,96,110,0.64), rgba(88,96,110,0.73), rgba(88,96,110,0.82));
+    #93c0e2, #a4cae7, #b4d3eb, #c1dbef, #cde2f2, #d8e8f5, #e3eef8, #edf4fb, #f7fafe);
 }
 .legend-item {
   display: flex;
@@ -1284,7 +1284,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.44.0</span>
+    <span id="app-version">v4.45.0</span>
   </div>
 
   <!-- Footer -->
@@ -1336,7 +1336,7 @@ html, body {
       <button id="btn-rank-close" onclick="closeRank()">✕</button>
     </div>
     <div id="rank-tabs">
-      <button class="rank-tab active" data-tab="index" onclick="setRankTab('index')">🏔️ 指数</button>
+      <button class="rank-tab active" data-tab="index" onclick="setRankTab('index')">🏔️ 登山指数</button>
       <button class="rank-tab" data-tab="snow" onclick="setRankTab('snow')">❄️ 新雪</button>
     </div>
 
@@ -2612,7 +2612,18 @@ function dayBandsFracs() {
    「現在／過去の境目」の線と紛らわしいため。
    夜だけを塗る方式にしてあるので、白地でも空色のグラデ地でも同じように使える。 */
 const NIGHT_RGB = '40,52,96';
-const NIGHT_ALPHA = 0.30;
+/* 夜の濃さは月齢で変える（満月の夜は明るく、新月の夜は暗い）。
+   月の出入りは見ておらず「その夜の月がどれだけ満ちているか」だけなので、
+   月が沈んでいる時間帯も同じ明るさになる。雰囲気づけの割り切り。 */
+const NIGHT_ALPHA_NEW = 0.38;    // 新月の夜（いちばん暗い）
+const NIGHT_ALPHA_FULL = 0.20;   // 満月の夜（いちばん明るい）
+// 輝面比。0=新月, 1=満月
+function moonIllum(date) {
+  return (1 - Math.cos(2 * Math.PI * moonPhase(date))) / 2;
+}
+function nightAlphaAt(date) {
+  return NIGHT_ALPHA_NEW + (NIGHT_ALPHA_FULL - NIGHT_ALPHA_NEW) * moonIllum(date);
+}
 
 function softEdgePx(pr) { return Math.min(22, pxPerHourVal * 1.6) * pr; }
 
@@ -2628,23 +2639,33 @@ function softGradient(ctx, x0, x1, soft, rgb, alpha) {
   return g;
 }
 
-// 夜（昼間帯の補集合）を暗く塗る
-function paintNightOverlay(u, ctx, H) {
-  const pr = canvasRatio(u);
-  const soft = softEdgePx(pr);
-  const xL = u.valToPos(-0.5, 'x', true);
-  const xR = u.valToPos(HOURS - 0.5, 'x', true);
+/* 夜の帯（昼間帯の補集合）を時間index基準で返す。
+   px ではなく時間で持つのは、帯ごとの月齢を引くのに時刻が要るため。 */
+function nightBandsFracs() {
+  const lo = -0.5, hi = HOURS - 0.5;
   const days = dayBandsFracs()
-    .map(b => [u.valToPos(Math.max(-0.5, b.from), 'x', true),
-               u.valToPos(Math.min(HOURS - 0.5, b.to), 'x', true)])
+    .map(b => [Math.max(lo, b.from), Math.min(hi, b.to)])
     .filter(([a, b]) => b > a)
     .sort((p, q) => p[0] - q[0]);
   const nights = [];
-  let cur = xL;
+  let cur = lo;
   days.forEach(([a, b]) => { if (a > cur) nights.push([cur, a]); cur = Math.max(cur, b); });
-  if (cur < xR) nights.push([cur, xR]);
-  nights.forEach(([a, b]) => {
-    ctx.fillStyle = softGradient(ctx, a, b, soft, NIGHT_RGB, NIGHT_ALPHA);
+  if (cur < hi) nights.push([cur, hi]);
+  return nights;
+}
+
+// 夜（昼間帯の補集合）を暗く塗る。scaleは panel ごとの濃さの倍率
+function paintNightOverlay(u, ctx, H, scale) {
+  const pr = canvasRatio(u);
+  const soft = softEdgePx(pr);
+  const d0 = state.allData[0].time.getTime();
+  nightBandsFracs().forEach(([f0, f1]) => {
+    const a = u.valToPos(f0, 'x', true), b = u.valToPos(f1, 'x', true);
+    if (b <= a) return;
+    // その夜の真ん中の月齢で濃さを決める
+    const mid = new Date(d0 + ((f0 + f1) / 2) * 3600e3);
+    const alpha = nightAlphaAt(mid) * (scale || 1);
+    ctx.fillStyle = softGradient(ctx, a, b, soft, NIGHT_RGB, alpha);
     ctx.fillRect(a - soft, 0, (b + soft) - (a - soft), H);
   });
 }
@@ -2715,14 +2736,23 @@ function drawTimeLabelsHook(u) { drawTimeLabels(u, canvasRatio(u)); }
      ・濃さ:     しきい値ではなく連続関数（cloudAlpha）で
      ・時刻方向: 1時間=1画素の小さなラスタを作り、drawImageの補間で引き伸ばす
    の3点で境界を消す。ラスタ化は組み立て時に一度だけなので描画は軽い。 */
-const CLOUD_RGB = [88, 96, 110];
+/* 雲は「白」で描き、空は青にする（v4.45.0）。
+   以前は淡い地に灰色の雲だったが、夜のシェーディングも灰色寄りなので
+   「背景・夜・雲」が同じトーンで混ざって見分けられなかった。
+   空＝青／雲＝白 にすると、夜は空だけが暗くなり雲は明るいままなので、
+   昼でも夜でも雲だけが浮いて見える。 */
+const CLOUD_RGB = [252, 253, 255];
+/* 空のグラデーションは上下であまり差をつけない。下を淡くしすぎると
+   低層の雲（バックカントリーでいちばん効く高度）が白地に白で埋もれるため。 */
+const SKY_TOP = '#6f9fca';     // 上空（高度12km側）
+const SKY_BOTTOM = '#93c0e2';  // 地上付近
 const CLOUD_ROWS = 192;        // ラスタの高さ（高度方向のサンプル数）
 const CLOUD_SUB = 8;           // 1時間を横に何分割するか
-// 雲量(%)→不透明度。従来の6段階とほぼ同じ濃さを通る連続カーブ
+// 雲量(%)→不透明度。白で描くようになったぶんコントラストを上げてある
 function cloudAlpha(cov) {
   if (cov == null) return 0;
   const t = Math.max(0, Math.min(1, (cov - 3) / 97));
-  return 0.82 * Math.pow(t, 0.85);
+  return 0.95 * Math.pow(t, 0.75);
 }
 let cloudRasterCache = null;   // { data, profiles, canvas }
 // 縦CLOUD_ROWS段・横1時間あたりCLOUD_SUB画素のラスタを作る。
@@ -2791,14 +2821,19 @@ function drawCloudPrecip(u) {
   const W = ctx.canvas.width;
   const data = state.allData;
   ctx.save();
-  // 下地：上ほど淡く（上空）、下ほど濃い空色（地上付近）
+  // 空の下地：上ほど濃い青（上空）、下ほど淡い（地上付近のもや）
   const grad = ctx.createLinearGradient(0, top, 0, bottom);
-  grad.addColorStop(0, '#f4f8fc');
-  grad.addColorStop(1, '#e4eef8');
+  grad.addColorStop(0, SKY_TOP);
+  grad.addColorStop(1, SKY_BOTTOM);
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, u.ctx.canvas.height);
-  // 夜のシェーディングは他のパネルと揃える（雲・降水の上には被せず下地だけ暗くする）
-  paintNightOverlay(u, ctx, u.ctx.canvas.height);
+  ctx.fillRect(0, top, W, bottom - top);
+  // 時刻軸の帯は白のまま（青地だと目盛りの数字が読みにくいため）
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, top);
+  ctx.fillRect(0, bottom, W, u.ctx.canvas.height - bottom);
+  // 夜は「空の色」を落とす。雲は白なので夜でも雲と空は混ざらない。
+  // 雲と競合しなくなったぶん、他のパネルより少し強めに効かせている
+  paintNightOverlay(u, ctx, u.ctx.canvas.height, 1.4);
 
   // 雲：小さなラスタを引き伸ばして描く。拡大時の補間で時刻方向の境目も溶ける。
   if (data.length) {
@@ -2822,8 +2857,8 @@ function drawCloudPrecip(u) {
     ctx.restore();
   }
 
-  // 高度グリッド線（1.5/3.5/6/9km）
-  ctx.strokeStyle = 'rgba(0,0,0,0.13)';
+  // 高度グリッド線（1.5/3.5/6/9km）。青地なので白の破線にする
+  ctx.strokeStyle = 'rgba(255,255,255,0.34)';
   ctx.lineWidth = pr;
   ctx.setLineDash([3 * pr, 3 * pr]);
   ALT_TICKS.forEach(a => {
@@ -2834,7 +2869,7 @@ function drawCloudPrecip(u) {
   ctx.setLineDash([]);
 
   // 地表帯（茶）＋降水バー（下から。左軸=降水mm/h）
-  ctx.fillStyle = 'rgba(190,160,130,0.55)';
+  ctx.fillStyle = 'rgba(150,118,86,0.85)';
   ctx.fillRect(PADDING_L * pr, bottom - 5 * pr, W - (PADDING_L + PADDING_R) * pr, 5 * pr);
   const pmax = scaleInfo ? Math.max(4, scaleInfo.precipMax) : 8;
   const zone = plotH * 0.62;   // 降水バーの最大高さ（左軸のフルスケール）
@@ -2844,16 +2879,23 @@ function drawCloudPrecip(u) {
     const xa = u.valToPos(i - 0.5, 'x', true);
     const xb = u.valToPos(i + 0.5, 'x', true);
     const bh = Math.min(1, p / pmax) * zone;
-    ctx.fillStyle = (data[i].snow > 0) ? 'rgba(60,120,220,0.88)' : 'rgba(26,190,190,0.88)';
+    // 凡例と同じ色をベタで置き、明るい縁をつける（夜の暗い空でも沈まないように）
+    ctx.fillStyle = (data[i].snow > 0) ? '#3c78dc' : '#1abebe';
     ctx.fillRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = pr;
+    ctx.strokeRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
   }
 
   // 日付区切り（0時）
   for (let i = 0; i < data.length; i++) {
     if (data[i].time.getHours() !== 0) continue;
     const x = u.valToPos(i - 0.5, 'x', true);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = pr;
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
     ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, u.ctx.canvas.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, bottom); ctx.lineTo(x, u.ctx.canvas.height); ctx.stroke();
   }
   ctx.restore();
 }

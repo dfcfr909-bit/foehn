@@ -3,6 +3,9 @@
 //   ・高度方向の補間が単調3次で、0〜100%の外へ行き過ぎないこと
 //   ・描画された雲に「1時間ぶんの箱」の縦線が出ないこと（時刻方向がなめらか）
 //   ・濃さが段階的（旧実装は6段階）ではなく連続していること
+//   ・空＝青／雲＝白であること（灰色どうしで背景・夜・雲が混ざらないための肝）
+//   ・夜は空だけが暗くなること
+//   ・月齢で夜の濃さが変わること（満月＝明るい / 新月＝暗い）
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const HTML = fs.readFileSync(require('path').join(__dirname, '..', 'sotoki_v4.html'), 'utf8');
@@ -111,7 +114,20 @@ function fakeSupplemental(reqUrl) {
     const x1 = Math.round(cloudChart.valToPos(i0 + 21, 'x', true));
     const row = ctx.getImageData(x0, y, x1 - x0, 1).data;
     const lum = [];
-    for (let i = 0; i < row.length; i += 4) lum.push(row[i]);   // 雲が濃いほど暗い
+    for (let i = 0; i < row.length; i += 4) lum.push(row[i]);   // 雲が濃いほど明るい（白）
+
+    // 明るさを1点だけ読むための道具（雲は白・空は青なので赤成分で足りる）
+    const at = (idx, alt) => {
+      const px = ctx.getImageData(
+        Math.round(cloudChart.valToPos(idx, 'x', true)), Math.round(box.yAlt(alt)), 1, 1).data;
+      return { r: px[0], g: px[1], b: px[2], lum: 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2] };
+    };
+    // 雲(100%)と晴れ(0%)を隣り合う時刻で比べる。fixtureは偶数時=100% / 奇数時=0%
+    const iCloud = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() % 2 === 0);
+    const iClear = iCloud + 1;
+    // 昼と夜を、雲のない高度(6000m)で比べる（日の出04:40 / 日の入19:00のfixture）
+    const iNight = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 1);
+    const iDay = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 12);
     let maxJump = 0;
     for (let i = 1; i < lum.length; i++) maxJump = Math.max(maxJump, Math.abs(lum[i] - lum[i - 1]));
     const distinct = new Set(lum).size;
@@ -126,6 +142,23 @@ function fakeSupplemental(reqUrl) {
       hours: state.allData.length,
       cached: cloudRasterFor(state.allData) === cloudRasterFor(state.allData),
       px: { n: lum.length, maxJump, distinct, span },
+      // 空＝青 / 雲＝白 の関係（灰色どうしで混ざらないための肝）
+      cloudPx: at(iCloud, 1700),
+      clearPx: at(iClear, 1700),
+      nightSky: at(iNight, 6000),
+      daySky: at(iDay, 6000),
+      // 月齢による夜の濃さ（満月=明るい / 新月=暗い）
+      moon: (() => {
+        const base = Date.UTC(2000, 0, 6, 18, 14);           // 基準の新月
+        const nm = new Date(base + 100 * SYNODIC_MONTH * 86400000);
+        const fm = new Date(base + 100.5 * SYNODIC_MONTH * 86400000);
+        return {
+          illumNew: Number(moonIllum(nm).toFixed(3)),
+          illumFull: Number(moonIllum(fm).toFixed(3)),
+          alphaNew: Number(nightAlphaAt(nm).toFixed(3)),
+          alphaFull: Number(nightAlphaAt(fm).toFixed(3)),
+        };
+      })(),
     };
   });
 
@@ -146,7 +179,16 @@ function fakeSupplemental(reqUrl) {
     r.px.span > 40 &&                                      // 0%↔100%の差はちゃんと出ている
     r.px.distinct > 30 &&                                  // 濃さが段階的でない（旧実装は数種類）
     // 時刻の境目に段差が無い（旧実装なら1時間ごとに span ぶんの段差が出る）
-    r.px.maxJump <= 14;
+    r.px.maxJump <= 14 &&
+    // 空＝青 / 雲＝白。雲のほうが明るく、晴れ空は青い（青成分が赤成分より大きい）
+    r.cloudPx.lum > r.clearPx.lum + 30 &&
+    r.clearPx.b > r.clearPx.r + 25 &&
+    r.cloudPx.r > 200 && r.cloudPx.g > 200 && r.cloudPx.b > 200 &&
+    // 夜は空だけが暗くなる（雲は白のままなので混ざらない）
+    r.daySky.lum > r.nightSky.lum + 20 &&
+    // 月齢で夜の濃さが変わる（満月＝明るい / 新月＝暗い）
+    r.moon.illumNew < 0.02 && r.moon.illumFull > 0.98 &&
+    r.moon.alphaNew > r.moon.alphaFull + 0.1;
   console.log(ok ? 'CLOUD SMOKE PASSED' : 'CLOUD SMOKE FAILED');
   process.exit(ok ? 0 : 1);
 })();

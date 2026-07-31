@@ -10,7 +10,7 @@ const TESTS = [
   ['smoke_align',   '赤の選択線と選択indexの位置一致・タップ選択'],
   ['smoke_outlook', 'AI全国概況カードの表示/非表示'],
   ['smoke_favpicker', 'お気に入り円柱ピッカー（円周配置・省スペース・選択確定）'],
-  ['smoke_cloud',   '気圧面雲量の無段階表示（14層・単調3次補間・境目なし）'],
+  ['smoke_cloud',   '雲パネル（無段階表示・青空と白い雲・月齢で夜の濃さ）'],
   ['smoke_snowrank', '新雪ランキング推定（SLR・補正係数k・評価窓・信頼度）'],
   ['smoke_snowui',  '新雪ランキングUI（タブ・順位・タグ絞り込み・信頼度表示）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
