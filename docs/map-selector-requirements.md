@@ -370,3 +370,28 @@ https://www.jma.go.jp/bosai/jmatile/data/nowc/{basetime}/none/{validtime}/surf/{
 
 `mapFlyTo()` が `flyTo(..., { duration: 0.8 })` を使う。**`setView` の瞬間移動は使わない。**
 どこからどこへ動いたのかが分かるようにするため。
+
+---
+
+## 17. 地図操作の追加（v4.53.0）
+
+### 17.1 ダブルタップ＋上下ドラッグで拡大縮小
+
+Googleマップと同じ片手操作。Leafletに無い操作なので `bindDoubleTapZoom()` で自前実装した。
+
+- 2回目のタップを**押したまま**上下に動かすと連続的にズーム（`DTAP_PX_PER_ZOOM`=70pxで1段）
+- ほとんど動かさずに離したら、ふつうのダブルタップとして1段拡大
+- なめらかにするため地図は **`zoomSnap: 0`**（小数ズームを許す）
+- Leaflet標準の `doubleClickZoom` は**切ってある**（自前の操作と取り合いになるため）
+- 2回目のタップで `preventDefault()` する。しないと地図のパンに取られる
+
+### 17.2 現在地のまわりだけ雨雲を抜く
+
+雨のエリアに入ると自位置が雨雲に埋もれて分からなくなる、という指摘への対応。
+`mapNowcast` pane に radial-gradient のマスクを掛け、現在地の周囲だけ雨雲を透明にする。
+
+- `SPOT_CLEAR_PX`(46px) までは完全に抜け、`SPOT_FADE_PX`(130px) で元の濃さに戻る
+- **ナウキャストとマーカーは pane を分けること。** マスクはpane単位なので、同じpaneに
+  入れると**現在地マーカーごと消える**。そのために `mapNowcast`(380) と
+  `mapWeather`(400) を分けてある
+- マスクは `move`/`zoom` と現在地の更新のたびに貼り直す。追跡を止めたら外す

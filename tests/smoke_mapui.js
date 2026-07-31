@@ -399,7 +399,8 @@ function fakeWeather() {
   ok(radar.on && radar.url, '降雨レーダーが載る', radar);
   ok(/20260131120000/.test(radar.url) && /surf\/hrpns/.test(radar.url),
     'targetTimesのbasetime/validtimeでURLを組む', radar.url);
-  ok(radar.pane === 'mapWeather', '気象は専用paneに載る（地形図より上）', radar.pane);
+  // ナウキャストだけ別pane。現在地まわりのマスクをここに掛けるため
+  ok(radar.pane === 'mapNowcast', 'ナウキャストは専用paneに載る（マスク用に分離）', radar.pane);
   ok(radar.attribution.includes('気象庁'), '出典に気象庁が入る', radar.attribution);
 
   // 雷は降水とは別のtargetTimes（N2）を見に行く
@@ -633,6 +634,69 @@ function fakeWeather() {
   ok(northUp.dragging === true, '戻したら手動パンが復活する', northUp.dragging);
   ok(northUp.label === '北', 'ボタンの表示が「北」に戻る', northUp.label);
 
+  // ★雨雲の中でも自位置が分かるよう、現在地のまわりだけ雨雲を抜く
+  const spot = await page.evaluate(() => {
+    const pane = leafletMap.getPane('mapNowcast');
+    return {
+      mask: pane.style.maskImage || pane.style.webkitMaskImage,
+      // マーカーは別paneなので抜かれない
+      markerPane: meMarker.options.pane,
+      nowcastPane: overlayTileLayers.radar ? overlayTileLayers.radar.options.pane : null,
+    };
+  });
+  ok(/radial-gradient/.test(spot.mask || ''), '現在地のまわりにマスクが掛かる', spot.mask);
+  ok(/rgba\(0, ?0, ?0, ?0\)/.test(spot.mask || ''), 'マスクの中心は透明（雨雲が抜ける）', spot.mask);
+  ok(spot.markerPane === 'mapWeather' && spot.nowcastPane === 'mapNowcast',
+    '現在地マーカーと雨雲は別pane（マーカーごと消さないため）', spot);
+
+  // ダブルタップ＋上下ドラッグで拡大縮小できる
+  const dtap = await page.evaluate(async () => {
+    const el = leafletMap.getContainer();
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const touch = (tx, ty) => [{ clientX: tx, clientY: ty, identifier: 1, target: el }];
+    const fire = (type, tx, ty) => {
+      const ev = new Event(type, { bubbles: true, cancelable: true });
+      ev.touches = type === 'touchend' ? [] : touch(tx, ty);
+      el.dispatchEvent(ev);
+      return ev;
+    };
+    const before = leafletMap.getZoom();
+    fire('touchstart', x, y); fire('touchend', x, y);       // 1回目
+    await new Promise(r2 => setTimeout(r2, 60));
+    const start = fire('touchstart', x, y);                  // 2回目（押したまま）
+    fire('touchmove', x, y - 140);                           // 上へ140px＝2段ぶん
+    const during = leafletMap.getZoom();
+    fire('touchend', x, y - 140);
+    return { before, during, after: leafletMap.getZoom(), prevented: start.defaultPrevented,
+             snap: leafletMap.options.zoomSnap };
+  });
+  ok(dtap.during > dtap.before + 1.5, 'ダブルタップ＋上ドラッグで拡大する', dtap);
+  ok(Math.abs(dtap.during - dtap.after) < 0.01, '指を離した位置のズームで止まる', dtap);
+  ok(dtap.prevented, '2回目のタップは地図のパンに取られない', dtap.prevented);
+  ok(dtap.snap === 0, '小数ズームを許してなめらかにする', dtap.snap);
+
+  // 動かさずに離せば、ふつうのダブルタップとして1段拡大
+  const dtapPlain = await page.evaluate(async () => {
+    const el = leafletMap.getContainer();
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const fire = (type, tx, ty) => {
+      const ev = new Event(type, { bubbles: true, cancelable: true });
+      ev.touches = type === 'touchend' ? [] : [{ clientX: tx, clientY: ty, identifier: 1, target: el }];
+      el.dispatchEvent(ev);
+    };
+    leafletMap.setZoom(10);
+    const before = leafletMap.getZoom();
+    fire('touchstart', x, y); fire('touchend', x, y);
+    await new Promise(r2 => setTimeout(r2, 60));
+    fire('touchstart', x, y); fire('touchend', x, y);
+    await new Promise(r2 => setTimeout(r2, 400));
+    return { before, after: leafletMap.getZoom() };
+  });
+  ok(Math.abs(dtapPlain.after - dtapPlain.before - 1) < 0.01,
+    'その場のダブルタップは1段拡大', dtapPlain);
+
   // 追跡を止めるとマーカーも消える
   await page.evaluate(() => stopTracking());
   await page.waitForTimeout(200);
@@ -641,6 +705,11 @@ function fakeWeather() {
     dot: document.querySelectorAll('.me-dot').length,
   }));
   ok(!stopped.watching && stopped.dot === 0, '追跡を止めると現在地マーカーが消える', stopped);
+  const spotOff = await page.evaluate(() => {
+    const pane = leafletMap.getPane('mapNowcast');
+    return pane.style.maskImage || pane.style.webkitMaskImage || '';
+  });
+  ok(spotOff === '', '追跡を止めたらマスクも外れる', spotOff);
 
   /* ================= 6. 永続化と復元 ================= */
   const saved = await page.evaluate(() => ({

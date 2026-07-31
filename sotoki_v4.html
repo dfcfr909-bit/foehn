@@ -1547,7 +1547,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.52.0</span>
+    <span id="app-version">v4.53.0</span>
   </div>
 
   <!-- Footer -->
@@ -4353,7 +4353,7 @@ async function addNowcastLayer(def, opacity) {
     const t = await jmaNowcastTimes(def.timesFile);
     if (!isOverlayOn(def.id)) return;                  // 待っている間に外されていたら何もしない
     const url = `${JMA_NOWCAST_BASE}/${t.basetime}/none/${t.validtime}/surf/${def.element}/{z}/{x}/{y}.png`;
-    const layer = L.tileLayer(url, tileOpts(def, { pane: 'mapWeather', opacity })).addTo(leafletMap);
+    const layer = L.tileLayer(url, tileOpts(def, { pane: 'mapNowcast', opacity })).addTo(leafletMap);
     // URLの形が違えば1枚も出ない。黙って空になるとわからないのでパネルに出す。
     // 失敗したタイルのズームも添える（ズーム上限が原因かの切り分けに要る）
     let errors = 0, loaded = 0, badZ = null;
@@ -4656,6 +4656,8 @@ function openMap() {
       mapPrefs = loadMapPrefs();
       leafletMap = L.map('map', {
         minZoom: MAP_ZOOM_MIN, maxZoom: MAP_ZOOM_MAX, attributionControl: false,
+        zoomSnap: 0,            // ダブルタップ＋上下で連続的に拡大縮小するため
+        doubleClickZoom: false, // 自前のダブルタップ操作と取り合いになるので切る
       }).setView([state.lat, state.lon], 10);
       // 重ね順：ベース(200) < オーバーレイ(350) < 赤色立体図風(360/361) < マーカー(600)
       leafletMap.createPane('mapOverlays').style.zIndex = 350;
@@ -4663,10 +4665,15 @@ function openMap() {
       const slopePane = leafletMap.createPane('rrimSlope');
       slopePane.style.zIndex = 361;
       slopePane.style.mixBlendMode = 'multiply';
-      leafletMap.createPane('mapWeather').style.zIndex = 400;   // 気象は地形図より上
+      // ナウキャスト（雨雲・雷）は別pane。現在地まわりだけ薄くするマスクをここに掛ける。
+      // マーカーと同じpaneに入れると、現在地マーカーごと消えてしまう
+      leafletMap.createPane('mapNowcast').style.zIndex = 380;
+      leafletMap.createPane('mapWeather').style.zIndex = 400;   // アメダス・風・現在地
       // 点で描く気象レイヤーは表示範囲ぶんしか出さないので、動かすたびに描き直す
       leafletMap.on('moveend zoomend', () => refreshWeatherPoints());
       patchRotatedInput(leafletMap);
+      bindDoubleTapZoom(leafletMap);
+      leafletMap.on('move zoom zoomend', updateMeSpotlight);
       applyBaseLayer();
       applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
@@ -4967,6 +4974,8 @@ function stopTracking() {
   setHeadingUp(false);            // 向きだけ残しても意味がないので一緒に戻す
   if (meMarker) { leafletMap.removeLayer(meMarker); meMarker = null; }
   if (meCircle) { leafletMap.removeLayer(meCircle); meCircle = null; }
+  myPos = null;
+  updateMeSpotlight();          // 現在地が分からなくなったらマスクも外す
   updateMapToolButtons();
 }
 
@@ -4976,6 +4985,7 @@ function onGeoUpdate(pos) {
   // 方位センサーが使えないときは、進行方向（GPSのheading）で代用する
   if (!headingHandler && typeof c.heading === 'number' && !isNaN(c.heading)) setHeading(c.heading);
   drawMe();
+  updateMeSpotlight();
   if (mapFollow && leafletMap) leafletMap.panTo([myPos.lat, myPos.lon], { animate: true, duration: 0.5 });
 }
 
@@ -5063,6 +5073,76 @@ function setHeadingUp(on) {
   }
   leafletMap.invalidateSize();
   updateMapToolButtons();
+}
+
+/* ------ 現在地まわりだけ雨雲を薄くする（霧が晴れているように） ------
+   雨のエリアに入ると自分の位置が雨雲に埋もれて分からなくなるため、
+   現在地の周囲だけナウキャストのpaneをマスクで抜く。
+   マスクはpane単位なので、マーカーと同じpaneに入れると現在地ごと消える。
+   だからナウキャストは mapNowcast、マーカーは mapWeather と分けてある。 */
+const SPOT_CLEAR_PX = 46;    // 完全に晴れている半径
+const SPOT_FADE_PX = 130;    // ここまでで元の濃さに戻る
+
+function updateMeSpotlight() {
+  if (!leafletMap) return;
+  const pane = leafletMap.getPane('mapNowcast');
+  if (!pane) return;
+  if (!myPos) { pane.style.webkitMaskImage = ''; pane.style.maskImage = ''; return; }
+  const p = leafletMap.latLngToLayerPoint([myPos.lat, myPos.lon]);
+  const inner = (SPOT_CLEAR_PX / SPOT_FADE_PX * 100).toFixed(0);
+  // 中心を透明（＝雨雲を抜く）、外周を不透明（＝そのまま描く）
+  const g = `radial-gradient(circle ${SPOT_FADE_PX}px at ${p.x.toFixed(1)}px ${p.y.toFixed(1)}px,` +
+            ` rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${inner}%, rgba(0,0,0,1) 100%)`;
+  pane.style.webkitMaskImage = g;
+  pane.style.maskImage = g;
+}
+
+/* ------ ダブルタップ＋上下ドラッグで拡大縮小（Googleマップと同じ操作） ------
+   Leafletに無い操作なので自前で足す。2回目のタップを押したまま上下に動かすと、
+   離すまで連続的にズームする。片手で操作できるのが利点。 */
+const DTAP_MS = 300;         // 2回目のタップとみなす間隔
+const DTAP_SLOP_PX = 30;     // 2回目が同じ場所とみなすズレ
+const DTAP_PX_PER_ZOOM = 70; // 1段ズームするのに要る指の移動量
+
+function bindDoubleTapZoom(map) {
+  const el = map.getContainer();
+  let lastTapAt = 0, lastPt = null;
+  let zooming = false, startY = 0, startZoom = 0, moved = 0;
+
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { zooming = false; return; }
+    const t = e.touches[0];
+    const now = Date.now();
+    const near = lastPt && Math.abs(t.clientX - lastPt.x) < DTAP_SLOP_PX
+                        && Math.abs(t.clientY - lastPt.y) < DTAP_SLOP_PX;
+    if (now - lastTapAt < DTAP_MS && near) {
+      zooming = true;
+      startY = t.clientY;
+      startZoom = map.getZoom();
+      moved = 0;
+      e.preventDefault();          // 地図のパンに取られないようにする
+    }
+    lastTapAt = now;
+    lastPt = { x: t.clientX, y: t.clientY };
+  }, { passive: false });
+
+  el.addEventListener('touchmove', e => {
+    if (!zooming || e.touches.length !== 1) return;
+    e.preventDefault();
+    const dy = startY - e.touches[0].clientY;   // 上へ引くと拡大
+    moved = Math.abs(dy);
+    map.setZoom(startZoom + dy / DTAP_PX_PER_ZOOM, { animate: false });
+  }, { passive: false });
+
+  const end = () => {
+    if (!zooming) return;
+    // ほとんど動かさずに離したら、ふつうのダブルタップとして1段拡大する
+    if (moved < 8) map.setZoom(Math.round(map.getZoom()) + 1);
+    else map.setZoom(map.getZoom());            // 小数のまま止める
+    zooming = false;
+  };
+  el.addEventListener('touchend', end);
+  el.addEventListener('touchcancel', end);
 }
 
 /* 地図を回すとLeafletの座標変換が狂う（getBoundingClientRectが回転後の外接矩形になるため）。

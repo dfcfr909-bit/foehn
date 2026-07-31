@@ -4,7 +4,7 @@
 
 ## 現状
 
-- **バージョン**: v4.52.0
+- **バージョン**: v4.53.0
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/sotoki-development-bpquml`
@@ -154,6 +154,19 @@
   重なるので別定数にしてある。**指を離してもその場に留まる**（毎回定位置へ戻すと
   読めないため。`resetPopupPosition()` を呼ぶのは初期表示とリサイズ時だけ）
 - `cursorX` がスクロール量に依存するため、`scrollToIndex` は不動点反復で解く
+
+**地図の操作と現在地の見せ方**（v4.53.0）:
+- **ダブルタップ＋上下ドラッグで拡大縮小**（Googleマップと同じ片手操作）。Leafletに無いので
+  `bindDoubleTapZoom()` で自前実装。2回目のタップを押したまま上下に動かすと連続ズームし、
+  ほとんど動かさずに離せば1段拡大する。
+  なめらかにするため地図は **`zoomSnap: 0`**（小数ズーム可）にしてある。
+  Leaflet標準の `doubleClickZoom` は取り合いになるので **切ってある**
+- **現在地のまわりだけ雨雲を抜く**（`updateMeSpotlight()`）。雨のエリアに入ると自位置が
+  雨雲に埋もれて分からなくなるため、`mapNowcast` pane に radial-gradient のマスクを掛ける。
+  中心 `SPOT_CLEAR_PX`(46px) は完全に抜け、`SPOT_FADE_PX`(130px) で元の濃さに戻る
+- **そのためにナウキャストは `mapNowcast`、マーカーは `mapWeather` と pane を分けている。**
+  同じpaneに入れるとマスクで**現在地マーカーごと消える**。ここを混ぜないこと
+- マスクは `move`/`zoom` と現在地更新のたびに貼り直す。追跡を止めたら外す
 
 **現在地の追跡と地図の向き**（v4.52.0）:
 - 追跡中の現在地は**選択地点のピンとは別のマーカー**。追跡していても、選ぶ地点は
