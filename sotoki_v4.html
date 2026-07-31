@@ -730,7 +730,165 @@ html, body {
 .map-result-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .map-result-sub { font-size: 11px; color: var(--text3); }
 .map-result-msg { padding: 12px 14px; font-size: 12px; color: var(--text3); text-align: center; }
-#map { flex: 1; }
+#map-stage { flex: 1; position: relative; min-height: 0; }
+#map { position: absolute; inset: 0; }
+/* 出典表記。常時表示（利用条件） */
+#map-attribution {
+  position: absolute;
+  right: 0; bottom: 0;
+  z-index: 500;
+  max-width: 100%;
+  padding: 3px 6px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #333;
+  background: rgba(255,255,255,0.82);
+  border-top-left-radius: 6px;
+  pointer-events: none;
+}
+#map-elev {
+  position: absolute;
+  left: 8px; bottom: 8px;
+  z-index: 500;
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  pointer-events: none;
+}
+#btn-layers {
+  position: absolute;
+  right: 8px; top: 8px;
+  z-index: 500;
+  min-height: 44px;
+  padding: 0 12px;
+  display: flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
+}
+/* レイヤーパネル：ボトムシート */
+#layer-panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 600;
+  max-height: 78%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 2px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -3px 16px rgba(0,0,0,0.22);
+  transform: translateY(101%);
+  transition: transform 0.22s ease;
+}
+#layer-panel.open { transform: translateY(0); }
+#layer-panel-head {
+  display: flex; align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#layer-panel-head h3 { flex: 1; font-size: 14px; }
+#btn-layer-close {
+  min-width: 44px; min-height: 44px;
+  border: none; background: none; cursor: pointer;
+  font-size: 20px; color: var(--text);
+}
+#layer-panel-body { overflow-y: auto; padding: 4px 12px 14px; }
+.layer-section-title {
+  font-size: 11px; font-weight: 700; color: var(--text3);
+  margin: 10px 2px 6px;
+}
+#layer-bases { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.layer-base {
+  min-height: 44px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px; font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.layer-base.active { border-color: var(--text); background: var(--bg2); }
+.layer-swatch {
+  width: 22px; height: 22px; border-radius: 5px;
+  border: 1px solid rgba(0,0,0,0.2);
+  flex-shrink: 0;
+}
+.layer-base-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.layer-ov {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+}
+.layer-ov-toggle {
+  flex: 1; min-width: 0; min-height: 44px;
+  display: flex; align-items: center; gap: 8px;
+  border: none; background: none; cursor: pointer;
+  font-family: var(--font-ui); font-size: 13px; font-weight: 700;
+  color: var(--text2);
+  text-align: left;
+  padding: 0;
+}
+.layer-ov.on .layer-ov-toggle { color: var(--text); }
+.layer-ov-box {
+  width: 22px; height: 22px; flex-shrink: 0;
+  border: 2px solid var(--border); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: #fff;
+}
+.layer-ov.on .layer-ov-box { background: var(--text); border-color: var(--text); }
+.layer-ov-name { min-width: 0; }
+.layer-ov-note { display: block; font-size: 9px; font-weight: 400; color: var(--text3); }
+.layer-ov-op { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.layer-ov-op input[type=range] { width: 92px; height: 44px; }
+.layer-ov-op input[type=range]:disabled { opacity: 0.35; }
+.layer-op-val {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text3);
+  width: 34px; text-align: right;
+}
+#layer-cache { font-size: 11px; color: var(--text2); }
+#layer-cache-usage { font-family: var(--font-mono); margin-bottom: 6px; }
+#btn-cache-clear {
+  min-height: 44px; padding: 0 14px;
+  border: 2px solid var(--c-col); border-radius: 10px;
+  background: var(--surface); color: var(--c-col);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
+#layer-cache-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
+
+/* 地図画面だけOSのダークテーマに追従する（全画面オーバーレイなので本体と並ばない）。
+   本体アプリはlight固定のまま。 */
+@media (prefers-color-scheme: dark) {
+  #map-overlay {
+    --surface: #16181c;
+    --bg2: #23262c;
+    --border: #3a3f47;
+    --text: #f2f4f7;      /* 背景#16181cに対しコントラスト比 約15:1 */
+    --text2: #c7ccd4;     /* 約10:1 */
+    --text3: #9aa2ad;     /* 約6.4:1（AA本文4.5:1を満たす） */
+    --c-col: #ff8a8a;
+    background: #16181c;
+  }
+  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
+  #map-overlay #map-elev { color: #f2f4f7; background: rgba(12,14,17,0.88); }
+}
+
 #map-hint {
   padding: 8px 14px;
   font-size: 11px;
@@ -1284,7 +1442,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.45.0</span>
+    <span id="app-version">v4.46.0</span>
   </div>
 
   <!-- Footer -->
@@ -1315,7 +1473,35 @@ html, body {
       <button id="map-search-btn" onclick="doMapSearch()">検索</button>
     </div>
     <div id="map-results"></div>
-    <div id="map"></div>
+    <div id="map-stage">
+      <div id="map"></div>
+      <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
+      <div id="map-attribution"></div>
+      <div id="map-elev" style="display:none"></div>
+      <button id="btn-layers" onclick="toggleLayerPanel()" aria-label="地図レイヤーを選ぶ">
+        <span aria-hidden="true">🗂️</span>レイヤー
+      </button>
+
+      <!-- レイヤーパネル（ボトムシート） -->
+      <div id="layer-panel" role="dialog" aria-label="地図レイヤー">
+        <div id="layer-panel-head">
+          <h3>地図レイヤー</h3>
+          <button id="btn-layer-close" onclick="closeLayerPanel()" aria-label="閉じる">✕</button>
+        </div>
+        <div id="layer-panel-body">
+          <div class="layer-section-title" id="layer-bases-title">ベースマップ</div>
+          <div id="layer-bases" role="radiogroup" aria-labelledby="layer-bases-title"></div>
+          <div class="layer-section-title" id="layer-overlays-title">重ねる地形図</div>
+          <div id="layer-overlays" aria-labelledby="layer-overlays-title"></div>
+          <div class="layer-section-title">保存した地図タイル</div>
+          <div id="layer-cache">
+            <div id="layer-cache-usage">—</div>
+            <button id="btn-cache-clear" onclick="clearTileCache()">タイルキャッシュを削除</button>
+            <div id="layer-cache-note">一度表示した範囲は自動で保存され、圏外でも表示できる。</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="map-hint">地図をタップ、または上の検索窓で地点を選択</div>
   </div>
 
@@ -1384,7 +1570,8 @@ const state = {
   allData: null,     // 表示データ（実績PAST_HOURS＋予報FORECAST_HOURSを切り出した範囲）
   fullData: null,    // 取得した全データ（過去含む。再取得なしで範囲切替）
   daily: null,       // 日の出・日の入り
-  elevation: null,   // 地点標高(m)
+  elevation: null,      // 地点標高(m)。Open-Meteoが返すモデル格子の標高（API用）
+  demElevation: null,   // 標高タイルから読んだ実際の地点標高(m)。表示用（displayElevation参照）
   cloudProfiles: null,   // 時刻→[[高度m, 雲量%], ...]（気圧面データ。無ければ3層合成）
   sliderIndex: 0,    // デフォルト：現在時刻
 };
@@ -1420,6 +1607,8 @@ async function fetchWeather(lat, lon) {
     state.fullData = processData(json);          // dpressは全期間の文脈で算出済み
     state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
     state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // 地点標高(m)
+    // 標高タイルの実測値は地点ごとの値なので、別地点なら捨てる
+    if (state.lat !== lat || state.lon !== lon) state.demElevation = null;
     state.lat = lat;
     state.lon = lon;
     applyRange();                                // 表示範囲を切り出し
@@ -2906,8 +3095,9 @@ function drawCloudOverlay(u) {
   const { pr, yAlt } = cloudPlotBox(u);
   const W = ctx.canvas.width;
   // 選択中の山の標高ライン
-  if (state.elevation != null && state.elevation > 0) {
-    const y = yAlt(state.elevation);
+  const elevForLine = displayElevation();
+  if (elevForLine != null && elevForLine > 0) {
+    const y = yAlt(elevForLine);
     ctx.save();
     ctx.strokeStyle = '#8a5a2b';
     ctx.lineWidth = 1.5 * pr;
@@ -2915,7 +3105,7 @@ function drawCloudOverlay(u) {
     ctx.beginPath(); ctx.moveTo(PADDING_L * pr, y); ctx.lineTo(W - PADDING_R * pr, y); ctx.stroke();
     ctx.setLineDash([]);
     // ラベル「▲ 標高m」
-    const label = `▲${Math.round(state.elevation)}m`;
+    const label = `▲${Math.round(elevForLine)}m`;
     ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
     const tw = ctx.measureText(label).width;
     ctx.fillStyle = '#8a5a2b';
@@ -3784,10 +3974,227 @@ chartsWrapper.addEventListener('touchmove', e => {
 })();
 
 /* ============================================================
-   MAP
+   MAP — レイヤー定義
+   仕様は docs/map-selector-requirements.md。
+   URLやズーム範囲を変えるときは、コードではなくこの2つの表だけを直す。
+   ============================================================ */
+const MAP_ZOOM_MIN = 4;
+const MAP_ZOOM_MAX = 18;   // 地理院のオーバーレイに合わせて18で止める（OSM/Esriは19まであるが引き伸ばしが粗くなる）
+
+/* ベースマップ（排他選択）。maxNativeZoom を超えた分はオーバーズームで引き伸ばす */
+const MAP_BASES = [
+  { id: 'std',   name: '標準地図',        url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
+    minNativeZoom: 5, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#eae6dc' },
+  { id: 'pale',  name: '淡色地図',        url: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
+    minNativeZoom: 5, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#f2f0ea' },
+  { id: 'photo', name: '航空写真',        url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',
+    minNativeZoom: 2, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#4d6640' },
+  { id: 'osm',   name: 'OpenStreetMap',  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    minNativeZoom: 0, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors', swatch: '#e8e2d8' },
+  // EsriだけURLのタイル座標順が {z}/{y}/{x}（xとyが逆）
+  { id: 'esri',  name: '衛星画像',        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    minNativeZoom: 0, maxNativeZoom: 19, attribution: 'Esri, Maxar, Earthstar Geographics', swatch: '#3b4a33' },
+];
+const MAP_BASE_DEFAULT = 'pale';   // オーバーレイの下地として最も見やすい
+
+/* オーバーレイ（複数同時可）。opacityは既定の透過率 */
+const MAP_OVERLAYS = [
+  { id: 'rrimLike',  name: '赤色立体図風', composite: true, opacity: 0.70,
+    minNativeZoom: 3, maxNativeZoom: 15, attribution: '国土地理院（陰影起伏図・傾斜量図）',
+    note: '陰影起伏図に傾斜量図を乗算合成' },
+  { id: 'slope',     name: '傾斜量図',     url: 'https://cyberjapandata.gsi.go.jp/xyz/slopemap/{z}/{x}/{y}.png',
+    minNativeZoom: 3, maxNativeZoom: 15, opacity: 0.50, attribution: '国土地理院' },
+  { id: 'hillshade', name: '陰影起伏図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png',
+    minNativeZoom: 2, maxNativeZoom: 16, opacity: 0.50, attribution: '国土地理院' },
+  { id: 'relief',    name: '色別標高図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png',
+    minNativeZoom: 5, maxNativeZoom: 15, opacity: 0.40, attribution: '国土地理院' },
+  { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+  { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+  { id: 'gazo3', name: '過去空中写真3', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo3/{z}/{x}/{y}.jpg',
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+  { id: 'gazo4', name: '過去空中写真4', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo4/{z}/{x}/{y}.jpg',
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+  /* 火山土地条件図：要件定義 §11-1 の「実装前に要確認」がまだ確認できていない
+     （開発環境から地理院に到達できずレイヤーIDと配信範囲を確かめられない）。
+     推測でURLを書くと黙って壊れるので pending にしてUIに出していない。
+     正しいIDが分かったら url と minNativeZoom/maxNativeZoom を埋めて pending を消すこと。 */
+  { id: 'volcano', name: '火山土地条件図', url: null, pending: true,
+    minNativeZoom: 10, maxNativeZoom: 16, opacity: 0.60, attribution: '国土地理院' },
+];
+// 赤色立体図風が使う2枚（単独トグルと同じURLを参照する）
+const RRIM_SHADE = 'hillshade';
+const RRIM_SLOPE = 'slope';
+// 赤色立体図風と二重描画になるレイヤー（有効時は自動で外す）
+const RRIM_CONFLICTS = [RRIM_SHADE, RRIM_SLOPE];
+
+const MAP_LS_BASE = 'sotoki.map.baseLayer';
+const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
+
+function findBase(id) { return MAP_BASES.find(b => b.id === id) || null; }
+function findOverlay(id) { return MAP_OVERLAYS.find(o => o.id === id) || null; }
+// UIに出すオーバーレイ（URL未確認のものは出さない）
+function usableOverlays() { return MAP_OVERLAYS.filter(o => !o.pending); }
+
+/* ------ 永続化（不正値はデフォルトへ落とす） ------ */
+function loadMapPrefs() {
+  let base = MAP_BASE_DEFAULT;
+  try {
+    const raw = localStorage.getItem(MAP_LS_BASE);
+    if (raw && findBase(raw)) base = raw;
+  } catch (e) { /* 読めなければデフォルト */ }
+  const overlays = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_OVERLAYS) || '[]');
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        const def = findOverlay(item.id);
+        if (!def || def.pending) continue;                 // 未知ID・未確認レイヤーは捨てる
+        const o = Number(item.opacity);
+        overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? o : def.opacity });
+      }
+    }
+  } catch (e) { /* 壊れていたらオーバーレイなし */ }
+  return { base, overlays };
+}
+function saveMapPrefs() {
+  try {
+    localStorage.setItem(MAP_LS_BASE, mapPrefs.base);
+    localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(mapPrefs.overlays));
+  } catch (e) { /* 保存できなくても地図は動く */ }
+}
+
+/* ============================================================
+   MAP — 本体
    ============================================================ */
 let leafletMap = null;
 let leafletMarker = null;
+let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [] };
+let baseTileLayer = null;
+const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
+
+// タイルレイヤ共通のオプション。ネイティブ範囲外はオーバーズームで埋める（空白にしない）
+function tileOpts(def, extra) {
+  return Object.assign({
+    minZoom: MAP_ZOOM_MIN,
+    maxZoom: MAP_ZOOM_MAX,
+    minNativeZoom: def.minNativeZoom,
+    maxNativeZoom: def.maxNativeZoom,
+    crossOrigin: true,
+  }, extra || {});
+}
+
+function applyBaseLayer() {
+  if (!leafletMap) return;
+  if (baseTileLayer) { leafletMap.removeLayer(baseTileLayer); baseTileLayer = null; }
+  const def = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT);
+  baseTileLayer = L.tileLayer(def.url, tileOpts(def)).addTo(leafletMap);
+  updateMapAttribution();
+}
+
+/* 赤色立体図風：陰影起伏図の上に傾斜量図を mix-blend-mode: multiply で重ねる。
+   個別のタイル画像ではなく pane 単位で掛けるので、タイルの継ぎ目に線が出ない。 */
+function buildRrimLayers(opacity) {
+  const shade = findOverlay(RRIM_SHADE), slope = findOverlay(RRIM_SLOPE);
+  const def = findOverlay('rrimLike');
+  const shadePane = leafletMap.getPane('rrimShade');
+  const slopePane = leafletMap.getPane('rrimSlope');
+  shadePane.style.opacity = String(opacity);
+  slopePane.style.opacity = String(opacity);
+  return [
+    L.tileLayer(shade.url, tileOpts(def, { pane: 'rrimShade' })).addTo(leafletMap),
+    L.tileLayer(slope.url, tileOpts(def, { pane: 'rrimSlope' })).addTo(leafletMap),
+  ];
+}
+
+function applyOverlays() {
+  if (!leafletMap) return;
+  // いったん全部外してから、有効なものだけ積み直す（重ね順を毎回そろえるため）
+  Object.keys(overlayTileLayers).forEach(id => {
+    const l = overlayTileLayers[id];
+    (Array.isArray(l) ? l : [l]).forEach(x => leafletMap.removeLayer(x));
+    delete overlayTileLayers[id];
+  });
+  mapPrefs.overlays.forEach(item => {
+    const def = findOverlay(item.id);
+    if (!def || def.pending) return;
+    if (def.composite) {
+      overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
+    } else if (def.url) {
+      overlayTileLayers[def.id] = L.tileLayer(def.url,
+        tileOpts(def, { pane: 'mapOverlays', opacity: item.opacity })).addTo(leafletMap);
+    }
+  });
+  updateMapAttribution();
+}
+
+// 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
+function updateMapAttribution() {
+  const el = document.getElementById('map-attribution');
+  if (!el) return;
+  const parts = [];
+  const base = findBase(mapPrefs.base);
+  if (base) parts.push(base.attribution);
+  mapPrefs.overlays.forEach(item => {
+    const def = findOverlay(item.id);
+    if (def && def.attribution && !parts.includes(def.attribution)) parts.push(def.attribution);
+  });
+  el.textContent = parts.join(' / ');
+}
+
+function setMapBase(id) {
+  if (!findBase(id)) return;
+  mapPrefs.base = id;
+  saveMapPrefs();
+  applyBaseLayer();
+  renderLayerPanel();
+}
+
+function isOverlayOn(id) { return mapPrefs.overlays.some(o => o.id === id); }
+function overlayOpacity(id) {
+  const cur = mapPrefs.overlays.find(o => o.id === id);
+  if (cur) return cur.opacity;
+  const def = findOverlay(id);
+  return def ? def.opacity : 1;
+}
+
+function toggleOverlay(id) {
+  const def = findOverlay(id);
+  if (!def || def.pending) return;
+  if (isOverlayOn(id)) {
+    mapPrefs.overlays = mapPrefs.overlays.filter(o => o.id !== id);
+  } else {
+    // 赤色立体図風は傾斜量図・陰影起伏図と二重になるので、入れた側を優先して外す
+    if (id === 'rrimLike') {
+      mapPrefs.overlays = mapPrefs.overlays.filter(o => !RRIM_CONFLICTS.includes(o.id));
+    } else if (RRIM_CONFLICTS.includes(id)) {
+      mapPrefs.overlays = mapPrefs.overlays.filter(o => o.id !== 'rrimLike');
+    }
+    mapPrefs.overlays.push({ id, opacity: overlayOpacity(id) });
+  }
+  saveMapPrefs();
+  applyOverlays();
+  renderLayerPanel();
+}
+
+// スライダーはドラッグ中も即座に反映する（作り直さず不透明度だけ差し替える）
+function setOverlayOpacity(id, value) {
+  const item = mapPrefs.overlays.find(o => o.id === id);
+  if (!item) return;
+  item.opacity = Math.max(0, Math.min(1, value));
+  saveMapPrefs();
+  const layer = overlayTileLayers[id];
+  if (Array.isArray(layer)) {
+    leafletMap.getPane('rrimShade').style.opacity = String(item.opacity);
+    leafletMap.getPane('rrimSlope').style.opacity = String(item.opacity);
+  } else if (layer) {
+    layer.setOpacity(item.opacity);
+  }
+  const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
+  if (label) label.textContent = Math.round(item.opacity * 100) + '%';
+}
 
 function openMap() {
   document.getElementById('map-overlay').classList.add('open');
@@ -3795,33 +4202,208 @@ function openMap() {
   document.getElementById('map-search-input').value = '';
   if (!leafletMap) {
     setTimeout(() => {
-      leafletMap = L.map('map').setView([state.lat, state.lon], 10);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 17,
-      }).addTo(leafletMap);
+      mapPrefs = loadMapPrefs();
+      leafletMap = L.map('map', {
+        minZoom: MAP_ZOOM_MIN, maxZoom: MAP_ZOOM_MAX, attributionControl: false,
+      }).setView([state.lat, state.lon], 10);
+      // 重ね順：ベース(200) < オーバーレイ(350) < 赤色立体図風(360/361) < マーカー(600)
+      leafletMap.createPane('mapOverlays').style.zIndex = 350;
+      leafletMap.createPane('rrimShade').style.zIndex = 360;
+      const slopePane = leafletMap.createPane('rrimSlope');
+      slopePane.style.zIndex = 361;
+      slopePane.style.mixBlendMode = 'multiply';
+      applyBaseLayer();
+      applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
       leafletMap.on('click', e => {
         const { lat, lng } = e.latlng;
         leafletMarker.setLatLng([lat, lng]);
         state.lat = lat;
         state.lon = lng;
+        // 標高は非同期で取りに行き、地図描画も地点確定もブロックしない
+        fetchPointElevation(lat, lng);
         reverseGeocode(lat, lng).then(name => {
           state.locationName = name;
           closeMap();
           fetchWeather(lat, lng);
         });
       });
+      renderLayerPanel();
+      refreshTileCacheUsage();
     }, 100);
   } else {
     leafletMap.setView([state.lat, state.lon], leafletMap.getZoom());
     leafletMarker.setLatLng([state.lat, state.lon]);
     setTimeout(() => leafletMap.invalidateSize(), 100);
+    refreshTileCacheUsage();
   }
 }
 
 function closeMap() {
   document.getElementById('map-overlay').classList.remove('open');
+  closeLayerPanel();
+}
+
+/* ------ レイヤーパネル（ボトムシート） ------ */
+function toggleLayerPanel() {
+  const el = document.getElementById('layer-panel');
+  if (el.classList.contains('open')) closeLayerPanel();
+  else { el.classList.add('open'); renderLayerPanel(); refreshTileCacheUsage(); }
+}
+function closeLayerPanel() {
+  document.getElementById('layer-panel').classList.remove('open');
+}
+
+function renderLayerPanel() {
+  const baseWrap = document.getElementById('layer-bases');
+  const ovWrap = document.getElementById('layer-overlays');
+  if (!baseWrap || !ovWrap) return;
+  baseWrap.innerHTML = MAP_BASES.map(b => `
+    <button class="layer-base${b.id === mapPrefs.base ? ' active' : ''}"
+            role="radio" aria-checked="${b.id === mapPrefs.base}"
+            onclick="setMapBase('${b.id}')">
+      <span class="layer-swatch" style="background:${b.swatch}"></span>
+      <span class="layer-base-name">${escapeHtml(b.name)}</span>
+    </button>`).join('');
+  ovWrap.innerHTML = usableOverlays().map(o => {
+    const on = isOverlayOn(o.id);
+    const op = overlayOpacity(o.id);
+    return `
+      <div class="layer-ov${on ? ' on' : ''}">
+        <button class="layer-ov-toggle" role="switch" aria-checked="${on}"
+                onclick="toggleOverlay('${o.id}')">
+          <span class="layer-ov-box">${on ? '✓' : ''}</span>
+          <span class="layer-ov-name">${escapeHtml(o.name)}
+            ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}</span>
+        </button>
+        <div class="layer-ov-op">
+          <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
+                 aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
+                 oninput="setOverlayOpacity('${o.id}', this.value / 100)">
+          <span class="layer-op-val" data-id="${o.id}">${Math.round(op * 100)}%</span>
+        </div>
+      </div>`;
+  }).join('');
+  updateMapAttribution();
+}
+
+/* ============================================================
+   標高タイル（国土地理院 dem_png）から選択地点の標高を読む
+   ============================================================ */
+const DEM_TILE_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png';
+const DEM_ZOOM = 14;
+
+// 緯度経度 → タイル座標とタイル内の画素座標（Webメルカトル）
+function lonLatToTilePixel(lat, lon, z) {
+  const n = Math.pow(2, z);
+  const xf = (lon + 180) / 360 * n;
+  const latRad = lat * Math.PI / 180;
+  const yf = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+  const tx = Math.floor(xf), ty = Math.floor(yf);
+  return { tx, ty, px: Math.floor((xf - tx) * 256), py: Math.floor((yf - ty) * 256) };
+}
+
+/* 標高タイルのRGB → 標高[m]。
+   x = R*65536 + G*256 + B として
+     x <  2^23 : x * 0.01
+     x == 2^23 : 無効値（海域・データなし）
+     x >  2^23 : (x - 2^24) * 0.01   ← 負の標高 */
+function decodeDemPixel(r, g, b) {
+  const x = r * 65536 + g * 256 + b;
+  if (x === 8388608) return null;
+  return (x < 8388608 ? x : x - 16777216) * 0.01;
+}
+
+// 同じ地点で二度取りに行かないための覚え書き（小数4桁＝約11mで丸める）
+const demCache = new Map();
+function demKey(lat, lon) { return `${lat.toFixed(4)},${lon.toFixed(4)}`; }
+
+function fetchPointElevation(lat, lon) {
+  const key = demKey(lat, lon);
+  if (demCache.has(key)) {
+    state.demElevation = demCache.get(key);
+    updateElevationLabel();
+    return Promise.resolve(state.demElevation);
+  }
+  const { tx, ty, px, py } = lonLatToTilePixel(lat, lon, DEM_ZOOM);
+  const url = DEM_TILE_URL.replace('{z}', DEM_ZOOM).replace('{x}', tx).replace('{y}', ty);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';        // Canvasを汚さないため
+    img.onload = () => {
+      let elev = null;
+      try {
+        const cv = document.createElement('canvas');
+        cv.width = 256; cv.height = 256;
+        const c = cv.getContext('2d');
+        c.drawImage(img, 0, 0);
+        const d = c.getImageData(px, py, 1, 1).data;
+        elev = decodeDemPixel(d[0], d[1], d[2]);
+      } catch (e) { elev = null; }        // CORS等で読めなくても地図は止めない
+      demCache.set(key, elev);
+      state.demElevation = elev;
+      updateElevationLabel();
+      resolve(elev);
+    };
+    img.onerror = () => { demCache.set(key, null); state.demElevation = null; updateElevationLabel(); resolve(null); };
+    img.src = url;
+  });
+}
+
+// 表示用の標高。標高タイルの実測を優先し、無ければOpen-Meteoのモデル格子標高に落ちる
+function displayElevation() {
+  if (typeof state.demElevation === 'number' && isFinite(state.demElevation)) return state.demElevation;
+  return (typeof state.elevation === 'number') ? state.elevation : null;
+}
+function updateElevationLabel() {
+  const el = document.getElementById('map-elev');
+  if (!el) return;
+  const v = state.demElevation;
+  // 取得失敗・無効値なら欄ごと隠す
+  if (typeof v !== 'number' || !isFinite(v)) { el.textContent = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.textContent = `標高 ${Math.round(v)}m`;
+  try { if (leafletMap) buildCharts(); } catch (e) { /* 描画前なら無視 */ }
+}
+
+/* ------ タイルキャッシュの使用量表示・削除（Service Workerと会話する） ------ */
+function swMessage(payload) {
+  return new Promise(resolve => {
+    const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (!sw) return resolve(null);
+    const ch = new MessageChannel();
+    const timer = setTimeout(() => resolve(null), 3000);
+    ch.port1.onmessage = e => { clearTimeout(timer); resolve(e.data); };
+    sw.postMessage(payload, [ch.port2]);
+  });
+}
+function formatBytes(n) {
+  if (!n) return '0 MB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+async function refreshTileCacheUsage() {
+  const el = document.getElementById('layer-cache-usage');
+  if (!el) return;
+  const res = await swMessage({ type: 'tiles-usage' });
+  let quotaText = '';
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      if (est && est.usage != null) {
+        quotaText = `／アプリ全体 ${formatBytes(est.usage)}` +
+          (est.quota ? `（上限 ${formatBytes(est.quota)}）` : '');
+      }
+    }
+  } catch (e) { /* 取れなければ出さない */ }
+  el.textContent = res
+    ? `地図タイル ${formatBytes(res.bytes)}（${res.count}枚）${quotaText}`
+    : `地図タイルのキャッシュ情報を取得できません${quotaText}`;
+}
+async function clearTileCache() {
+  // 破壊的操作なので必ず確認を挟む
+  if (!confirm('保存した地図タイルをすべて削除します。\n圏外では削除した範囲の地図が表示できなくなります。\n削除しますか？')) return;
+  await swMessage({ type: 'tiles-clear' });
+  await refreshTileCacheUsage();
 }
 
 /* ------ 地名検索（Nominatim） ------ */

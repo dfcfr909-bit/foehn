@@ -13,6 +13,8 @@ const TESTS = [
   ['smoke_cloud',   '雲パネル（無段階表示・青空と白い雲・月齢で夜の濃さ）'],
   ['smoke_snowrank', '新雪ランキング推定（SLR・補正係数k・評価窓・信頼度）'],
   ['smoke_snowui',  '新雪ランキングUI（タブ・順位・タグ絞り込み・信頼度表示）'],
+  ['smoke_mapui',  '地図選択（ベース5種・オーバーレイ・赤色立体図風・標高タイル・永続化）'],
+  ['smoke_tilecache', '地図タイルキャッシュ（対象ホスト・cache-first・LRU・削除）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_kyt',    'KYT分析用紙（様式寸法・上限字数・印刷1枚・溢れ検知）'],
   ['smoke_worker', '下書き生成Worker（秘密パス・CORS・日次上限・内部を漏らさない）'],

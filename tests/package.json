@@ -6,6 +6,7 @@
     "test": "node run-all.js"
   },
   "dependencies": {
+    "leaflet": "1.9.4",
     "playwright-core": "^1.49.0",
     "uplot": "1.6.32"
   }
