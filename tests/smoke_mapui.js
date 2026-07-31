@@ -60,6 +60,8 @@ const DEM_RGB = [2, 208, 247];
 const DEM_EXPECTED_M = 1845.67;
 const DEM_PNG = solidPng(256, 256, ...DEM_RGB);
 const TILE_PNG = solidPng(8, 8, 200, 200, 200);
+// 雨雲のタイルは地図タイルと違う色にする（消えていないかを画素で見分けるため）
+const NOWCAST_PNG = solidPng(8, 8, 0, 80, 255);
 
 const AMEDAS_TABLE = {
   '55102': { kjName: '富山',   lat: [36, 42.0], lon: [137, 12.0], alt: 9 },
@@ -156,7 +158,8 @@ function fakeWeather() {
           elements: [isN2 ? 'thns' : 'hrpns'],
         }]) });
       }
-      if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: TILE_PNG }); }
+      // 雨雲だけ色を変える（地図タイルと見分けて「消えていないか」を画素で見るため）
+      if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: NOWCAST_PNG }); }
       if (url.includes('/himawari/')) { satHits.push(url); return route.fulfill({ contentType: 'image/jpeg', body: TILE_PNG }); }
       if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
       if (url.includes('/amedas/const/amedastable.json')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_TABLE) });
@@ -751,9 +754,14 @@ function fakeWeather() {
 
   // ★雨雲の中でも自位置が分かるよう、現在地のまわりだけ雨雲を抜く
   const spot = await page.evaluate(() => {
-    const pane = leafletMap.getPane('mapNowcast');
+    const host = leafletMap.getPane('mapNowcastMask');
+    const tiles = leafletMap.getPane('mapNowcast');
+    const hr = host.getBoundingClientRect(), size = leafletMap.getSize();
     return {
-      mask: pane.style.maskImage || pane.style.webkitMaskImage,
+      mask: host.style.maskImage || host.style.webkitMaskImage,
+      tileMask: tiles.style.maskImage || tiles.style.webkitMaskImage,
+      hostW: Math.round(hr.width), hostH: Math.round(hr.height),
+      sizeX: size.x, sizeY: size.y,
       // マーカーは別paneなので抜かれない
       markerPane: meMarker.options.pane,
       nowcastPane: overlayTileLayers.radar ? overlayTileLayers.radar.options.pane : null,
@@ -763,6 +771,45 @@ function fakeWeather() {
   ok(/rgba\(0, ?0, ?0, ?0\)/.test(spot.mask || ''), 'マスクの中心は透明（雨雲が抜ける）', spot.mask);
   ok(spot.markerPane === 'mapWeather' && spot.nowcastPane === 'mapNowcast',
     '現在地マーカーと雨雲は別pane（マーカーごと消さないため）', spot);
+  /* ★マスクは「実寸のある箱」にしか効かない。Leafletのpaneは0×0なので、
+     paneに直接掛けると塗り領域が無くレイヤーが丸ごと消える（実際に出した不具合）。
+     入れ物を挟んで画面ぶんの寸法を持たせていること。 */
+  ok(spot.hostW === spot.sizeX && spot.hostH === spot.sizeY,
+    '★マスクを掛ける入れ物が画面と同じ実寸を持つ（0×0だとレイヤーごと消える）', spot);
+  ok(!spot.tileMask, 'タイルのpane自体にはマスクを掛けない（0×0なので消える）', spot.tileMask);
+
+  /* ★画素で確かめる。追跡のon/offで、離れた場所の雨雲は変わってはいけない
+     （「追跡をonにするとレイヤーが変わる」という指摘の正体がこれだった）。 */
+  await page.evaluate(() => {
+    // 点で描くレイヤーは消しておく（矢印やピンが混ざると雨雲の変化と見分けられない）
+    if (isOverlayOn('amedas')) toggleOverlay('amedas');
+    if (isOverlayOn('windArrows')) toggleOverlay('windArrows');
+    stopTracking();
+    leafletMap.setView([36.57, 137.65], 11);      // 現在地と同じ中心＝追跡でも地図は動かない
+  });
+  await page.waitForTimeout(1500);
+  const mapBox = await page.evaluate(() => {
+    const r = document.getElementById('map').getBoundingClientRect();
+    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+  });
+  const cx = Math.round(mapBox.x + mapBox.w / 2), cy = Math.round(mapBox.y + mapBox.h / 2);
+  // 遠く（穴の外＝中心から200px下）と、穴の中だがマーカーには掛からない場所（中心の78px左）
+  const farClip = { x: cx - 12, y: cy + 190, width: 24, height: 24 };
+  const nearClip = { x: cx - 86, y: cy - 8, width: 16, height: 16 };
+  // 標本の場所に他の要素が乗っていないことを先に確かめる（乗っていると比較が無意味になる）
+  const onTop = await page.evaluate(pts => pts.map(([x, y]) => {
+    const e = document.elementFromPoint(x, y);
+    return e ? (e.id || e.className || e.tagName) : null;
+  }), [[cx, cy + 202], [cx - 78, cy]]);
+  ok(onTop.every(t => t === 'map'), '画素を比べる場所に他の要素が乗っていない', onTop);
+  const farOff = await page.screenshot({ clip: farClip });
+  const nearOff = await page.screenshot({ clip: nearClip });
+  await page.evaluate(() => startTracking());
+  await page.waitForTimeout(1200);
+  const farOn = await page.screenshot({ clip: farClip });
+  const nearOn = await page.screenshot({ clip: nearClip });
+  ok(farOn.equals(farOff), '★追跡をonにしても離れた場所の雨雲は変わらない（レイヤーが消えない）');
+  ok(!nearOn.equals(nearOff), '★現在地のまわりだけは実際に薄くなる（マスクが効いている）');
 
   // ダブルタップ＋上下ドラッグで拡大縮小できる
   const dtap = await page.evaluate(async () => {
@@ -834,10 +881,16 @@ function fakeWeather() {
   }));
   ok(!stopped.watching && stopped.dot === 0, '追跡を止めると現在地マーカーが消える', stopped);
   const spotOff = await page.evaluate(() => {
-    const pane = leafletMap.getPane('mapNowcast');
-    return pane.style.maskImage || pane.style.webkitMaskImage || '';
+    const host = leafletMap.getPane('mapNowcastMask');
+    const tiles = leafletMap.getPane('mapNowcast');
+    return {
+      mask: host.style.maskImage || host.style.webkitMaskImage || '',
+      hostW: host.style.width, tileLeft: tiles.style.left,
+    };
   });
-  ok(spotOff === '', '追跡を止めたらマスクも外れる', spotOff);
+  ok(spotOff.mask === '', '追跡を止めたらマスクも外れる', spotOff.mask);
+  ok(spotOff.hostW === '' && spotOff.tileLeft === '',
+    '入れ物のずらしも元に戻す（掛けっぱなしにしない）', spotOff);
 
   /* ================= 6. 永続化と復元 ================= */
   const saved = await page.evaluate(() => ({

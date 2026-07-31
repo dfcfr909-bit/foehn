@@ -1568,7 +1568,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.56.0</span>
+    <span id="app-version">v4.57.0</span>
   </div>
 
   <!-- Footer -->
@@ -4768,9 +4768,14 @@ function openMap() {
       const slopePane = leafletMap.createPane('rrimSlope');
       slopePane.style.zIndex = 361;
       slopePane.style.mixBlendMode = 'multiply';
-      // ナウキャスト（雨雲・雷）は別pane。現在地まわりだけ薄くするマスクをここに掛ける。
-      // マーカーと同じpaneに入れると、現在地マーカーごと消えてしまう
-      leafletMap.createPane('mapNowcast').style.zIndex = 380;
+      /* ナウキャスト（雨雲・衛星・雷）は別pane。現在地まわりだけ薄くするマスクを掛ける。
+         マーカーと同じpaneに入れると、現在地マーカーごと消えてしまう。
+         ⚠**マスクは「実寸のある箱」にしか効かない。** Leafletのpaneは0×0なので、
+         paneに直接掛けると画面ぶんの塗り領域が無く**レイヤーが丸ごと消える**
+         （追跡をonにすると雨雲が全部消える不具合を出した。v4.57.0で修正）。
+         そのためマスク用の入れ物を1枚挟み、そちらに画面ぶんの寸法を持たせる。 */
+      leafletMap.createPane('mapNowcastMask').style.zIndex = 380;
+      leafletMap.createPane('mapNowcast', leafletMap.getPane('mapNowcastMask'));
       leafletMap.createPane('mapWeather').style.zIndex = 400;   // アメダス・風・現在地
       // 点で描く気象レイヤーは表示範囲ぶんしか出さないので、動かすたびに描き直す
       leafletMap.on('moveend zoomend', () => refreshWeatherPoints());
@@ -5193,16 +5198,35 @@ function updateMeSpotlight() {
 }
 function paintMeSpotlight() {
   if (!leafletMap) return;
-  const pane = leafletMap.getPane('mapNowcast');
-  if (!pane) return;
-  if (!myPos) { pane.style.webkitMaskImage = ''; pane.style.maskImage = ''; return; }
-  const p = leafletMap.latLngToLayerPoint([myPos.lat, myPos.lon]);
-  const inner = (SPOT_CLEAR_PX / SPOT_FADE_PX * 100).toFixed(0);
+  const host = leafletMap.getPane('mapNowcastMask');   // マスクを掛ける実寸のある箱
+  const tiles = leafletMap.getPane('mapNowcast');      // 雨雲・衛星のタイルはこの中
+  if (!host || !tiles) return;
+  if (!myPos) {
+    host.style.webkitMaskImage = host.style.maskImage = '';
+    host.style.left = host.style.top = host.style.width = host.style.height = '';
+    tiles.style.left = tiles.style.top = '';
+    return;
+  }
+  /* 入れ物を画面とぴったり重ねる。paneはmap paneの中にあり、map paneはパンしたぶんだけ
+     ずれているので、その量を引いて画面の左上に合わせる。中身は同じ量だけ逆に動かして
+     元の位置に留める。**同じ o を使う限り差し引きは必ず0なので、タイルはずれない**
+     （1フレーム遅れても穴の位置が遅れるだけで、絵はずれない）。 */
+  const o = leafletMap._getMapPanePos();
+  const size = leafletMap.getSize();
+  host.style.left = (-o.x) + 'px';
+  host.style.top = (-o.y) + 'px';
+  host.style.width = size.x + 'px';
+  host.style.height = size.y + 'px';
+  tiles.style.left = o.x + 'px';
+  tiles.style.top = o.y + 'px';
+  // 入れ物の左上＝画面の左上なので、穴の中心は画面座標をそのまま使える
+  const p = leafletMap.latLngToContainerPoint([myPos.lat, myPos.lon]);
+  const clear = (SPOT_CLEAR_PX / SPOT_FADE_PX * 100).toFixed(0);
   // 中心を透明（＝雨雲を抜く）、外周を不透明（＝そのまま描く）
   const g = `radial-gradient(circle ${SPOT_FADE_PX}px at ${p.x.toFixed(1)}px ${p.y.toFixed(1)}px,` +
-            ` rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${inner}%, rgba(0,0,0,1) 100%)`;
-  pane.style.webkitMaskImage = g;
-  pane.style.maskImage = g;
+            ` rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${clear}%, rgba(0,0,0,1) 100%)`;
+  host.style.webkitMaskImage = g;
+  host.style.maskImage = g;
 }
 
 /* ------ ダブルタップ＋上下ドラッグで拡大縮小（Googleマップと同じ操作） ------
