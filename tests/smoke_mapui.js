@@ -68,10 +68,10 @@ const AMEDAS_TABLE = {
   '55999': { kjName: '雨量のみ', lat: [36, 35.0], lon: [137, 38.0], alt: 300 },
 };
 const AMEDAS_MAP = {
-  '55102': { temp: [2.4, 0], wind: [3.1, 0], windDirection: [8, 0] },
-  '55136': { temp: [-4.8, 0], wind: [6.2, 0], windDirection: [12, 0], snow: [180, 0] },
+  '55102': { temp: [2.4, 0], wind: [3.1, 0], windDirection: [8, 0], humidity: [70, 0] },
+  '55136': { temp: [-4.8, 0], wind: [6.2, 0], windDirection: [16, 0], snow: [180, 0] },
   '55396': { temp: [1.1, 0], wind: [2.0, 0] },
-  '55999': { precipitation1h: [0, 0] },        // 雨量計のみ＝気温も風も無い地点
+  '55999': { precipitation1h: [3.5, 0] },      // 雨量計のみ＝気温も風も無い地点
 };
 
 // 風の格子レスポンス（座標ごとに1つ。1点だけ強風にして警告表示も見る）
@@ -171,6 +171,18 @@ function fakeWeather() {
     }, initLocalStorage || {});
     await page.goto('https://sotoki.test/');
     await page.waitForTimeout(1200);
+    // スクリプトが評価に失敗すると読み込み中のまま固まり、以降のclickが30秒待ちになる。
+    // （実際にTDZ＝constの宣言より前で参照して起きた）。ここで早く落として原因を出す。
+    const boot = await page.evaluate(() => ({
+      err: typeof mapPrefs === 'undefined' ? 'mapPrefs未定義（スクリプトが評価されていない）' : null,
+      loading: (() => {
+        const el = document.getElementById('loading-overlay');
+        return !!el && getComputedStyle(el).display !== 'none';
+      })(),
+    })).catch(e => ({ err: e.message, loading: true }));
+    if (boot.err || boot.loading) {
+      throw new Error(`起動に失敗: ${boot.err || '読み込み中のまま'} / pageerror: ${errors.join(' / ') || 'なし'}`);
+    }
     return page;
   }
 
@@ -411,10 +423,33 @@ function fakeWeather() {
     };
   });
   ok(amedas.count >= 2, 'アメダスの実測ピンが出る', amedas);
-  ok(amedas.texts.some(t => /-4.8℃/.test(t)), '気温の実測値を出す', amedas.texts);
-  ok(amedas.texts.some(t => /積180cm/.test(t)), '積雪も出す', amedas.texts);
+  ok(amedas.texts.some(t => /-4\.8/.test(t)), '気温の実測値を出す', amedas.texts);
   ok(!amedas.texts.some(t => /雨量のみ/.test(t)),
-    '気温も風も無い地点（雨量計のみ）は出さない', amedas.texts);
+    '気温を持たない地点（雨量計のみ）は気温表示では出さない', amedas.texts);
+
+  // 表示する要素を切り替えられる
+  const byElement = await page.evaluate(async () => {
+    const out = {};
+    for (const id of ['wind', 'precip', 'snow', 'humidity', 'temp']) {
+      setAmedasElement(id);
+      await new Promise(r => setTimeout(r, 120));
+      out[id] = {
+        texts: [...document.querySelectorAll('.amedas-box')].map(p => p.textContent),
+        arrows: document.querySelectorAll('.amedas-arrow').length,
+        saved: localStorage.getItem('sotoki.map.amedasElement'),
+      };
+    }
+    return out;
+  });
+  ok(byElement.wind.texts.some(t => /6\.2m\/s/.test(t)), '風速に切り替えられる', byElement.wind.texts);
+  ok(byElement.wind.arrows > 0, '風のときは向きの矢印が付く', byElement.wind.arrows);
+  ok(byElement.precip.texts.some(t => /3\.5mm/.test(t)) &&
+     byElement.precip.texts.some(t => /雨量のみ/.test(t)),
+    '降水では雨量計のみの地点も出る', byElement.precip.texts);
+  ok(byElement.snow.texts.length === 1 && /180cm/.test(byElement.snow.texts[0]),
+    '積雪は観測している地点だけ', byElement.snow.texts);
+  ok(byElement.humidity.texts.some(t => /70%/.test(t)), '湿度に切り替えられる', byElement.humidity.texts);
+  ok(byElement.temp.saved === 'temp', '選んだ要素が保存される', byElement.temp.saved);
 
   // ズームを引くと出さない（点が多すぎるため）。理由をパネルに出す
   await page.evaluate(() => leafletMap.setView([36.57, 137.65], 6));

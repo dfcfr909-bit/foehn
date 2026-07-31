@@ -834,7 +834,18 @@ html, body {
   display: flex; align-items: center; gap: 8px;
   padding: 2px 0;
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;      /* アメダスの要素チップを2段目に落とす */
 }
+/* アメダスで何を表示するかの切り替え */
+.amedas-els { flex-basis: 100%; display: flex; gap: 5px; padding: 0 0 6px 30px; flex-wrap: wrap; }
+.amedas-el {
+  min-height: 44px; padding: 0 12px;
+  border: 2px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text2);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
+.amedas-el.active { background: var(--text); color: #fff; border-color: var(--text); }
 .layer-ov-toggle {
   flex: 1; min-width: 0; min-height: 44px;
   display: flex; align-items: center; gap: 8px;
@@ -876,7 +887,12 @@ html, body {
   white-space: nowrap;
   line-height: 1.15;
 }
-.amedas-box b { font-size: 11px; color: #c1440e; font-family: var(--font-mono); }
+.amedas-box b {
+  font-size: 11px; font-family: var(--font-mono);
+  display: inline-flex; align-items: center; gap: 1px;
+}
+.amedas-box b small { font-size: 8px; opacity: 0.75; }
+.amedas-box .amedas-arrow { font-style: normal; font-size: 12px; line-height: 1; }
 .amedas-box span { font-size: 8px; color: #444; }
 .wind-box {
   transform: translate(-50%, -50%);
@@ -1480,7 +1496,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.48.0</span>
+    <span id="app-version">v4.49.0</span>
   </div>
 
   <!-- Footer -->
@@ -4069,8 +4085,30 @@ const RRIM_SLOPE = 'slope';
 // 赤色立体図風と二重描画になるレイヤー（有効時は自動で外す）
 const RRIM_CONFLICTS = [RRIM_SHADE, RRIM_SLOPE];
 
+/* ピンに出す要素。アメダスは地点ごとに観測項目が違うので、
+   選んだ要素を持たない地点はピンごと出さない。 */
+const AMEDAS_ELEMENTS = [
+  { id: 'temp',     name: '気温', field: 'temp',            unit: '℃',   color: '#c1440e' },
+  { id: 'wind',     name: '風',   field: 'wind',            unit: 'm/s', color: '#2a3a8a' },
+  { id: 'precip',   name: '降水', field: 'precipitation1h', unit: 'mm',  color: '#1a7fbe' },
+  { id: 'snow',     name: '積雪', field: 'snow',            unit: 'cm',  color: '#3c78dc' },
+  { id: 'humidity', name: '湿度', field: 'humidity',        unit: '%',   color: '#2a7d4f' },
+];
+const AMEDAS_ELEMENT_DEFAULT = 'temp';
+function amedasElementDef(id) {
+  return AMEDAS_ELEMENTS.find(e => e.id === id) || AMEDAS_ELEMENTS[0];
+}
+/* アメダスの風向は「16方位のindex」で来る（0=静穏, 1=北北東 … 16=北）。
+   度に直すと index × 22.5。★実機で向きが合っているか要確認（方位の取り違えは
+   バックカントリーでは危険な誤りになるため）。 */
+const AMEDAS_DIR16 = ['静穏', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東',
+                      '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西', '北'];
+function amedasDirName(i) { return (i != null && AMEDAS_DIR16[i]) ? AMEDAS_DIR16[i] : ''; }
+function amedasDirDeg(i) { return (i >= 1 && i <= 16) ? i * 22.5 : null; }
+
 const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
+const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -4100,7 +4138,7 @@ const MAP_WEATHER = [
     note: '雷ナウキャスト（実況）', unverified: true },
   // アメダス。新雪ランキングで使っている取得口と同じ（snowRanking.js のヘルパを再利用）
   { id: 'amedas', name: 'アメダス', kind: 'amedas', opacity: 1,
-    attribution: '気象庁アメダス', note: '気温／風速の実測。地図を拡大すると表示' },
+    attribution: '気象庁アメダス', note: '実測値。地図を拡大すると表示' },
   // 風。Open-Meteoの値を格子状に矢印で置く（leaflet-velocity禁止のためアニメーションはしない）
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
     attribution: 'Open-Meteo', note: '選択時刻の風。地図を拡大すると表示' },
@@ -4134,12 +4172,18 @@ function loadMapPrefs() {
       }
     }
   } catch (e) { /* 壊れていたらオーバーレイなし */ }
-  return { base, overlays };
+  let amedasElement = AMEDAS_ELEMENT_DEFAULT;
+  try {
+    const raw = localStorage.getItem(MAP_LS_AMEDAS_EL);
+    if (raw && AMEDAS_ELEMENTS.some(e => e.id === raw)) amedasElement = raw;
+  } catch (e) { /* 読めなければ既定 */ }
+  return { base, overlays, amedasElement };
 }
 function saveMapPrefs() {
   try {
     localStorage.setItem(MAP_LS_BASE, mapPrefs.base);
     localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(mapPrefs.overlays));
+    localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -4148,7 +4192,7 @@ function saveMapPrefs() {
    ============================================================ */
 let leafletMap = null;
 let leafletMarker = null;
-let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [] };
+let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -4293,11 +4337,10 @@ async function loadAmedas() {
     if (!meta || !obs) continue;
     const lat = snowRanking.dmsToDeg(meta.lat), lon = snowRanking.dmsToDeg(meta.lon);
     if (lat == null || lon == null) continue;
-    const pick = k => (Array.isArray(obs[k]) ? obs[k][0] : null);
-    stations.push({
-      id, name: meta.kjName || id, lat, lon, alt: meta.alt,
-      temp: pick('temp'), wind: pick('wind'), dir: pick('windDirection'), snow: pick('snow'),
-    });
+    // 値は [値, 品質フラグ] の配列。要素を切り替えられるよう全部持っておく
+    const vals = {};
+    for (const k of Object.keys(obs)) if (Array.isArray(obs[k])) vals[k] = obs[k][0];
+    stations.push({ id, name: meta.kjName || id, lat, lon, alt: meta.alt, vals });
   }
   amedasData = { stations, stamp };
   return amedasData;
@@ -4313,29 +4356,39 @@ function drawAmedas(bounds, opacity) {
     return;
   }
   setLayerStatus('amedas', '');
-  let n = 0;
+  const el = amedasElementDef(mapPrefs.amedasElement);
+  let n = 0, shown = 0;
   for (const s of amedasData.stations) {
     if (!bounds.contains([s.lat, s.lon])) continue;
-    // 雨量計だけの地点は気温も風も持たない。「—」のピンが散らかるので出さない
-    if (s.temp == null && s.wind == null && s.snow == null) continue;
+    const v = s.vals[el.field];
+    // その要素を観測していない地点は出さない（「—」のピンが散らかるため）
+    if (v == null) continue;
     if (++n > 140) break;                       // 出しすぎない
-    const t = (s.temp != null) ? `${s.temp}℃` : '';
-    const w = (s.wind != null) ? `${s.wind}m/s` : '';
-    const sn = (s.snow != null) ? `${s.snow}cm` : '';
+    shown++;
+    // 風のときは向きも矢印で添える（風向は「吹いてくる方角」なので矢印は+180°）
+    const deg = amedasDirDeg(s.vals.windDirection);
+    const arrow = (el.id === 'wind' && deg != null)
+      ? `<i class="amedas-arrow" style="transform:rotate(${(deg + 180) % 360}deg)">↑</i>` : '';
     const m = L.marker([s.lat, s.lon], {
       pane: 'mapWeather',
       opacity,
       icon: L.divIcon({
         className: 'amedas-pin',
-        html: `<div class="amedas-box"><b>${t || w}</b>` +
-              `<span>${escapeHtml(s.name)}${sn ? ' 積' + sn : ''}</span></div>`,
+        html: `<div class="amedas-box">` +
+              `<b style="color:${el.color}">${arrow}${v}<small>${el.unit}</small></b>` +
+              `<span>${escapeHtml(s.name)}</span></div>`,
         iconSize: null,
       }),
     }).addTo(leafletMap);
-    m.bindTooltip(`${escapeHtml(s.name)}（${s.alt ?? '?'}m）<br>気温 ${t || '—'} / 風 ${w || '—'}` +
-                  (sn ? `<br>積雪 ${sn}` : ''));
+    // ツールチップには持っている値をまとめて出す
+    const rows = AMEDAS_ELEMENTS
+      .filter(e => s.vals[e.field] != null)
+      .map(e => `${e.name} ${s.vals[e.field]}${e.unit}` +
+        (e.id === 'wind' ? ` ${amedasDirName(s.vals.windDirection)}` : ''));
+    m.bindTooltip(`${escapeHtml(s.name)}（${s.alt ?? '?'}m）<br>${rows.join(' / ')}`);
     weatherMarkers.push(m);
   }
+  if (shown === 0) setLayerStatus('amedas', `この範囲に${el.name}の観測点がありません`);
 }
 
 /* 風の矢印。leaflet-velocity（禁止）を使わないので、Open-Meteoの値を
@@ -4550,6 +4603,13 @@ function closeLayerPanel() {
   document.getElementById('layer-panel').classList.remove('open');
 }
 
+// アメダスで何を出すかの切り替え（気温／風／降水／積雪／湿度）
+function amedasElementChips() {
+  return `<div class="amedas-els">` + AMEDAS_ELEMENTS.map(e =>
+    `<button class="amedas-el${e.id === mapPrefs.amedasElement ? ' active' : ''}"
+             onclick="setAmedasElement('${e.id}')">${e.name}</button>`).join('') + `</div>`;
+}
+
 function renderLayerPanel() {
   const baseWrap = document.getElementById('layer-bases');
   const ovWrap = document.getElementById('layer-overlays');
@@ -4573,7 +4633,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
@@ -4583,6 +4643,7 @@ function renderLayerPanel() {
       </div>`;
   };
   ovWrap.innerHTML = usableOverlays().map(row).join('');
+
   const wxWrap = document.getElementById('layer-weather');
   if (wxWrap) wxWrap.innerHTML = usableWeather().map(row).join('');
   updateMapAttribution();
@@ -5127,6 +5188,13 @@ function setRankTab(tab) {
     p.classList.toggle('active', p.id === `rank-pane-${tab}`));
   // 新雪タブは開いたときに初めて取りに行く（毎回の起動を重くしない）
   if (tab === 'snow' && !snowResult && !snowLoading) refreshSnowRanking();
+}
+
+function setAmedasElement(id) {
+  mapPrefs.amedasElement = amedasElementDef(id).id;
+  saveMapPrefs();
+  refreshWeatherPoints();
+  renderLayerPanel();
 }
 
 function setSnowFilter(kind) {
