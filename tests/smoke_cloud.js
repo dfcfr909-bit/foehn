@@ -104,11 +104,25 @@ function fakeSupplemental(reqUrl) {
     const cv = document.querySelector('#chart-cloud canvas');
     const ctx = cv.getContext('2d');
     const box = cloudPlotBox(cloudChart);
+    /* 明るさを1点だけ読むための道具（雲は白・空は青なので赤成分で足りる）。
+       ★高度グリッド線は破線なので、線に乗ると時刻ごとに破線の位相が変わって
+         明るさが数十も揺れる。高度から安全なyを選ぶところまでを込みにする。 */
+    const safeY = alt => {
+      let yy = Math.round(box.yAlt(alt));
+      while (ALT_TICKS.some(a => Math.abs(box.yAlt(a) - yy) < 4)) yy -= 1;
+      return yy;
+    };
+    const yCloudBand = safeY(1700);     // 雲の帯の中
+    const ySky = safeY(5000);           // 雲のない高さ
+    const at = (idx, yy) => {
+      const px = ctx.getImageData(Math.round(cloudChart.valToPos(idx, 'x', true)), yy, 1, 1).data;
+      return { r: px[0], g: px[1], b: px[2], lum: 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2] };
+    };
+
     // 雲の帯（850〜800hPa）の中の1行を横に走査する。
     // 0時の日付区切り線が入ると段差として拾ってしまうので、1時〜22時の中で見る。
     // 高度グリッド線は破線なので、線に重ならない高さを選ぶ（重なると3px周期の縞を拾う）
-    let y = Math.round(box.yAlt(1700));
-    while (ALT_TICKS.some(a => Math.abs(box.yAlt(a) - y) < 4)) y -= 1;
+    const y = yCloudBand;
     const i0 = state.allData.findIndex(d => d.time.getHours() === 1);
     const x0 = Math.round(cloudChart.valToPos(i0, 'x', true));
     const x1 = Math.round(cloudChart.valToPos(i0 + 21, 'x', true));
@@ -116,12 +130,6 @@ function fakeSupplemental(reqUrl) {
     const lum = [];
     for (let i = 0; i < row.length; i += 4) lum.push(row[i]);   // 雲が濃いほど明るい（白）
 
-    // 明るさを1点だけ読むための道具（雲は白・空は青なので赤成分で足りる）
-    const at = (idx, alt) => {
-      const px = ctx.getImageData(
-        Math.round(cloudChart.valToPos(idx, 'x', true)), Math.round(box.yAlt(alt)), 1, 1).data;
-      return { r: px[0], g: px[1], b: px[2], lum: 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2] };
-    };
     // 雲(100%)と晴れ(0%)を隣り合う時刻で比べる。fixtureは偶数時=100% / 奇数時=0%
     const iCloud = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() % 2 === 0);
     const iClear = iCloud + 1;
@@ -145,10 +153,10 @@ function fakeSupplemental(reqUrl) {
       cached: cloudRasterFor(state.allData) === cloudRasterFor(state.allData),
       px: { n: lum.length, maxJump, distinct, span },
       // 空＝青 / 雲＝白 の関係（灰色どうしで混ざらないための肝）
-      cloudPx: at(iCloud, 1700),
-      clearPx: at(iClear, 1700),
-      nightSky: at(iNight, 6000),
-      daySky: at(iDay, 6000),
+      cloudPx: at(iCloud, yCloudBand),
+      clearPx: at(iClear, yCloudBand),
+      nightSky: at(iNight, ySky),
+      daySky: at(iDay, ySky),
       // 月齢による夜の濃さ（満月=明るい / 新月=暗い）
       moon: (() => {
         const base = Date.UTC(2000, 0, 6, 18, 14);           // 基準の新月

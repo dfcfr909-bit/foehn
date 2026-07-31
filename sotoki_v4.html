@@ -730,7 +730,9 @@ html, body {
 .map-result-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .map-result-sub { font-size: 11px; color: var(--text3); }
 .map-result-msg { padding: 12px 14px; font-size: 12px; color: var(--text3); text-align: center; }
-#map-stage { flex: 1; position: relative; min-height: 0; }
+/* overflow:hidden が要る。レイヤーパネルは閉じているとき translateY(101%) で
+   下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
+#map-stage { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 #map { position: absolute; inset: 0; }
 /* 出典表記。常時表示（利用条件） */
 #map-attribution {
@@ -782,10 +784,13 @@ html, body {
 /* 円柱はヘッダーから引っ越してくるので、残りの幅いっぱいを使わせる */
 #map-fav-slot { flex: 1 1 0; min-width: 0; display: flex; }
 #map-fav-slot > #fav-rotary { flex: 1 1 0; }
-#btn-layers {
+#map-tools {
   position: absolute;
   right: 8px; top: 8px;
   z-index: 500;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+}
+#map-tools button {
   min-height: 44px;
   padding: 0 12px;
   display: flex; align-items: center; gap: 5px;
@@ -799,6 +804,29 @@ html, body {
   cursor: pointer;
   box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
+#map-tools button[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
+
+/* 現在地（追跡中）。選択地点のピンとは別物 */
+.me-dot {
+  width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: #1a73e8;
+  border: 2px solid #fff;
+  box-shadow: 0 0 3px rgba(0,0,0,0.5);
+}
+/* 進行方向を示す扇。ノースアップでは方位に回り、ヘディングアップでは常に上を向く */
+.me-cone {
+  position: absolute; left: 50%; top: 50%;
+  width: 0; height: 0; margin: -30px 0 0 -13px;
+  border-left: 13px solid transparent;
+  border-right: 13px solid transparent;
+  border-bottom: 22px solid rgba(26,115,232,0.35);
+  transform-origin: 50% 100%;
+}
+.me-pin { background: none; border: none; }
+
+/* ヘディングアップ中は地図を回す。角が欠けないよう地図の実体を大きくしておく */
+#map-stage.rotating #map { inset: -40%; }
 /* レイヤーパネル：ボトムシート */
 #layer-panel {
   position: absolute;
@@ -900,7 +928,7 @@ html, body {
 /* アメダスの実測ピンと風の矢印（タイルではなくマーカーで置く） */
 .amedas-pin, .wind-arrow { background: none; border: none; }
 .amedas-box {
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
   display: inline-flex; flex-direction: column; align-items: center;
   padding: 1px 5px;
   border-radius: 6px;
@@ -918,7 +946,7 @@ html, body {
 .amedas-box .amedas-arrow { font-style: normal; font-size: 12px; line-height: 1; }
 .amedas-box span { font-size: 8px; color: #444; }
 .wind-box {
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
   display: inline-flex; align-items: center; gap: 1px;
   padding: 1px 4px;
   border-radius: 6px;
@@ -1519,7 +1547,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.51.0</span>
+    <span id="app-version">v4.52.0</span>
   </div>
 
   <!-- Footer -->
@@ -1555,9 +1583,15 @@ html, body {
       <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
       <div id="map-attribution"></div>
       <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
-      <button id="btn-layers" onclick="toggleLayerPanel()" aria-label="地図レイヤーを選ぶ">
-        <span aria-hidden="true">🗂️</span>レイヤー
-      </button>
+      <div id="map-tools">
+        <button id="btn-layers" onclick="toggleLayerPanel()" aria-label="地図レイヤーを選ぶ">
+          <span aria-hidden="true">🗂️</span>レイヤー
+        </button>
+        <button id="btn-track" onclick="toggleTracking()" aria-pressed="false"
+                aria-label="現在地を追跡"><span aria-hidden="true">◎</span>追跡</button>
+        <button id="btn-orient" onclick="toggleOrientation()" aria-pressed="false"
+                aria-label="地図の向き"><span id="orient-icon" aria-hidden="true">🧭</span><span id="orient-label">北</span></button>
+      </div>
 
       <!-- レイヤーパネル（ボトムシート） -->
       <div id="layer-panel" role="dialog" aria-label="地図レイヤー">
@@ -4632,6 +4666,7 @@ function openMap() {
       leafletMap.createPane('mapWeather').style.zIndex = 400;   // 気象は地形図より上
       // 点で描く気象レイヤーは表示範囲ぶんしか出さないので、動かすたびに描き直す
       leafletMap.on('moveend zoomend', () => refreshWeatherPoints());
+      patchRotatedInput(leafletMap);
       applyBaseLayer();
       applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
@@ -4666,6 +4701,7 @@ function closeMap() {
   document.getElementById('map-overlay').classList.remove('open');
   closeLayerPanel();
   restoreFavRotary();
+  if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
 }
 function isMapOpen() {
   const el = document.getElementById('map-overlay');
@@ -4876,6 +4912,175 @@ function mapFlyTo(lat, lon, zoom) {
 // 地図画面の「現在地」。取得したらそこへなめらかに寄る
 function gpsFromMap() {
   fetchGPS({ keepMap: true });
+}
+
+/* ============================================================
+   現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）
+
+   ・追跡中の現在地は「選択地点のピン」とは別のマーカーで描く。
+     追跡していても、選ぶ地点は利用者がタップしたところのまま
+   ・ヘディングアップは #map をCSSで回して実現する。Leafletに回転機能は無い。
+     回すとLeafletの座標変換（画面座標→緯度経度）が狂うので、
+     mouseEventToContainerPoint を中心まわりの逆回転で補正する
+   ・回転中は手動パンを止める。ドラッグ量まで補正しはじめると破綻するため、
+     「追いかけている間は自分で動かさない」という割り切りにしている
+   ============================================================ */
+let geoWatchId = null;
+let myPos = null;                 // { lat, lon, accuracy }
+let meMarker = null, meCircle = null;
+let mapFollow = false;            // 現在地を画面中央に追い続ける
+let mapHeadingUp = false;         // ヘディングアップ
+let mapRotationDeg = 0;           // 地図に掛けている回転(deg)
+let headingDeg = 0;               // 端末が向いている方位(deg, 真北=0, 時計回り)
+let headingHandler = null;
+
+function updateMapToolButtons() {
+  const t = document.getElementById('btn-track');
+  const o = document.getElementById('btn-orient');
+  if (t) t.setAttribute('aria-pressed', String(geoWatchId != null));
+  if (o) {
+    o.setAttribute('aria-pressed', String(mapHeadingUp));
+    const label = document.getElementById('orient-label');
+    if (label) label.textContent = mapHeadingUp ? '進行' : '北';
+  }
+}
+
+function toggleTracking() {
+  if (geoWatchId != null) stopTracking(); else startTracking();
+}
+
+function startTracking() {
+  if (!navigator.geolocation) { alert('Geolocation非対応'); return; }
+  mapFollow = true;
+  geoWatchId = navigator.geolocation.watchPosition(
+    onGeoUpdate,
+    () => { alert('現在地を取得できませんでした'); stopTracking(); },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+  );
+  updateMapToolButtons();
+}
+
+function stopTracking() {
+  if (geoWatchId != null) navigator.geolocation.clearWatch(geoWatchId);
+  geoWatchId = null;
+  mapFollow = false;
+  setHeadingUp(false);            // 向きだけ残しても意味がないので一緒に戻す
+  if (meMarker) { leafletMap.removeLayer(meMarker); meMarker = null; }
+  if (meCircle) { leafletMap.removeLayer(meCircle); meCircle = null; }
+  updateMapToolButtons();
+}
+
+function onGeoUpdate(pos) {
+  const c = pos.coords;
+  myPos = { lat: c.latitude, lon: c.longitude, accuracy: c.accuracy };
+  // 方位センサーが使えないときは、進行方向（GPSのheading）で代用する
+  if (!headingHandler && typeof c.heading === 'number' && !isNaN(c.heading)) setHeading(c.heading);
+  drawMe();
+  if (mapFollow && leafletMap) leafletMap.panTo([myPos.lat, myPos.lon], { animate: true, duration: 0.5 });
+}
+
+function drawMe() {
+  if (!leafletMap || !myPos) return;
+  const ll = [myPos.lat, myPos.lon];
+  // 誤差の輪
+  if (!meCircle) {
+    meCircle = L.circle(ll, { radius: myPos.accuracy || 0, pane: 'mapWeather',
+      color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.12 }).addTo(leafletMap);
+  } else {
+    meCircle.setLatLng(ll).setRadius(myPos.accuracy || 0);
+  }
+  // 扇は「方位 ＋ 地図の回転」ぶん回す。ヘディングアップでは差し引き0になり常に上を向く
+  const cone = headingDeg + mapRotationDeg;
+  const html = `<div class="me-cone" style="transform:rotate(${cone}deg)"></div><div class="me-dot"></div>`;
+  if (!meMarker) {
+    meMarker = L.marker(ll, { pane: 'mapWeather', interactive: false,
+      icon: L.divIcon({ className: 'me-pin', html, iconSize: null }) }).addTo(leafletMap);
+  } else {
+    meMarker.setLatLng(ll);
+    meMarker.getElement().innerHTML = html;
+  }
+}
+
+/* 方位センサー。iOSは利用者の操作の中で許可を求める必要がある */
+async function enableHeading() {
+  if (typeof DeviceOrientationEvent === 'undefined') return false;
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') return false;
+    } catch (e) { return false; }
+  }
+  headingHandler = e => {
+    // iOSは webkitCompassHeading（真北基準・時計回り）。他は絶対方位のalpha（反時計回り）
+    let h = null;
+    if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
+    else if (typeof e.alpha === 'number') h = 360 - e.alpha;
+    if (h == null || isNaN(h)) return;
+    setHeading(h);
+  };
+  window.addEventListener('deviceorientation', headingHandler, true);
+  return true;
+}
+
+function setHeading(deg) {
+  headingDeg = ((deg % 360) + 360) % 360;
+  if (mapHeadingUp) applyMapRotation(-headingDeg);   // 進行方向を上に向けるので逆に回す
+  else drawMe();
+}
+
+function applyMapRotation(deg) {
+  mapRotationDeg = deg;
+  const stage = document.getElementById('map-stage');
+  const map = document.getElementById('map');
+  if (!stage || !map) return;
+  map.style.transform = deg ? `rotate(${deg}deg)` : '';
+  // 自前のラベルは逆回転して立てる（地図が回っても文字が読めるように）
+  stage.style.setProperty('--map-rot', `${-deg}deg`);
+  drawMe();
+}
+
+async function toggleOrientation() {
+  if (mapHeadingUp) { setHeadingUp(false); return; }
+  if (geoWatchId == null) startTracking();      // 向きだけ変えても使いにくいので追跡も入れる
+  if (!await enableHeading()) { alert('方位センサーを使えませんでした'); return; }
+  setHeadingUp(true);
+}
+
+function setHeadingUp(on) {
+  if (!leafletMap) return;
+  mapHeadingUp = on;
+  document.getElementById('map-stage').classList.toggle('rotating', on);
+  if (on) {
+    // 回転中に手でパンすると、ドラッグの向きと地図の動きがねじれる。追従中なので止める
+    leafletMap.dragging.disable();
+    applyMapRotation(-headingDeg);
+  } else {
+    leafletMap.dragging.enable();
+    applyMapRotation(0);
+    if (headingHandler) {
+      window.removeEventListener('deviceorientation', headingHandler, true);
+      headingHandler = null;
+    }
+  }
+  leafletMap.invalidateSize();
+  updateMapToolButtons();
+}
+
+/* 地図を回すとLeafletの座標変換が狂う（getBoundingClientRectが回転後の外接矩形になるため）。
+   中心まわりに逆回転して、回していないときと同じ座標に直す。
+   これを入れないと、ヘディングアップ中のタップが見当違いの地点を選ぶ。 */
+function patchRotatedInput(map) {
+  const orig = map.mouseEventToContainerPoint.bind(map);
+  map.mouseEventToContainerPoint = e => {
+    if (!mapRotationDeg) return orig(e);
+    const c = map.getContainer();
+    const r = c.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const dx = e.clientX - cx, dy = e.clientY - cy;
+    const a = -mapRotationDeg * Math.PI / 180;
+    return L.point(
+      dx * Math.cos(a) - dy * Math.sin(a) + c.clientWidth / 2,
+      dx * Math.sin(a) + dy * Math.cos(a) + c.clientHeight / 2);
+  };
 }
 
 async function doMapSearch() {

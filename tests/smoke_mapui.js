@@ -123,7 +123,11 @@ function fakeWeather() {
   const timesHits = [];
 
   async function newPage(initLocalStorage) {
-    const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 800 },
+      permissions: ['geolocation'],
+      geolocation: { latitude: 36.57, longitude: 137.65, accuracy: 25 },
+    });
     page.on('pageerror', e => errors.push(e.message));
     page.on('dialog', d => d.accept());
     await page.route('**/*', route => {
@@ -497,12 +501,26 @@ function fakeWeather() {
       inMap: document.getElementById('map-fav-slot').contains(el),
       gpsBtn: !!document.getElementById('btn-map-gps'),
       gpsH: document.getElementById('btn-map-gps').getBoundingClientRect().height,
+      // 実際に押せるか（高さだけ見ても、上に何かが被っていたら押せない）
+      gpsHit: (() => {
+        const b = document.getElementById('btn-map-gps').getBoundingClientRect();
+        const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return !!t && document.getElementById('btn-map-gps').contains(t);
+      })(),
+      rotaryHit: (() => {
+        const b = el.getBoundingClientRect();
+        const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return !!t && el.contains(t);
+      })(),
       width: el.getBoundingClientRect().width,
     };
   });
   ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
   ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
   ok(rotary.gpsBtn && rotary.gpsH >= 44, '地図に「現在地」ボタンがある（44px以上）', rotary);
+  // ★閉じたレイヤーパネルが覆いかぶさって押せなくなっていたことがある
+  ok(rotary.gpsHit, '「現在地」ボタンが他の要素に覆われていない', rotary.gpsHit);
+  ok(rotary.rotaryHit, 'お気に入り円柱が他の要素に覆われていない', rotary.rotaryHit);
   ok(rotary.width > 100, '円柱は地図の幅を使える', rotary.width);
 
   // 地図をタップしても閉じない（以前は閉じてメテオグラムに戻っていた）
@@ -545,6 +563,84 @@ function fakeWeather() {
   ok(rotaryHome.inHeader && rotaryHome.count === 1, '地図を閉じると円柱はヘッダーへ戻る', rotaryHome);
   await page.evaluate(() => openMap());
   await page.waitForTimeout(600);
+
+  /* ================= 5e. 現在地の追跡とヘディングアップ ================= */
+  await page.evaluate(() => { if (mapHeadingUp) setHeadingUp(false); if (geoWatchId != null) stopTracking(); });
+  await page.click('#btn-track');
+  await page.waitForTimeout(900);
+  const tracking = await page.evaluate(() => ({
+    watching: geoWatchId != null,
+    pressed: document.getElementById('btn-track').getAttribute('aria-pressed'),
+    dot: document.querySelectorAll('.me-dot').length,
+    circle: !!meCircle,
+    // 現在地マーカーは「選択地点のピン」とは別物
+    separateFromPin: !!meMarker && !!leafletMarker && meMarker !== leafletMarker,
+  }));
+  ok(tracking.watching && tracking.pressed === 'true', '追跡が始まる', tracking);
+  ok(tracking.dot === 1 && tracking.circle, '現在地マーカーと誤差の輪が出る', tracking);
+  ok(tracking.separateFromPin, '現在地は選択地点のピンとは別のマーカー', tracking.separateFromPin);
+
+  // ヘディングアップ：地図が回り、手動パンは止まり、ラベルは逆回転で立つ
+  const heading = await page.evaluate(async () => {
+    // 方位センサーの許可ダイアログはこの環境に無いので、そのままイベントを流す
+    await toggleOrientation();
+    const ev = new Event('deviceorientation');
+    ev.webkitCompassHeading = 90;          // 東を向いている
+    window.dispatchEvent(ev);
+    await new Promise(r => setTimeout(r, 200));
+    const stage = document.getElementById('map-stage');
+    return {
+      headingUp: mapHeadingUp,
+      rotation: mapRotationDeg,
+      mapTransform: document.getElementById('map').style.transform,
+      counterRot: getComputedStyle(stage).getPropertyValue('--map-rot').trim(),
+      dragging: leafletMap.dragging.enabled(),
+      rotating: stage.classList.contains('rotating'),
+      label: document.getElementById('orient-label').textContent,
+    };
+  });
+  ok(heading.headingUp, 'ヘディングアップに切り替わる', heading);
+  ok(heading.rotation === -90, '東を向いたら地図は-90度回る（進行方向が上）', heading.rotation);
+  ok(/rotate\(-90deg\)/.test(heading.mapTransform), '地図にrotateが掛かる', heading.mapTransform);
+  ok(heading.counterRot === '90deg', '自前ラベルは逆回転で立てる', heading.counterRot);
+  ok(heading.dragging === false, '★回転中は手動パンを止める（座標がねじれるため）', heading.dragging);
+  ok(heading.rotating, '地図の実体を広げるクラスが付く');
+  ok(heading.label === '進行', 'ボタンの表示が「進行」になる', heading.label);
+
+  // ★回転中でもタップした場所が正しく取れること（補正が効いているか）
+  const rotTap = await page.evaluate(() => {
+    const c = leafletMap.getContainer();
+    const r = c.getBoundingClientRect();
+    // 画面上でコンテナ中心から右へ100pxの位置をタップしたことにする
+    const fake = { clientX: r.left + r.width / 2 + 100, clientY: r.top + r.height / 2 };
+    const p = leafletMap.mouseEventToContainerPoint(fake);
+    return { x: Math.round(p.x - c.clientWidth / 2), y: Math.round(p.y - c.clientHeight / 2) };
+  });
+  // -90度回した地図で画面右は、地図座標では下（+y）にあたる
+  ok(Math.abs(rotTap.x) <= 1 && Math.abs(rotTap.y - 100) <= 1,
+    '回転中のタップ座標が逆回転で補正される', rotTap);
+
+  // 北向きに戻す
+  await page.evaluate(() => setHeadingUp(false));
+  await page.waitForTimeout(200);
+  const northUp = await page.evaluate(() => ({
+    headingUp: mapHeadingUp,
+    rotation: mapRotationDeg,
+    dragging: leafletMap.dragging.enabled(),
+    label: document.getElementById('orient-label').textContent,
+  }));
+  ok(!northUp.headingUp && northUp.rotation === 0, 'ノースアップに戻る', northUp);
+  ok(northUp.dragging === true, '戻したら手動パンが復活する', northUp.dragging);
+  ok(northUp.label === '北', 'ボタンの表示が「北」に戻る', northUp.label);
+
+  // 追跡を止めるとマーカーも消える
+  await page.evaluate(() => stopTracking());
+  await page.waitForTimeout(200);
+  const stopped = await page.evaluate(() => ({
+    watching: geoWatchId != null,
+    dot: document.querySelectorAll('.me-dot').length,
+  }));
+  ok(!stopped.watching && stopped.dot === 0, '追跡を止めると現在地マーカーが消える', stopped);
 
   /* ================= 6. 永続化と復元 ================= */
   const saved = await page.evaluate(() => ({
