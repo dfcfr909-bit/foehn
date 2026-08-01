@@ -866,14 +866,16 @@ function fakeWeather() {
     return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
   });
   const cx = Math.round(mapBox.x + mapBox.w / 2), cy = Math.round(mapBox.y + mapBox.h / 2);
-  // 遠く（穴の外＝中心から200px下）と、穴の中だがマーカーには掛からない場所（中心の78px左）
+  /* 遠く（穴の外＝中心から200px下）と、穴の中だがマーカーには掛からない場所。
+     穴はマーカーのすぐ外側だけなので（v4.59.0で縮小）、近い方は中心の20px左を見る。
+     方位の扇は右を向いている（先の検査で東を向けたまま）ので左が安全。 */
   const farClip = { x: cx - 12, y: cy + 190, width: 24, height: 24 };
-  const nearClip = { x: cx - 86, y: cy - 8, width: 16, height: 16 };
+  const nearClip = { x: cx - 23, y: cy - 3, width: 6, height: 6 };
   // 標本の場所に他の要素が乗っていないことを先に確かめる（乗っていると比較が無意味になる）
   const onTop = await page.evaluate(pts => pts.map(([x, y]) => {
     const e = document.elementFromPoint(x, y);
     return e ? (e.id || e.className || e.tagName) : null;
-  }), [[cx, cy + 202], [cx - 78, cy]]);
+  }), [[cx, cy + 202], [cx - 20, cy]]);
   ok(onTop.every(t => t === 'map'), '画素を比べる場所に他の要素が乗っていない', onTop);
   const farOff = await page.screenshot({ clip: farClip });
   const nearOff = await page.screenshot({ clip: nearClip });

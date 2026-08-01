@@ -1605,7 +1605,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.58.0</span>
+    <span id="app-version">v4.59.0</span>
   </div>
 
   <!-- Footer -->
@@ -5290,8 +5290,12 @@ function setHeadingUp(on) {
    現在地の周囲だけナウキャストのpaneをマスクで抜く。
    マスクはpane単位なので、マーカーと同じpaneに入れると現在地ごと消える。
    だからナウキャストは mapNowcast、マーカーは mapWeather と分けてある。 */
-const SPOT_CLEAR_PX = 46;    // 完全に晴れている半径
-const SPOT_FADE_PX = 130;    // ここまでで元の濃さに戻る
+/* 大きさは現在地マーカーを基準に決める。広く抜くと雲の様子が読めなくなるため、
+   「マーカーの白フチのすぐ外側だけがふわっと抜ける」程度に留める（v4.59.0で縮小）。
+   ME_DOT_R は .me-dot（16px＋白フチ2px）の外半径。 */
+const ME_DOT_R = 10;
+const SPOT_CLEAR_PX = ME_DOT_R + 1;    // 完全に晴れている半径（マーカーのぶんだけ）
+const SPOT_FADE_PX = ME_DOT_R * 2.6;   // ここまでで元の濃さに戻る（白フチの1〜2倍ぶん）
 
 let spotRaf = null;
 function updateMeSpotlight() {
