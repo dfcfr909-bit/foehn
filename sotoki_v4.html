@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SotoKi">
@@ -94,7 +94,8 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  /* viewport-fit=cover でノッチ下まで描くので、その分だけ内側に逃がす */
+  padding: calc(4px + env(safe-area-inset-top)) 10px 4px;
   background: var(--surface);
   border-bottom: 2px solid var(--border);
   flex-shrink: 0;
@@ -621,7 +622,7 @@ html, body {
 #footer {
   display: flex;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 4px 10px calc(4px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -661,47 +662,39 @@ html, body {
   background: var(--surface);
 }
 #map-overlay.open { display: flex; }
-#map-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 14px;
-  border-bottom: 2px solid var(--border);
-  gap: 10px;
-  flex-shrink: 0;
+
+/* 上に浮かぶ操作（閉じる＋検索）。
+   ⚠**器は pointer-events:none。** 中身以外の場所は地図に触れるようにするため。
+   これを外すと帯の下の地図が触れなくなり、全画面にした意味が無くなる。 */
+#map-top {
+  position: absolute;
+  left: 8px; right: 8px;
+  top: calc(8px + env(safe-area-inset-top));
+  z-index: 1100;              /* Leaflet標準コントロール(1000)より上 */
+  display: flex; align-items: flex-start; gap: 8px;
+  pointer-events: none;
 }
-#map-header h2 { flex: 1; font-size: 16px; }
-#btn-map-close {
-  font-size: 22px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--text);
-  padding: 4px 8px;
-}
-#map-search-row {
-  display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-}
+#map-top > * { pointer-events: auto; }
+#btn-map-close.map-round { font-size: 19px; flex-shrink: 0; }
+#map-search-row { display: flex; gap: 6px; flex: 1; min-width: 0; }
 #map-search-input {
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 0 14px;
   font-size: 15px;   /* iOSの自動ズーム防止に16px近辺 */
   font-family: var(--font-ui);
   color: var(--text);
   background: var(--surface);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
 #map-search-btn {
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 15px;
   border: none;
-  border-radius: var(--radius);
+  border-radius: 22px;
   background: var(--text);
   color: #fff;
   font-size: 14px;
@@ -709,12 +702,20 @@ html, body {
   font-family: var(--font-ui);
   cursor: pointer;
   flex-shrink: 0;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
+/* 検索結果も浮かせる。地図を隠しすぎないよう高さを抑える */
 #map-results {
-  flex-shrink: 0;
-  max-height: 40%;
+  position: absolute;
+  left: 8px; right: 8px;
+  top: calc(60px + env(safe-area-inset-top));
+  z-index: 1100;
+  max-height: 45%;
   overflow-y: auto;
   background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.3);
 }
 #map-results:empty { display: none; }
 .map-result-item {
@@ -735,55 +736,64 @@ html, body {
    下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
 #map-stage { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 #map { position: absolute; inset: 0; }
+/* 下に浮かぶもの（案内文／地点名＋出典／お気に入り円柱）。
+   ⚠上と同じく**器は pointer-events:none**。円柱の左右は地図に触れる */
+#map-bottom {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 0;
+  z-index: 1100;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 0 8px calc(6px + env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+#map-bottom > * { pointer-events: auto; }
+#map-foot {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
+  pointer-events: none;
+}
 /* 出典表記。常時表示（利用条件） */
 #map-attribution {
-  position: absolute;
-  right: 0; bottom: 0;
-  z-index: 500;
-  max-width: 100%;
+  max-width: 60%;
   padding: 3px 6px;
   font-size: 9px;
   line-height: 1.4;
   color: #333;
   background: rgba(255,255,255,0.82);
-  border-top-left-radius: 6px;
-  pointer-events: none;
+  border-radius: 6px;
+  margin-left: auto;
 }
 /* 選択中の地点（名前＋標高）。地図を閉じずに選べるようにしたので常に出す */
 #map-picked {
-  position: absolute;
-  left: 8px; bottom: 8px;
-  z-index: 500;
-  max-width: 65%;
+  max-width: 60%;
   padding: 4px 9px;
   border-radius: 8px;
   font-size: 12px;
   color: var(--text);
   background: rgba(255,255,255,0.9);
   box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-  pointer-events: none;
   display: flex; align-items: baseline; gap: 6px;
 }
 #map-picked b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #map-elev { font-size: 11px; color: var(--text2); flex-shrink: 0; }
 #map-elev:empty { display: none; }
-/* 地図の下のコントロール（現在地＋お気に入り円柱） */
-#map-bottom {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 10px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
+/* 円柱はヘッダーから引っ越してくる。浮いているので背景を敷いて地図と分ける */
+#map-fav-slot {
+  min-width: 0; display: flex;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.86);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.28);
 }
-/* 円柱はヘッダーから引っ越してくるので、残りの幅いっぱいを使わせる */
-#map-fav-slot { flex: 1 1 0; min-width: 0; display: flex; }
 #map-fav-slot > #fav-rotary { flex: 1 1 0; }
 #map-tools {
   position: absolute;
-  right: 8px; top: 8px;
-  z-index: 500;
+  right: 8px;
+  top: calc(60px + env(safe-area-inset-top));   /* 浮いた検索行の下から */
+  z-index: 1100;
   display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
 }
-#map-tools button {
+/* レイヤーは文字入りのピル。方位・現在地・閉じるは丸ボタン */
+#btn-layers {
   min-height: 44px;
   padding: 0 12px;
   display: flex; align-items: center; gap: 5px;
@@ -799,13 +809,22 @@ html, body {
 }
 #btn-layers[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
 
-/* 方位・現在地は丸ボタン（スーパー地形のような地図上のアイコン操作） */
-#map-tools button.map-round {
+/* 丸ボタン（スーパー地形のような地図上のアイコン操作）。
+   #map-tools の外（閉じるボタン）でも使うので、id で縛らないこと */
+.map-round {
   width: 44px; height: 44px; min-height: 44px;
   padding: 0; gap: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
   border-radius: 50%;
-  justify-content: center;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
   position: relative;
+  flex-shrink: 0;
 }
 .map-round svg { width: 34px; height: 34px; display: block; overflow: visible; }
 
@@ -1031,16 +1050,26 @@ html, body {
   #map-overlay #map-elev { color: #f2f4f7; background: rgba(12,14,17,0.88); }
 }
 
+/* 案内文は浮かせたうえ、**しばらくすると消える**。
+   全画面にした以上、常時出しっぱなしで地図を隠す価値は無い。
+   短いタップをしたときは flash で呼び戻す（v4.60.0） */
 #map-hint {
-  padding: 8px 14px;
+  align-self: center;
+  padding: 5px 12px;
+  border-radius: 14px;
   font-size: 11px;
-  color: var(--text2);
+  color: var(--text);
+  background: rgba(255,255,255,0.88);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
   text-align: center;
-  flex-shrink: 0;
-  transition: color .2s, background .2s;
+  transition: opacity .4s, color .2s, background .2s;
 }
+#map-hint.hidden { opacity: 0; pointer-events: none; }
 /* 長押しせずにタップしたときだけ光らせる。「押しても何も起きない」で迷わせないため */
-#map-hint.flash { color: var(--a-col); background: rgba(42,125,79,0.12); font-weight: 700; }
+#map-hint.flash {
+  opacity: 1;
+  color: #fff; background: var(--a-col); font-weight: 700;
+}
 
 /* 長押しの手応え。押している間だけ輪が締まっていき、閉じ切るとピンが立つ。
    閉じる時間は PIN_HOLD_MS からJSで入れる（CSSに数字を二重に持たない） */
@@ -1605,7 +1634,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.59.0</span>
+    <span id="app-version">v4.60.0</span>
   </div>
 
   <!-- Footer -->
@@ -1625,24 +1654,37 @@ html, body {
   </div>
 
   <!-- Map Overlay -->
+  <!-- 地図は全画面。操作はすべて地図の上に浮かせる（v4.60.0）。
+       以前はヘッダー・検索行・円柱・案内文が画面の3割（201px）を占めていた -->
   <div id="map-overlay">
-    <div id="map-header">
-      <h2>地点を選択</h2>
-      <button id="btn-map-close" onclick="closeMap()">✕</button>
-    </div>
-    <div id="map-search-row">
-      <input type="search" id="map-search-input" placeholder="山名・地名で検索（例: 槍ヶ岳）"
-        enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off">
-      <button id="map-search-btn" onclick="doMapSearch()">検索</button>
-    </div>
-    <div id="map-results"></div>
     <div id="map-stage">
       <div id="map"></div>
       <!-- 長押し中に出す輪。押し切るとピンが立つ -->
       <div id="pin-hold" aria-hidden="true"></div>
-      <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
-      <div id="map-attribution"></div>
-      <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
+      <!-- 上に浮かぶ操作：閉じる＋検索。器はタップを通し、中身だけが受ける -->
+      <div id="map-top">
+        <button id="btn-map-close" class="map-round" onclick="closeMap()"
+                aria-label="地図を閉じる">✕</button>
+        <div id="map-search-row">
+          <input type="search" id="map-search-input" placeholder="山名・地名で検索"
+            enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off">
+          <button id="map-search-btn" onclick="doMapSearch()">検索</button>
+        </div>
+      </div>
+      <div id="map-results"></div>
+
+      <!-- 下に浮かぶもの：案内文／地点名＋出典／お気に入り円柱 -->
+      <div id="map-bottom">
+        <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
+        <div id="map-foot">
+          <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
+          <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
+          <div id="map-attribution"></div>
+        </div>
+        <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
+        <div id="map-fav-slot"></div>
+      </div>
+
       <div id="map-tools">
         <button id="btn-layers" onclick="toggleLayerPanel()" aria-label="地図レイヤーを選ぶ">
           <span aria-hidden="true">🗂️</span>レイヤー
@@ -1699,12 +1741,6 @@ html, body {
         </div>
       </div>
     </div>
-    <div id="map-bottom">
-      <!-- 「現在地」ボタンは右上の丸ボタンに統合した（v4.58.0） -->
-      <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
-      <div id="map-fav-slot"></div>
-    </div>
-    <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
   </div>
 
   <!-- Favorites Overlay -->
@@ -4813,6 +4849,7 @@ function openMap() {
   document.getElementById('map-overlay').classList.add('open');
   document.getElementById('map-results').innerHTML = '';   // 前回の検索結果をクリア
   document.getElementById('map-search-input').value = '';
+  showMapHint();
   setPickedName(state.locationName);
   moveFavRotaryTo(document.getElementById('map-fav-slot'));
   if (!leafletMap) {
@@ -4822,6 +4859,9 @@ function openMap() {
         minZoom: MAP_ZOOM_MIN, maxZoom: MAP_ZOOM_MAX, attributionControl: false,
         zoomSnap: 0,            // ダブルタップ＋上下で連続的に拡大縮小するため
         doubleClickZoom: false, // 自前のダブルタップ操作と取り合いになるので切る
+        // 標準の +/- は出さない。全画面にした左上は「閉じる」の場所で、
+        // 拡大縮小はピンチとダブルタップ＋上下ドラッグで足りる（v4.60.0）
+        zoomControl: false,
       }).setView([state.lat, state.lon], 10);
       // 重ね順：ベース(200) < オーバーレイ(350) < 赤色立体図風(360/361) < マーカー(600)
       leafletMap.createPane('mapOverlays').style.zIndex = 350;
@@ -5469,9 +5509,24 @@ function flashPinHint() {
     if (Date.now() - dtapLastAt < 600) return;
     const el = document.getElementById('map-hint');
     if (!el) return;
+    el.classList.remove('hidden');
     el.classList.add('flash');
-    pinHintTimer = setTimeout(() => el.classList.remove('flash'), 1200);
+    pinHintTimer = setTimeout(() => {
+      el.classList.remove('flash');
+      pinHintTimer = setTimeout(() => el.classList.add('hidden'), 800);
+    }, 1400);
   }, DTAP_MS + 60);
+}
+
+/* 案内文は開いた直後だけ出して、しばらくしたら消す。
+   全画面にした以上、常時出しっぱなしで地図を隠す価値は無い。 */
+const MAP_HINT_MS = 4500;
+function showMapHint() {
+  const el = document.getElementById('map-hint');
+  if (!el) return;
+  clearTimeout(pinHintTimer);
+  el.classList.remove('hidden', 'flash');
+  pinHintTimer = setTimeout(() => el.classList.add('hidden'), MAP_HINT_MS);
 }
 
 // 地点の確定。地図は閉じない（続けて別の地点を見比べられるようにするため v4.51.0）

@@ -113,6 +113,8 @@ function fakeWeather() {
   return { hourly: h, daily, elevation: 1500 };
 }
 
+const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少し長く
+
 (async () => {
   const fails = [];
   const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefined ? ` … ${JSON.stringify(extra)}` : '')); };
@@ -589,6 +591,64 @@ function fakeWeather() {
       width: el.getBoundingClientRect().width,
     };
   });
+  /* ================= 5d-1. 地図は全画面（v4.60.0） =================
+     以前はヘッダー・検索行・円柱・案内文が画面の3割（201px）を占めていた。
+     いまは全部を地図の上に浮かせている。 */
+  const full = await page.evaluate(() => {
+    const stage = document.getElementById('map-stage').getBoundingClientRect();
+    const hit = (x, y) => { const e = document.elementFromPoint(x, y); return e ? (e.id || e.className || e.tagName) : null; };
+    const inMap = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && !!e.closest('#map'); };
+    const fav = document.getElementById('map-fav-slot').getBoundingClientRect();
+    const close = document.getElementById('btn-map-close').getBoundingClientRect();
+    const search = document.getElementById('map-search-input').getBoundingClientRect();
+    const inside = id => !!document.getElementById(id).closest('#map-overlay');
+    return {
+      screenH: window.innerHeight,
+      stageH: Math.round(stage.height),
+      /* 浮いた帯の「外側」は地図に触れる（器が pointer-events を食っていないこと）。
+         地図上のマーカー（アメダスのピン等）に当たることもあるので、
+         「#map の中かどうか」で見る。浮いた帯が食っていれば #map の外になる */
+      centre: inMap(Math.round(stage.left + stage.width / 2), Math.round(stage.top + stage.height / 2)),
+      besideFav: inMap(4, Math.round(fav.top + fav.height / 2)),
+      underSearch: inMap(Math.round(stage.left + stage.width / 2), Math.round(search.bottom + 60)),
+      // 当たった先の名前（落ちたときに何が食っているか分かるように）
+      centreHit: hit(Math.round(stage.left + stage.width / 2), Math.round(stage.top + stage.height / 2)),
+      besideFavHit: hit(4, Math.round(fav.top + fav.height / 2)),
+      // 浮いているもの自体はちゃんと押せる
+      closeHit: (() => { const t = document.elementFromPoint(close.left + close.width / 2, close.top + close.height / 2);
+                         return !!t && document.getElementById('btn-map-close').contains(t); })(),
+      searchHit: (() => { const t = document.elementFromPoint(search.left + search.width / 2, search.top + search.height / 2);
+                          return !!t && document.getElementById('map-search-input').contains(t); })(),
+      closeH: Math.round(close.height),
+      // 出典表記は利用条件。浮かせても見えていること
+      attrVisible: (() => { const a = document.getElementById('map-attribution').getBoundingClientRect();
+                            return a.width > 0 && a.height > 0 && a.bottom <= window.innerHeight + 1; })(),
+      // ★DOMの入れ子が壊れていないこと（他の画面が地図の中に入り込むと見えなくなる）
+      rankOutside: !inside('rank-overlay'),
+      favOverlayOutside: !inside('fav-overlay'),
+      // 標準の +/- は出さない（左上は閉じるボタンの場所）
+      zoomCtl: document.querySelectorAll('.leaflet-control-zoom').length,
+    };
+  });
+  ok(full.stageH === full.screenH, '★地図が画面いっぱいを使う（上下の帯を無くした）', full);
+  ok(full.centre && full.besideFav && full.underSearch,
+    '★浮かせた帯の外側は地図に触れる（器がタップを食わない）', full);
+  ok(full.closeHit && full.closeH >= 44, '閉じるボタンが押せる（44px以上）', full);
+  ok(full.searchHit, '検索欄が押せる', full.searchHit);
+  ok(full.attrVisible, '出典表記が見えている（利用条件）', full.attrVisible);
+  ok(full.rankOutside && full.favOverlayOutside,
+    '★他の画面が地図の入れ子に紛れ込んでいない', full);
+  ok(full.zoomCtl === 0, 'Leaflet標準の+/-は出さない（左上は閉じるボタン）', full.zoomCtl);
+
+  // 案内文は開いた直後だけ出て、しばらくすると消える（地図を隠し続けない）
+  const hintNow = await page.evaluate(() => document.getElementById('map-hint').classList.contains('hidden'));
+  await page.evaluate(() => { showMapHint(); });
+  const hintShown = await page.evaluate(() => document.getElementById('map-hint').classList.contains('hidden'));
+  await page.waitForTimeout(MAP_HINT_WAIT);
+  const hintGone = await page.evaluate(() => document.getElementById('map-hint').classList.contains('hidden'));
+  ok(!hintShown, '開いた直後は案内文が出る', { hintNow, hintShown });
+  ok(hintGone, '★案内文はしばらくすると消える（全画面を地図に譲る）', hintGone);
+
   ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
   ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
   ok(rotary.gpsBtn && rotary.gpsH >= 44, '地図に「現在地」ボタンがある（44px以上）', rotary);
