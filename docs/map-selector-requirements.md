@@ -695,15 +695,44 @@ const SPOT_FADE_PX  = ME_DOT_R * 2.6;  // 26px：白フチの1〜2倍ぶんで�
 ### 23.4 safe-area（ホーム画面から起動したとき）
 
 `apple-mobile-web-app-status-bar-style: black-translucent` を指定しているのに
-`viewport-fit=cover` と `env(safe-area-inset-*)` が無かった。全画面にするなら必須なので入れた。
+`viewport-fit=cover` と safe-area の逃げ幅が無かった。全画面にするなら必須なので入れた。
 
 - viewport meta に `viewport-fit=cover`
-- 地図の浮きもの … `top: calc(8px + env(safe-area-inset-top))` /
-  `padding-bottom: calc(6px + env(safe-area-inset-bottom))`
-- **本体の `#header` / `#footer` にも要る。** `viewport-fit=cover` はアプリ全体に効くので、
-  地図だけ直しても本体がノッチに潜る
+- 逃げ幅は **`:root` の `--sa-top` / `--sa-bottom`** に集約
+- 地図の浮きもの … `top: calc(8px + var(--sa-top))` /
+  `padding-bottom: calc(6px + var(--sa-bottom))`
 
-### 23.5 テスト
+⚠⚠**`viewport-fit=cover` はアプリ全体に効く。全画面のかぶせ画面すべてに逃げ幅が要る。**
+
+| 画面 | 上 | 下 |
+|---|---|---|
+| 本体 | `#header` | `#footer` |
+| 地図 | `#map-top` | `#map-bottom` |
+| ランキング | `#rank-header` | `#rank-list` / `#snow-list` |
+| お気に入り | `#fav-header` | `#fav-save-btn` |
+
+**v4.60.0 でランキングとお気に入りを入れ忘れた。** 「ランキング」の文字が時計に重なり、
+✕ がステータスバーに潜って**画面から戻れなくなった**（iOSはステータスバー領域の
+タップがページに届かない）。v4.60.1 で修正。
+
+**`env(safe-area-inset-*)` を直接書かないこと。** 変数を通さないと §23.6 の検査を
+すり抜ける。直書きが混ざっていないかもテストで見ている。
+
+### 23.6 safe-area のテスト
+
+`env()` は headless Chromium では常に 0 なので、そのままでは検査できない。
+だから逃げ幅を CSS 変数にしてある——**テストが `--sa-top` / `--sa-bottom` を
+差し替えて、全画面ぶんまとめて検査する**。
+
+各画面の「いちばん上にある押せるもの」（`btn-map` / `btn-map-close` /
+`btn-rank-close` / `btn-fav-close`）について、
+
+- `getBoundingClientRect().top >= --sa-top`（ノッチの下から始まっているか）
+- `elementFromPoint` で本当に押せるか
+
+の両方を見る。画面を1つ足したら、この配列にも足すこと。
+
+### 23.5 全画面化のテスト
 
 `smoke_mapui` に「地図が画面いっぱいか」「浮かせた帯の外側が地図に触れるか」
 「✕と検索が押せるか」「出典が見えているか」「案内文が消えるか」を足した。

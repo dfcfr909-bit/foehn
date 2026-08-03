@@ -649,6 +649,56 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(!hintShown, '開いた直後は案内文が出る', { hintNow, hintShown });
   ok(hintGone, '★案内文はしばらくすると消える（全画面を地図に譲る）', hintGone);
 
+  /* ================= 5d-2. safe-area（ノッチ／ホームインジケータ） =================
+     ⚠v4.60.0 で viewport-fit=cover を入れたのに、ランキングとお気に入りの
+     ヘッダーに逃げ幅を入れ忘れ、「ランキング」の文字が時計に重なり ✕ が押せなくなった。
+     env() は headless では 0 なので、**変数を差し替えて全画面ぶんまとめて検査する**。 */
+  const SA_TOP = 47, SA_BOT = 34;   // iPhoneのノッチ／ホームインジケータ相当
+  const safeArea = await page.evaluate(async ([top, bot]) => {
+    const root = document.documentElement;
+    root.style.setProperty('--sa-top', top + 'px');
+    root.style.setProperty('--sa-bottom', bot + 'px');
+    await new Promise(r => setTimeout(r, 120));
+    // 各画面の「いちばん上にある押せるもの」が、ノッチの下にあり実際に押せること
+    closeMap(); closeRank(); closeFav();          // まず全部たたんで本体から見る
+    await new Promise(r => setTimeout(r, 250));
+    const screens = [
+      { name: '本体', open: null, btn: 'btn-map' },
+      { name: '地図', open: 'openMap', btn: 'btn-map-close', close: 'closeMap' },
+      { name: 'ランキング', open: 'openRank', btn: 'btn-rank-close', close: 'closeRank' },
+      { name: 'お気に入り', open: 'openFav', btn: 'btn-fav-close', close: 'closeFav' },
+    ];
+    const out = [];
+    for (const sc of screens) {
+      if (sc.open) { window[sc.open](); await new Promise(r => setTimeout(r, 350)); }
+      const el = document.getElementById(sc.btn);
+      const r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      out.push({
+        name: sc.name,
+        top: Math.round(r.top),
+        clear: r.top >= top,                       // ノッチの下から始まっているか
+        hit: !!t && el.contains(t),                // 本当に押せるか
+      });
+      if (sc.close) { window[sc.close](); await new Promise(r => setTimeout(r, 250)); }
+    }
+    root.style.removeProperty('--sa-top');
+    root.style.removeProperty('--sa-bottom');
+    openMap();                                   // 後続の検査のため地図に戻す
+    await new Promise(r => setTimeout(r, 400));
+    return out;
+  }, [SA_TOP, SA_BOT]);
+  await page.waitForTimeout(500);
+  const sunk = safeArea.filter(x => !x.clear || !x.hit);
+  ok(sunk.length === 0,
+    '★どの画面も上端の操作がノッチに潜らず押せる（safe-area）', safeArea);
+  // 変数を通していない書き方が混ざっていないか（env()直書きは検査をすり抜ける）
+  const envDirect = await page.evaluate(() =>
+    [...document.querySelectorAll('style')].map(s => s.textContent).join('')
+      .match(/env\(safe-area-inset-[a-z]+\)(?!,)/g) || []);
+  ok(envDirect.length === 0,
+    'safe-area は --sa-top / --sa-bottom を通す（env()の直書きは検査をすり抜ける）', envDirect);
+
   ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
   ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
   ok(rotary.gpsBtn && rotary.gpsH >= 44, '地図に「現在地」ボタンがある（44px以上）', rotary);
