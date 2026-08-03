@@ -870,6 +870,24 @@ html, body {
   background: var(--gps-col); border: 2px solid var(--surface);
 }
 
+/* 雷。べた塗りの境目をぼかして「面」に見せる。
+   ⚠paneではなくレイヤーの入れ物に掛けること（paneに掛けると雨雲まで滲む） */
+.wx-glow { filter: blur(5px) saturate(1.35); }
+
+/* 雷マーク（縦Zの稲妻）。Windyのように「雷が鳴っている」と一目で分かるように */
+.thunder-pin { pointer-events: none; }
+.thunder-pin svg {
+  display: block;
+  width: 21px; height: 30px;
+  margin: -15px 0 0 -10.5px;    /* 稲妻の中心を観測位置に合わせる */
+  filter: drop-shadow(0 0 5px rgba(255,214,64,0.95))
+          drop-shadow(0 0 13px rgba(255,150,0,0.8));
+}
+.thunder-pin path {
+  fill: #ffe14d;
+  stroke: #6b3f00; stroke-width: 1.5; stroke-linejoin: round;
+}
+
 /* 現在地（追跡中）。選択地点のピンとは別物 */
 .me-dot {
   width: 16px; height: 16px; margin: -8px 0 0 -8px;
@@ -920,6 +938,12 @@ html, body {
   font-size: 20px; color: var(--text);
 }
 #layer-panel-body { overflow-y: auto; padding: 4px 12px 14px; }
+/* パネルを開いている間は地図の浮きボタンを引っ込める。
+   パネルの✕と現在地ボタンが重なって押し間違える（実機で指摘された）。
+   どのみちパネルが地図を覆っているので、この間は地図の操作をしない */
+#map-stage.panel-open #map-tools,
+#map-stage.panel-open #map-top { opacity: 0; pointer-events: none; }
+#map-tools, #map-top { transition: opacity .18s; }
 .layer-section-title {
   font-size: 11px; font-weight: 700; color: var(--text3);
   margin: 10px 2px 6px;
@@ -1643,7 +1667,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.60.1</span>
+    <span id="app-version">v4.61.0</span>
   </div>
 
   <!-- Footer -->
@@ -4362,8 +4386,9 @@ const MAP_WEATHER = [
   { id: 'thunder', name: '雷', kind: 'jmaNowcast', element: 'thns',
     timesFile: JMA_TIMES_THUNDER, opacity: 0.80,
     minNativeZoom: 4, maxNativeZoom: 8, attribution: '気象庁ナウキャスト',
-    note: '雷ナウキャスト（実況）。雷が無い時間はタイル自体が無いことがある',
-    mayBeEmpty: true, unverified: true },
+    note: '雷ナウキャスト（実況）。雷マークの位置で強さが分かる',
+    // 塗りの境目をぼかし、上に雷マークを重ねる（べた塗りだと何の色か分からない）
+    glow: true, bolts: true, mayBeEmpty: true },
   // アメダス。新雪ランキングで使っている取得口と同じ（snowRanking.js のヘルパを再利用）
   { id: 'amedas', name: 'アメダス', kind: 'amedas', opacity: 1,
     attribution: '気象庁アメダス', note: '実測値。地図を拡大すると表示' },
@@ -4546,7 +4571,12 @@ async function addTimedTileLayer(def, opacity, replace) {
         ? `この範囲に表示なし（z${badZ}のタイルが無い）`
         : `取得できません（z${badZ}のタイルが無い）`);
     });
-    layer.on('tileload', () => { loaded++; dropPrev(); setLayerStatus(def.id, ''); });
+    layer.on('tileload', () => {
+      loaded++; dropPrev(); setLayerStatus(def.id, '');
+      if (def.bolts) updateThunderIcons();       // タイルが増えたら雷マークを置き直す
+    });
+    // 雷はべた塗りで境目が固いので、レイヤーごとぼかす（paneに掛けると雨雲まで滲む）
+    if (def.glow && layer.getContainer()) layer.getContainer().classList.add('wx-glow');
     overlayTileLayers[def.id] = layer;
   } catch (e) {
     if (prev) { leafletMap.removeLayer(prev); delete overlayTileLayers[def.id]; }
@@ -4763,7 +4793,92 @@ function refreshWeatherPoints() {
   const bounds = leafletMap.getBounds();
   if (isOverlayOn('amedas')) drawAmedas(bounds, overlayOpacity('amedas'));
   if (isOverlayOn('windArrows')) drawWindArrows(bounds, overlayOpacity('windArrows'));
+  updateThunderIcons();
   weatherPointsDirty = false;
+}
+
+/* ------ 雷を「雷らしく」見せる（v4.61.0） ------
+   気象庁のタイルはべた塗りの多角形なので、色だけでは雷と分からない
+   （「パッと見分かりにくい」という指摘）。Windyのように**雷マークを重ねる**。
+
+   雷の位置はタイル画像そのものから読む。画面ぶんのcanvasに今出ているタイルを
+   並べ直し、格子に区切って「塗られている画素」が多いマスの重心にマークを置く。
+   ※タイルが別ドメインなのでcanvasが汚染されると読めない。その場合は
+     ぼかしだけ効いた状態になる（例外を握って静かに諦める）。 */
+const THUNDER_CELL_PX = 92;    // この間隔で1つ雷マークを置く（詰めすぎると壁紙に見える）
+const THUNDER_STEP_PX = 4;     // 画素はこの間隔で間引いて読む
+const THUNDER_MIN_HITS = 7;    // マス内にこれだけ塗りがあれば雷とみなす
+const THUNDER_MAX_ICONS = 26;  // 置きすぎると重いうえ読めない
+const THUNDER_BOLT = '<svg viewBox="0 0 24 34" aria-hidden="true">' +
+  '<path d="M14.6 1.5 4 19.5h6.6L9.2 32.5 20 14.5h-6.7z"/></svg>';
+
+let thunderMarkers = [];
+let thunderRaf = null;
+
+function clearThunderIcons() {
+  thunderMarkers.forEach(m => leafletMap.removeLayer(m));
+  thunderMarkers = [];
+}
+function updateThunderIcons() {
+  if (thunderRaf) return;      // 地図の移動中に何度も走らせない
+  thunderRaf = requestAnimationFrame(() => { thunderRaf = null; paintThunderIcons(); });
+}
+
+function paintThunderIcons() {
+  if (!leafletMap) return;
+  clearThunderIcons();
+  const layer = overlayTileLayers.thunder;
+  if (!layer || !isOverlayOn('thunder')) return;
+  const size = leafletMap.getSize();
+  if (size.x < 8 || size.y < 8) return;
+
+  const cv = document.createElement('canvas');
+  cv.width = size.x; cv.height = size.y;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const ts = layer.getTileSize();
+  let drew = 0;
+  for (const key of Object.keys(layer._tiles)) {
+    const t = layer._tiles[key];
+    if (!t || !t.loaded || !t.el || !t.el.complete || !t.el.naturalWidth) continue;
+    const c = layer._keyToTileCoords(key);
+    /* タイルの四隅を「そのタイルのズームの世界座標 → 緯度経度 → 画面座標」で出す。
+       拡大率やパンの途中でもずれないし、地図を回していても画面座標系は同じ */
+    const nw = leafletMap.latLngToContainerPoint(
+      leafletMap.unproject(L.point(c.x * ts.x, c.y * ts.y), c.z));
+    const se = leafletMap.latLngToContainerPoint(
+      leafletMap.unproject(L.point((c.x + 1) * ts.x, (c.y + 1) * ts.y), c.z));
+    try { ctx.drawImage(t.el, nw.x, nw.y, se.x - nw.x, se.y - nw.y); drew++; }
+    catch (e) { /* 読めないタイルは飛ばす */ }
+  }
+  if (!drew) return;
+
+  let data;
+  try { data = ctx.getImageData(0, 0, cv.width, cv.height).data; }
+  catch (e) { return; }        // CORSで読めない環境ではぼかしだけで我慢する
+
+  const cells = [];
+  for (let cy = 0; cy < cv.height; cy += THUNDER_CELL_PX) {
+    for (let cx = 0; cx < cv.width; cx += THUNDER_CELL_PX) {
+      const x1 = Math.min(cx + THUNDER_CELL_PX, cv.width);
+      const y1 = Math.min(cy + THUNDER_CELL_PX, cv.height);
+      let hits = 0, sx = 0, sy = 0;
+      for (let y = cy; y < y1; y += THUNDER_STEP_PX) {
+        for (let x = cx; x < x1; x += THUNDER_STEP_PX) {
+          if (data[(y * cv.width + x) * 4 + 3] > 40) { hits++; sx += x; sy += y; }
+        }
+      }
+      if (hits >= THUNDER_MIN_HITS) cells.push({ hits, x: sx / hits, y: sy / hits });
+    }
+  }
+  // 濃いところから順に、上限まで
+  cells.sort((a, b) => b.hits - a.hits);
+  cells.slice(0, THUNDER_MAX_ICONS).forEach(c => {
+    const ll = leafletMap.containerPointToLatLng(L.point(c.x, c.y));
+    thunderMarkers.push(L.marker(ll, {
+      pane: 'mapWeather', interactive: false,
+      icon: L.divIcon({ className: 'thunder-pin', html: THUNDER_BOLT, iconSize: null }),
+    }).addTo(leafletMap));
+  });
 }
 
 // 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
@@ -4929,10 +5044,18 @@ function isMapOpen() {
 function toggleLayerPanel() {
   const el = document.getElementById('layer-panel');
   if (el.classList.contains('open')) closeLayerPanel();
-  else { el.classList.add('open'); renderLayerPanel(); refreshTileCacheUsage(); }
+  else {
+    el.classList.add('open');
+    // 浮きボタンを引っ込める（パネルの✕と現在地ボタンが重なるため）
+    document.getElementById('map-stage').classList.add('panel-open');
+    renderLayerPanel();
+    refreshTileCacheUsage();
+  }
 }
 function closeLayerPanel() {
   document.getElementById('layer-panel').classList.remove('open');
+  const stage = document.getElementById('map-stage');
+  if (stage) stage.classList.remove('panel-open');
 }
 
 // アメダスで何を出すかの切り替え（気温／風／降水／積雪／湿度）

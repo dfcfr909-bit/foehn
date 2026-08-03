@@ -62,6 +62,30 @@ const DEM_PNG = solidPng(256, 256, ...DEM_RGB);
 const TILE_PNG = solidPng(8, 8, 200, 200, 200);
 // 雨雲のタイルは地図タイルと違う色にする（消えていないかを画素で見分けるため）
 const NOWCAST_PNG = solidPng(8, 8, 0, 80, 255);
+/* 雷タイルは RGBA で「左上1/4だけ塗り」にする。
+   雷マークは塗ってある所にだけ置かれる（＝画像を読んで位置を決めている）ことを見るため */
+function rgbaPng(w, h, fn) {
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const o = y * (w * 4 + 1);
+    for (let x = 0; x < w; x++) {
+      const p = fn(x, y);
+      raw[o + 1 + x * 4] = p[0]; raw[o + 2 + x * 4] = p[1];
+      raw[o + 3 + x * 4] = p[2]; raw[o + 4 + x * 4] = p[3];
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;   // RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+/* 塗るのはタイルの一部だけ（12/64＝面積の3.5%）。
+   広く塗ると「格子状に置いているだけ」の実装でも近くに塗りが見つかってしまい、
+   検査が意味を失う（実際にすり抜けた）。 */
+const THUNDER_PNG = rgbaPng(64, 64,
+  (x, y) => (x >= 10 && x < 22 && y >= 10 && y < 22) ? [255, 230, 0, 230] : [0, 0, 0, 0]);
 
 const AMEDAS_TABLE = {
   '55102': { kjName: '富山',   lat: [36, 42.0], lon: [137, 12.0], alt: 9 },
@@ -159,6 +183,12 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
           basetime: stamp, validtime: stamp,
           elements: [isN2 ? 'thns' : 'hrpns'],
         }]) });
+      }
+      // 雷は一部だけ塗ったタイル（雷マークの置き場所を画像から決めているのを見るため）
+      if (url.includes('/surf/thns/')) {
+        nowcastHits.push(url);
+        return route.fulfill({ contentType: 'image/png', body: THUNDER_PNG,
+          headers: { 'access-control-allow-origin': '*' } });
       }
       // 雨雲だけ色を変える（地図タイルと見分けて「消えていないか」を画素で見るため）
       if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: NOWCAST_PNG }); }
@@ -427,7 +457,71 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(thunder.url && /20260131123000/.test(thunder.url) && /surf\/thns/.test(thunder.url),
     '雷はN2の時刻でURLを組む', thunder.url);
   ok(thunder.maxNative === 8, '雷はズーム上限が低い（降水より粗いメッシュ）', thunder.maxNative);
+
+  /* ★雷を「雷らしく」見せる（v4.61.0）。べた塗りだと何の色か分からないという指摘。
+     マークはタイル画像を読んで塗ってある所にだけ置く。 */
+  await page.evaluate(() => leafletMap.setView([36.57, 137.65], 8));
+  await page.waitForTimeout(1800);
+  const bolts = await page.evaluate(() => {
+    const pins = [...document.querySelectorAll('.thunder-pin')];
+    const th = overlayTileLayers.thunder, rd = overlayTileLayers.radar;
+    // マークが塗ってある所（＝タイルの左上1/4）に乗っているか、画素を読んで確かめる
+    const cv = document.createElement('canvas');
+    const size = leafletMap.getSize();
+    cv.width = size.x; cv.height = size.y;
+    const ctx = cv.getContext('2d');
+    const ts = th.getTileSize();
+    for (const k of Object.keys(th._tiles)) {
+      const t = th._tiles[k];
+      if (!t || !t.loaded || !t.el || !t.el.naturalWidth) continue;
+      const c = th._keyToTileCoords(k);
+      const nw = leafletMap.latLngToContainerPoint(leafletMap.unproject(L.point(c.x * ts.x, c.y * ts.y), c.z));
+      const se = leafletMap.latLngToContainerPoint(leafletMap.unproject(L.point((c.x + 1) * ts.x, (c.y + 1) * ts.y), c.z));
+      ctx.drawImage(t.el, nw.x, nw.y, se.x - nw.x, se.y - nw.y);
+    }
+    let data = null;
+    try { data = ctx.getImageData(0, 0, cv.width, cv.height).data; } catch (e) { /* 読めない */ }
+    /* マークの近くに塗りがあるか。真上の1画素で見ると、2つの塗りにまたがるマスの
+       重心が「塗りの谷間」に落ちて誤検出するので、マス半分ぶんの範囲で探す。
+       画像を読まずに格子状に置いていれば、塗りの無い3/4側にも出るので落ちる。 */
+    const R = Math.round(THUNDER_CELL_PX / 2);
+    const onPaint = pins.map(p => {
+      const r = p.getBoundingClientRect();
+      const mr = leafletMap.getContainer().getBoundingClientRect();
+      const cxp = Math.round(r.left + r.width / 2 - mr.left);
+      const cyp = Math.round(r.top + r.height / 2 - mr.top);
+      if (!data) return null;
+      for (let y = Math.max(0, cyp - R); y < Math.min(cv.height, cyp + R); y += 3) {
+        for (let x = Math.max(0, cxp - R); x < Math.min(cv.width, cxp + R); x += 3) {
+          if (data[(y * cv.width + x) * 4 + 3] > 40) return true;
+        }
+      }
+      return false;
+    }).filter(v => v !== null);
+    return {
+      count: pins.length,
+      onPaint: onPaint.filter(Boolean).length,
+      checked: onPaint.length,
+      readable: !!data,
+      max: THUNDER_MAX_ICONS,
+      thunderGlow: !!th && th.getContainer().classList.contains('wx-glow'),
+      radarGlow: !!rd && rd.getContainer().classList.contains('wx-glow'),
+      glowFilter: (() => { const e = document.querySelector('.wx-glow'); return e ? getComputedStyle(e).filter : null; })(),
+    };
+  });
+  ok(bolts.readable, '雷タイルの画素が読める（CORSが通っている）', bolts.readable);
+  ok(bolts.count > 0 && bolts.count <= bolts.max, '★雷マークが置かれる（上限内）', bolts);
+  ok(bolts.checked > 0 && bolts.onPaint === bolts.checked,
+    '★雷マークは塗ってある所にだけ置く（画像を読んで位置を決めている）', bolts);
+  ok(bolts.count >= 4, '複数の雷域にマークが散る', bolts.count);
+  ok(bolts.thunderGlow && !bolts.radarGlow,
+    '★ぼかしは雷のレイヤーだけに掛ける（雨雲まで滲ませない）', bolts);
+  ok(/blur/.test(bolts.glowFilter || ''), '境目をぼかしている', bolts.glowFilter);
+
   await page.evaluate(() => toggleOverlay('thunder'));
+  await page.waitForTimeout(500);
+  const boltsOff = await page.evaluate(() => document.querySelectorAll('.thunder-pin').length);
+  ok(boltsOff === 0, '雷を消したら雷マークも消える', boltsOff);
   await page.waitForTimeout(200);
 
   /* 衛星の雲（ひまわり）。レーダーは降っている所しか映らないので、
