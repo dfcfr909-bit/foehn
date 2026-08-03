@@ -1665,7 +1665,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.62.0</span>
+    <span id="app-version">v4.63.0</span>
   </div>
 
   <!-- Footer -->
@@ -4291,9 +4291,11 @@ const MAP_OVERLAYS = [
      unverified にしてある。タイルが取れなければパネルに理由が出る。
      配信元を変えるときは url と attribution を差し替えるだけでよい。 */
   { id: 'csmap', name: 'CS立体図', url: 'https://map.ecoris.info/tiles/csmap/{z}/{x}/{y}.png',
-    minNativeZoom: 8, maxNativeZoom: 16, opacity: 0.75,
-    attribution: 'エコリス地図タイル（CS立体図）', unverified: true,
-    note: '曲率＋傾斜＋陰影の合成。谷筋・微地形が読みやすい' },
+    /* ズーム範囲も配信範囲も未確認。狭く決め打つとその範囲外で必ず404になるので
+       広めに取り、取れなかったズームをパネルに出して切り分ける */
+    minNativeZoom: 4, maxNativeZoom: 17, opacity: 0.75,
+    attribution: 'エコリス地図タイル（CS立体図）', unverified: true, mayBeEmpty: true,
+    note: '曲率＋傾斜＋陰影の合成。配信範囲が限られている可能性あり' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
     minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
@@ -4514,8 +4516,10 @@ function applyOverlays() {
     } else if (def.kind === 'amedas' || def.kind === 'windArrows') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
-      overlayTileLayers[def.id] = L.tileLayer(def.url,
+      const layer = L.tileLayer(def.url,
         tileOpts(def, { pane: 'mapOverlays', opacity: item.opacity })).addTo(leafletMap);
+      watchTileStatus(layer, def);     // 失敗を黙って空にしない
+      overlayTileLayers[def.id] = layer;
     }
   });
   refreshWeatherPoints();
@@ -4561,25 +4565,13 @@ async function addTimedTileLayer(def, opacity, replace) {
     if (!isOverlayOn(def.id)) return;                  // 待っている間に外されていたら何もしない
     const layer = L.tileLayer(timedTileUrl(def, t),
       tileOpts(def, { pane: 'mapNowcast', opacity })).addTo(leafletMap);
-    // URLの形が違えば1枚も出ない。黙って空になるとわからないのでパネルに出す。
-    // 失敗したタイルのズームも添える（ズーム上限が原因かの切り分けに要る）
-    let errors = 0, loaded = 0, badZ = null;
     const dropPrev = () => {
       if (!prev || prev === layer) return;
       leafletMap.removeLayer(prev);
     };
-    layer.on('tileerror', e => {
-      errors++;
-      if (e && e.coords) badZ = e.coords.z;
-      if (loaded > 0 || errors < 3) return;
-      dropPrev();                                      // 新しい方が出ないなら古い方も用済み
-      setLayerStatus(def.id, def.mayBeEmpty
-        ? `この範囲に表示なし（z${badZ}のタイルが無い）`
-        : `取得できません（z${badZ}のタイルが無い）`);
-    });
-    layer.on('tileload', () => {
-      loaded++; dropPrev(); setLayerStatus(def.id, '');
-      if (def.bolts) updateThunderIcons();       // タイルが増えたら雷マークを置き直す
+    watchTileStatus(layer, def, {
+      onFail: dropPrev,                          // 新しい方が出ないなら古い方も用済み
+      onLoad: () => { dropPrev(); if (def.bolts) updateThunderIcons(); },
     });
     // 雷はべた塗りで境目が固いので、レイヤーごとぼかす（paneに掛けると雨雲まで滲む）
     if (def.glow && layer.getContainer()) layer.getContainer().classList.add('wx-glow');
@@ -4615,6 +4607,30 @@ function refreshWeatherLayers() {
   });
   // アメダスは点で描くので、実測値そのものを取り直してから描き直す
   if (isOverlayOn('amedas')) { amedasData = null; refreshWeatherPoints(); }
+}
+
+/* タイルが1枚も取れないときにパネルへ理由を出す。
+   ⚠**時刻つきタイルだけでなく、ふつうのオーバーレイにも必ず付けること。**
+   付け忘れると失敗が黙って「空のレイヤー」になり、利用者からは
+   「表示されない」としか見えない（CS立体図で実際に踏んだ。v4.63.0で共通化）。
+   失敗したタイルのズームを添えるのは、配信範囲の問題かズーム範囲の問題かを
+   切り分けるため。 */
+function watchTileStatus(layer, def, hooks) {
+  let errors = 0, loaded = 0, badZ = null;
+  layer.on('tileerror', e => {
+    errors++;
+    if (e && e.coords) badZ = e.coords.z;
+    if (loaded > 0 || errors < 3) return;      // 一部だけ欠けるのは配信範囲の端なので黙る
+    if (hooks && hooks.onFail) hooks.onFail();
+    setLayerStatus(def.id, def.mayBeEmpty
+      ? `この範囲に表示なし（z${badZ}のタイルが無い）`
+      : `取得できません（z${badZ}のタイルが無い）`);
+  });
+  layer.on('tileload', () => {
+    loaded++;
+    setLayerStatus(def.id, '');
+    if (hooks && hooks.onLoad) hooks.onLoad();
+  });
 }
 
 // レイヤーごとの状態表示（取得できない等）

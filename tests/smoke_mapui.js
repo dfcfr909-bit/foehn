@@ -445,6 +445,22 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(csmap.unverified && csmap.badge, '★URL未確認なので「要確認」バッジを出す', csmap);
   ok(/エコリス/.test(csmap.attr), '出典に配信元が入る（地理院ではない）', csmap.attr);
 
+  /* ★ふつうのオーバーレイでも、タイルが取れなければ理由をパネルに出すこと。
+     時刻つきタイルにしか報告を付けていなかったため、CS立体図が失敗しても
+     黙って空になり「表示されない」としか分からなかった（v4.63.0で共通化）。 */
+  await page.route('**/map.ecoris.info/**', r => r.fulfill({ status: 404, body: '' }));
+  await page.evaluate(() => { toggleOverlay('csmap'); leafletMap.setView([36.57, 137.65], 11); });
+  await page.waitForTimeout(2200);
+  const csFail = await page.evaluate(() => {
+    const el = document.querySelector('.layer-status[data-id="csmap"]');
+    return el ? el.textContent : null;
+  });
+  ok(csFail && /タイルが無い/.test(csFail),
+    '★取れないオーバーレイは理由を出す（黙って空にしない）', csFail);
+  ok(csFail && /z\d+/.test(csFail), '失敗したズームを添える（切り分けに要る）', csFail);
+  await page.evaluate(() => toggleOverlay('csmap'));
+  await page.waitForTimeout(300);
+
   const wxDefs = await page.evaluate(() => MAP_WEATHER.map(w => ({ id: w.id, kind: w.kind })));
   ok(wxDefs.length === 5, '気象レイヤーは5種', wxDefs);
 
