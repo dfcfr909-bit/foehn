@@ -1665,7 +1665,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.63.0</span>
+    <span id="app-version">v4.63.1</span>
   </div>
 
   <!-- Footer -->
@@ -4290,9 +4290,13 @@ const MAP_OVERLAYS = [
      ⚠**地理院ではなく第三者の配信を見に行く。URLも利用条件も未確認**なので
      unverified にしてある。タイルが取れなければパネルに理由が出る。
      配信元を変えるときは url と attribution を差し替えるだけでよい。 */
+  /* CS立体図：**保留中**（v4.63.1でUIから隠した）。
+     実機（石川県・白山市 z10）で「この範囲に表示なし（z10のタイルが無い）」となり、
+     この配信は少なくとも石川県をカバーしていないことが分かった。
+     配信範囲の分かるURLが手に入ったら url を差し替えて pending を消せば戻る。
+     ズーム範囲・利用条件も未確認のままなので、戻すときに合わせて確認すること。 */
   { id: 'csmap', name: 'CS立体図', url: 'https://map.ecoris.info/tiles/csmap/{z}/{x}/{y}.png',
-    /* ズーム範囲も配信範囲も未確認。狭く決め打つとその範囲外で必ず404になるので
-       広めに取り、取れなかったズームをパネルに出して切り分ける */
+    pending: true,
     minNativeZoom: 4, maxNativeZoom: 17, opacity: 0.75,
     attribution: 'エコリス地図タイル（CS立体図）', unverified: true, mayBeEmpty: true,
     note: '曲率＋傾斜＋陰影の合成。配信範囲が限られている可能性あり' },

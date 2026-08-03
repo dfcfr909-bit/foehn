@@ -425,41 +425,49 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(stacked.saved.length === 3, '重ねた状態が保存される', stacked.saved);
 
   /* ================= 5c. 気象レイヤー ================= */
-  /* CS立体図（第三者配信・URL未確認）。要確認バッジ付きでUIに出ていること */
+  /* CS立体図は保留中（v4.63.1）。実機で石川県が配信範囲外だったのでUIから隠してある。
+     火山土地条件図と同じく、定義は残して pending でだけ止める。 */
   const csmap = await page.evaluate(() => {
     const def = MAP_OVERLAYS.find(o => o.id === 'csmap');
-    const shown = usableOverlays().some(o => o.id === 'csmap');
-    toggleOverlay('csmap');
-    const layer = overlayTileLayers.csmap;
-    const out = {
-      shown, unverified: !!(def && def.unverified),
-      url: layer ? layer._url : null,
-      attr: document.getElementById('map-attribution').textContent,
-      badge: /CS立体図[\s\S]{0,80}要確認/.test(document.getElementById('layer-overlays').innerHTML),
+    return {
+      defined: !!def,
+      pending: !!(def && def.pending),
+      shown: usableOverlays().some(o => o.id === 'csmap'),
+      inPanel: /CS立体図/.test(document.getElementById('layer-overlays').innerHTML),
+      // 保存済みの設定に残っていても復元しない
+      restored: (() => {
+        localStorage.setItem('sotoki.map.overlays', JSON.stringify([{ id: 'csmap', opacity: 0.7 }]));
+        const p = loadMapPrefs();
+        localStorage.removeItem('sotoki.map.overlays');
+        return p.overlays.some(o => o.id === 'csmap');
+      })(),
     };
-    toggleOverlay('csmap');
-    return out;
   });
-  ok(csmap.shown, 'CS立体図がレイヤー一覧に出る', csmap);
-  ok(csmap.url && /csmap/.test(csmap.url), 'CS立体図のタイルが載る', csmap.url);
-  ok(csmap.unverified && csmap.badge, '★URL未確認なので「要確認」バッジを出す', csmap);
-  ok(/エコリス/.test(csmap.attr), '出典に配信元が入る（地理院ではない）', csmap.attr);
+  ok(csmap.defined && csmap.pending, 'CS立体図は定義を残したまま保留（pending）', csmap);
+  ok(!csmap.shown && !csmap.inPanel, '保留中はレイヤー一覧に出さない', csmap);
+  ok(!csmap.restored, '保存済みに残っていても保留中のレイヤーは復元しない', csmap.restored);
 
   /* ★ふつうのオーバーレイでも、タイルが取れなければ理由をパネルに出すこと。
      時刻つきタイルにしか報告を付けていなかったため、CS立体図が失敗しても
      黙って空になり「表示されない」としか分からなかった（v4.63.0で共通化）。 */
-  await page.route('**/map.ecoris.info/**', r => r.fulfill({ status: 404, body: '' }));
-  await page.evaluate(() => { toggleOverlay('csmap'); leafletMap.setView([36.57, 137.65], 11); });
+  await page.route('**/xyz/relief/**', r => r.fulfill({ status: 404, body: '' }));
+  await page.evaluate(() => {
+    if (isOverlayOn('relief')) toggleOverlay('relief');   // 先の検査で入っている場合がある
+    toggleOverlay('relief');
+    leafletMap.setView([36.57, 137.65], 11);
+  });
   await page.waitForTimeout(2200);
-  const csFail = await page.evaluate(() => {
-    const el = document.querySelector('.layer-status[data-id="csmap"]');
+  const reliefFail = await page.evaluate(() => {
+    const el = document.querySelector('.layer-status[data-id="relief"]');
     return el ? el.textContent : null;
   });
-  ok(csFail && /タイルが無い/.test(csFail),
-    '★取れないオーバーレイは理由を出す（黙って空にしない）', csFail);
-  ok(csFail && /z\d+/.test(csFail), '失敗したズームを添える（切り分けに要る）', csFail);
-  await page.evaluate(() => toggleOverlay('csmap'));
-  await page.waitForTimeout(300);
+  ok(reliefFail && /タイルが無い/.test(reliefFail),
+    '★取れないオーバーレイは理由を出す（黙って空にしない）', reliefFail);
+  ok(reliefFail && /z\d+/.test(reliefFail), '失敗したズームを添える（切り分けに要る）', reliefFail);
+  // 後続の永続化の検査が relief を見るので、入れた状態に戻しておく
+  await page.unroute('**/xyz/relief/**');
+  await page.evaluate(() => { if (!isOverlayOn('relief')) toggleOverlay('relief'); });
+  await page.waitForTimeout(400);
 
   const wxDefs = await page.evaluate(() => MAP_WEATHER.map(w => ({ id: w.id, kind: w.kind })));
   ok(wxDefs.length === 5, '気象レイヤーは5種', wxDefs);
