@@ -874,19 +874,17 @@ html, body {
    ⚠paneではなくレイヤーの入れ物に掛けること（paneに掛けると雨雲まで滲む） */
 .wx-glow { filter: blur(5px) saturate(1.35); }
 
-/* 雷マーク（縦Zの稲妻）。Windyのように「雷が鳴っている」と一目で分かるように */
+/* 雷マーク（縦Zの稲妻）。Windy寄せで小さく・輪郭線なし・半透明・数多く。
+   縁取ると地図記号のように見えて、雷の"面"が読めなくなる */
 .thunder-pin { pointer-events: none; }
 .thunder-pin svg {
   display: block;
-  width: 21px; height: 30px;
-  margin: -15px 0 0 -10.5px;    /* 稲妻の中心を観測位置に合わせる */
-  filter: drop-shadow(0 0 5px rgba(255,214,64,0.95))
-          drop-shadow(0 0 13px rgba(255,150,0,0.8));
+  width: 12px; height: 17px;
+  margin: -8.5px 0 0 -6px;      /* 稲妻の中心を観測位置に合わせる */
+  opacity: 0.78;
+  filter: drop-shadow(0 0 3px rgba(120,60,0,0.55));   /* 明るい塗りの上でも沈まない程度に */
 }
-.thunder-pin path {
-  fill: #ffe14d;
-  stroke: #6b3f00; stroke-width: 1.5; stroke-linejoin: round;
-}
+.thunder-pin path { fill: #fffbe6; }
 
 /* 現在地（追跡中）。選択地点のピンとは別物 */
 .me-dot {
@@ -1667,7 +1665,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.61.0</span>
+    <span id="app-version">v4.62.0</span>
   </div>
 
   <!-- Footer -->
@@ -4288,6 +4286,14 @@ const MAP_OVERLAYS = [
     minNativeZoom: 2, maxNativeZoom: 16, opacity: 0.50, attribution: '国土地理院' },
   { id: 'relief',    name: '色別標高図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png',
     minNativeZoom: 5, maxNativeZoom: 15, opacity: 0.40, attribution: '国土地理院' },
+  /* CS立体図（曲率＋傾斜＋陰影の合成。長野県林業総合センター 戸田堅一郎氏の考案）。
+     ⚠**地理院ではなく第三者の配信を見に行く。URLも利用条件も未確認**なので
+     unverified にしてある。タイルが取れなければパネルに理由が出る。
+     配信元を変えるときは url と attribution を差し替えるだけでよい。 */
+  { id: 'csmap', name: 'CS立体図', url: 'https://map.ecoris.info/tiles/csmap/{z}/{x}/{y}.png',
+    minNativeZoom: 8, maxNativeZoom: 16, opacity: 0.75,
+    attribution: 'エコリス地図タイル（CS立体図）', unverified: true,
+    note: '曲率＋傾斜＋陰影の合成。谷筋・微地形が読みやすい' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
     minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
@@ -4805,10 +4811,12 @@ function refreshWeatherPoints() {
    並べ直し、格子に区切って「塗られている画素」が多いマスの重心にマークを置く。
    ※タイルが別ドメインなのでcanvasが汚染されると読めない。その場合は
      ぼかしだけ効いた状態になる（例外を握って静かに諦める）。 */
-const THUNDER_CELL_PX = 92;    // この間隔で1つ雷マークを置く（詰めすぎると壁紙に見える）
-const THUNDER_STEP_PX = 4;     // 画素はこの間隔で間引いて読む
-const THUNDER_MIN_HITS = 7;    // マス内にこれだけ塗りがあれば雷とみなす
-const THUNDER_MAX_ICONS = 26;  // 置きすぎると重いうえ読めない
+/* 密度と大きさはWindy寄せ（小さく・輪郭線なし・薄く・数多く）。
+   大きく描いて縁取ると「地図記号」に見えてしまい、雷の"面"が読めない。 */
+const THUNDER_CELL_PX = 46;    // この間隔で1つ雷マークを置く
+const THUNDER_STEP_PX = 3;     // 画素はこの間隔で間引いて読む
+const THUNDER_MIN_HITS = 5;    // マス内にこれだけ塗りがあれば雷とみなす
+const THUNDER_MAX_ICONS = 90;  // 置きすぎると重いうえ読めない
 const THUNDER_BOLT = '<svg viewBox="0 0 24 34" aria-hidden="true">' +
   '<path d="M14.6 1.5 4 19.5h6.6L9.2 32.5 20 14.5h-6.7z"/></svg>';
 

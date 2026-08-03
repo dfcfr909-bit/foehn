@@ -163,6 +163,7 @@ async function ask(sw, type) {
     const isTile = u => sw.ctx.isTileRequest(new URL(u));
     const K = sw.get;
     ok(isTile('https://cyberjapandata.gsi.go.jp/xyz/pale/14/1/1.png'), '地理院タイルは対象');
+    ok(isTile('https://map.ecoris.info/tiles/csmap/14/1/1.png'), 'CS立体図も対象（地形なので変わらない）');
     ok(isTile('https://tile.openstreetmap.org/14/1/1.png'), 'OSMタイルは対象');
     ok(isTile('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/14/1/1'), 'Esriタイルは対象');
     ok(!isTile('https://api.open-meteo.com/v1/forecast?x=1'), '気象APIは対象外');

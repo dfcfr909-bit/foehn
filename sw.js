@@ -73,6 +73,7 @@ const TILE_HOSTS = [
   'cyberjapandata.gsi.go.jp',
   'tile.openstreetmap.org',
   'server.arcgisonline.com',
+  'map.ecoris.info',           // CS立体図
 ];
 function isTileRequest(url) {
   return TILE_HOSTS.includes(url.hostname);

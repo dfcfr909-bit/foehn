@@ -425,6 +425,26 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(stacked.saved.length === 3, '重ねた状態が保存される', stacked.saved);
 
   /* ================= 5c. 気象レイヤー ================= */
+  /* CS立体図（第三者配信・URL未確認）。要確認バッジ付きでUIに出ていること */
+  const csmap = await page.evaluate(() => {
+    const def = MAP_OVERLAYS.find(o => o.id === 'csmap');
+    const shown = usableOverlays().some(o => o.id === 'csmap');
+    toggleOverlay('csmap');
+    const layer = overlayTileLayers.csmap;
+    const out = {
+      shown, unverified: !!(def && def.unverified),
+      url: layer ? layer._url : null,
+      attr: document.getElementById('map-attribution').textContent,
+      badge: /CS立体図[\s\S]{0,80}要確認/.test(document.getElementById('layer-overlays').innerHTML),
+    };
+    toggleOverlay('csmap');
+    return out;
+  });
+  ok(csmap.shown, 'CS立体図がレイヤー一覧に出る', csmap);
+  ok(csmap.url && /csmap/.test(csmap.url), 'CS立体図のタイルが載る', csmap.url);
+  ok(csmap.unverified && csmap.badge, '★URL未確認なので「要確認」バッジを出す', csmap);
+  ok(/エコリス/.test(csmap.attr), '出典に配信元が入る（地理院ではない）', csmap.attr);
+
   const wxDefs = await page.evaluate(() => MAP_WEATHER.map(w => ({ id: w.id, kind: w.kind })));
   ok(wxDefs.length === 5, '気象レイヤーは5種', wxDefs);
 

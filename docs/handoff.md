@@ -4,7 +4,7 @@
 
 ## 現状
 
-- **バージョン**: v4.61.0
+- **バージョン**: v4.62.0
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/sotoki-development-bpquml`
@@ -22,6 +22,7 @@
 | **JMA bosai のCORS** | 新雪ランキングはアメダスをブラウザから直に叩く前提。**実機で通るか未確認**。通らなければ `worker/` かNetlify Functionsにプロキシを足す |
 | ~~円柱ピッカーの感触~~ | v4.30.0で追加、**実機で確認済み（手応えOK）**。v4.32.0でヘッダーへ移動し `FAV_R`=82 / `FAV_ANGLE`=52 に調整済み |
 | **スクラバー帯のなぞり心地** | v4.30.0。1時間の幅はチャートと共通（`pxPerHourVal`）なので、密度を変えるには `HOURS_PER_SCREEN` を変える（チャートの表示時間数も一緒に変わる点に注意） |
+| **CS立体図のURLと利用条件** | v4.62.0で追加。`https://map.ecoris.info/tiles/csmap/{z}/{x}/{y}.png` は**地理院ではなく第三者の配信**で、URLも利用条件も**未確認**（`unverified`）。出なければパネルに理由が出る。配信元を変えるときは `MAP_OVERLAYS` の `url` と `attribution` を差し替えるだけ |
 | **地図レイヤーの実機確認** | 開発環境から地理院・OSM・Esriに到達できないため、タイルが実際に出るか未確認。特に**火山土地条件図はレイヤーIDが不明**で `pending` にしてUIから隠してある。過去空中写真のカバー範囲・Esriの正式attribution・iOSのストレージ実測も未確認。一覧は `docs/map-selector-requirements.md` §14 |
 | ~~雷レイヤー~~ | **実機で表示確認済み（v4.61.0）**。N2の時刻表＋ズーム上限8で正しかった。雷マークとぼかしも追加済み |
 | **衛星の雲（ひまわり）のURL** | v4.55.0で追加。`.../himawari/data/satimg/{basetime}/jp/{validtime}/{band}/{prod}/{z}/{x}/{y}.jpg` の形は**実機未確認**（`unverified`）。出なければパネルに「取得できません（zNのタイルが無い）」が出るので、その数字で切り分ける |
@@ -334,8 +335,10 @@
   色だけでは雷と分からない（「パッと見分かりにくい」との指摘）。Windyのように
   縦Zの稲妻を散らし、レイヤーごと `blur` でぼかして面に見せる
 - 雷マークの位置は**タイル画像そのものから読む**。画面ぶんのcanvasに今出ているタイルを
-  並べ直し、`THUNDER_CELL_PX`(92px) の格子に区切って、塗られた画素が
-  `THUNDER_MIN_HITS`(7) 以上あるマスの重心に置く（上限 `THUNDER_MAX_ICONS`=26）
+  並べ直し、`THUNDER_CELL_PX`(46px) の格子に区切って、塗られた画素が
+  `THUNDER_MIN_HITS`(5) 以上あるマスの重心に置く（上限 `THUNDER_MAX_ICONS`=90）
+- 見た目は**Windy寄せ**（v4.62.0で調整）。**小さく・輪郭線なし・半透明（0.78）・数多く**。
+  大きく描いて縁取ると「地図記号」に見えてしまい、雷の"面"が読めない
 - ⚠**ぼかしは pane ではなくレイヤーの入れ物（`.leaflet-layer`）に掛ける。**
   paneに掛けると同居している雨雲・衛星まで滲む
 - ⚠**タイルは別ドメインなのでcanvasが汚染されると読めない。** 例外を握って
