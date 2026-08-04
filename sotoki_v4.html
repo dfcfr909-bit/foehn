@@ -1665,7 +1665,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.63.1</span>
+    <span id="app-version">v4.64.0</span>
   </div>
 
   <!-- Footer -->
@@ -4510,6 +4510,7 @@ function applyOverlays() {
     (Array.isArray(l) ? l : [l]).forEach(x => leafletMap.removeLayer(x));
     delete overlayTileLayers[id];
   });
+  dropAllStaleWxLayers();          // 貼り替え待ちの置き去りも一緒に掃除する
   mapPrefs.overlays.forEach(item => {
     const def = findOverlay(item.id);
     if (!def || def.pending) return;
@@ -4562,26 +4563,47 @@ function timedTileUrl(def, t) {
 /* 時刻つきタイルを載せる。
    replace=true（自動更新・バンド切替）のときは、新しいタイルが1枚出るまで
    古いレイヤーを残す。先に消すと更新のたびに一瞬まっさらになるため。 */
+/* 貼り替え待ちの古いレイヤー。
+   ⚠**必ず外れる道を用意しておくこと。** 「新しいタイルが1枚出たら外す」だけだと、
+   新しい方が読み込まれも失敗もしない（表示範囲外・ズーム範囲外など）とき古い方が
+   地図に残り続け、5分ごとの自動更新のたびに積み上がる。
+   iOSはWebプロセスのメモリ上限が厳しく、放置するとページごと落ちる。 */
+const staleWxLayers = new Set();
+const WX_DROP_MS = 8000;          // 何があってもこの時間で古い方は外す
+
+function dropStaleWxLayer(layer) {
+  if (!layer || !staleWxLayers.has(layer)) return;
+  staleWxLayers.delete(layer);
+  if (leafletMap) leafletMap.removeLayer(layer);
+}
+function dropAllStaleWxLayers() {
+  staleWxLayers.forEach(l => { if (leafletMap) leafletMap.removeLayer(l); });
+  staleWxLayers.clear();
+}
+
 async function addTimedTileLayer(def, opacity, replace) {
-  const prev = replace ? overlayTileLayers[def.id] : null;
   try {
     const t = await jmaTimes(def.timesFile);
     if (!isOverlayOn(def.id)) return;                  // 待っている間に外されていたら何もしない
+    /* ⚠**いま載っているレイヤーは「待ったあと」に取ること。**
+       待つ前に取ると、更新が重なったとき2つの呼び出しが同じ古いレイヤーを掴み、
+       途中で作られたレイヤーが誰からも参照されないまま地図に残る。 */
+    const prev = replace ? overlayTileLayers[def.id] : null;
     const layer = L.tileLayer(timedTileUrl(def, t),
       tileOpts(def, { pane: 'mapNowcast', opacity })).addTo(leafletMap);
-    const dropPrev = () => {
-      if (!prev || prev === layer) return;
-      leafletMap.removeLayer(prev);
-    };
+    if (prev && prev !== layer) staleWxLayers.add(prev);
+    const dropPrev = () => dropStaleWxLayer(prev);
     watchTileStatus(layer, def, {
       onFail: dropPrev,                          // 新しい方が出ないなら古い方も用済み
       onLoad: () => { dropPrev(); if (def.bolts) updateThunderIcons(); },
     });
+    setTimeout(dropPrev, WX_DROP_MS);            // 読み込みも失敗もしない場合の逃げ道
     // 雷はべた塗りで境目が固いので、レイヤーごとぼかす（paneに掛けると雨雲まで滲む）
     if (def.glow && layer.getContainer()) layer.getContainer().classList.add('wx-glow');
     overlayTileLayers[def.id] = layer;
   } catch (e) {
-    if (prev) { leafletMap.removeLayer(prev); delete overlayTileLayers[def.id]; }
+    const cur = replace ? overlayTileLayers[def.id] : null;
+    if (cur) { leafletMap.removeLayer(cur); staleWxLayers.delete(cur); delete overlayTileLayers[def.id]; }
     setLayerStatus(def.id, `取得できません（${e.message}）`);
   }
 }
@@ -4601,6 +4623,7 @@ function stopWxRefresh() {
 }
 function refreshWeatherLayers() {
   if (!leafletMap || !isMapOpen()) return;
+  if (document.hidden) return;     // 裏に回っている間は貼り直さない
   clearWxTimes();
   mapPrefs.overlays.forEach(item => {
     const def = findOverlay(item.id);
@@ -4834,35 +4857,58 @@ function refreshWeatherPoints() {
 /* 密度と大きさはWindy寄せ（小さく・輪郭線なし・薄く・数多く）。
    大きく描いて縁取ると「地図記号」に見えてしまい、雷の"面"が読めない。 */
 const THUNDER_CELL_PX = 46;    // この間隔で1つ雷マークを置く
-const THUNDER_STEP_PX = 3;     // 画素はこの間隔で間引いて読む
 const THUNDER_MIN_HITS = 5;    // マス内にこれだけ塗りがあれば雷とみなす
-const THUNDER_MAX_ICONS = 90;  // 置きすぎると重いうえ読めない
+const THUNDER_MAX_ICONS = 64;  // 置きすぎると重いうえ読めない
+/* ⚠**走査用のcanvasは使い回し、画面の半分の解像度で持つこと。**
+   タイルが1枚読めるたびに画面サイズのcanvasを作って getImageData すると、
+   1回あたり数MBの捨てゴミが毎フレーム出る。iOSはWebプロセスのメモリ上限が
+   厳しく、地図を動かし続けるとページごと落ちる（実機で「問題が繰り返し
+   起きました」＝Webプロセスのクラッシュを踏んだ）。
+   46pxのマスに区切るだけなので、半分の解像度で精度は十分。 */
+const THUNDER_SCAN_SCALE = 0.5;
+let thunderScanCv = null;
+
+// canvasの裏地は明示的に手放す（0×0にすると確保が解放される）
+function releaseThunderScan() {
+  if (!thunderScanCv) return;
+  thunderScanCv.width = thunderScanCv.height = 0;
+  thunderScanCv = null;
+}
 const THUNDER_BOLT = '<svg viewBox="0 0 24 34" aria-hidden="true">' +
   '<path d="M14.6 1.5 4 19.5h6.6L9.2 32.5 20 14.5h-6.7z"/></svg>';
 
 let thunderMarkers = [];
-let thunderRaf = null;
+let thunderTimer = null;
 
 function clearThunderIcons() {
   thunderMarkers.forEach(m => leafletMap.removeLayer(m));
   thunderMarkers = [];
 }
+/* ⚠**rAFではなく時間で間引くこと。** tileload はタイルの枚数だけ飛んでくるので、
+   rAFだと実質毎フレーム走って走査が止まらない。250msに1回で十分。 */
+const THUNDER_DEBOUNCE_MS = 250;
 function updateThunderIcons() {
-  if (thunderRaf) return;      // 地図の移動中に何度も走らせない
-  thunderRaf = requestAnimationFrame(() => { thunderRaf = null; paintThunderIcons(); });
+  if (thunderTimer) return;
+  thunderTimer = setTimeout(() => { thunderTimer = null; paintThunderIcons(); }, THUNDER_DEBOUNCE_MS);
 }
 
 function paintThunderIcons() {
   if (!leafletMap) return;
   clearThunderIcons();
   const layer = overlayTileLayers.thunder;
-  if (!layer || !isOverlayOn('thunder')) return;
+  if (!layer || !isOverlayOn('thunder')) { releaseThunderScan(); return; }
   const size = leafletMap.getSize();
   if (size.x < 8 || size.y < 8) return;
 
-  const cv = document.createElement('canvas');
-  cv.width = size.x; cv.height = size.y;
+  // 走査用canvasは使い回す（毎回作ると数MBの捨てゴミが積み上がる）
+  const k = THUNDER_SCAN_SCALE;
+  const w = Math.max(1, Math.round(size.x * k)), h = Math.max(1, Math.round(size.y * k));
+  if (!thunderScanCv) thunderScanCv = document.createElement('canvas');
+  const cv = thunderScanCv;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.clearRect(0, 0, w, h);
+  const cell = Math.max(4, Math.round(THUNDER_CELL_PX * k));
   const ts = layer.getTileSize();
   let drew = 0;
   for (const key of Object.keys(layer._tiles)) {
@@ -4875,27 +4921,26 @@ function paintThunderIcons() {
       leafletMap.unproject(L.point(c.x * ts.x, c.y * ts.y), c.z));
     const se = leafletMap.latLngToContainerPoint(
       leafletMap.unproject(L.point((c.x + 1) * ts.x, (c.y + 1) * ts.y), c.z));
-    try { ctx.drawImage(t.el, nw.x, nw.y, se.x - nw.x, se.y - nw.y); drew++; }
+    try { ctx.drawImage(t.el, nw.x * k, nw.y * k, (se.x - nw.x) * k, (se.y - nw.y) * k); drew++; }
     catch (e) { /* 読めないタイルは飛ばす */ }
   }
   if (!drew) return;
 
   let data;
-  try { data = ctx.getImageData(0, 0, cv.width, cv.height).data; }
+  try { data = ctx.getImageData(0, 0, w, h).data; }
   catch (e) { return; }        // CORSで読めない環境ではぼかしだけで我慢する
 
   const cells = [];
-  for (let cy = 0; cy < cv.height; cy += THUNDER_CELL_PX) {
-    for (let cx = 0; cx < cv.width; cx += THUNDER_CELL_PX) {
-      const x1 = Math.min(cx + THUNDER_CELL_PX, cv.width);
-      const y1 = Math.min(cy + THUNDER_CELL_PX, cv.height);
+  for (let cy = 0; cy < h; cy += cell) {
+    for (let cx = 0; cx < w; cx += cell) {
+      const x1 = Math.min(cx + cell, w), y1 = Math.min(cy + cell, h);
       let hits = 0, sx = 0, sy = 0;
-      for (let y = cy; y < y1; y += THUNDER_STEP_PX) {
-        for (let x = cx; x < x1; x += THUNDER_STEP_PX) {
-          if (data[(y * cv.width + x) * 4 + 3] > 40) { hits++; sx += x; sy += y; }
+      for (let y = cy; y < y1; y += 2) {
+        for (let x = cx; x < x1; x += 2) {
+          if (data[(y * w + x) * 4 + 3] > 40) { hits++; sx += x; sy += y; }
         }
       }
-      if (hits >= THUNDER_MIN_HITS) cells.push({ hits, x: sx / hits, y: sy / hits });
+      if (hits >= THUNDER_MIN_HITS) cells.push({ hits, x: sx / hits / k, y: sy / hits / k });
     }
   }
   // 濃いところから順に、上限まで
@@ -5061,6 +5106,8 @@ function closeMap() {
   restoreFavRotary();
   cancelPinHold();                          // 押しっぱなしのまま閉じても後からピンが立たないように
   stopWxRefresh();                          // 見ていない間は取りに行かない（通信量のため）
+  dropAllStaleWxLayers();                   // 貼り替え待ちの置き去りを残さない
+  releaseThunderScan();                     // 走査用canvasの裏地を手放す
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
 }
 function isMapOpen() {

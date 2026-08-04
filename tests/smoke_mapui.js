@@ -618,6 +618,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(/20260131124000/.test(afterRefresh.sat), '衛星も新しいbasetimeで貼り直す', afterRefresh.sat);
   ok(afterRefresh.layers === 2, '古いレイヤーは残さない（重ならない）', afterRefresh.layers);
 
+
+
   // 閉じたらタイマーを止める（見ていない間は通信しない）
   await page.evaluate(() => closeMap());
   await page.waitForTimeout(200);
@@ -1214,6 +1216,33 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(spotOff.mask === '', '追跡を止めたらマスクも外れる', spotOff.mask);
   ok(spotOff.hostW === '' && spotOff.tileLeft === '',
     '入れ物のずらしも元に戻す（掛けっぱなしにしない）', spotOff);
+
+  /* ★自動更新でレイヤーが積み上がらないこと。
+     「新しいタイルが1枚出たら古いのを外す」だけだと、新しい方が読み込まれも
+     失敗もしない状況で古い方が地図に残り続け、5分ごとに積み上がる。
+     iOSはメモリ上限が厳しく、放置するとページごと落ちる（実機で踏んだ）。
+     ここではタイルを永久に返さない状態にして、それでも外れることを見る。 */
+  // ⚠タイル画像だけ止めること。jmatile 全体を止めると targetTimes まで止まり、
+  //   レイヤーが1枚も作られず検査が空振りする（実際に空振りした）。
+  await page.route('**/surf/hrpns/**', route => new Promise(() => {}));   // 応答しない
+  await page.evaluate(() => { refreshWeatherLayers(); refreshWeatherLayers(); });
+  await page.waitForTimeout(1200);
+  const piled = await page.evaluate(() => {
+    let n = 0; leafletMap.eachLayer(l => { if (l._url && /jmatile/.test(l._url)) n++; });
+    return { layers: n, stale: staleWxLayers.size, dropMs: WX_DROP_MS };
+  });
+  await page.waitForTimeout(piled.dropMs + 800);
+  const afterDrop = await page.evaluate(() => {
+    let n = 0; leafletMap.eachLayer(l => { if (l._url && /jmatile/.test(l._url)) n++; });
+    return { layers: n, stale: staleWxLayers.size };
+  });
+  ok(afterDrop.layers <= 2 && afterDrop.stale === 0,
+    '★タイルが返ってこなくても古いレイヤーは必ず外れる（積み上がらない）',
+    { 貼り替え直後: piled, 待ったあと: afterDrop });
+  await page.unroute('**/surf/hrpns/**');
+  // 応答しなかったリクエストが残るので、積み直して綺麗な状態に戻す
+  await page.evaluate(() => applyOverlays());
+  await page.waitForTimeout(1500);
 
   /* ================= 6. 永続化と復元 ================= */
   const saved = await page.evaluate(() => ({
