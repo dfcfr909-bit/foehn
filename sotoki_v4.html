@@ -1681,7 +1681,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.67.0</span>
+    <span id="app-version">v4.68.0</span>
   </div>
 
   <!-- Footer -->
@@ -4571,12 +4571,14 @@ const MAP_WEATHER = [
     timesFile: JMA_TIMES_PRECIP, opacity: 0.65,
     minNativeZoom: 4, maxNativeZoom: 10, attribution: '気象庁ナウキャスト',
     note: '高解像度降水ナウキャスト（実況）。5分ごとに自動更新' },
-  /* 衛星の雲。レーダーに映らない「降っていない雲」を見るため。
-     URLの形は実機で未確認なので unverified（取れなければパネルに理由が出る）。 */
+  /* 衛星の雲。レーダーに映らない「降っていない雲」を見るため。実機で表示確認済み。
+     ⚠**ひまわりのタイルはJPEGで、透明部分が無い。** そのまま濃くすると雲の無い所まで
+     真っ黒に塗り潰れて地図が消える（実機で踏んだ）。そこで blend: 'screen' を付け、
+     暗い所ほど下の地図が透ける合成にしてある（詳細は wxPaneFor）。 */
   { id: 'satellite', name: '衛星の雲', kind: 'jmaSat',
-    timesFile: JMA_TIMES_SAT, opacity: 0.55,
+    timesFile: JMA_TIMES_SAT, opacity: 0.55, blend: 'screen',
     minNativeZoom: 3, maxNativeZoom: 6, attribution: '気象庁 ひまわり',
-    note: 'ひまわりの雲画像。10分ごとに自動更新', unverified: true },
+    note: 'ひまわりの雲画像。暗い所ほど地図が透ける。10分ごとに自動更新' },
   /* 雷。N1では出ずN2に変えたが、実機ではまだタイルが404だった（時刻表は取れている）。
      雷ナウキャストは降水より粗いメッシュでズーム上限が低いと見て 10→8 に下げてある。
      加えて、雷が観測されていない時間帯はタイル自体が無い可能性がある。 */
@@ -4771,6 +4773,20 @@ function dropAllStaleWxLayers() {
   staleWxLayers.clear();
 }
 
+/* 気象タイルを載せるpaneを選ぶ。
+   ⚠**合成モードは「タイルのdiv」ではなくpaneに掛けること。** mix-blend-mode は
+   いちばん近い祖先のスタッキングコンテキストの中でしか下と混ざらない。
+   マスク用の入れ物（z-indexつき）がその境になるので、その内側に掛けても
+   ベースマップとは混ざらず、黒いままになる。
+   そのため合成するレイヤーは専用のpane（mapSat）に分けてある。 */
+function wxPaneFor(def) { return def.blend ? 'mapSat' : 'mapNowcast'; }
+// 合成モードはマスク用の入れ物（z-indexを持つ外側）に掛ける。内側だと下と混ざらない
+function applyWxBlend(def) {
+  if (!def.blend || !leafletMap) return;
+  const host = leafletMap.getPane('mapSatMask');
+  if (host) host.style.mixBlendMode = def.blend;
+}
+
 async function addTimedTileLayer(def, opacity, replace) {
   try {
     const t = await jmaTimes(def.timesFile);
@@ -4780,7 +4796,7 @@ async function addTimedTileLayer(def, opacity, replace) {
        途中で作られたレイヤーが誰からも参照されないまま地図に残る。 */
     const prev = replace ? overlayTileLayers[def.id] : null;
     const layer = L.tileLayer(timedTileUrl(def, t),
-      tileOpts(def, { pane: 'mapNowcast', opacity })).addTo(leafletMap);
+      tileOpts(def, { pane: wxPaneFor(def), opacity })).addTo(leafletMap);
     if (prev && prev !== layer) staleWxLayers.add(prev);
     const dropPrev = () => dropStaleWxLayer(prev);
     watchTileStatus(layer, def, {
@@ -4790,6 +4806,7 @@ async function addTimedTileLayer(def, opacity, replace) {
     setTimeout(dropPrev, WX_DROP_MS);            // 読み込みも失敗もしない場合の逃げ道
     // 雷はべた塗りで境目が固いので、レイヤーごとぼかす（paneに掛けると雨雲まで滲む）
     if (def.glow && layer.getContainer()) layer.getContainer().classList.add('wx-glow');
+    applyWxBlend(def);                           // 衛星の雲は暗い所を透かす合成にする
     overlayTileLayers[def.id] = layer;
   } catch (e) {
     const cur = replace ? overlayTileLayers[def.id] : null;
@@ -5432,6 +5449,11 @@ function openMap() {
          paneに直接掛けると画面ぶんの塗り領域が無く**レイヤーが丸ごと消える**
          （追跡をonにすると雨雲が全部消える不具合を出した。v4.57.0で修正）。
          そのためマスク用の入れ物を1枚挟み、そちらに画面ぶんの寸法を持たせる。 */
+      /* 衛星の雲だけは合成モードを掛けるので別の組にする（雨雲まで一緒に薄まらないように）。
+         雨雲・雷より下（375 < 380）に置いて、レーダーが雲の上に来るようにする。 */
+      const satMask = leafletMap.createPane('mapSatMask');
+      satMask.style.zIndex = 375;
+      leafletMap.createPane('mapSat', satMask);
       leafletMap.createPane('mapNowcastMask').style.zIndex = 380;
       leafletMap.createPane('mapNowcast', leafletMap.getPane('mapNowcastMask'));
       leafletMap.createPane('mapWeather').style.zIndex = 400;   // アメダス・風・現在地
@@ -5910,10 +5932,15 @@ function updateMeSpotlight() {
   if (spotRaf) return;
   spotRaf = requestAnimationFrame(() => { spotRaf = null; paintMeSpotlight(); });
 }
+// マスクを掛ける組（外＝実寸の箱／内＝タイルの入る所）。雨雲・雷と衛星で1組ずつ
+const SPOT_PANES = [['mapNowcastMask', 'mapNowcast'], ['mapSatMask', 'mapSat']];
 function paintMeSpotlight() {
   if (!leafletMap) return;
-  const host = leafletMap.getPane('mapNowcastMask');   // マスクを掛ける実寸のある箱
-  const tiles = leafletMap.getPane('mapNowcast');      // 雨雲・衛星のタイルはこの中
+  for (const [hostName, tilesName] of SPOT_PANES) {
+    paintSpotlightPane(leafletMap.getPane(hostName), leafletMap.getPane(tilesName));
+  }
+}
+function paintSpotlightPane(host, tiles) {
   if (!host || !tiles) return;
   if (!myPos) {
     host.style.webkitMaskImage = host.style.maskImage = '';

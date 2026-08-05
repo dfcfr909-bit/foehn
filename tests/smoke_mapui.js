@@ -60,6 +60,7 @@ const DEM_RGB = [2, 208, 247];
 const DEM_EXPECTED_M = 1845.67;
 const DEM_PNG = solidPng(256, 256, ...DEM_RGB);
 const TILE_PNG = solidPng(8, 8, 200, 200, 200);
+const BLACK_PNG = solidPng(8, 8, 0, 0, 0);
 // 雨雲のタイルは地図タイルと違う色にする（消えていないかを画素で見分けるため）
 const NOWCAST_PNG = solidPng(8, 8, 0, 80, 255);
 /* 雷タイルは RGBA で「左上1/4だけ塗り」にする。
@@ -192,7 +193,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       }
       // 雨雲だけ色を変える（地図タイルと見分けて「消えていないか」を画素で見るため）
       if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: NOWCAST_PNG }); }
-      if (url.includes('/himawari/')) { satHits.push(url); return route.fulfill({ contentType: 'image/jpeg', body: TILE_PNG }); }
+      // 衛星は**真っ黒なタイル**を返す（ひまわりのJPEGは透明部分が無く、実機で全面真っ黒になった）
+      if (url.includes('/himawari/')) { satHits.push(url); return route.fulfill({ contentType: 'image/jpeg', body: BLACK_PNG }); }
       if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
       if (url.includes('/amedas/const/amedastable.json')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_TABLE) });
       if (url.includes('/amedas/data/map/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_MAP) });
@@ -580,7 +582,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(sat.url && /himawari\/data\/satimg/.test(sat.url), '衛星タイルはひまわりの配信を見る', sat.url);
   ok(sat.url && /20260131123000/.test(sat.url), '衛星も targetTimes の時刻でURLを組む', sat.url);
   ok(sat.url && /\/jp\/.*\/REP\/ETC\//.test(sat.url), '既定はカラー（REP/ETC）', sat.url);
-  ok(sat.pane === 'mapNowcast', '衛星も雨雲と同じpane（現在地マスクの対象）', sat.pane);
+  ok(sat.pane === 'mapSat', '衛星は合成用の別pane（雨雲まで一緒に薄まらないように）', sat.pane);
   ok(timesHits.some(u => u.includes('targetTimes_jp')), '衛星は日本域の targetTimes', timesHits);
   ok(sat.chips.includes('赤外'), 'バンド切替のチップが出る', sat.chips);
   ok(satHits.length > 0, '衛星タイルを実際に取りに行っている', satHits.length);
@@ -1302,6 +1304,56 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const broken = await page4.evaluate(() => ({ base: mapPrefs.base, n: mapPrefs.overlays.length }));
   ok(broken.base === 'pale' && broken.n === 0, '壊れた保存値でも既定で起動する', broken);
   await page4.close();
+
+  /* ================= 衛星の雲の合成（暗い所を透かす） =================
+     ★ひまわりのタイルはJPEGで**透明部分が無い**。そのまま濃くすると雲の無い所まで
+     塗り潰れて地図が消える（実機で「全面真っ黒」を踏んだ）。
+     真っ黒なタイルを返したうえで、濃度100%でも下の地図が残ることを画素で確かめる。
+     他のレイヤーが混ざると比較が無意味になるので、専用のページで衛星だけを載せる。 */
+  const page5 = await newPage({ 'sotoki.map.overlays': JSON.stringify([{ id: 'satellite', opacity: 1 }]) });
+  await page5.click('#btn-map');
+  await page5.waitForTimeout(2000);
+  const blend = await page5.evaluate(() => ({
+    on: isOverlayOn('satellite'),
+    pane: overlayTileLayers.satellite ? overlayTileLayers.satellite.options.pane : null,
+    host: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
+    tiles: getComputedStyle(leafletMap.getPane('mapSat')).mixBlendMode,
+    nowcast: getComputedStyle(leafletMap.getPane('mapNowcastMask')).mixBlendMode,
+    satZ: +getComputedStyle(leafletMap.getPane('mapSatMask')).zIndex,
+    nowZ: +getComputedStyle(leafletMap.getPane('mapNowcastMask')).zIndex,
+  }));
+  ok(blend.on && blend.pane === 'mapSat', '衛星は合成用の別pane（雨雲まで一緒に薄まらないように）', blend);
+  ok(blend.host === 'screen', '★暗い所が透ける合成をpaneに掛けている', blend);
+  /* 合成は**外側（z-indexを持つ箱）**に掛けること。内側に掛けても
+     いちばん近いスタッキングコンテキストの中でしか混ざらず、黒いままになる */
+  ok(blend.tiles === 'normal', '合成は内側のpaneには掛けない（下と混ざらないため）', blend);
+  ok(blend.nowcast === 'normal', '雨雲・雷は合成しない（透明部分のあるPNGなので不要）', blend);
+  ok(blend.satZ < blend.nowZ, '衛星は雨雲より下に敷く', blend);
+
+  const satBox = await page5.evaluate(() => {
+    const r = document.getElementById('map').getBoundingClientRect();
+    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+  });
+  // ピンや現在地の穴・浮いた帯に掛からない場所を選ぶ
+  const satClip = { x: Math.round(satBox.x + satBox.w * 0.25), y: Math.round(satBox.y + satBox.h * 0.62),
+                    width: 8, height: 8 };
+  const onTopSat = await page5.evaluate(([x, y]) => {
+    const e = document.elementFromPoint(x, y);
+    return e ? (e.id || e.className || e.tagName) : null;
+  }, [satClip.x + 4, satClip.y + 4]);
+  ok(onTopSat === 'map', '画素を見る場所に他の要素が乗っていない', onTopSat);
+
+  const satOn = await page5.screenshot({ clip: satClip });
+  // 合成を外すと同じ場所が変わる（＝この標本の場所は本当に衛星に覆われている）
+  await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.mixBlendMode = 'normal'; });
+  await page5.waitForTimeout(400);
+  const satFlat = await page5.screenshot({ clip: satClip });
+  await page5.evaluate(() => { if (isOverlayOn('satellite')) toggleOverlay('satellite'); });
+  await page5.waitForTimeout(800);
+  const satOff = await page5.screenshot({ clip: satClip });
+  ok(!satFlat.equals(satOff), '標本の場所は本当に衛星に覆われている（合成なしなら塗り潰れる）');
+  ok(satOn.equals(satOff), '★濃度100%でも雲の無い（暗い）所は下の地図がそのまま見える');
+  await page5.close();
 
   await browser.close();
   if (errors.length) fails.push('ページエラー: ' + errors.join(' / '));
