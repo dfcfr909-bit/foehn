@@ -1016,6 +1016,48 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const tracking = await page.evaluate(() => ({ watching: geoWatchId != null, follow: mapFollow }));
   ok(tracking.watching && tracking.follow, '追跡が始まる', tracking);
 
+  /* ★追跡中に地点を選んだら追従をやめること。
+     やめないと、選んだ地点へ飛んだ数秒後に**次のGPS更新で現在地へ引き戻される**
+     （円柱で地域を選ぶと一度飛んでから戻る、という報告の正体）。
+     現在地の点は残したいので、追跡ごと切らず 'once' に落とす。 */
+  const followPick = await page.evaluate(async () => {
+    const far = [35.36, 138.73];                 // 現在地(36.57,137.65)から十分離れた所
+    selectFav(far[0], far[1], '遠くの山');
+    await new Promise(r => setTimeout(r, 1200));
+    const afterPick = leafletMap.getCenter();
+    // 次のGPS更新が来た体で、引き戻されないことを見る
+    onGeoUpdate({ coords: { latitude: 36.57, longitude: 137.65, accuracy: 20 } });
+    await new Promise(r => setTimeout(r, 900));
+    const afterGeo = leafletMap.getCenter();
+    return {
+      mode: document.getElementById('btn-locate').dataset.mode,
+      follow: mapFollow, watching: geoWatchId != null,
+      dot: document.querySelectorAll('.me-dot').length,
+      movedToPick: Math.abs(afterPick.lat - far[0]) < 0.05,
+      pulledBack: Math.abs(afterGeo.lat - 36.57) < 0.05,
+      drift: Math.abs(afterGeo.lat - afterPick.lat),
+    };
+  });
+  ok(followPick.movedToPick, '選んだ地点へ寄る', followPick);
+  ok(followPick.follow === false && followPick.mode === 'once',
+    '★地点を選んだら追従はやめる（現在地の表示は残す）', followPick);
+  ok(followPick.watching && followPick.dot === 1, '追跡そのものは切らない（点は出たまま）', followPick);
+  ok(!followPick.pulledBack && followPick.drift < 0.02,
+    '★次のGPS更新が来ても現在地へ引き戻されない', followPick);
+
+  // 拡大縮小の基準点も、追従していないなら現在地に引っぱられない
+  const zoomAnchorAway = await page.evaluate(() => {
+    const c = leafletMap.getCenter();
+    const a = zoomAnchor(leafletMap);
+    return { anchorLat: a.lat, centerLat: c.lat, myLat: myPos ? myPos.lat : null };
+  });
+  ok(Math.abs(zoomAnchorAway.anchorLat - zoomAnchorAway.centerLat) < 0.02,
+    '★追従していないなら拡大の基準点も現在地に引っぱられない', zoomAnchorAway);
+
+  // 以降のヘディングアップの検査のため、追跡に戻す
+  await page.evaluate(() => setLocateMode('follow'));
+  await page.waitForTimeout(700);
+
   // ノースアップのときの方位環の色（ヘディングアップと見分けが付くかの比較用）
   const northRim = await page.evaluate(() => {
     const r = document.querySelector('.orient-rim');

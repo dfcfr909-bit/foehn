@@ -1681,7 +1681,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.68.1</span>
+    <span id="app-version">v4.69.0</span>
   </div>
 
   <!-- Footer -->
@@ -2341,7 +2341,7 @@ function selectFav(lat, lon, name) {
   state.lon = lon;
   state.locationName = name;
   // 地図を見ている最中なら、その地点へなめらかに寄る（一瞬で飛ばさない）
-  if (isMapOpen()) { setPickedName(name); mapFlyTo(lat, lon); }
+  if (isMapOpen()) { releaseFollow(); setPickedName(name); mapFlyTo(lat, lon); }
   fetchWeather(lat, lon);
 }
 
@@ -5701,6 +5701,7 @@ function pickMapPoint(lat, lon, name) {
   state.lat = lat;
   state.lon = lon;
   state.locationName = name;
+  releaseFollow();                   // 選んだ地点から現在地へ引き戻されないように
   setPickedName(name);
   document.getElementById('map-results').innerHTML = '';   // 選んだら候補は畳む
   mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : 11, 11));
@@ -5809,6 +5810,20 @@ function startTracking(follow) {
     () => { alert('現在地を取得できませんでした'); stopTracking(); },
     { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
   );
+  updateMapToolButtons();
+}
+
+/* 地点を「自分の意思で選んだ」ときは追従をやめる。
+   ⚠**追従したまま別の地点へ飛ばすと、次のGPS更新（数秒後）で現在地へ引き戻される。**
+   円柱で地域を選ぶと一度その地点へ飛んでから現在地に戻る不具合を出した（利用者の報告）。
+   現在地の点とまわりのマスクは残したいので、追跡ごと切らずに 'once' へ落とす。
+   ⚠ヘディングアップは**追従が前提でドラッグを止めている**ので一緒に戻すこと。
+     残すと「回ったまま・追わない・動かせない」地図になる。 */
+function releaseFollow() {
+  if (!mapFollow && locateMode !== 'follow') return;
+  mapFollow = false;
+  if (locateMode === 'follow') locateMode = 'once';
+  if (mapHeadingUp) setHeadingUp(false);
   updateMapToolButtons();
 }
 
@@ -5996,9 +6011,11 @@ const DTAP_SLOP_PX = 30;     // 2回目が同じ場所とみなすズレ
 const DTAP_PX_PER_ZOOM = 90; // 1段ズームするのに要る指の移動量
 let dtapLastAt = 0;          // 直近でダブルタップ拡大を操作した時刻（長押し案内の抑制に使う）
 
-// 拡大縮小の基準点。追跡中は自分の位置を中心にする
+/* 拡大縮小の基準点。**追従中だけ**自分の位置を中心にする。
+   ⚠`geoWatchId != null`（＝現在地を出しているだけ）で判定しない。
+     地点を選んだあとに拡大すると現在地へ引き戻される。 */
 function zoomAnchor(map, fallbackLatLng) {
-  if (geoWatchId != null && myPos) return L.latLng(myPos.lat, myPos.lon);
+  if (mapFollow && myPos) return L.latLng(myPos.lat, myPos.lon);
   return fallbackLatLng || map.getCenter();
 }
 
@@ -6056,7 +6073,7 @@ function bindDoubleTapZoom(map) {
       // ほとんど動かさずに離したら、ふつうのダブルタップとして1段拡大
       // 小数ズームの途中から押しても、きりのよい段に着地させる
       const z = map._limitZoom(Math.floor(map.getZoom()) + 1);
-      if (geoWatchId != null && myPos) map.setView(anchor, z);
+      if (mapFollow && myPos) map.setView(anchor, z);
       else map.setZoomAround(tapLatLng, z);
     } else if (map.options.zoomAnimation) {
       map._animateZoom(anchor, map._limitZoom(curZoom), true, map.options.zoomSnap);
@@ -6135,6 +6152,7 @@ function showMapHint() {
 // 地点の確定。地図は閉じない（続けて別の地点を見比べられるようにするため v4.51.0）
 function pickMapPoint(lat, lng) {
   leafletMarker.setLatLng([lat, lng]);
+  releaseFollow();                   // 選んだ場所から現在地へ引き戻されないように
   state.lat = lat;
   state.lon = lng;
   setPickedName('取得中…');
