@@ -60,7 +60,21 @@ const DEM_RGB = [2, 208, 247];
 const DEM_EXPECTED_M = 1845.67;
 const DEM_PNG = solidPng(256, 256, ...DEM_RGB);
 const TILE_PNG = solidPng(8, 8, 200, 200, 200);
-const BLACK_PNG = solidPng(8, 8, 0, 0, 0);
+/* 衛星タイルは**隣り合うタイルで暗部の水準を変える**（6 と 26）。
+   ひまわりの夜間画像はタイルごとに黒レベルがわずかに違い、screen合成だと
+   その差がタイルの継ぎ目＝縦横の線・格子として見えた（実機で踏んだ）。
+   一様に真っ黒な素材では**この不具合が再現しない**ので、わざと差をつけてある。 */
+const SAT_DARK_A = solidPng(256, 256, 6, 6, 6);
+const SAT_DARK_B = solidPng(256, 256, 26, 26, 26);
+/* 雲は**真っ白ではなく薄い灰色**にする。真っ白だといくら黒レベルを切り上げても
+   白のままなので、「切り捨てが強すぎて雲まで消える」側の失敗を素通りする（実際に素通りした）。 */
+const SAT_CLOUD = solidPng(256, 256, 110, 110, 110);
+let satTileMode = 'dark';        // 'dark'（暗部の差あり）/ 'cloud'（一面の薄い雲）
+function satTileBody(url) {
+  if (satTileMode === 'cloud') return SAT_CLOUD;
+  const m = /\/(\d+)\/(\d+)\/(\d+)\.jpg/.exec(url);
+  return (m && ((+m[2] + +m[3]) % 2)) ? SAT_DARK_B : SAT_DARK_A;
+}
 // 雨雲のタイルは地図タイルと違う色にする（消えていないかを画素で見分けるため）
 const NOWCAST_PNG = solidPng(8, 8, 0, 80, 255);
 /* 雷タイルは RGBA で「左上1/4だけ塗り」にする。
@@ -193,8 +207,11 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       }
       // 雨雲だけ色を変える（地図タイルと見分けて「消えていないか」を画素で見るため）
       if (url.includes('/jmatile/')) { nowcastHits.push(url); return route.fulfill({ contentType: 'image/png', body: NOWCAST_PNG }); }
-      // 衛星は**真っ黒なタイル**を返す（ひまわりのJPEGは透明部分が無く、実機で全面真っ黒になった）
-      if (url.includes('/himawari/')) { satHits.push(url); return route.fulfill({ contentType: 'image/jpeg', body: BLACK_PNG }); }
+      // 衛星は**暗いタイル**を返す（ひまわりのJPEGは透明部分が無く、実機で全面真っ黒になった）
+      if (url.includes('/himawari/')) {
+        satHits.push(url);
+        return route.fulfill({ contentType: 'image/jpeg', body: satTileBody(url) });
+      }
       if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
       if (url.includes('/amedas/const/amedastable.json')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_TABLE) });
       if (url.includes('/amedas/data/map/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(AMEDAS_MAP) });
@@ -1334,26 +1351,55 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     const r = document.getElementById('map').getBoundingClientRect();
     return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
   });
-  // ピンや現在地の穴・浮いた帯に掛からない場所を選ぶ
-  const satClip = { x: Math.round(satBox.x + satBox.w * 0.25), y: Math.round(satBox.y + satBox.h * 0.62),
-                    width: 8, height: 8 };
-  const onTopSat = await page5.evaluate(([x, y]) => {
-    const e = document.elementFromPoint(x, y);
-    return e ? (e.id || e.className || e.tagName) : null;
-  }, [satClip.x + 4, satClip.y + 4]);
-  ok(onTopSat === 'map', '画素を見る場所に他の要素が乗っていない', onTopSat);
+  /* 標本は**縦に長い帯**にする。8px角だとタイルの継ぎ目をまたがないので、
+     「継ぎ目に線が出る」不具合を素通ししてしまう（実機で線が見えた）。
+     ピンや浮いた帯に掛からない左寄りの列を、縦にまるごと見る。 */
+  const satClip = { x: Math.round(satBox.x + satBox.w * 0.2), y: Math.round(satBox.y + 120),
+                    width: 4, height: Math.round(satBox.h - 300) };
+  const onTopSat = await page5.evaluate(c => {
+    const out = [];
+    for (let y = c.y; y < c.y + c.height; y += 40) {
+      const e = document.elementFromPoint(c.x + 2, y);
+      out.push(e ? (e.id || e.className || e.tagName) : null);
+    }
+    return out;
+  }, satClip);
+  ok(onTopSat.every(t => t === 'map'), '画素を見る帯に他の要素が乗っていない', onTopSat);
 
   const satOn = await page5.screenshot({ clip: satClip });
-  // 合成を外すと同じ場所が変わる（＝この標本の場所は本当に衛星に覆われている）
+  // 合成を外すと同じ場所が変わる（＝この帯は本当に衛星に覆われている）
   await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.mixBlendMode = 'normal'; });
   await page5.waitForTimeout(400);
   const satFlat = await page5.screenshot({ clip: satClip });
+  await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.mixBlendMode = 'screen'; });
+  await page5.waitForTimeout(400);
+  // 黒レベルの切り捨てを外すと、タイルごとの暗部の差が線になって出る
+  await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.filter = 'none'; });
+  await page5.waitForTimeout(400);
+  const satNoFloor = await page5.screenshot({ clip: satClip });
+  await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.filter = ''; });
+  await page5.waitForTimeout(400);
   await page5.evaluate(() => { if (isOverlayOn('satellite')) toggleOverlay('satellite'); });
   await page5.waitForTimeout(800);
   const satOff = await page5.screenshot({ clip: satClip });
-  ok(!satFlat.equals(satOff), '標本の場所は本当に衛星に覆われている（合成なしなら塗り潰れる）');
-  ok(satOn.equals(satOff), '★濃度100%でも雲の無い（暗い）所は下の地図がそのまま見える');
+  ok(!satFlat.equals(satOff), '標本の帯は本当に衛星に覆われている（合成なしなら塗り潰れる）');
+  ok(!satNoFloor.equals(satOff), '黒レベルを切り捨てないとタイルごとの暗部の差が出る（検査の前提）');
+  ok(satOn.equals(satOff), '★暗部を切り捨てるのでタイルの継ぎ目に線が出ない・地図がそのまま見える');
   await page5.close();
+
+  /* 暗部を切り捨てても**雲そのものは消えない**こと。
+     切り捨てが強すぎると「線は消えたが雲も出ない」になり、レイヤーの意味が無くなる。 */
+  satTileMode = 'cloud';
+  const page6 = await newPage({ 'sotoki.map.overlays': JSON.stringify([{ id: 'satellite', opacity: 1 }]) });
+  await page6.click('#btn-map');
+  await page6.waitForTimeout(2000);
+  const cloudOn = await page6.screenshot({ clip: satClip });
+  await page6.evaluate(() => { if (isOverlayOn('satellite')) toggleOverlay('satellite'); });
+  await page6.waitForTimeout(800);
+  const cloudOff = await page6.screenshot({ clip: satClip });
+  ok(!cloudOn.equals(cloudOff), '★薄い雲も消さない（切り捨てが強すぎない）');
+  await page6.close();
+  satTileMode = 'dark';
 
   await browser.close();
   if (errors.length) fails.push('ページエラー: ' + errors.join(' / '));

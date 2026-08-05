@@ -1681,7 +1681,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.68.0</span>
+    <span id="app-version">v4.68.1</span>
   </div>
 
   <!-- Footer -->
@@ -4576,7 +4576,7 @@ const MAP_WEATHER = [
      真っ黒に塗り潰れて地図が消える（実機で踏んだ）。そこで blend: 'screen' を付け、
      暗い所ほど下の地図が透ける合成にしてある（詳細は wxPaneFor）。 */
   { id: 'satellite', name: '衛星の雲', kind: 'jmaSat',
-    timesFile: JMA_TIMES_SAT, opacity: 0.55, blend: 'screen',
+    timesFile: JMA_TIMES_SAT, opacity: 0.55, blend: 'screen', floor: 1.5,
     minNativeZoom: 3, maxNativeZoom: 6, attribution: '気象庁 ひまわり',
     note: 'ひまわりの雲画像。暗い所ほど地図が透ける。10分ごとに自動更新' },
   /* 雷。N1では出ずN2に変えたが、実機ではまだタイルが404だった（時刻表は取れている）。
@@ -4780,11 +4780,20 @@ function dropAllStaleWxLayers() {
    ベースマップとは混ざらず、黒いままになる。
    そのため合成するレイヤーは専用のpane（mapSat）に分けてある。 */
 function wxPaneFor(def) { return def.blend ? 'mapSat' : 'mapNowcast'; }
-// 合成モードはマスク用の入れ物（z-indexを持つ外側）に掛ける。内側だと下と混ざらない
+/* 合成モードはマスク用の入れ物（z-indexを持つ外側）に掛ける。内側だと下と混ざらない。
+   ⚠**合成の前に黒レベルを切り捨てること（floor）。** ひまわりの画像はタイルごとに
+   暗部の水準がわずかに違う（特に夜のカラーバンドは可視光がほぼ無く、その差が支配的）。
+   screen合成は暗い所ほど下を透かすので、**その差がそのままタイルの継ぎ目＝縦横の線や
+   格子として見えてしまう**（実機で踏んだ。一様なタイルでは出ず、隣り合うタイルの
+   暗部を6と26にすると再現する）。
+   contrast(C) は 0.5 − 0.5/C 以下を黒に落とすので、C=1.5 なら約17%以下の暗部が
+   まとめて0になり、床の差ごと消える。雲（明るい所）はむしろ締まる。 */
 function applyWxBlend(def) {
   if (!def.blend || !leafletMap) return;
   const host = leafletMap.getPane('mapSatMask');
-  if (host) host.style.mixBlendMode = def.blend;
+  if (!host) return;
+  host.style.mixBlendMode = def.blend;
+  host.style.filter = def.floor ? `contrast(${def.floor})` : '';
 }
 
 async function addTimedTileLayer(def, opacity, replace) {
