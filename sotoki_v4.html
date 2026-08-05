@@ -761,6 +761,22 @@ html, body {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
   pointer-events: none;
 }
+/* 雨の予告。「明日夕方15時から雨」（毎時データ）と
+   「あと35分で雨が止みます」（ナウキャスト）を1行で出す。
+   分きざみの方が来たら nowcast クラスを付けて色を変え、出所の違いを見せる */
+#map-rain {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 700;
+  color: #fff;
+  background: rgba(38,52,70,0.88);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#map-rain.nowcast { background: rgba(20,96,170,0.92); }
+#map-rain.hidden, #map-rain:empty { display: none; }
 /* 出典表記。常時表示（利用条件） */
 #map-attribution {
   max-width: 60%;
@@ -1665,7 +1681,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.66.0</span>
+    <span id="app-version">v4.67.0</span>
   </div>
 
   <!-- Footer -->
@@ -1707,6 +1723,7 @@ html, body {
       <!-- 下に浮かぶもの：案内文／地点名＋出典／お気に入り円柱 -->
       <div id="map-bottom">
         <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
+        <div id="map-rain" class="hidden"></div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
           <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
@@ -1882,6 +1899,7 @@ async function fetchWeather(lat, lon) {
     state.lon = lon;
     applyRange();                                // 表示範囲を切り出し
     saveLast(lat, lon, state.locationName);
+    updateRainOutlook();                         // 雨の予告（地図を開いていれば見える）
     // DOM反映後に描画
     requestAnimationFrame(() => {
       requestAnimationFrame(() => render());
@@ -4703,17 +4721,22 @@ function applyOverlays() {
    時間で中身が変わるためSWのキャッシュ対象には入れていない（TILE_HOSTSに無い）。
    自動更新のたびに時刻表を引き直せるよう、キャッシュはURLをキーにして捨てられるようにする。 */
 let wxTimesPromises = {};
-function jmaTimes(url) {
+// 時刻表そのもの。予報（basetime≠validtime）も要るので、絞らずに全部返す
+function jmaTimesList(url) {
   if (wxTimesPromises[url]) return wxTimesPromises[url];
   wxTimesPromises[url] = fetch(url)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(list => {
       if (!Array.isArray(list) || !list.length) throw new Error('targetTimesが空');
-      // 実況＝basetimeとvalidtimeが同じもの。無ければ先頭を使う
-      return list.find(t => t.basetime === t.validtime) || list[0];
+      return list;
     })
     .catch(e => { delete wxTimesPromises[url]; throw e; });
   return wxTimesPromises[url];
+}
+// 地図に貼るのは実況＝basetimeとvalidtimeが同じもの。無ければ先頭を使う
+function jmaTimes(url) {
+  return jmaTimesList(url)
+    .then(list => list.find(t => t.basetime === t.validtime) || list[0]);
 }
 // 次の自動更新で新しい時刻を取りに行くため、覚えている時刻表を捨てる
 function clearWxTimes() { wxTimesPromises = {}; }
@@ -4801,6 +4824,175 @@ function refreshWeatherLayers() {
   });
   // アメダスは点で描くので、実測値そのものを取り直してから描き直す
   if (isOverlayOn('amedas')) { amedasData = null; refreshWeatherPoints(); }
+  updateRainOutlook();             // 雨の予告も同じ周期で見直す
+}
+
+/* ------ 雨の予告（いつ降り出す・いつ止む） ------
+   2段構え。
+   1段目：手元の毎時データ（Open-Meteo）だけで「明日夕方15時から雨」を出す。
+          追加の通信が要らないので、圏外でも取得済みなら必ず出せる。
+   2段目：気象庁ナウキャストのタイルを**地点の1画素だけ**読んで
+          「あと35分で雨が止みます」を出す。1段目より細かいので上書きする。
+   ⚠**2段目は必ず1段目に戻れるようにしておくこと。** タイルのCORSが通らない
+     環境では getImageData が例外を投げる（雷マークで実際に踏んだ経路）。
+     そこで黙って1段目のままにする。 */
+const RAIN_MM = 0.1;              // これ以上を「降っている」とみなす（mm/h）
+const RAIN_LOOK_H = 48;           // 毎時データで何時間先まで探すか
+
+// 気象庁の時間帯の言い方。3時間ごとに区切る（0時始まり）
+const JMA_BANDS = ['未明', '明け方', '朝', '昼前', '昼過ぎ', '夕方', '夜のはじめ頃', '夜遅く'];
+function timeBandWord(d) { return JMA_BANDS[Math.floor(d.getHours() / 3)]; }
+// 「今日／明日／明後日」。それより先は日付そのもので言う
+function dayWord(d, from) {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.round((b - a) / 864e5);
+  return diff <= 0 ? '今日' : diff === 1 ? '明日' : diff === 2 ? '明後日'
+       : `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/* 毎時データから、降り出し／降り止みの最初の変わり目を探す。
+   戻り値 { kind:'starts'|'stops'|'none', idx, isSnow, text }。
+   雪と雨を言い分けるのはバックカントリーでは意味が違うため。 */
+function rainOutlookHourly(data, fromIdx) {
+  if (!data || !data.length) return null;
+  const i0 = Math.max(0, Math.min(data.length - 1, fromIdx | 0));
+  const wet = i => (data[i].precip || 0) >= RAIN_MM;
+  const snowy = i => (data[i].snow || 0) > 0;
+  const end = Math.min(data.length, i0 + RAIN_LOOK_H + 1);
+  const nowWet = wet(i0);
+  for (let i = i0 + 1; i < end; i++) {
+    if (wet(i) === nowWet) continue;
+    const d = data[i].time;
+    // 止む側は「いま何が降っているか」、降り出す側は「これから何が降るか」で言葉を選ぶ
+    const isSnow = nowWet ? snowy(i0) : snowy(i);
+    const w = isSnow ? '雪' : '雨';
+    const when = `${dayWord(d, data[i0].time)}${timeBandWord(d)}${d.getHours()}時`;
+    return nowWet
+      ? { kind: 'stops', idx: i, isSnow, text: `${when}ごろ${w}が止む見込み` }
+      : { kind: 'starts', idx: i, isSnow, text: `${when}から${w}` };
+  }
+  const isSnow = snowy(i0);
+  return nowWet
+    ? { kind: 'none', idx: -1, isSnow, text: `${RAIN_LOOK_H}時間先まで${isSnow ? '雪' : '雨'}が続く見込み` }
+    : { kind: 'none', idx: -1, isSnow: false, text: `${RAIN_LOOK_H}時間先まで雨の予想なし` };
+}
+
+/* ------ ナウキャストの1画素読み（分きざみ） ------ */
+const NOWC_TILE_Z = 10;           // 降水ナウキャストのネイティブ最大ズーム
+const NOWC_ALPHA_MIN = 30;        // これ以上の不透明度を「降っている」とみなす
+const NOWC_MAX_STEPS = 13;        // 実況＋60分先（5分きざみ）
+const NOWC_STEP_MIN = 5;
+
+// 緯度経度 → タイル番号と、そのタイル内の画素位置（Webメルカトル）
+function tilePixelAt(lat, lon, z) {
+  const n = Math.pow(2, z);
+  const rad = lat * Math.PI / 180;
+  const wx = (lon + 180) / 360 * n;
+  const wy = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
+  const x = Math.floor(wx), y = Math.floor(wy);
+  return { z, x, y,
+    px: Math.min(255, Math.floor((wx - x) * 256)),
+    py: Math.min(255, Math.floor((wy - y) * 256)) };
+}
+// "20260131T120000Z" 形式（区切りなしの形も来る）を Date にする
+function parseJmaTime(s) {
+  const m = /^(\d{4})(\d\d)(\d\d)T?(\d\d)(\d\d)(\d\d)Z?$/.exec(String(s || ''));
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+}
+/* 時刻表を「実況→予報」の並びに直す。
+   実況は basetime===validtime のうち一番新しいもの、予報はそれより先の validtime。 */
+function nowcastSeries(list) {
+  if (!Array.isArray(list) || !list.length) return [];
+  const obsAll = list.filter(t => t.basetime === t.validtime);
+  const obs = obsAll.length
+    ? obsAll.reduce((a, b) => (a.validtime > b.validtime ? a : b))
+    : list[0];
+  const fut = list.filter(t => t.validtime > obs.validtime)
+    .sort((a, b) => (a.validtime < b.validtime ? -1 : 1));
+  return [obs].concat(fut);
+}
+
+/* タイル1枚のうち1画素だけ読む。1×1のcanvasに負のオフセットで描いて
+   目当ての画素を(0,0)に落とす（画面ぶんのcanvasを作らないため。iOSのメモリ対策） */
+let rainProbeCv = null;
+function probeTileAlpha(img, px, py) {
+  if (!rainProbeCv) {
+    rainProbeCv = document.createElement('canvas');
+    rainProbeCv.width = rainProbeCv.height = 1;
+  }
+  const ctx = rainProbeCv.getContext('2d', { willReadFrequently: true });
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.drawImage(img, -px, -py);
+  return ctx.getImageData(0, 0, 1, 1).data[3];   // CORSが通らないとここで例外
+}
+function loadTileImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';     // 画素を読むので必須。無いとcanvasが汚れる
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('タイルが読めない'));
+    img.src = url;
+  });
+}
+
+/* 実況＋60分先を地点で拾い、最初の変わり目までの分数を返す。
+   読めなければ null（＝毎時データの見込みに任せる）。 */
+async function rainOutlookNowcast(lat, lon) {
+  const def = findOverlay('radar');
+  if (!def || lat == null || lon == null) return null;
+  const seq = nowcastSeries(await jmaTimesList(def.timesFile)).slice(0, NOWC_MAX_STEPS);
+  if (seq.length < 2) return null;
+  const p = tilePixelAt(lat, lon, NOWC_TILE_Z);
+  const wet = [];
+  for (const t of seq) {
+    const url = timedTileUrl(def, t)
+      .replace('{z}', p.z).replace('{x}', p.x).replace('{y}', p.y);
+    let a;
+    try { a = probeTileAlpha(await loadTileImage(url), p.px, p.py); }
+    catch (e) { return null; }         // 1枚でも読めなければ諦める
+    wet.push(a >= NOWC_ALPHA_MIN);
+  }
+  const nowWet = wet[0];
+  for (let i = 1; i < wet.length; i++) {
+    if (wet[i] === nowWet) continue;
+    const dt = parseJmaTime(seq[i].validtime);
+    const raw = dt ? (dt.getTime() - Date.now()) / 60000 : i * NOWC_STEP_MIN;
+    const min = Math.max(NOWC_STEP_MIN, Math.round(raw / NOWC_STEP_MIN) * NOWC_STEP_MIN);
+    return nowWet
+      ? { kind: 'stops', min, text: `あと${min}分で雨が止みます` }
+      : { kind: 'starts', min, text: `あと${min}分で雨が降り出します` };
+  }
+  // 60分先まで変わらないなら分きざみで言えることは無い。毎時の見込みに任せる
+  return null;
+}
+
+/* ------ 表示 ------ */
+let rainOutlookSeq = 0;
+function setRainText(text, fromNowcast) {
+  const el = document.getElementById('map-rain');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('nowcast', !!fromNowcast);
+  el.classList.toggle('hidden', !text);
+}
+function updateRainOutlook() {
+  const el = document.getElementById('map-rain');
+  if (!el) return;
+  // 出るのは地図画面だけ。閉じている間にタイルを取りに行っても捨てるだけになる
+  if (!isMapOpen()) { setRainText('', false); return; }
+  const data = state.allData;
+  const base = (data && data.length) ? rainOutlookHourly(data, indexOfNow(data)) : null;
+  setRainText(base ? base.text : '', false);
+  // 分きざみは後から追いつく。地点を変えたら古い結果は捨てる
+  const seq = ++rainOutlookSeq;
+  rainOutlookNowcast(state.lat, state.lon)
+    .then(r => {
+      if (seq !== rainOutlookSeq || !r || !r.text) return;
+      setRainText(r.text, true);
+    })
+    .catch(() => { /* 読めない環境では毎時の見込みのままにする */ });
 }
 
 /* タイルが1枚も取れないときにパネルへ理由を出す。
@@ -5215,6 +5407,7 @@ function openMap() {
   document.getElementById('map-search-input').value = '';
   showMapHint();
   setPickedName(state.locationName);
+  updateRainOutlook();
   moveFavRotaryTo(document.getElementById('map-fav-slot'));
   if (!leafletMap) {
     setTimeout(() => {
@@ -5909,6 +6102,8 @@ function pickMapPoint(lat, lng) {
   state.lat = lat;
   state.lon = lng;
   setPickedName('取得中…');
+  // 分きざみの雨はタイルだけで出せるので、気象データを待たずに先に更新する
+  updateRainOutlook();
   // 標高は非同期で取りに行き、地図描画も地点確定もブロックしない
   fetchPointElevation(lat, lng);
   reverseGeocode(lat, lng).then(name => {
