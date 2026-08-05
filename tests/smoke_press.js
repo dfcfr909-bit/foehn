@@ -173,6 +173,78 @@ const pressCalm = () => 1013;
   ok(gutter.barLabelY > gutter.lineBottom && gutter.barLabelY < gutter.plotBottom,
     'Δ6hの見出しはバーの帯に置く', gutter);
 
+  /* ================= 4. 縦窓がスライダーに追従する（v4.66.0） =================
+     絶対気圧は10日で30hPa以上動く。全期間を1画面に収めると1日ぶんが線に出ないので、
+     縦窓を狭く保って選択時刻に追従させる。左のガターの数字も一緒に動く。 */
+  const win = await page.evaluate(async () => {
+    const d = state.allData;
+    // 気圧の高い時刻と低い時刻を探す
+    let hi = 0, lo = 0;
+    for (let i = 0; i < d.length; i++) {
+      if (d[i].pressure == null) continue;
+      if (d[i].pressure > d[hi].pressure) hi = i;
+      if (d[i].pressure < d[lo].pressure) lo = i;
+    }
+    const snap = async idx => {
+      setSelectedIndex(idx);
+      await new Promise(r => setTimeout(r, 500));   // 落ち着いてからの合わせ直しを待つ
+      return {
+        idx, press: d[idx].pressure,
+        min: pressChart.scales.p.min, max: pressChart.scales.p.max,
+        gutMin: scaleInfo.pressMin, gutMax: scaleInfo.pressMax,
+      };
+    };
+    const atHi = await snap(hi);
+    const atLo = await snap(lo);
+    const full = (() => {
+      let mn = Infinity, mx = -Infinity;
+      d.forEach(x => { if (x.pressure != null) { mn = Math.min(mn, x.pressure); mx = Math.max(mx, x.pressure); } });
+      return mx - mn;
+    })();
+    return { atHi, atLo, fullSpan: full, minSpan: PRESS_WIN_MIN_HPA };
+  });
+  const spanOf = w => w.max - w.min;
+  ok(win.fullSpan > 20, 'fixtureは全期間で20hPa以上動く（窓の効果を見るため）', win.fullSpan);
+  ok(spanOf(win.atHi) < win.fullSpan * 0.7 && spanOf(win.atLo) < win.fullSpan * 0.7,
+    '★縦窓は全期間より狭い（＝上下動が拡大される）', win);
+  ok(spanOf(win.atHi) >= win.minSpan - 0.01, '窓は狭くしすぎない（最小幅を保つ）', win);
+  ok(win.atHi.min > win.atLo.min + 3,
+    '★選択時刻を動かすと窓も上下に動く', { hi: win.atHi, lo: win.atLo });
+  ok(win.atHi.press >= win.atHi.min && win.atHi.press <= win.atHi.max &&
+     win.atLo.press >= win.atLo.min && win.atLo.press <= win.atLo.max,
+    '★選択時刻の気圧は必ず窓の中に入る', win);
+  ok(win.atHi.gutMin === win.atHi.min && win.atLo.gutMax === win.atLo.max,
+    '★左のガターの数字も窓と一緒に動く（絶対値が読めたまま）', win);
+
+  /* ★線が窓を外れても下段のバーや隣のパネルに突き抜けないこと。
+     縦窓は選択時刻のまわりに合わせるので、画面外の時刻は必ず窓を大きく外れる。 */
+  const spill = await page.evaluate(lay => {
+    const c = document.getElementById('chart-press').querySelector('canvas');
+    const ctx = c.getContext('2d');
+    const d = state.allData;
+    // 窓から最も外れている時刻を探す
+    const p = pressChart.scales.p;
+    let worst = 0, worstD = 0;
+    for (let i = 0; i < d.length; i++) {
+      if (d[i].pressure == null) continue;
+      const off = Math.max(p.min - d[i].pressure, d[i].pressure - p.max);
+      if (off > worstD) { worstD = off; worst = i; }
+    }
+    /* 隙間の1行をまるごと走査する。1点だけ読むと、線がその列を通っていないだけで
+       通ってしまう（実際に空振りした） */
+    const gapY = Math.round((lay.lineBot + lay.barTop) / 2);
+    const row = ctx.getImageData(0, gapY, c.width, 1).data;
+    let inkedPx = 0;
+    for (let x = 0; x < c.width; x++) {
+      const r = row[x * 4], g = row[x * 4 + 1], b = row[x * 4 + 2];
+      // 線の色は橙か青。背景（灰・淡い警告帯）はRGBが近い
+      if (Math.abs(r - b) > 55) inkedPx++;
+    }
+    return { worst, worstD, gapY, inkedPx, width: c.width };
+  }, layout);
+  ok(spill.worstD > 1, '窓を大きく外れる時刻が存在する（検査が空振りしていない）', spill);
+  ok(spill.inkedPx === 0, '★窓を外れた線が帯の外へ突き抜けない（クリップしている）', spill);
+
   await page.screenshot({ path: __dirname + '/smoke_press.png' });
   await page.close();
 

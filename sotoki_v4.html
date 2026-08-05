@@ -1665,7 +1665,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.65.0</span>
+    <span id="app-version">v4.66.0</span>
   </div>
 
   <!-- Footer -->
@@ -2715,10 +2715,11 @@ function buildCharts() {
 
   // 見やすいY軸レンジ（uPlotスケールとガター描画で共有し、位置ズレを防ぐ）
   const tempRange  = niceRange(temps, 1.5, 5);        // 気温：変化を強調
-  /* 気圧：上下の余白を4%まで削る。10日ぶんだと実レンジが30hPaを超えることがあり、
-     既定の12%余白だと1日ぶんの数hPaの動きが線の傾きに現れない
-     （「刻みが大きすぎて上下降が見にくい」という指摘。v4.65.0） */
-  const pressRange = niceRange(pressures, 0.6, 4, 0.03);
+  /* 気圧は**選択時刻のまわりだけを映す縦窓**にする（v4.66.0。詳細は pressWindowFor）。
+     全期間を1画面に収めると1日ぶんの数hPaが線の傾きに現れないため。
+     窓が作れないとき（データが薄い等）だけ従来どおり全期間から求める */
+  const pressWin = pressWindowFor(state.sliderIndex);
+  const pressRange = pressWin ? [pressWin.min, pressWin.max] : niceRange(pressures, 0.6, 4, 0.03);
   const windMaxV   = Math.max(8, Math.max(0, ...winds.map(v => v || 0)) * 1.15);
   // 突風は風速より大きいので独立スケール（右軸）
   const gustVals   = gusts.filter(v => v != null);
@@ -2856,6 +2857,64 @@ const PRESS_LINE_FRAC = 0.70;   // パネルのうち絶対気圧の線が使う
 const PRESS_BAR_MAX = 8;        // ΔPバーの振り切り（hPa/6h）
 const PRESS_BOMB_DP = -3.5;     // これより急な下降に爆弾マークを出す
 
+/* ------ 気圧の縦窓（選択時刻に追従して上下に動く） ------
+   絶対気圧は10日で30hPa以上動くことがあり、全期間を1画面に収めると
+   1日ぶんの数hPaが線に出ない。**表示する縦幅を狭く保ち、窓のほうを
+   選択時刻に追従させて上下に動かす**（利用者の提案。v4.66.0）。
+   左のガターの数字も窓と一緒に動かすので、絶対値は読めたまま。
+
+   ⚠**毎フレーム描き直さないこと。** 気圧のcanvasは全期間ぶん（幅3,600px超）あり、
+   スクラブのたびに `setScale` で描き直すとチャート移動をtransformにした意味が無くなる
+   （v4.42.0で「ゆっくりなぞるとカクつく」原因になったのがまさにこれ）。
+   なぞっている間は粗い刻み、指を離してから細かく合わせる二段構えにしてある。 */
+const PRESS_WIN_MIN_HPA = 10;   // 縦窓の最小の幅
+const PRESS_WIN_PAD = 1.3;      // 画面内の変動に対する余裕
+const PRESS_WIN_COARSE = 2.5;   // なぞっている間はこれだけずれたら描き直す
+const PRESS_WIN_FINE = 0.4;     // 落ち着いてから合わせ直す刻み
+const PRESS_WIN_SETTLE_MS = 180;
+
+// 選択時刻のまわり（画面に入る範囲）に合わせた縦窓を返す
+function pressWindowFor(idx) {
+  const d = state.allData;
+  if (!d || !d.length) return null;
+  const half = Math.round(HOURS_PER_SCREEN / 2) + 2;
+  let mn = Infinity, mx = -Infinity;
+  for (let i = Math.max(0, idx - half); i <= Math.min(d.length - 1, idx + half); i++) {
+    const v = d[i].pressure;
+    if (v == null) continue;
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+  }
+  if (!isFinite(mn)) return null;
+  const c = (mn + mx) / 2;
+  const span = Math.max(PRESS_WIN_MIN_HPA, (mx - mn) * PRESS_WIN_PAD);
+  return { min: c - span / 2, max: c + span / 2 };
+}
+
+let pressWinRaf = null, pressWinTimer = null;
+function applyPressWindow(threshold) {
+  if (!pressChart || !state.allData || !scaleInfo) return false;
+  const w = pressWindowFor(state.sliderIndex);
+  if (!w) return false;
+  const cur = pressChart.scales.p;
+  if (cur && Math.abs(cur.min - w.min) < threshold && Math.abs(cur.max - w.max) < threshold) return false;
+  pressChart.setScale('p', { min: w.min, max: w.max });
+  scaleInfo.pressMin = w.min;
+  scaleInfo.pressMax = w.max;
+  drawAxisGutter();          // 左の数字も窓と一緒に動かす（絶対値を読めたままにする）
+  return true;
+}
+function updatePressWindow() {
+  if (!pressWinRaf) {
+    pressWinRaf = requestAnimationFrame(() => {
+      pressWinRaf = null;
+      applyPressWindow(PRESS_WIN_COARSE);      // なぞっている間は粗く
+    });
+  }
+  clearTimeout(pressWinTimer);
+  pressWinTimer = setTimeout(() => applyPressWindow(PRESS_WIN_FINE), PRESS_WIN_SETTLE_MS);
+}
+
 // 6時間変化量 dp から線の色・太さを決める（下降=暖色/上昇=寒色、急なほど濃く太く）
 function pressSegStyle(dp) {
   const m = Math.abs(dp || 0);
@@ -2928,7 +2987,13 @@ function drawPressOverlay(u) {
     ctx.fillRect(x0, 0, x1 - x0, plotH);
   }
 
-  // 2) 気圧ラインを変化量ごとに色分けして描画（上段に収める）
+  /* 2) 気圧ラインを変化量ごとに色分けして描画（上段に収める）
+     ⚠**必ずクリップすること。** 縦窓は選択時刻のまわりに合わせてあるので、
+     画面外の時刻は窓を大きく外れる。切らないと下段のバーや隣のパネルに突き抜ける。 */
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, u.ctx.canvas.width, lineBot);
+  ctx.clip();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   for (let i = 1; i < data.length; i++) {
@@ -2943,6 +3008,7 @@ function drawPressOverlay(u) {
     ctx.lineTo(x1, y1);
     ctx.stroke();
   }
+  ctx.restore();
 
   /* 2b) ΔP6h のバー。ここが「上がり下がり」の本体。
      絶対気圧のレンジに関係なく ±PRESS_BAR_MAX の固定スケールなので、
@@ -4081,6 +4147,7 @@ function setSelectedIndex(idx, scroll = false, smooth = false) {
   state.sliderIndex = clamped;
   if (scroll) scrollToIndex(clamped, smooth);
   positionScrubLine();
+  updatePressWindow();       // 気圧の縦窓を選択時刻に追従させる
   updatePopup();
   updateDateBadge();
   updateNowButton();
