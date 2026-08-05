@@ -119,7 +119,7 @@ function pngSize(file) {
     swChecks.hasFetchHandler && swChecks.hasInstall && swChecks.hasActivate &&
     swChecks.htmlNetworkFirst && swChecks.skipsCrossOrigin && swChecks.cleansOldCaches &&
     // ブラウザからmanifestが読める
-    linked && linked.display === 'standalone' && linked.short_name === 'SotoKi';
+    linked && linked.display === 'standalone' && linked.short_name === 'NAGI NAV';
 
   console.log(ok ? 'PWA SMOKE PASSED' : 'PWA SMOKE FAILED');
   process.exit(ok ? 0 : 1);
