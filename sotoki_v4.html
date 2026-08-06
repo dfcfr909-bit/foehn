@@ -1296,6 +1296,23 @@ html, body {
 }
 .rank-name { flex: 1; min-width: 0; }
 .rank-name .rn-main { font-weight: 700; font-size: 14px; }
+/* 山域名・地点名は「押すとその地点へ飛ぶ」。峰名と同じ見た目にして役割をそろえる。
+   ⚠**文字の幅ぶんだけにすること。** 行いっぱいに広げると、峰の一覧を開こうとして
+   余白を押しただけで飛んでしまう */
+.area-link, .spot-link {
+  display: inline-block;
+  background: none; border: none;
+  padding: 2px 0;
+  margin: -2px 0;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  text-decoration: underline;
+}
+.area-link { font-size: 14px; }
+.spot-link { font-size: 14px; }
 .rank-name .rn-sub { font-size: 10px; color: var(--text3); }
 /* B/C評価の理由（一言）。バッジ色に合わせる */
 .rn-reason {
@@ -1685,7 +1702,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.69.1</span>
+    <span id="app-version">v4.70.0</span>
   </div>
 
   <!-- Footer -->
@@ -6501,6 +6518,19 @@ async function buildRanking(dates) {
 const rankGradeChar = r => (r == null ? '—' : ['A', 'B', 'C'][r]);
 const rankDowChar = ds => ['日', '月', '火', '水', '木', '金', '土'][new Date(ds + 'T00:00').getDay()];
 
+/* 山域の代表峰＝いちばん良い判定を出した峰。
+   カードの見出し（山域＝代表峰の最良値）と同じ峰なので、山域名を押したときの
+   飛び先もここに合わせる。判定不能ばかりなら先頭の峰で妥協する。 */
+function bestPeakOf(row) {
+  let best = null, bestRank = 99;
+  for (const pr of row.peakResults) {
+    for (const d of pr.days) {
+      if (d && d.rank < bestRank) { bestRank = d.rank; best = pr; }
+    }
+  }
+  return best || row.peakResults[0] || null;
+}
+
 function renderRankList(rows, dates) {
   const list = document.getElementById('rank-list');
   list.innerHTML = '';
@@ -6531,6 +6561,7 @@ function renderRankList(rows, dates) {
     }
     const reasonHtml = cardReason ? `<div class="rn-reason rb-${rankGradeChar(row.best)}">${cardReason}</div>` : '';
 
+    const repPeak = bestPeakOf(row);   // 山域名の飛び先（代表峰）
     const headCols = dates.map(ds =>
       `<th>${parseInt(ds.slice(5, 7))}/${parseInt(ds.slice(8, 10))}(${rankDowChar(ds)})</th>`).join('');
     const peakRows = row.peakResults.map(pr => {
@@ -6552,7 +6583,10 @@ function renderRankList(rows, dates) {
       <div class="rank-card-head">
         <span class="rank-pos">${i + 1}</span>
         <div class="rank-name">
-          <div class="rn-main">${row.area.name}</div>
+          <div class="rn-main">${repPeak
+            ? `<button class="area-link" data-lat="${repPeak.peak.lat}" data-lon="${repPeak.peak.lon}"` +
+              ` data-name="${repPeak.peak.name}">${row.area.name}</button>`
+            : row.area.name}</div>
           <div class="rn-sub">${row.area.region}</div>
           ${reasonHtml}
         </div>
@@ -6566,7 +6600,7 @@ function renderRankList(rows, dates) {
       </div>
     `;
     card.querySelector('.rank-card-head').addEventListener('click', () => card.classList.toggle('open'));
-    card.querySelectorAll('.peak-link').forEach(btn => {
+    card.querySelectorAll('.peak-link, .area-link').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
         gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon));
@@ -6737,7 +6771,10 @@ function renderSnowList() {
         <div class="snow-pos">${i + 1}</div>
         <div class="snow-main">
           <div class="snow-name-line">
-            <span class="snow-name">${escapeHtml(r.name)}</span>
+            <span class="snow-name">${r.lat != null && r.lon != null
+              ? `<button class="spot-link" data-lat="${r.lat}" data-lon="${r.lon}"` +
+                ` data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</button>`
+              : escapeHtml(r.name)}</span>
             <span class="snow-tag ${r.type}">${tag}</span>
             <span class="snow-area">${escapeHtml(r.area)}</span>
             <span class="snow-alt">${r.elevation}m</span>
@@ -6758,6 +6795,12 @@ function renderSnowList() {
   const notes = (snowResult.notes || []).length
     ? `<div class="snow-msg">${snowResult.notes.map(escapeHtml).join('<br>')}</div>` : '';
   list.innerHTML = html + notes;
+  // 地点名を押したらその地点の96hメテオグラムへ（登山指数タブの峰名と同じ振る舞い）
+  list.querySelectorAll('.spot-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon));
+    });
+  });
 }
 
 // 風向（度）を16方位に。0°=北から時計回り

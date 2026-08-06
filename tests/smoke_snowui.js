@@ -231,6 +231,29 @@ function fakeWeather() {
   // 再取得していない（フィルタは手元の結果を並べ替えるだけ）
   ok(snowReqs === 4, 'フィルタ切り替えで再取得しない', snowReqs);
 
+  /* ★地点名タップ → その地点の96hメテオグラムへ（利用者の要望）。
+     登山指数タブの峰名と同じ振る舞いにそろえてある。 */
+  const spotJump = await page.evaluate(async () => {
+    const link = document.querySelector('.snow-row .snow-name .spot-link');
+    if (!link) return { missing: true };
+    const name = link.textContent;
+    const lat = parseFloat(link.dataset.lat), lon = parseFloat(link.dataset.lon);
+    link.click();
+    await new Promise(r => setTimeout(r, 900));
+    return {
+      name, lat, lon,
+      overlayOpen: document.getElementById('rank-overlay').classList.contains('open'),
+      locationName: state.locationName,
+      movedTo: Math.abs(state.lat - lat) < 1e-6 && Math.abs(state.lon - lon) < 1e-6,
+    };
+  });
+  ok(!spotJump.missing, '★新雪ランキングの地点名がリンクになっている', spotJump);
+  ok(!spotJump.missing && Number.isFinite(spotJump.lat) && Number.isFinite(spotJump.lon),
+    '地点の緯度経度が一覧まで届いている', spotJump);
+  ok(!spotJump.missing && spotJump.movedTo && spotJump.locationName === spotJump.name,
+    '★押した地点へ飛ぶ', spotJump);
+  ok(!spotJump.missing && !spotJump.overlayOpen, '飛んだらランキングは閉じる', spotJump);
+
   await page.screenshot({ path: __dirname + '/smoke_snowui.png' });
 
   // --- 4. spots.json が未生成のとき ---
@@ -275,6 +298,6 @@ function fakeWeather() {
     console.log('SNOWUI SMOKE FAILED');
     process.exit(1);
   }
-  console.log(JSON.stringify({ snow, snowReqs }, null, 2));
+  console.log(JSON.stringify({ snow, snowReqs, spotJump }, null, 2));
   console.log('SNOWUI SMOKE PASSED');
 })();

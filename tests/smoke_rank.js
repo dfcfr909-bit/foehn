@@ -108,6 +108,55 @@ function fakeBatch(url) {
     dates: rankDates,
   }));
 
+  /* ★山域名タップ → その山域の代表峰へ飛ぶ（利用者の要望）。
+     山域名は「峰の一覧を開く」動作と場所が近いので、
+     **押しても展開しない**ことと**飛び先が代表峰＝いちばん良い判定の峰**であることを見る。 */
+  const areaJump = await page.evaluate(async () => {
+    const order = { A: 0, B: 1, C: 2 };
+    // その山域でいちばん良い判定を出した峰（＝飛び先の正解）を、描かれている表から読む
+    const bestOf = card => {
+      let name = null, rank = 99, first = null;
+      for (const tr of [...card.querySelectorAll('.rank-detail tr')].slice(1)) {
+        const nm = tr.querySelector('.peak-link');
+        if (nm && !first) first = nm.textContent;
+        for (const g of tr.querySelectorAll('.pd-grade')) {
+          const r = order[g.textContent.trim()];
+          if (r != null && r < rank) { rank = r; name = nm ? nm.textContent : null; }
+        }
+      }
+      return { name, first };
+    };
+    /* ⚠**「代表峰＝先頭の峰」でないカードを選ぶこと。**
+       たまたま先頭が最良のカードで試すと、「先頭の峰へ飛ぶ」だけの実装でも通ってしまう
+       （実際に素通りした）。差のあるカードが1枚も無ければ検査が成立しないので失敗させる。 */
+    const cards = [...document.querySelectorAll('.rank-card')];
+    const card = cards.find(c => {
+      const b = bestOf(c);
+      return b.name && b.first && b.name !== b.first;
+    });
+    if (!card) return { noDistinctCard: true, cards: cards.length };
+    const want = bestOf(card);
+    const link = card.querySelector('.rn-main .area-link');
+    if (!link) return { missing: true };
+    const openBefore = card.classList.contains('open');
+    link.click();
+    await new Promise(r => setTimeout(r, 900));
+    return {
+      linkName: link.textContent,
+      wantName: want.name,
+      firstPeak: want.first,
+      // 山域名を押しただけで峰の一覧が開いてしまわないこと
+      toggled: card.classList.contains('open') !== openBefore,
+      overlayOpen: document.getElementById('rank-overlay').classList.contains('open'),
+      locationName: state.locationName,
+      lat: state.lat, lon: state.lon,
+    };
+  });
+
+  // ランキングに戻して、以降の峰タップの検査を続ける
+  await page.evaluate(() => openRank());
+  await page.waitForTimeout(1500);
+
   // 峰タップ → メテオグラム遷移
   await page.click('.rank-card .rank-card-head');
   await page.waitForTimeout(200);
@@ -121,9 +170,19 @@ function fakeBatch(url) {
   }));
 
   await browser.close();
-  console.log(JSON.stringify({ rankState, expanded, tomorrow, peakName, afterJump, errors }, null, 2));
+  console.log(JSON.stringify({ rankState, expanded, tomorrow, areaJump, peakName, afterJump, errors }, null, 2));
+  if (areaJump.noDistinctCard) console.log('  ✗ 代表峰と先頭の峰が違うカードが無い（検査が成立しない）');
+  if (areaJump.missing) console.log('  ✗ 山域名がリンクになっていない');
+  if (areaJump.toggled) console.log('  ✗ 山域名を押すと峰の一覧が開いてしまう');
+  if (areaJump.overlayOpen) console.log('  ✗ 山域名を押してもランキングが閉じない');
+  if (areaJump.wantName && areaJump.locationName !== areaJump.wantName) {
+    console.log(`  ✗ 飛び先が代表峰でない（${areaJump.locationName} ≠ ${areaJump.wantName}）`);
+  }
 
   const ok = errors.length === 0 &&
+    !areaJump.noDistinctCard && !areaJump.missing &&
+    !areaJump.toggled && !areaJump.overlayOpen &&
+    areaJump.locationName === areaJump.wantName &&
     rankState.overlayOpen && rankState.cardCount === 20 && rankState.hasUnjudgeable &&
     expanded.open && expanded.peakRows >= 2 &&
     tomorrow.badgeCols === 1 &&

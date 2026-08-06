@@ -320,6 +320,9 @@
         area: spot.area,
         type: spot.type,
         elevation: spot.elevation,
+        // 一覧から地点へ飛ぶために持たせる（推定そのものには使わない）
+        lat: spot.lat,
+        lon: spot.lon,
         past24hCm: r1(past.cm) || 0,
         next12hCm: r1(next.cm) || 0,
         totalCm: r1(past.cm + next.cm) || 0,
