@@ -35,6 +35,10 @@
   --bg: #f5f4f0;
   --bg2: #eceae3;
   --surface: #ffffff;
+  /* 地図に浮かぶ札の下地。半透明にしたいのでRGBだけ持つ。
+     ⚠**白を直書きしないこと。** 文字色は var(--text) 系でテーマに追従するので、
+     下地だけ白のままにするとダークモードで**白地に白文字**になる（実機で踏んだ）。 */
+  --surface-rgb: 255, 255, 255;
   --border: #d4d0c8;
   --text: #1a1a1a;
   --text2: #555;
@@ -705,7 +709,9 @@ html, body {
   border: none;
   border-radius: 22px;
   background: var(--text);
-  color: #fff;
+  /* ⚠白を直書きしない。下地が var(--text) なので、ダークモードでは下地が明るくなり
+     **白地に白文字**で読めなくなる（実機で踏んだ）。文字は下地の反対＝surfaceにする */
+  color: var(--surface);
   font-size: 14px;
   font-weight: 700;
   font-family: var(--font-ui);
@@ -795,7 +801,7 @@ html, body {
   border-radius: 8px;
   font-size: 12px;
   color: var(--text);
-  background: rgba(255,255,255,0.9);
+  background: rgba(var(--surface-rgb), 0.9);
   box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   display: flex; align-items: baseline; gap: 6px;
 }
@@ -806,7 +812,7 @@ html, body {
 #map-fav-slot {
   min-width: 0; display: flex;
   border-radius: 12px;
-  background: rgba(255,255,255,0.86);
+  background: rgba(var(--surface-rgb), 0.86);
   box-shadow: 0 1px 6px rgba(0,0,0,0.28);
 }
 #map-fav-slot > #fav-rotary { flex: 1 1 0; }
@@ -1088,6 +1094,7 @@ html, body {
 @media (prefers-color-scheme: dark) {
   #map-overlay {
     --surface: #16181c;
+    --surface-rgb: 22, 24, 28;
     --bg2: #23262c;
     --border: #3a3f47;
     --text: #f2f4f7;      /* 背景#16181cに対しコントラスト比 約15:1 */
@@ -1636,6 +1643,11 @@ html, body {
     <feComponentTransfer>
       <feFuncA id="satAlphaCurve" type="linear" slope="1" intercept="0"/>
     </feComponentTransfer>
+    <!-- 直線だけだと「晴れ」が薄いベールとして残る（実機で地図が全体に暗くなった）。
+         累乗で中間を押し下げ、明るい雲は残す。 -->
+    <feComponentTransfer>
+      <feFuncA id="satAlphaGamma" type="gamma" amplitude="1" exponent="1" offset="0"/>
+    </feComponentTransfer>
   </filter>
 </svg>
 <div id="app">
@@ -1723,7 +1735,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.72.1</span>
+    <span id="app-version">v4.73.0</span>
   </div>
 
   <!-- Footer -->
@@ -4609,9 +4621,9 @@ const SAT_BANDS = [
      取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
   { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
   // 赤外＝白黒。雲が白く晴れが暗い
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.12 },
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.30, alphaGamma: 1.8 },
   // 雲頂＝明るさが雲・色が雲頂高度。色を保ちたいので合成ではなく透明度で抜く
-  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.10 },
+  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.25, alphaGamma: 1.8 },
 ];
 const SAT_BAND_DEFAULT = 'B13';
 function satBands() { return SAT_BANDS.filter(b => !b.pending); }
@@ -4848,16 +4860,21 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
    暗部を6と26にすると再現する）。
    contrast(C) は 0.5 − 0.5/C 以下を黒に落とすので、C=1.5 なら約17%以下の暗部が
    まとめて0になり、床の差ごと消える。雲（明るい所）はむしろ締まる。 */
-/* 明るさ（輝度）をそのまま透明度にする曲線。
-   `cut` 以下の暗さは完全に透明、白は完全に不透明。間は直線。
-     alpha = (輝度 − cut) / (1 − cut) */
-function applySatAlphaCurve(cut) {
+/* 明るさ（輝度）を透明度にする曲線。
+     alpha = ((輝度 − cut) / (1 − cut)) ^ gamma
+   ⚠**直線だけでは足りない。** ひまわりの「晴れ」は真っ黒ではなく中間の灰色
+   （赤外なら地表の温度）なので、直線だと薄いベールとして残り、**地図全体が
+   暗く沈む**（実機で踏んだ）。累乗で中間を押し下げ、明るい雲だけ残す。
+   ⚠cutを上げすぎると薄い雲が消える。テストが両端（晴れは消える／雲は残る）を見ている。 */
+function applySatAlphaCurve(cut, gamma) {
   const f = document.getElementById('satAlphaCurve');
-  if (!f) return;
+  const g = document.getElementById('satAlphaGamma');
+  if (!f || !g) return;
   const c = Math.max(0, Math.min(0.9, cut || 0));
   const slope = 1 / (1 - c);
   f.setAttribute('slope', slope.toFixed(4));
   f.setAttribute('intercept', (-c * slope).toFixed(4));
+  g.setAttribute('exponent', String(gamma || 1));
 }
 
 /* ⚠**衛星画像は「合成」ではなく「透明度」で抜くこと**（v4.72.0）。
@@ -4874,7 +4891,7 @@ function applyWxBlend(def) {
   if (!host) return;
   const b = satBandDef(mapPrefs.satBand);
   if (b.alphaCut != null) {
-    applySatAlphaCurve(b.alphaCut);
+    applySatAlphaCurve(b.alphaCut, b.alphaGamma);
     host.style.mixBlendMode = 'normal';
     host.style.filter = 'url(#satAlpha)';
     return;

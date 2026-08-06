@@ -60,15 +60,18 @@ const DEM_RGB = [2, 208, 247];
 const DEM_EXPECTED_M = 1845.67;
 const DEM_PNG = solidPng(256, 256, ...DEM_RGB);
 const TILE_PNG = solidPng(8, 8, 200, 200, 200);
-/* 衛星タイルは**隣り合うタイルで暗部の水準を変える**（6 と 26）。
-   ひまわりの夜間画像はタイルごとに黒レベルがわずかに違い、screen合成だと
-   その差がタイルの継ぎ目＝縦横の線・格子として見えた（実機で踏んだ）。
-   一様に真っ黒な素材では**この不具合が再現しない**ので、わざと差をつけてある。 */
-const SAT_DARK_A = solidPng(256, 256, 6, 6, 6);
-const SAT_DARK_B = solidPng(256, 256, 26, 26, 26);
-/* 雲は**真っ白ではなく薄い灰色**にする。真っ白だといくら黒レベルを切り上げても
-   白のままなので、「切り捨てが強すぎて雲まで消える」側の失敗を素通りする（実際に素通りした）。 */
-const SAT_CLOUD = solidPng(256, 256, 110, 110, 110);
+/* ⚠**「晴れ」を真っ黒にしないこと。** 実機のひまわりは晴れていても真っ黒ではなく
+   中間の灰色（赤外なら地表の温度）で、そこが薄いベールとして残って**地図全体が
+   暗く沈む**不具合を出した。6や26のような素材では**この不具合が再現しない**
+   （実際に素通りして実機で踏んだ）。実測に近い 0.35〜0.41 あたりを使う。
+   隣り合うタイルで水準を変えてあるのは、その差が継ぎ目の線として出ないかも見るため。 */
+const SAT_DARK_A = solidPng(256, 256, 88, 88, 88);     // 輝度 0.345
+const SAT_DARK_B = solidPng(256, 256, 105, 105, 105);  // 輝度 0.412
+/* 雲は**真っ白ではなく灰色**にする。真っ白だといくら切り上げても白のままなので、
+   「切り捨てが強すぎて雲まで消える」側の失敗を素通りする（実際に素通りした）。 */
+/* ⚠**地図タイル(200)と同じ明るさにしないこと。** 同じだと雲が乗っても画素が動かず、
+   「測れない」ではなく「変化なし＝合格」になりかねない（実際に測定不能になった）。 */
+const SAT_CLOUD = solidPng(256, 256, 160, 160, 160);   // 輝度 0.627
 /* 'patchy' … **一部のタイルだけ404**。ひまわりのカラーが帯状にしか出なかった実機の再現。
    以前の失敗報告は「1枚でも読めたら以降を無視」だったので、この状態を**黙って通していた**。 */
 let satTileMode = 'dark';        // 'dark' / 'cloud'（薄い雲）/ 'patchy'（虫食い配信）
@@ -225,11 +228,12 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const satHits = [];
   const timesHits = [];
 
-  async function newPage(initLocalStorage) {
+  async function newPage(initLocalStorage, opts) {
     const page = await browser.newPage({
       viewport: { width: 390, height: 800 },
       permissions: ['geolocation'],
       geolocation: { latitude: 36.57, longitude: 137.65, accuracy: 25 },
+      ...((opts && opts.colorScheme) ? { colorScheme: opts.colorScheme } : {}),
     });
     page.on('pageerror', e => errors.push(e.message));
     page.on('dialog', d => d.accept());
@@ -691,6 +695,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
       slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
       intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
+      gamma: +document.getElementById('satAlphaGamma').getAttribute('exponent'),
     });
   });
   const readSat = () => ({
@@ -698,14 +703,16 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
     slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
     intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
+    gamma: +document.getElementById('satAlphaGamma').getAttribute('exponent'),
   });
   const irBlend = await page.evaluate(readSat);
   ok(irBlend.blend === 'normal' && /satAlpha/.test(irBlend.filter),
     '★衛星は合成ではなく輝度→透明度で抜く', irBlend);
   // alpha = (輝度 - cut)/(1 - cut) なので、cutでalpha=0・1でalpha=1になる
   const curveAt = (c, L) => c.slope * L + c.intercept;
-  ok(Math.abs(curveAt(irBlend, 0.12)) < 0.01 && Math.abs(curveAt(irBlend, 1) - 1) < 0.01,
-    '赤外の曲線は0.12以下を透明・白を不透明にする', irBlend);
+  ok(Math.abs(curveAt(irBlend, 0.30)) < 0.01 && Math.abs(curveAt(irBlend, 1) - 1) < 0.01,
+    '赤外の曲線は0.30以下を透明・白を不透明にする', irBlend);
+  ok(irBlend.gamma > 1, '中間を押し下げる累乗が掛かっている（晴れのベール対策）', irBlend);
 
   await page.evaluate(() => setSatBand('SND'));
   await page.waitForTimeout(900);
@@ -715,7 +722,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(satBand.url && /\/SND\/ETC\//.test(satBand.url), '雲頂に切り替わる（SND/ETC）', satBand.url);
   ok(satBand.saved === 'SND', '選んだバンドが保存される', satBand.saved);
-  ok(Math.abs(curveAt(satBand, 0.10)) < 0.01,
+  ok(Math.abs(curveAt(satBand, 0.25)) < 0.01,
     '★バンドを変えたら曲線も書き換わる（前のバンドのcutが残らない）', satBand);
 
   // 保留中のバンドは指定しても選ばれない
@@ -1532,6 +1539,51 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }
   await pageS.close();
 
+  /* ================= ダークモードで地図の札が読めること =================
+     ★地図に浮かぶ札は下地を白で直書きしていたのに、文字色は var(--text) 系で
+     テーマに追従していた。そのためダークモードで**白地に白文字**になり、
+     検索ボタンと「気象データ取得中…」が読めなくなった（実機で踏んだ）。 */
+  const pageD = await newPage(null, { colorScheme: 'dark' });
+  await pageD.click('#btn-map');
+  await pageD.waitForTimeout(900);
+  const contrast = await pageD.evaluate(() => {
+    // 相対輝度（WCAG）
+    const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const lum = c => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+    const parse = s => (s.match(/[\d.]+/g) || []).map(Number);
+    /* 半透明の下地は「地図の上」なので、中間の灰色に重ねて近似する。
+       白に重ねると壊れた版が通ってしまうため、意地悪な側で見ない */
+    const over = (c, bg) => {
+      const a = c.length > 3 ? c[3] : 1;
+      return [0, 1, 2].map(i => c[i] * a + bg[i] * (1 - a));
+    };
+    const ratio = (fg, bg) => {
+      const l1 = lum(fg), l2 = lum(bg);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    };
+    const check = (sel, bgSel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { sel, missing: true };
+      const cs = getComputedStyle(el);
+      const bgEl = bgSel ? document.querySelector(bgSel) : el;
+      const bgc = parse(getComputedStyle(bgEl).backgroundColor);
+      return { sel, ratio: +ratio(over(parse(cs.color), [128, 128, 128]),
+                                  over(bgc, [128, 128, 128])).toFixed(2) };
+    };
+    document.getElementById('map-picked-name').textContent = '気象データ取得中…';
+    return {
+      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      btn: check('#map-search-btn'),
+      picked: check('#map-picked-name', '#map-picked'),
+      elev: check('#map-elev', '#map-picked'),
+    };
+  });
+  ok(contrast.dark, 'ダークモードで見ている（検査の前提）', contrast.dark);
+  ok(contrast.btn.ratio >= 4.5, '★ダークモードでも検索ボタンの文字が読める', contrast.btn);
+  ok(contrast.picked.ratio >= 4.5, '★ダークモードでも地点名・取得中の表示が読める', contrast.picked);
+  ok(contrast.elev.ratio >= 3, 'ダークモードでも標高が読める', contrast.elev);
+  await pageD.close();
+
   /* ================= 虫食い配信を黙って通さない =================
      ★以前の失敗報告は「1枚でも読めたら以降のエラーを全部無視」だった。
      そのせいで、ひまわりのカラーが大半404で帯状にしか出ていないのに
@@ -1631,9 +1683,15 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page5.evaluate(() => { if (isOverlayOn('satellite')) toggleOverlay('satellite'); });
   await page5.waitForTimeout(800);
   const satOff = await page5.screenshot({ clip: satClip });
-  ok(!satFlat.equals(satOff), '標本の帯は本当に衛星に覆われている（抜かないと黒く潰れる）');
-  ok(satOn.equals(satOff),
-    '★暗い所は完全に透明＝濃度100%でも地図がそのまま見え、継ぎ目にも線が出ない');
+  ok(!satFlat.equals(satOff), '標本の帯は本当に衛星に覆われている（抜かないと塗り潰れる）');
+  /* ベールの濃さを実測する。「一致するか」で見ると厳しすぎるうえ、
+     **どれだけ沈んでいるか**が分からない（実機は薄いベールで地図が暗くなった）。 */
+  const vOff = meanLum(satOff), vOn = meanLum(satOn), vFull = meanLum(satFlat);
+  const veil = Math.abs(vOn - vOff) / Math.abs(vFull - vOff);
+  ok(Math.abs(vFull - vOff) > 8, 'ベールの物差しが成立する', { vOff, vOn, vFull });
+  ok(veil < 0.10,
+    '★晴れの所はほぼ完全に透ける（濃度100%でも地図が沈まない・継ぎ目も出ない）',
+    { veil: +veil.toFixed(3), vOff: +vOff.toFixed(1), vOn: +vOn.toFixed(1), vFull: +vFull.toFixed(1) });
   await page5.close();
 
   /* 暗部を切り捨てても**雲そのものは消えない**こと。
@@ -1653,15 +1711,15 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page6.waitForTimeout(800);
   const cloudOff = await page6.screenshot({ clip: satClip });
   ok(!cloudOn.equals(cloudOff), '★薄い雲も消さない（切り捨てが強すぎない）');
-  /* 濃さを測る。灰色110（輝度0.431）を cut=0.12 で抜くと
-     alpha = (0.431-0.12)/0.88 ≒ 0.35。地図と全不透明の間の35%あたりに来るはず。
+  /* 濃さを測る。灰色160（輝度0.627）を cut=0.30 / gamma=1.8 で抜くと
+     alpha = ((0.627-0.30)/0.70)^1.8 ≒ 0.25。地図と全不透明の間の1/4あたりに来るはず。
      ⚠フィルタの色空間指定（sRGB）を落とすと**線形RGBで計算されて4%まで落ちる**。
      「変わったか」だけ見ていると、この取りこぼしに気づけない。 */
   const lOff = meanLum(cloudOff), lOn = meanLum(cloudOn), lFull = meanLum(cloudFull);
   const frac = (lOn - lOff) / (lFull - lOff);
   ok(Math.abs(lFull - lOff) > 8, '全不透明との差が測れる（物差しが成立する）',
     { lOff, lOn, lFull });
-  ok(frac > 0.22 && frac < 0.50,
+  ok(frac > 0.15 && frac < 0.40,
     '★薄い雲の濃さが想定どおり（輝度→透明度がsRGBで計算されている）',
     { frac: +frac.toFixed(3), lOff: +lOff.toFixed(1), lOn: +lOn.toFixed(1), lFull: +lFull.toFixed(1) });
   await page6.close();
