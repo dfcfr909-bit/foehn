@@ -138,8 +138,21 @@ function fakeSupplemental(reqUrl) {
     //   ずれると雲の量の差を夜の暗さと取り違える（1時と12時で比べて実際に落ちた）。
     const iNight = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 1);
     const iDay = state.allData.findIndex((d, k) => k > 30 && d.time.getHours() === 13);
-    let maxJump = 0;
-    for (let i = 1; i < lum.length; i++) maxJump = Math.max(maxJump, Math.abs(lum[i] - lum[i - 1]));
+    /* 「1時間ごとの段差」を見たいので、**時刻の境目とそれ以外を分けて**測る。
+       全体の最大値だけ見ると、夜のシェーディングの境目のような
+       雲と無関係のなだらかな変化を拾って、実行時刻によって落ちる（実際に落ちた）。 */
+    let maxJump = 0, maxJumpHour = 0, maxJumpOther = 0;
+    const hourXs = new Set();
+    for (let k = 0; k <= 24; k++) {
+      const px = Math.round(cloudChart.valToPos(i0 + k - 0.5, 'x', true)) - x0;
+      for (let d = -1; d <= 1; d++) hourXs.add(px + d);
+    }
+    for (let i = 1; i < lum.length; i++) {
+      const j = Math.abs(lum[i] - lum[i - 1]);
+      maxJump = Math.max(maxJump, j);
+      if (hourXs.has(i)) maxJumpHour = Math.max(maxJumpHour, j);
+      else maxJumpOther = Math.max(maxJumpOther, j);
+    }
     const distinct = new Set(lum).size;
     const span = Math.max(...lum) - Math.min(...lum);
     return {
@@ -151,7 +164,7 @@ function fakeSupplemental(reqUrl) {
       rasterH: cloudRasterFor(state.allData).height,
       hours: state.allData.length,
       cached: cloudRasterFor(state.allData) === cloudRasterFor(state.allData),
-      px: { n: lum.length, maxJump, distinct, span },
+      px: { n: lum.length, maxJump, maxJumpHour, maxJumpOther, distinct, span },
       // 空＝青 / 雲＝白 の関係（灰色どうしで混ざらないための肝）
       cloudPx: at(iCloud, yCloudBand),
       clearPx: at(iClear, yCloudBand),
@@ -188,8 +201,14 @@ function fakeSupplemental(reqUrl) {
     r.rasterH === 192 && r.rasterW === r.hours * 8 && r.cached &&   // 1時間8分割のラスタを使い回す
     r.px.span > 40 &&                                      // 0%↔100%の差はちゃんと出ている
     r.px.distinct > 30 &&                                  // 濃さが段階的でない（旧実装は数種類）
-    // 時刻の境目に段差が無い（旧実装なら1時間ごとに span ぶんの段差が出る）
-    r.px.maxJump <= 14 &&
+    /* 時刻の境目に段差が無い（旧実装なら1時間ごとに span ぶんの段差が出た）。
+       ⚠**絶対値で頭打ちにしないこと。** 以前は `maxJump <= 14` としていたが、
+       この14は「なめらかな坂のいちばん急な所」の実測値すれすれで、
+       **実行時刻によって15になって落ちた**（アプリは何も変わっていないのに）。
+       見たいのは「境目だけ余分に飛ぶか」なので、境目と境目以外を比べる。 */
+    r.px.maxJumpHour <= r.px.maxJumpOther + 6 &&
+    // 念のため、坂そのものが段になっていないことも幅に対する割合で見る
+    r.px.maxJump < r.px.span * 0.35 &&
     // 空＝青 / 雲＝白。雲のほうが明るく、晴れ空は青い（青成分が赤成分より大きい）
     r.cloudPx.lum > r.clearPx.lum + 30 &&
     r.clearPx.b > r.clearPx.r + 25 &&

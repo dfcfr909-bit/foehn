@@ -104,6 +104,63 @@ function rgbaPng(w, h, fn) {
 const THUNDER_PNG = rgbaPng(64, 64,
   (x, y) => (x >= 10 && x < 22 && y >= 10 && y < 22) ? [255, 230, 0, 230] : [0, 0, 0, 0]);
 
+/* スクリーンショットのPNGを解いて画素を読む。
+   ⚠**「変わったか」だけの比較では弱い。** 雲がうっすら4%だけ乗っていても
+   「変わった」で通ってしまう（フィルタの色空間指定を落とす変異が実際に素通りした）。
+   濃さそのものを測れるようにする。 */
+function decodePng(buf) {
+  let pos = 8, w = 0, h = 0, bitDepth = 8, colorType = 6;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString('ascii', pos + 4, pos + 8);
+    const data = buf.slice(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0); h = data.readUInt32BE(4);
+      bitDepth = data[8]; colorType = data[9];
+    } else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    pos += 12 + len;
+  }
+  if (bitDepth !== 8) throw new Error('8bit以外のPNGは想定していない: ' + bitDepth);
+  const ch = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+  if (!ch) throw new Error('未対応のcolorType: ' + colorType);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = w * ch;
+  const out = Buffer.alloc(stride * h);
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < h; y++) {
+    const ft = raw[y * (stride + 1)];
+    const line = raw.slice(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    const cur = Buffer.alloc(stride);
+    for (let i = 0; i < stride; i++) {
+      const a = i >= ch ? cur[i - ch] : 0, b = prev[i], c = i >= ch ? prev[i - ch] : 0;
+      let v = line[i];
+      if (ft === 1) v += a;
+      else if (ft === 2) v += b;
+      else if (ft === 3) v += (a + b) >> 1;
+      else if (ft === 4) {
+        const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c);
+        v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
+      }
+      cur[i] = v & 0xff;
+    }
+    cur.copy(out, y * stride);
+    prev = cur;
+  }
+  return { w, h, ch, data: out };
+}
+// 画像の平均輝度（0〜255）
+function meanLum(buf) {
+  const img = decodePng(buf);
+  let sum = 0, n = 0;
+  for (let i = 0; i < img.data.length; i += img.ch) {
+    sum += 0.30 * img.data[i] + 0.59 * img.data[i + 1] + 0.11 * img.data[i + 2];
+    n++;
+  }
+  return sum / n;
+}
+
 const AMEDAS_TABLE = {
   '55102': { kjName: '富山',   lat: [36, 42.0], lon: [137, 12.0], alt: 9 },
   '55136': { kjName: '立山',   lat: [36, 34.0], lon: [137, 39.0], alt: 420 },
@@ -628,26 +685,38 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   /* バンドを変えるとURLと**合成方法**が変わり、選択は保存される。
      ⚠合成はバンドごと。赤外は背景が暗いので screen が効くが、
      色つきの雲頂を screen にすると明るい地図の上で潰れる（カラーで実際に潰れた）。 */
-  const satPane = () => getComputedStyle(leafletMap.getPane('mapSatMask'));
-  const irBlend = await page.evaluate(() => ({
+  await page.evaluate(() => {
+    window.readSatOuter = () => ({
+      blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
+      filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
+      slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
+      intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
+    });
+  });
+  const readSat = () => ({
     blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
     filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
-  }));
-  ok(irBlend.blend === 'screen' && /contrast/.test(irBlend.filter),
-    '赤外は screen ＋ 黒レベルの切り捨て', irBlend);
+    slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
+    intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
+  });
+  const irBlend = await page.evaluate(readSat);
+  ok(irBlend.blend === 'normal' && /satAlpha/.test(irBlend.filter),
+    '★衛星は合成ではなく輝度→透明度で抜く', irBlend);
+  // alpha = (輝度 - cut)/(1 - cut) なので、cutでalpha=0・1でalpha=1になる
+  const curveAt = (c, L) => c.slope * L + c.intercept;
+  ok(Math.abs(curveAt(irBlend, 0.12)) < 0.01 && Math.abs(curveAt(irBlend, 1) - 1) < 0.01,
+    '赤外の曲線は0.12以下を透明・白を不透明にする', irBlend);
 
   await page.evaluate(() => setSatBand('SND'));
   await page.waitForTimeout(900);
-  const satBand = await page.evaluate(() => ({
+  const satBand = await page.evaluate(() => Object.assign(readSatOuter(), {
     url: overlayTileLayers.satellite ? overlayTileLayers.satellite._url : null,
     saved: localStorage.getItem('sotoki.map.satBand'),
-    blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
-    filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
   }));
   ok(satBand.url && /\/SND\/ETC\//.test(satBand.url), '雲頂に切り替わる（SND/ETC）', satBand.url);
   ok(satBand.saved === 'SND', '選んだバンドが保存される', satBand.saved);
-  ok(satBand.blend === 'normal' && !/contrast/.test(satBand.filter),
-    '★色つきのバンドでは合成を外す（前のバンドの設定を残さない）', satBand);
+  ok(Math.abs(curveAt(satBand, 0.10)) < 0.01,
+    '★バンドを変えたら曲線も書き換わる（前のバンドのcutが残らない）', satBand);
 
   // 保留中のバンドは指定しても選ばれない
   const repIgnored = await page.evaluate(() => {
@@ -1517,17 +1586,18 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     on: isOverlayOn('satellite'),
     pane: overlayTileLayers.satellite ? overlayTileLayers.satellite.options.pane : null,
     host: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
-    tiles: getComputedStyle(leafletMap.getPane('mapSat')).mixBlendMode,
+    filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
+    tilesFilter: getComputedStyle(leafletMap.getPane('mapSat')).filter,
     nowcast: getComputedStyle(leafletMap.getPane('mapNowcastMask')).mixBlendMode,
     satZ: +getComputedStyle(leafletMap.getPane('mapSatMask')).zIndex,
     nowZ: +getComputedStyle(leafletMap.getPane('mapNowcastMask')).zIndex,
   }));
   ok(blend.on && blend.pane === 'mapSat', '衛星は合成用の別pane（雨雲まで一緒に薄まらないように）', blend);
-  ok(blend.host === 'screen', '★暗い所が透ける合成をpaneに掛けている', blend);
-  /* 合成は**外側（z-indexを持つ箱）**に掛けること。内側に掛けても
-     いちばん近いスタッキングコンテキストの中でしか混ざらず、黒いままになる */
-  ok(blend.tiles === 'normal', '合成は内側のpaneには掛けない（下と混ざらないため）', blend);
-  ok(blend.nowcast === 'normal', '雨雲・雷は合成しない（透明部分のあるPNGなので不要）', blend);
+  ok(/satAlpha/.test(blend.filter), '★輝度→透明度のフィルタを外側のpaneに掛けている', blend);
+  /* フィルタは**外側（z-indexを持つ箱）**に掛けること。内側に掛けても
+     いちばん近いスタッキングコンテキストの中で閉じてしまう */
+  ok(blend.tilesFilter === 'none', 'フィルタは内側のpaneには掛けない', blend);
+  ok(blend.nowcast === 'normal', '雨雲・雷は素のまま（透明部分のあるPNGなので不要）', blend);
   ok(blend.satZ < blend.nowZ, '衛星は雨雲より下に敷く', blend);
 
   const satBox = await page5.evaluate(() => {
@@ -1550,24 +1620,20 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(onTopSat.every(t => t === 'map'), '画素を見る帯に他の要素が乗っていない', onTopSat);
 
   const satOn = await page5.screenshot({ clip: satClip });
-  // 合成を外すと同じ場所が変わる（＝この帯は本当に衛星に覆われている）
-  await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.mixBlendMode = 'normal'; });
-  await page5.waitForTimeout(400);
-  const satFlat = await page5.screenshot({ clip: satClip });
-  await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.mixBlendMode = 'screen'; });
-  await page5.waitForTimeout(400);
-  // 黒レベルの切り捨てを外すと、タイルごとの暗部の差が線になって出る
+  /* 対照実験：フィルタを外すと、暗いタイルが**そのまま黒で塗り潰す**。
+     これが利用者の見た「濃度を上げると黒潰れして地図が見えない」症状そのもの。
+     ここが変わらないなら、そもそも標本の帯に衛星が載っていない＝検査が無意味。 */
   await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.filter = 'none'; });
-  await page5.waitForTimeout(400);
-  const satNoFloor = await page5.screenshot({ clip: satClip });
+  await page5.waitForTimeout(500);
+  const satFlat = await page5.screenshot({ clip: satClip });
   await page5.evaluate(() => { leafletMap.getPane('mapSatMask').style.filter = ''; });
-  await page5.waitForTimeout(400);
+  await page5.waitForTimeout(500);
   await page5.evaluate(() => { if (isOverlayOn('satellite')) toggleOverlay('satellite'); });
   await page5.waitForTimeout(800);
   const satOff = await page5.screenshot({ clip: satClip });
-  ok(!satFlat.equals(satOff), '標本の帯は本当に衛星に覆われている（合成なしなら塗り潰れる）');
-  ok(!satNoFloor.equals(satOff), '黒レベルを切り捨てないとタイルごとの暗部の差が出る（検査の前提）');
-  ok(satOn.equals(satOff), '★暗部を切り捨てるのでタイルの継ぎ目に線が出ない・地図がそのまま見える');
+  ok(!satFlat.equals(satOff), '標本の帯は本当に衛星に覆われている（抜かないと黒く潰れる）');
+  ok(satOn.equals(satOff),
+    '★暗い所は完全に透明＝濃度100%でも地図がそのまま見え、継ぎ目にも線が出ない');
   await page5.close();
 
   /* 暗部を切り捨てても**雲そのものは消えない**こと。
@@ -1577,10 +1643,27 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page6.click('#btn-map');
   await page6.waitForTimeout(2000);
   const cloudOn = await page6.screenshot({ clip: satClip });
+  // フィルタを外した状態＝雲を完全に不透明で載せたときの色（濃さの物差し）
+  await page6.evaluate(() => { leafletMap.getPane('mapSatMask').style.filter = 'none'; });
+  await page6.waitForTimeout(500);
+  const cloudFull = await page6.screenshot({ clip: satClip });
+  await page6.evaluate(() => { leafletMap.getPane('mapSatMask').style.filter = ''; });
+  await page6.waitForTimeout(500);
   await page6.evaluate(() => { if (isOverlayOn('satellite')) toggleOverlay('satellite'); });
   await page6.waitForTimeout(800);
   const cloudOff = await page6.screenshot({ clip: satClip });
   ok(!cloudOn.equals(cloudOff), '★薄い雲も消さない（切り捨てが強すぎない）');
+  /* 濃さを測る。灰色110（輝度0.431）を cut=0.12 で抜くと
+     alpha = (0.431-0.12)/0.88 ≒ 0.35。地図と全不透明の間の35%あたりに来るはず。
+     ⚠フィルタの色空間指定（sRGB）を落とすと**線形RGBで計算されて4%まで落ちる**。
+     「変わったか」だけ見ていると、この取りこぼしに気づけない。 */
+  const lOff = meanLum(cloudOff), lOn = meanLum(cloudOn), lFull = meanLum(cloudFull);
+  const frac = (lOn - lOff) / (lFull - lOff);
+  ok(Math.abs(lFull - lOff) > 8, '全不透明との差が測れる（物差しが成立する）',
+    { lOff, lOn, lFull });
+  ok(frac > 0.22 && frac < 0.50,
+    '★薄い雲の濃さが想定どおり（輝度→透明度がsRGBで計算されている）',
+    { frac: +frac.toFixed(3), lOff: +lOff.toFixed(1), lOn: +lOn.toFixed(1), lFull: +lFull.toFixed(1) });
   await page6.close();
   satTileMode = 'dark';
 

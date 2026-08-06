@@ -1617,6 +1617,23 @@ html, body {
 </style>
 </head>
 <body>
+<!-- 衛星画像を「明るい所ほど不透明」にするフィルタ。
+     ⚠**color-interpolation-filters="sRGB" は必須。** 既定のlinearRGBで計算すると
+     色がくすんで雲頂の色分けが読めなくなる。
+     行列はRGBをそのまま通し、A に輝度（0.30R+0.59G+0.11B）を入れている。
+     feFuncA の傾きと切片は applySatAlphaCurve がバンドごとに書き換える。 -->
+<svg id="sat-filter-defs" aria-hidden="true" focusable="false"
+     style="position:absolute;width:0;height:0;overflow:hidden">
+  <filter id="satAlpha" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0
+                                         0 1 0 0 0
+                                         0 0 1 0 0
+                                         0.30 0.59 0.11 0 0"/>
+    <feComponentTransfer>
+      <feFuncA id="satAlphaCurve" type="linear" slope="1" intercept="0"/>
+    </feComponentTransfer>
+  </filter>
+</svg>
 <div id="app">
 
   <!-- Loading -->
@@ -1702,7 +1719,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.71.0</span>
+    <span id="app-version">v4.72.0</span>
   </div>
 
   <!-- Footer -->
@@ -4587,10 +4604,10 @@ const SAT_BANDS = [
      `band`/`prod` が正しいか、カラーだけ配信範囲が違うのかは未確認。
      取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
   { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
-  // 赤外は背景が暗く雲が白い＝screenと相性が良い。昼夜とも写る
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', blend: 'screen', floor: 1.5 },
-  // 雲頂は色つきの加工画像。screenだと潰れるので素直に不透明度で重ねる
-  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC' },
+  // 赤外＝白黒。雲が白く晴れが暗い
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.12 },
+  // 雲頂＝明るさが雲・色が雲頂高度。色を保ちたいので合成ではなく透明度で抜く
+  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.10 },
 ];
 const SAT_BAND_DEFAULT = 'B13';
 function satBands() { return SAT_BANDS.filter(b => !b.pending); }
@@ -4827,13 +4844,37 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
    暗部を6と26にすると再現する）。
    contrast(C) は 0.5 − 0.5/C 以下を黒に落とすので、C=1.5 なら約17%以下の暗部が
    まとめて0になり、床の差ごと消える。雲（明るい所）はむしろ締まる。 */
+/* 明るさ（輝度）をそのまま透明度にする曲線。
+   `cut` 以下の暗さは完全に透明、白は完全に不透明。間は直線。
+     alpha = (輝度 − cut) / (1 − cut) */
+function applySatAlphaCurve(cut) {
+  const f = document.getElementById('satAlphaCurve');
+  if (!f) return;
+  const c = Math.max(0, Math.min(0.9, cut || 0));
+  const slope = 1 / (1 - c);
+  f.setAttribute('slope', slope.toFixed(4));
+  f.setAttribute('intercept', (-c * slope).toFixed(4));
+}
+
+/* ⚠**衛星画像は「合成」ではなく「透明度」で抜くこと**（v4.72.0）。
+   ひまわりのJPEGは透明部分が無いので、そのまま重ねると黒で塗り潰れ、
+   `screen` で抜くと明るい地図の上では潰れる。**どちらも実機で踏んだ。**
+   輝度を透明度に移せば、暗い所（晴れ）は地図が素通し、明るい所（雲）は
+   **色をそのまま残して**乗る。雲頂の色分けが読めるのはこれが要る。
+   `cut` は暗部の切り捨てを兼ねるので、タイルごとの黒レベルの差＝格子も出ない。
+   ⚠**バンドを変えたら曲線も書き換えること**（前のバンドの `cut` が残る）。
+   重い・出ない端末に当たったら、バンド定義を `blend`/`floor` に戻せば従来動作。 */
 function applyWxBlend(def) {
   if (def.kind !== 'jmaSat' || !leafletMap) return;
   const host = leafletMap.getPane('mapSatMask');
   if (!host) return;
   const b = satBandDef(mapPrefs.satBand);
-  /* ⚠**掛けないバンドでは必ず外すこと。** 付けっぱなしにすると、
-     前に選んでいたバンドの合成が次のバンドに残る */
+  if (b.alphaCut != null) {
+    applySatAlphaCurve(b.alphaCut);
+    host.style.mixBlendMode = 'normal';
+    host.style.filter = 'url(#satAlpha)';
+    return;
+  }
   host.style.mixBlendMode = b.blend || 'normal';
   host.style.filter = b.floor ? `contrast(${b.floor})` : '';
 }
