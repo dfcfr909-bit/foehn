@@ -220,6 +220,13 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
         tileHits.push(url);
         return route.fulfill({ contentType: 'image/png', body: TILE_PNG });
       }
+      if (url.includes('nominatim.openstreetmap.org/search')) {
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(
+          Array.from({ length: 8 }, (_, i) => ({
+            lat: String(36.5 + i * 0.01), lon: String(137.6 + i * 0.01),
+            display_name: `東町${i}, 矢板市, 栃木県, 日本`, name: `東町${i}`,
+          }))) });
+      }
       if (url.includes('api.open-meteo.com')) {
         // 風の格子（複数座標・wind_speed_10m）は配列で返す
         if (url.includes('wind_speed_10m')) {
@@ -1363,6 +1370,61 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const broken = await page4.evaluate(() => ({ base: mapPrefs.base, n: mapPrefs.overlays.length }));
   ok(broken.base === 'pale' && broken.n === 0, '壊れた保存値でも既定で起動する', broken);
   await page4.close();
+
+  /* ================= 検索結果とレイヤーパネルの重なり =================
+     ★検索したままパネルを開くと、結果の札が浮いて残り**パネルの✕まで覆って
+     閉じられなくなる**（実機で踏んだ）。地図の✕はパネルを開くと引っ込む決まりなので、
+     パネルの✕が押せなくなると**戻る手段がひとつも無くなる**。 */
+  const pageS = await newPage();
+  await pageS.click('#btn-map');
+  await pageS.waitForTimeout(700);
+  await pageS.fill('#map-search-input', '東町');
+  await pageS.click('#map-search-btn');
+  await pageS.waitForTimeout(900);
+  const searched = await pageS.evaluate(() => {
+    const r = document.getElementById('map-results');
+    return { n: r.querySelectorAll('.map-result-item').length,
+             shown: getComputedStyle(r).display !== 'none' };
+  });
+  ok(searched.n > 0 && searched.shown, '検索結果が出る（以降の検査の前提）', searched);
+
+  await pageS.click('#btn-layers');
+  await pageS.waitForTimeout(600);
+  const trapped = await pageS.evaluate(() => {
+    const btn = document.getElementById('btn-layer-close');
+    const b = btn.getBoundingClientRect();
+    const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    const res = document.getElementById('map-results');
+    return {
+      panelOpen: document.getElementById('layer-panel').classList.contains('open'),
+      // パネルの✕を押したとき、本当にその✕に当たるか
+      hitsClose: !!hit && (hit === btn || btn.contains(hit)),
+      hitId: hit ? (hit.id || hit.className || hit.tagName) : null,
+      resultsCleared: res.querySelectorAll('.map-result-item').length === 0,
+      resultsHidden: getComputedStyle(res).opacity === '0' ||
+                     getComputedStyle(res).display === 'none',
+      // 地図側の✕は引っ込んでいる（だからパネルの✕が唯一の出口）
+      mapCloseHidden: getComputedStyle(document.getElementById('map-top')).opacity === '0',
+    };
+  });
+  ok(trapped.panelOpen, 'レイヤーパネルが開く', trapped);
+  ok(trapped.mapCloseHidden, 'パネルを開くと地図の✕は引っ込む（前提）', trapped);
+  ok(trapped.resultsCleared && trapped.resultsHidden,
+    '★パネルを開いたら検索結果は畳む', trapped);
+  ok(trapped.hitsClose, '★パネルの✕が本当に押せる（閉じられなくならない）', trapped);
+  /* 実際に閉じられることまで見る。
+     ⚠**押せないと分かっているときはclickしないこと。** 覆われたままclickすると
+     Playwrightが30秒待ってタイムアウトし、原因の見えない落ち方になる。 */
+  if (trapped.hitsClose) {
+    await pageS.click('#btn-layer-close');
+    await pageS.waitForTimeout(500);
+    const escaped = await pageS.evaluate(() => ({
+      panelOpen: document.getElementById('layer-panel').classList.contains('open'),
+      mapCloseBack: getComputedStyle(document.getElementById('map-top')).opacity !== '0',
+    }));
+    ok(!escaped.panelOpen && escaped.mapCloseBack, '★閉じれば地図の✕も戻る', escaped);
+  }
+  await pageS.close();
 
   /* ================= 衛星の雲の合成（暗い所を透かす） =================
      ★ひまわりのタイルはJPEGで**透明部分が無い**。そのまま濃くすると雲の無い所まで

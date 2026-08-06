@@ -927,7 +927,8 @@ html, body {
 #layer-panel {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  z-index: 600;
+  /* 浮かせた帯（1100）より上。下にすると浮いているものにパネルの✕が覆われる */
+  z-index: 1200;
   max-height: 78%;
   display: flex;
   flex-direction: column;
@@ -955,9 +956,12 @@ html, body {
 /* パネルを開いている間は地図の浮きボタンを引っ込める。
    パネルの✕と現在地ボタンが重なって押し間違える（実機で指摘された）。
    どのみちパネルが地図を覆っているので、この間は地図の操作をしない */
+/* ⚠**検索結果も一緒に引っ込めること。** 引っ込め忘れると、検索したままパネルを開いたとき
+   結果の札だけが浮いて残り、**パネルの✕まで覆って閉じられなくなる**（実機で踏んだ）。 */
 #map-stage.panel-open #map-tools,
+#map-stage.panel-open #map-results,
 #map-stage.panel-open #map-top { opacity: 0; pointer-events: none; }
-#map-tools, #map-top { transition: opacity .18s; }
+#map-tools, #map-top, #map-results { transition: opacity .18s; }
 .layer-section-title {
   font-size: 11px; font-weight: 700; color: var(--text3);
   margin: 10px 2px 6px;
@@ -1681,7 +1685,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.69.0</span>
+    <span id="app-version">v4.69.1</span>
   </div>
 
   <!-- Footer -->
@@ -5514,6 +5518,11 @@ function toggleLayerPanel() {
     el.classList.add('open');
     // 浮きボタンを引っ込める（パネルの✕と現在地ボタンが重なるため）
     document.getElementById('map-stage').classList.add('panel-open');
+    /* 検索の途中でパネルを開いたら、候補もキーボードも畳む。
+       残すとパネルの上に札とキーボードが乗って操作できなくなる */
+    document.getElementById('map-results').innerHTML = '';
+    const q = document.getElementById('map-search-input');
+    if (q) q.blur();
     renderLayerPanel();
     refreshTileCacheUsage();
   }

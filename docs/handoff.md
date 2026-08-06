@@ -4,7 +4,7 @@
 
 ## 現状
 
-- **バージョン**: v4.69.0
+- **バージョン**: v4.69.1
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/sotoki-development-bpquml`
