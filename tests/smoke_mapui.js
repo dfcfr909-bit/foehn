@@ -69,7 +69,9 @@ const SAT_DARK_B = solidPng(256, 256, 26, 26, 26);
 /* 雲は**真っ白ではなく薄い灰色**にする。真っ白だといくら黒レベルを切り上げても
    白のままなので、「切り捨てが強すぎて雲まで消える」側の失敗を素通りする（実際に素通りした）。 */
 const SAT_CLOUD = solidPng(256, 256, 110, 110, 110);
-let satTileMode = 'dark';        // 'dark'（暗部の差あり）/ 'cloud'（一面の薄い雲）
+/* 'patchy' … **一部のタイルだけ404**。ひまわりのカラーが帯状にしか出なかった実機の再現。
+   以前の失敗報告は「1枚でも読めたら以降を無視」だったので、この状態を**黙って通していた**。 */
+let satTileMode = 'dark';        // 'dark' / 'cloud'（薄い雲）/ 'patchy'（虫食い配信）
 function satTileBody(url) {
   if (satTileMode === 'cloud') return SAT_CLOUD;
   const m = /\/(\d+)\/(\d+)\/(\d+)\.jpg/.exec(url);
@@ -210,6 +212,12 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       // 衛星は**暗いタイル**を返す（ひまわりのJPEGは透明部分が無く、実機で全面真っ黒になった）
       if (url.includes('/himawari/')) {
         satHits.push(url);
+        if (satTileMode === 'patchy') {
+          // 1列だけ通し、残りは404（実機で見えた「帯だけ出る」状態）
+          const m = /\/(\d+)\/(\d+)\/(\d+)\.jpg/.exec(url);
+          const keep = m && (+m[2] % 3 === 0);
+          if (!keep) return route.fulfill({ status: 404, body: '' });
+        }
         return route.fulfill({ contentType: 'image/jpeg', body: satTileBody(url) });
       }
       if (url.includes('/amedas/data/latest_time.txt')) return route.fulfill({ contentType: 'text/plain', body: '2026-01-31T12:10:00+09:00' });
@@ -598,6 +606,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
      「曇っているが降っていない」を見るのはこちらの役目。 */
   await page.evaluate(() => toggleOverlay('satellite'));
   await page.waitForTimeout(900);
+  const SAT_PENDING_DEFINED = await page.evaluate(() =>
+    SAT_BANDS.some(b => b.id === 'REP' && b.pending));
   const sat = await page.evaluate(() => ({
     url: overlayTileLayers.satellite ? overlayTileLayers.satellite._url : null,
     pane: overlayTileLayers.satellite ? overlayTileLayers.satellite.options.pane : null,
@@ -605,23 +615,50 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(sat.url && /himawari\/data\/satimg/.test(sat.url), '衛星タイルはひまわりの配信を見る', sat.url);
   ok(sat.url && /20260131123000/.test(sat.url), '衛星も targetTimes の時刻でURLを組む', sat.url);
-  ok(sat.url && /\/jp\/.*\/REP\/ETC\//.test(sat.url), '既定はカラー（REP/ETC）', sat.url);
+  ok(sat.url && /\/jp\/.*\/B13\/TBB\//.test(sat.url), '既定は赤外（B13/TBB）', sat.url);
+  /* カラーは実機で配信が虫食いだったので保留（定義は残しつつ出さない）。
+     保存済みに残っていても復元しないこと。 */
+  ok(!sat.chips.includes('カラー'), '★保留中のカラーはチップに出さない', sat.chips);
+  ok(SAT_PENDING_DEFINED, 'カラーの定義自体は残してある（原因が分かれば戻せる）');
   ok(sat.pane === 'mapSat', '衛星は合成用の別pane（雨雲まで一緒に薄まらないように）', sat.pane);
   ok(timesHits.some(u => u.includes('targetTimes_jp')), '衛星は日本域の targetTimes', timesHits);
-  ok(sat.chips.includes('赤外'), 'バンド切替のチップが出る', sat.chips);
+  ok(sat.chips.includes('赤外') && sat.chips.includes('雲頂'), 'バンド切替のチップが出る', sat.chips);
   ok(satHits.length > 0, '衛星タイルを実際に取りに行っている', satHits.length);
 
-  // バンドを変えるとURLが変わり、選択は保存される
-  await page.evaluate(() => setSatBand('B13'));
-  await page.waitForTimeout(700);
+  /* バンドを変えるとURLと**合成方法**が変わり、選択は保存される。
+     ⚠合成はバンドごと。赤外は背景が暗いので screen が効くが、
+     色つきの雲頂を screen にすると明るい地図の上で潰れる（カラーで実際に潰れた）。 */
+  const satPane = () => getComputedStyle(leafletMap.getPane('mapSatMask'));
+  const irBlend = await page.evaluate(() => ({
+    blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
+    filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
+  }));
+  ok(irBlend.blend === 'screen' && /contrast/.test(irBlend.filter),
+    '赤外は screen ＋ 黒レベルの切り捨て', irBlend);
+
+  await page.evaluate(() => setSatBand('SND'));
+  await page.waitForTimeout(900);
   const satBand = await page.evaluate(() => ({
     url: overlayTileLayers.satellite ? overlayTileLayers.satellite._url : null,
     saved: localStorage.getItem('sotoki.map.satBand'),
+    blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
+    filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
   }));
-  ok(satBand.url && /\/B13\/TBB\//.test(satBand.url), '赤外に切り替わる（B13/TBB）', satBand.url);
-  ok(satBand.saved === 'B13', '選んだバンドが保存される', satBand.saved);
-  await page.evaluate(() => setSatBand('REP'));
-  await page.waitForTimeout(500);
+  ok(satBand.url && /\/SND\/ETC\//.test(satBand.url), '雲頂に切り替わる（SND/ETC）', satBand.url);
+  ok(satBand.saved === 'SND', '選んだバンドが保存される', satBand.saved);
+  ok(satBand.blend === 'normal' && !/contrast/.test(satBand.filter),
+    '★色つきのバンドでは合成を外す（前のバンドの設定を残さない）', satBand);
+
+  // 保留中のバンドは指定しても選ばれない
+  const repIgnored = await page.evaluate(() => {
+    setSatBand('REP');
+    return { saved: mapPrefs.satBand,
+             url: overlayTileLayers.satellite ? overlayTileLayers.satellite._url : null };
+  });
+  ok(repIgnored.saved !== 'REP', '★保留中のバンドは指定しても選ばれない', repIgnored);
+
+  await page.evaluate(() => setSatBand('B13'));
+  await page.waitForTimeout(700);
 
   /* 自動更新：時刻表を引き直して新しい basetime のレイヤーに貼り替える。
      雨雲も衛星も数分で更新されるので、開けっぱなしで古い絵のままにしない。 */
@@ -1425,6 +1462,48 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     ok(!escaped.panelOpen && escaped.mapCloseBack, '★閉じれば地図の✕も戻る', escaped);
   }
   await pageS.close();
+
+  /* ================= 虫食い配信を黙って通さない =================
+     ★以前の失敗報告は「1枚でも読めたら以降のエラーを全部無視」だった。
+     そのせいで、ひまわりのカラーが大半404で帯状にしか出ていないのに
+     画面には何も出ず、利用者からは「雲が写らない」としか見えなかった。
+     「全部ダメ」だけでなく「ほとんどダメ」も言えることを見る。 */
+  satTileMode = 'patchy';
+  const pageP = await newPage({ 'sotoki.map.overlays': JSON.stringify([{ id: 'satellite', opacity: 1 }]) });
+  await pageP.click('#btn-map');
+  await pageP.waitForTimeout(1200);
+  /* 引いて表示する。近づいたままだと衛星タイルは2枚しか要らず、
+     枚数が判定の下限（WX_FAIL_MIN_TILES）に届かないので検査が空振りする */
+  await pageP.evaluate(() => leafletMap.setZoom(5));
+  await pageP.waitForTimeout(1500);
+  await pageP.click('#btn-layers');
+  await pageP.waitForTimeout(3000);            // WX_FAIL_SETTLE_MS より長く待つ
+  const patchy = await pageP.evaluate(() => {
+    const row = [...document.querySelectorAll('.layer-ov')]
+      .find(r => /衛星/.test(r.textContent));
+    const l = overlayTileLayers.satellite;
+    return { text: row ? row.textContent.replace(/\s+/g, ' ') : null,
+             status: layerStatus.satellite,
+             tiles: l ? Object.keys(l._tiles).length : 0 };
+  });
+  ok(patchy.tiles >= 4, '検査に足るだけタイルを要求している（空振り防止）', patchy.tiles);
+  ok(patchy.status && /一部しか取得できません/.test(patchy.status),
+    '★大半が404なら「一部しか取得できません」と出す', patchy);
+  ok(patchy.status && /%/.test(patchy.status), '取得できなかった割合を添える', patchy.status);
+  await pageP.close();
+  satTileMode = 'dark';
+
+  /* 全部届いているときは何も言わないこと（言うと狼少年になる） */
+  const pageQ = await newPage({ 'sotoki.map.overlays': JSON.stringify([{ id: 'satellite', opacity: 1 }]) });
+  await pageQ.click('#btn-map');
+  await pageQ.waitForTimeout(1200);
+  await pageQ.evaluate(() => leafletMap.setZoom(5));
+  await pageQ.waitForTimeout(1500);
+  await pageQ.click('#btn-layers');
+  await pageQ.waitForTimeout(3000);
+  const healthy = await pageQ.evaluate(() => layerStatus.satellite || '');
+  ok(!healthy, '全部届いているときは何も出さない', healthy);
+  await pageQ.close();
 
   /* ================= 衛星の雲の合成（暗い所を透かす） =================
      ★ひまわりのタイルはJPEGで**透明部分が無い**。そのまま濃くすると雲の無い所まで

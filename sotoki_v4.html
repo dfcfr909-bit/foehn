@@ -1702,7 +1702,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.70.0</span>
+    <span id="app-version">v4.71.0</span>
   </div>
 
   <!-- Footer -->
@@ -4572,13 +4572,31 @@ const JMA_TIMES_THUNDER = `${JMA_NOWCAST_BASE}/targetTimes_N2.json`;
 const JMA_SAT_BASE = 'https://www.jma.go.jp/bosai/himawari/data/satimg';
 const JMA_TIMES_SAT = `${JMA_SAT_BASE}/targetTimes_jp.json`;
 // 表示するバンド。実機でURLの形を確認できていないので unverified 扱い
+/* ひまわりのバンド。
+   ⚠**合成方法はバンドごとに持たせること。** レイヤー一括で `screen` にすると、
+   中間調が主体の絵（カラー・雲頂）は明るいベースマップの上で潰れて見えなくなる。
+   `screen` が下に足せるのは `1-(1-下)(1-上)` の幅だけで、淡色地図（0.92）では
+   20階調しかない。背景が暗い赤外はその幅を端から端まで使えるが、
+   海も陸も中間調から上にいるカラーは上半分に押し込まれて海と雲の差が消える
+   （実機で「カラーだけ雲が写らない」を踏んだ）。
+   ⚠`pending` のバンドはチップに出さない（保存済みでも復元しない）。 */
 const SAT_BANDS = [
-  { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC' },  // リアルカラー再現画像
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB' },  // 雲の高さが分かる
-  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC' },  // 雲頂強調
+  /* カラー（リアルカラー再現画像）。**実機で配信が虫食い**だった。
+     濃度を変えても、赤外に切り替えても、待っても、同じ帯しか出ない
+     ＝合成でも時刻の使い回しでもなく、このバンド固有の問題。
+     `band`/`prod` が正しいか、カラーだけ配信範囲が違うのかは未確認。
+     取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
+  { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
+  // 赤外は背景が暗く雲が白い＝screenと相性が良い。昼夜とも写る
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', blend: 'screen', floor: 1.5 },
+  // 雲頂は色つきの加工画像。screenだと潰れるので素直に不透明度で重ねる
+  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC' },
 ];
-const SAT_BAND_DEFAULT = 'REP';
-function satBandDef(id) { return SAT_BANDS.find(b => b.id === id) || SAT_BANDS[0]; }
+const SAT_BAND_DEFAULT = 'B13';
+function satBands() { return SAT_BANDS.filter(b => !b.pending); }
+function satBandDef(id) {
+  return satBands().find(b => b.id === id) || satBands()[0] || SAT_BANDS[0];
+}
 
 // 気象レイヤーの自動更新の間隔。ナウキャストは5分、衛星は10分ごとに更新される
 const WX_REFRESH_MS = 5 * 60 * 1000;
@@ -4653,7 +4671,7 @@ function loadMapPrefs() {
   let satBand = SAT_BAND_DEFAULT;
   try {
     const raw = localStorage.getItem(MAP_LS_SAT_BAND);
-    if (raw && SAT_BANDS.some(b => b.id === raw)) satBand = raw;
+    if (raw && satBands().some(b => b.id === raw)) satBand = raw;   // pendingは復元しない
   } catch (e) { /* 読めなければ既定 */ }
   return { base, overlays, amedasElement, satBand };
 }
@@ -4800,7 +4818,7 @@ function dropAllStaleWxLayers() {
    マスク用の入れ物（z-indexつき）がその境になるので、その内側に掛けても
    ベースマップとは混ざらず、黒いままになる。
    そのため合成するレイヤーは専用のpane（mapSat）に分けてある。 */
-function wxPaneFor(def) { return def.blend ? 'mapSat' : 'mapNowcast'; }
+function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'; }
 /* 合成モードはマスク用の入れ物（z-indexを持つ外側）に掛ける。内側だと下と混ざらない。
    ⚠**合成の前に黒レベルを切り捨てること（floor）。** ひまわりの画像はタイルごとに
    暗部の水準がわずかに違う（特に夜のカラーバンドは可視光がほぼ無く、その差が支配的）。
@@ -4810,11 +4828,14 @@ function wxPaneFor(def) { return def.blend ? 'mapSat' : 'mapNowcast'; }
    contrast(C) は 0.5 − 0.5/C 以下を黒に落とすので、C=1.5 なら約17%以下の暗部が
    まとめて0になり、床の差ごと消える。雲（明るい所）はむしろ締まる。 */
 function applyWxBlend(def) {
-  if (!def.blend || !leafletMap) return;
+  if (def.kind !== 'jmaSat' || !leafletMap) return;
   const host = leafletMap.getPane('mapSatMask');
   if (!host) return;
-  host.style.mixBlendMode = def.blend;
-  host.style.filter = def.floor ? `contrast(${def.floor})` : '';
+  const b = satBandDef(mapPrefs.satBand);
+  /* ⚠**掛けないバンドでは必ず外すこと。** 付けっぱなしにすると、
+     前に選んでいたバンドの合成が次のバンドに残る */
+  host.style.mixBlendMode = b.blend || 'normal';
+  host.style.filter = b.floor ? `contrast(${b.floor})` : '';
 }
 
 async function addTimedTileLayer(def, opacity, replace) {
@@ -5048,22 +5069,45 @@ function updateRainOutlook() {
    「表示されない」としか見えない（CS立体図で実際に踏んだ。v4.63.0で共通化）。
    失敗したタイルのズームを添えるのは、配信範囲の問題かズーム範囲の問題かを
    切り分けるため。 */
+/* ⚠⚠**「全部ダメ」だけでなく「ほとんどダメ」も言うこと。**
+   以前は `if (loaded > 0) return;` で、**1枚でも読めたら以降の失敗を全部無視**していた。
+   そのせいで、ひまわりのカラーが大半404で帯状にしか出ていないのに画面には何も出ず、
+   利用者からは「雲が写らない」としか見えなかった（実機で踏んだ。v4.71.0で修正）。
+   ただし端の欠けで騒がないよう、**枚数が溜まってから割合で**判定する。 */
+const WX_FAIL_MIN_TILES = 6;      // これだけ届くまでは判定しない（起動直後に騒がない）
+const WX_FAIL_RATIO = 0.4;        // 4割以上落ちたら「一部しか出ていない」と言う
+const WX_FAIL_SETTLE_MS = 1500;   // タイルは非同期に届くので、落ち着いてから数える
 function watchTileStatus(layer, def, hooks) {
-  let errors = 0, loaded = 0, badZ = null;
+  let errors = 0, loaded = 0, badZ = null, timer = null;
+  const judge = () => {
+    timer = null;
+    const total = loaded + errors;
+    if (!errors || total < WX_FAIL_MIN_TILES) return;
+    if (loaded === 0) {
+      setLayerStatus(def.id, def.mayBeEmpty
+        ? `この範囲に表示なし（z${badZ}のタイルが無い）`
+        : `取得できません（z${badZ}のタイルが無い）`);
+      return;
+    }
+    if (errors / total < WX_FAIL_RATIO) { setLayerStatus(def.id, ''); return; }
+    const pct = Math.round(errors / total * 100);
+    setLayerStatus(def.id, `一部しか取得できません（${pct}%が取得不可・z${badZ}）`);
+  };
+  const later = () => { if (!timer) timer = setTimeout(judge, WX_FAIL_SETTLE_MS); };
   layer.on('tileerror', e => {
     errors++;
     if (e && e.coords) badZ = e.coords.z;
-    if (loaded > 0 || errors < 3) return;      // 一部だけ欠けるのは配信範囲の端なので黙る
-    if (hooks && hooks.onFail) hooks.onFail();
-    setLayerStatus(def.id, def.mayBeEmpty
-      ? `この範囲に表示なし（z${badZ}のタイルが無い）`
-      : `取得できません（z${badZ}のタイルが無い）`);
+    // 1枚も読めていないうちは、従来どおり早めに理由を出す
+    if (loaded === 0 && errors >= 3 && hooks && hooks.onFail) hooks.onFail();
+    later();
   });
   layer.on('tileload', () => {
     loaded++;
-    setLayerStatus(def.id, '');
+    if (!errors) setLayerStatus(def.id, '');
     if (hooks && hooks.onLoad) hooks.onLoad();
+    later();
   });
+  layer.on('remove', () => { if (timer) { clearTimeout(timer); timer = null; } });
 }
 
 // レイヤーごとの状態表示（取得できない等）
@@ -5559,7 +5603,7 @@ function amedasElementChips() {
 
 // ひまわりのバンド切り替え（カラー／赤外／雲頂）。アメダスの要素チップと同じ見た目
 function satBandChips() {
-  return `<div class="amedas-els">` + SAT_BANDS.map(b =>
+  return `<div class="amedas-els">` + satBands().map(b =>
     `<button class="amedas-el${b.id === mapPrefs.satBand ? ' active' : ''}"
              onclick="setSatBand('${b.id}')">${b.name}</button>`).join('') + `</div>`;
 }
