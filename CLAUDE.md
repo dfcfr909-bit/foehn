@@ -1,9 +1,11 @@
-# SotoKi
+# ナギナビ
 
 バックカントリー気象PWA（単一HTML / GitHub Pages / Open-Meteo JMAモデル / Leaflet）
 
-> **新しいセッションを始めたら、まず `docs/handoff.md` を読むこと。**
-> 現状・未完事項・過去の失敗（風速の単位取り違え等）がまとまっている。
+> **新しいセッションを始めたら、まず `docs/status.md` を読むこと。**
+> 現状・進行中・未完事項・次の一手がまとまっている。
+> 仕様の詳細や過去の経緯（風速の単位取り違え等）を探すときは
+> `docs/archive/handoff_v4.md`（旧・引き継ぎメモの原本）を見る。
 
 ## 規約
 
@@ -15,7 +17,9 @@
 ## 構成
 
 - `sotoki_v4.html` — 現行版（改修ベース）
-- `docs/handoff.md` — **引き継ぎメモ（現状・未完事項・経緯）**
+- `docs/status.md` — **現状・進行中・未完事項・次セッションの最初のプロンプト（毎回読む）**
+- `docs/archive/handoff_v4.md` — 旧・引き継ぎメモの原本。**仕様の詳細と過去の経緯はここ**（更新しない）
+- `docs/project_structure_proposal.md` — ドキュメント構成の移行計画（段階1まで実施済み）
 - `docs/requirements_renewal.md` — 全面改修 要件定義書
 - `docs/ai_outlook.md` — AI全国概況（GLM × GitHub Actions）
 - `snowRanking.js` / `data/spots.*` / `scripts/buildSpots.mjs` — 新雪ランキング。
@@ -35,7 +39,8 @@
 ## 改修計画
 
 `docs/requirements_renewal.md` の1〜5（uPlot移行／過去統合／昼夜シェーディング／
-視認性再設計／地図）は**実施済み**。以降の変更履歴と現行仕様は `docs/handoff.md` を参照。
+視認性再設計／地図）は**実施済み**。現状と未完事項は `docs/status.md`、
+現行仕様と変更の経緯は `docs/archive/handoff_v4.md` を参照。
 
 ## 技術スタック
 
