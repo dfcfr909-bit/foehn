@@ -266,10 +266,13 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
         const stamp = isJp ? (nth > 1 ? '20260131124000' : '20260131123000')
                     : isN2 ? '20260131123000'
                     : (nth > 1 ? '20260131121000' : '20260131120000');
-        return route.fulfill({ contentType: 'application/json', body: JSON.stringify([{
-          basetime: stamp, validtime: stamp,
-          elements: [isN2 ? 'thns' : 'hrpns'],
-        }]) });
+        /* ⚠**古い順に複数件返すこと。** 本物の時刻表は1件ではなく、古い実況から
+           新しい実況へ並んだ配列で来る。1件しか返さないと「先頭を拾う」実装でも
+           テストが通ってしまい、実機で古い絵を貼る不具合を見逃す（実際に見逃した）。 */
+        const stamps = ['20260131110000', '20260131111000', stamp];
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(
+          stamps.map(s => ({ basetime: s, validtime: s, elements: [isN2 ? 'thns' : 'hrpns'] }))
+        ) });
       }
       // 雷は一部だけ塗ったタイル（雷マークの置き場所を画像から決めているのを見るため）
       if (url.includes('/surf/thns/')) {
@@ -685,6 +688,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(sat.url && /himawari\/data\/satimg/.test(sat.url), '衛星タイルはひまわりの配信を見る', sat.url);
   ok(sat.url && /20260131123000/.test(sat.url), '衛星も targetTimes の時刻でURLを組む', sat.url);
+  // 時刻表の先頭（＝一番古い実況）を拾うと、実機で雲が大きくずれる
+  ok(sat.url && !/20260131110000/.test(sat.url),
+    '時刻表の先頭ではなく最新の実況を貼る', sat.url);
   ok(sat.url && /\/jp\/.*\/B13\/TBB\//.test(sat.url), '既定は赤外（B13/TBB）', sat.url);
   /* カラーは実機で配信が虫食いだったので保留（定義は残しつつ出さない）。
      保存済みに残っていても復元しないこと。 */

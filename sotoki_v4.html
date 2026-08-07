@@ -1716,7 +1716,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.76.0</span>
+    <span id="app-version">v4.76.1</span>
   </div>
 
   <!-- Footer -->
@@ -4805,10 +4805,20 @@ function jmaTimesList(url) {
     .catch(e => { delete wxTimesPromises[url]; throw e; });
   return wxTimesPromises[url];
 }
-// 地図に貼るのは実況＝basetimeとvalidtimeが同じもの。無ければ先頭を使う
+/* 実況＝basetimeとvalidtimeが同じもののうち、**一番新しいもの**。
+   ⚠時刻表は古い順に並んでいる。`find` で先頭を拾うと時刻表の張る時間ぶん
+   まるごと古い絵を貼ることになる（衛星の雲が実況と大きくずれた原因）。
+   実況が1件も無ければ先頭で妥協する。 */
+function latestObsTime(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const obs = list.filter(t => t.basetime === t.validtime);
+  return obs.length
+    ? obs.reduce((a, b) => (a.validtime > b.validtime ? a : b))
+    : list[0];
+}
+// 地図に貼るのは最新の実況
 function jmaTimes(url) {
-  return jmaTimesList(url)
-    .then(list => list.find(t => t.basetime === t.validtime) || list[0]);
+  return jmaTimesList(url).then(list => latestObsTime(list));
 }
 // 次の自動更新で新しい時刻を取りに行くため、覚えている時刻表を捨てる
 function clearWxTimes() { wxTimesPromises = {}; }
@@ -5073,11 +5083,8 @@ function parseJmaTime(s) {
 /* 時刻表を「実況→予報」の並びに直す。
    実況は basetime===validtime のうち一番新しいもの、予報はそれより先の validtime。 */
 function nowcastSeries(list) {
-  if (!Array.isArray(list) || !list.length) return [];
-  const obsAll = list.filter(t => t.basetime === t.validtime);
-  const obs = obsAll.length
-    ? obsAll.reduce((a, b) => (a.validtime > b.validtime ? a : b))
-    : list[0];
+  const obs = latestObsTime(list);
+  if (!obs) return [];
   const fut = list.filter(t => t.validtime > obs.validtime)
     .sort((a, b) => (a.validtime < b.validtime ? -1 : 1));
   return [obs].concat(fut);
