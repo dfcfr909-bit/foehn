@@ -1640,13 +1640,12 @@ html, body {
                                          0 1 0 0 0
                                          0 0 1 0 0
                                          0.30 0.59 0.11 0 0"/>
+    <!-- ⚠⚠**feComponentTransfer を2段に繋がないこと。** linear と gamma を
+         別々のノードにしたら、iOS Safari でフィルタが丸ごと効かなくなった
+         （v4.73.0で実際に壊した）。曲線は `type="table"` の1段に畳んで、
+         刻んだ値を applySatAlphaCurve が書き込む。 -->
     <feComponentTransfer>
-      <feFuncA id="satAlphaCurve" type="linear" slope="1" intercept="0"/>
-    </feComponentTransfer>
-    <!-- 直線だけだと「晴れ」が薄いベールとして残る（実機で地図が全体に暗くなった）。
-         累乗で中間を押し下げ、明るい雲は残す。 -->
-    <feComponentTransfer>
-      <feFuncA id="satAlphaGamma" type="gamma" amplitude="1" exponent="1" offset="0"/>
+      <feFuncA id="satAlphaCurve" type="table" tableValues="0 1"/>
     </feComponentTransfer>
   </filter>
 </svg>
@@ -1735,7 +1734,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.73.0</span>
+    <span id="app-version">v4.73.1</span>
   </div>
 
   <!-- Footer -->
@@ -4866,15 +4865,19 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
    （赤外なら地表の温度）なので、直線だと薄いベールとして残り、**地図全体が
    暗く沈む**（実機で踏んだ）。累乗で中間を押し下げ、明るい雲だけ残す。
    ⚠cutを上げすぎると薄い雲が消える。テストが両端（晴れは消える／雲は残る）を見ている。 */
+const SAT_ALPHA_STEPS = 16;      // 曲線を何分割して表にするか
 function applySatAlphaCurve(cut, gamma) {
   const f = document.getElementById('satAlphaCurve');
-  const g = document.getElementById('satAlphaGamma');
-  if (!f || !g) return;
+  if (!f) return;
   const c = Math.max(0, Math.min(0.9, cut || 0));
-  const slope = 1 / (1 - c);
-  f.setAttribute('slope', slope.toFixed(4));
-  f.setAttribute('intercept', (-c * slope).toFixed(4));
-  g.setAttribute('exponent', String(gamma || 1));
+  const g = gamma || 1;
+  const vals = [];
+  for (let i = 0; i <= SAT_ALPHA_STEPS; i++) {
+    const L = i / SAT_ALPHA_STEPS;
+    const t = Math.max(0, Math.min(1, (L - c) / (1 - c)));
+    vals.push(Math.pow(t, g).toFixed(4));
+  }
+  f.setAttribute('tableValues', vals.join(' '));
 }
 
 /* ⚠**衛星画像は「合成」ではなく「透明度」で抜くこと**（v4.72.0）。

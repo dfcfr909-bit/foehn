@@ -4,7 +4,7 @@
 
 ## 現状
 
-- **バージョン**: v4.73.0
+- **バージョン**: v4.73.1
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/sotoki-development-bpquml`
@@ -417,6 +417,10 @@
   `mapSatMask` に掛け、`alpha =(輝度 − cut)/(1 − cut)` にしている。
   暗い所（晴れ）は地図が素通し、明るい所（雲）は**色をそのまま残して**乗るので、
   雲頂の色分け（雲頂高度）が読める。`cut` は暗部の切り捨ても兼ねるので格子も出ない。
+  - ⚠⚠**`feComponentTransfer` を2段に繋がないこと**（v4.73.1）。linear と gamma を
+    別々のノードにしたら、**iOS Safari でフィルタが丸ごと効かなくなった**（実際に壊した）。
+    曲線は **`type="table"` の1段**に畳み、刻んだ値を `applySatAlphaCurve` が書き込む。
+    テストが `feComponentTransfer` の個数を数えている
   - ⚠⚠**直線だけでは足りない。累乗（`alphaGamma`）で中間を押し下げること**（v4.73.0）。
     ひまわりの「晴れ」は**真っ黒ではなく中間の灰色**（赤外なら地表の温度）なので、
     直線のままだと薄いベールとして残り、**地図全体が暗く沈む**（実機で踏んだ）。

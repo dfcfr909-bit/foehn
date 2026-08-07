@@ -693,26 +693,31 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     window.readSatOuter = () => ({
       blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
       filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
-      slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
-      intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
-      gamma: +document.getElementById('satAlphaGamma').getAttribute('exponent'),
+      // ⚠曲線は table の1段。2段に繋ぐと iOS Safari で丸ごと効かなくなる
+      nodes: document.querySelectorAll('#satAlpha feComponentTransfer').length,
+      table: (document.getElementById('satAlphaCurve').getAttribute('tableValues') || '')
+        .trim().split(/\s+/).map(Number),
     });
   });
-  const readSat = () => ({
-    blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
-    filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
-    slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
-    intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
-    gamma: +document.getElementById('satAlphaGamma').getAttribute('exponent'),
-  });
-  const irBlend = await page.evaluate(readSat);
+  const irBlend = await page.evaluate(() => window.readSatOuter());
   ok(irBlend.blend === 'normal' && /satAlpha/.test(irBlend.filter),
     '★衛星は合成ではなく輝度→透明度で抜く', irBlend);
-  // alpha = (輝度 - cut)/(1 - cut) なので、cutでalpha=0・1でalpha=1になる
-  const curveAt = (c, L) => c.slope * L + c.intercept;
+  /* 表（tableValues）を折れ線として引く。輝度Lに対する透明度を返す */
+  const curveAt = (c, L) => {
+    const t = c.table, n = t.length - 1;
+    const x = Math.max(0, Math.min(1, L)) * n;
+    const i = Math.min(n - 1, Math.floor(x));
+    return t[i] + (t[i + 1] - t[i]) * (x - i);
+  };
   ok(Math.abs(curveAt(irBlend, 0.30)) < 0.01 && Math.abs(curveAt(irBlend, 1) - 1) < 0.01,
     '赤外の曲線は0.30以下を透明・白を不透明にする', irBlend);
-  ok(irBlend.gamma > 1, '中間を押し下げる累乗が掛かっている（晴れのベール対策）', irBlend);
+  ok(irBlend.nodes === 1,
+    '★曲線のノードは1段だけ（2段に繋ぐとiOS Safariで丸ごと効かなくなる）', irBlend.nodes);
+  /* 直線ではなく「中間を押し下げた」曲線であること。直線なら cut と 1 の中点で 0.5 になる */
+  const midL = (0.30 + 1) / 2;
+  ok(curveAt(irBlend, midL) < 0.40,
+    '中間を押し下げる曲線になっている（晴れのベール対策）',
+    { midL, v: +curveAt(irBlend, midL).toFixed(3) });
 
   await page.evaluate(() => setSatBand('SND'));
   await page.waitForTimeout(900);
