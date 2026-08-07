@@ -1735,7 +1735,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.75.0</span>
+    <span id="app-version">v4.75.1</span>
   </div>
 
   <!-- Footer -->
@@ -4918,6 +4918,21 @@ function applySatAlphaCurve(cut) {
    `cut` は暗部の切り捨てを兼ねるので、タイルごとの黒レベルの差＝格子も出ない。
    ⚠**バンドを変えたら曲線も書き換えること**（前のバンドの `cut` が残る）。
    重い・出ない端末に当たったら、バンド定義を `blend`/`floor` に戻せば従来動作。 */
+/* ⚠⚠**フィルタの中身を書き換えたら、参照するidごと変えること**（v4.75.1）。
+   iOS Safari は一度評価したフィルタを使い回し、**あとから属性を書き換えても
+   絵が変わらない**。実機で「ピンクにしてもシアンにしても色が変わらない」を踏んだ。
+   Chromium は正しく作り直すので**この不具合はヘッドレスでは再現しない**。
+   そのため id を毎回振り直し、CSSの `url(#…)` も新しい方を指すようにしている。
+   （テストは「値を変えたらidも変わる」ことを見張っている） */
+let satFilterSeq = 0;
+function bumpSatFilterId() {
+  const filt = document.querySelector('#sat-filter-defs filter');
+  if (!filt) return null;
+  const id = 'satAlpha' + (++satFilterSeq);
+  filt.setAttribute('id', id);
+  return id;
+}
+
 function applyWxBlend(def) {
   if (def.kind !== 'jmaSat' || !leafletMap) return;
   const host = leafletMap.getPane('mapSatMask');
@@ -4926,8 +4941,9 @@ function applyWxBlend(def) {
   if (b.alphaCut != null) {
     applySatAlphaCurve(b.alphaCut);
     applySatMatrix(b.tintable ? satTintDef(mapPrefs.satTint) : null);
+    const id = bumpSatFilterId();
     host.style.mixBlendMode = 'normal';
-    host.style.filter = 'url(#satAlpha)';
+    host.style.filter = id ? `url(#${id})` : '';
     return;
   }
   host.style.mixBlendMode = b.blend || 'normal';

@@ -703,7 +703,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
       filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
       /* ⚠実機で透けたのは「1段・type=linear」だけ。2段でも table でも効かなかった */
-      nodes: document.querySelectorAll('#satAlpha feComponentTransfer').length,
+      nodes: document.querySelectorAll('#sat-filter-defs feComponentTransfer').length,
       funcType: document.getElementById('satAlphaCurve').getAttribute('type'),
       slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
       intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
@@ -1741,11 +1741,19 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
      ⚠**属性の確認で済ませない。** 実際に画素がピンクに寄っているかを見る。
      明るさを色にも掛けてしまうと薄い雲が「暗いピンク」になって地図に沈むので、
      赤が地図より**明るい**方向に動くことまで確かめる。 */
+  /* ⚠**レイヤーが載りきってから before を取ること。** タイルの取得は非同期なので、
+     オンにした直後だと filter がまだ 'none' で、**何を比べても違って見える**
+     （id を振り直さない壊し方が素通りした）。 */
+  await page6.evaluate(() => { if (!isOverlayOn('satellite')) toggleOverlay('satellite'); });
+  await page6.waitForTimeout(1200);
+  const filterBefore = await page6.evaluate(() =>
+    getComputedStyle(leafletMap.getPane('mapSatMask')).filter);
+  ok(/satAlpha/.test(filterBefore), 'before の時点でフィルタが載っている（検査の前提）', filterBefore);
   const tinted = await page6.evaluate(async () => {
-    if (!isOverlayOn('satellite')) toggleOverlay('satellite');
     setSatTint('pink');
     await new Promise(r => setTimeout(r, 800));
     return {
+      filterAfter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
       saved: localStorage.getItem('sotoki.map.satTint'),
       chips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
       matrix: (document.getElementById('satMatrix').getAttribute('values') || '')
@@ -1755,6 +1763,13 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page6.waitForTimeout(500);
   const pinkShot = await page6.screenshot({ clip: satClip });
   ok(tinted.saved === 'pink', '選んだ色が保存される', tinted.saved);
+  /* ★中身を書き換えたら参照するidも変わること。
+     ⚠**これはChromiumでは絵が正しく変わるので、画素検査では捕まらない。**
+     iOS Safari は一度評価したフィルタを使い回し、属性だけ書き換えても絵が変わらない
+     （実機で「色を変えても変化なし」を踏んだ）。構造で見張るしかない。 */
+  ok(tinted.filterAfter !== filterBefore && /satAlpha/.test(tinted.filterAfter),
+    '★フィルタの中身を変えたら参照するidも変える（iOS Safariが作り直さないため）',
+    { filterBefore, filterAfter: tinted.filterAfter });
   ok(tinted.chips.includes('ピンク'), '着色のチップが出る', tinted.chips);
   // 明るさはアルファ側（4行目）に残し、RGBは定数（5列目のoffset）にする
   ok(tinted.matrix[4] > 0.9 && tinted.matrix[9] < 0.4 && tinted.matrix[15] === 0.30,
