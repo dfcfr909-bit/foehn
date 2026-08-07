@@ -693,31 +693,27 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     window.readSatOuter = () => ({
       blend: getComputedStyle(leafletMap.getPane('mapSatMask')).mixBlendMode,
       filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
-      // ⚠曲線は table の1段。2段に繋ぐと iOS Safari で丸ごと効かなくなる
+      /* ⚠実機で透けたのは「1段・type=linear」だけ。2段でも table でも効かなかった */
       nodes: document.querySelectorAll('#satAlpha feComponentTransfer').length,
-      table: (document.getElementById('satAlphaCurve').getAttribute('tableValues') || '')
-        .trim().split(/\s+/).map(Number),
+      funcType: document.getElementById('satAlphaCurve').getAttribute('type'),
+      slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
+      intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
     });
   });
   const irBlend = await page.evaluate(() => window.readSatOuter());
   ok(irBlend.blend === 'normal' && /satAlpha/.test(irBlend.filter),
     '★衛星は合成ではなく輝度→透明度で抜く', irBlend);
-  /* 表（tableValues）を折れ線として引く。輝度Lに対する透明度を返す */
-  const curveAt = (c, L) => {
-    const t = c.table, n = t.length - 1;
-    const x = Math.max(0, Math.min(1, L)) * n;
-    const i = Math.min(n - 1, Math.floor(x));
-    return t[i] + (t[i + 1] - t[i]) * (x - i);
-  };
-  ok(Math.abs(curveAt(irBlend, 0.30)) < 0.01 && Math.abs(curveAt(irBlend, 1) - 1) < 0.01,
-    '赤外の曲線は0.30以下を透明・白を不透明にする', irBlend);
-  ok(irBlend.nodes === 1,
-    '★曲線のノードは1段だけ（2段に繋ぐとiOS Safariで丸ごと効かなくなる）', irBlend.nodes);
-  /* 直線ではなく「中間を押し下げた」曲線であること。直線なら cut と 1 の中点で 0.5 になる */
-  const midL = (0.30 + 1) / 2;
-  ok(curveAt(irBlend, midL) < 0.40,
-    '中間を押し下げる曲線になっている（晴れのベール対策）',
-    { midL, v: +curveAt(irBlend, midL).toFixed(3) });
+  // alpha = (輝度 - cut)/(1 - cut)。cutでalpha=0・1でalpha=1になる
+  const curveAt = (c, L) => Math.max(0, Math.min(1, c.slope * L + c.intercept));
+  ok(Math.abs(curveAt(irBlend, 0.45)) < 0.01 && Math.abs(curveAt(irBlend, 1) - 1) < 0.01,
+    '赤外の曲線は0.45以下を透明・白を不透明にする', irBlend);
+  /* ⚠形を変えないこと。実機で透けたのは「1段・type=linear」だけで、
+     2段に繋いだ版も table にした版も、iOS Safariでフィルタが丸ごと効かなかった */
+  ok(irBlend.nodes === 1 && irBlend.funcType === 'linear',
+    '★曲線は1段のlinear（実機で効くのはこの形だけ）', irBlend);
+  /* 実機の「晴れ」は輝度0.4前後。そこが完全に透けることが要（ベールの原因） */
+  ok(curveAt(irBlend, 0.40) === 0,
+    '★実機の晴れ（輝度0.40前後）は完全に透ける', { v: curveAt(irBlend, 0.40) });
 
   await page.evaluate(() => setSatBand('SND'));
   await page.waitForTimeout(900);
@@ -727,7 +723,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(satBand.url && /\/SND\/ETC\//.test(satBand.url), '雲頂に切り替わる（SND/ETC）', satBand.url);
   ok(satBand.saved === 'SND', '選んだバンドが保存される', satBand.saved);
-  ok(Math.abs(curveAt(satBand, 0.25)) < 0.01,
+  ok(Math.abs(curveAt(satBand, 0.40)) < 0.01,
     '★バンドを変えたら曲線も書き換わる（前のバンドのcutが残らない）', satBand);
 
   // 保留中のバンドは指定しても選ばれない

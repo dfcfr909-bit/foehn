@@ -1640,12 +1640,13 @@ html, body {
                                          0 1 0 0 0
                                          0 0 1 0 0
                                          0.30 0.59 0.11 0 0"/>
-    <!-- ⚠⚠**feComponentTransfer を2段に繋がないこと。** linear と gamma を
-         別々のノードにしたら、iOS Safari でフィルタが丸ごと効かなくなった
-         （v4.73.0で実際に壊した）。曲線は `type="table"` の1段に畳んで、
-         刻んだ値を applySatAlphaCurve が書き込む。 -->
+    <!-- ⚠⚠**この形（feComponentTransfer 1段・feFuncA type="linear"）から動かさないこと。**
+         実機のiOS Safariで透けたのはこの形だけ（v4.72.1）。
+         2段に繋いだら丸ごと効かなくなり（v4.73.0）、1段のまま type="table" に
+         変えても効かなかった（v4.73.1）。どちらも実機で踏んでいる。
+         そのため中間を落とす累乗は使わず、**cutを上げることで代替**している。 -->
     <feComponentTransfer>
-      <feFuncA id="satAlphaCurve" type="table" tableValues="0 1"/>
+      <feFuncA id="satAlphaCurve" type="linear" slope="1" intercept="0"/>
     </feComponentTransfer>
   </filter>
 </svg>
@@ -1734,7 +1735,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.73.1</span>
+    <span id="app-version">v4.74.0</span>
   </div>
 
   <!-- Footer -->
@@ -4620,9 +4621,9 @@ const SAT_BANDS = [
      取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
   { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
   // 赤外＝白黒。雲が白く晴れが暗い
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.30, alphaGamma: 1.8 },
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45 },
   // 雲頂＝明るさが雲・色が雲頂高度。色を保ちたいので合成ではなく透明度で抜く
-  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.25, alphaGamma: 1.8 },
+  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.40 },
 ];
 const SAT_BAND_DEFAULT = 'B13';
 function satBands() { return SAT_BANDS.filter(b => !b.pending); }
@@ -4861,23 +4862,18 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
    まとめて0になり、床の差ごと消える。雲（明るい所）はむしろ締まる。 */
 /* 明るさ（輝度）を透明度にする曲線。
      alpha = ((輝度 − cut) / (1 − cut)) ^ gamma
-   ⚠**直線だけでは足りない。** ひまわりの「晴れ」は真っ黒ではなく中間の灰色
-   （赤外なら地表の温度）なので、直線だと薄いベールとして残り、**地図全体が
-   暗く沈む**（実機で踏んだ）。累乗で中間を押し下げ、明るい雲だけ残す。
+   ⚠ひまわりの「晴れ」は真っ黒ではなく中間の灰色（赤外なら地表の温度）なので、
+   **cutをそこより上に置くこと**。低いと晴れが薄いベールとして残り、**地図全体が
+   暗く沈む**（実機で踏んだ）。中間を累乗で落とす手もあるが、iOS Safariが
+   その形のフィルタを受け付けないので cut で代替している。
    ⚠cutを上げすぎると薄い雲が消える。テストが両端（晴れは消える／雲は残る）を見ている。 */
-const SAT_ALPHA_STEPS = 16;      // 曲線を何分割して表にするか
-function applySatAlphaCurve(cut, gamma) {
+function applySatAlphaCurve(cut) {
   const f = document.getElementById('satAlphaCurve');
   if (!f) return;
   const c = Math.max(0, Math.min(0.9, cut || 0));
-  const g = gamma || 1;
-  const vals = [];
-  for (let i = 0; i <= SAT_ALPHA_STEPS; i++) {
-    const L = i / SAT_ALPHA_STEPS;
-    const t = Math.max(0, Math.min(1, (L - c) / (1 - c)));
-    vals.push(Math.pow(t, g).toFixed(4));
-  }
-  f.setAttribute('tableValues', vals.join(' '));
+  const slope = 1 / (1 - c);
+  f.setAttribute('slope', slope.toFixed(4));
+  f.setAttribute('intercept', (-c * slope).toFixed(4));
 }
 
 /* ⚠**衛星画像は「合成」ではなく「透明度」で抜くこと**（v4.72.0）。
@@ -4894,7 +4890,7 @@ function applyWxBlend(def) {
   if (!host) return;
   const b = satBandDef(mapPrefs.satBand);
   if (b.alphaCut != null) {
-    applySatAlphaCurve(b.alphaCut, b.alphaGamma);
+    applySatAlphaCurve(b.alphaCut);
     host.style.mixBlendMode = 'normal';
     host.style.filter = 'url(#satAlpha)';
     return;
