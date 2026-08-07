@@ -1636,7 +1636,7 @@ html, body {
      style="position:absolute;left:-9999px;top:0;width:1px;height:1px;
             opacity:0;pointer-events:none">
   <filter id="satAlpha" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0
+    <feColorMatrix id="satMatrix" type="matrix" values="1 0 0 0 0
                                          0 1 0 0 0
                                          0 0 1 0 0
                                          0.30 0.59 0.11 0 0"/>
@@ -1735,7 +1735,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.74.0</span>
+    <span id="app-version">v4.75.0</span>
   </div>
 
   <!-- Footer -->
@@ -4586,6 +4586,7 @@ const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
+const MAP_LS_SAT_TINT = 'sotoki.map.satTint';
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -4621,11 +4622,21 @@ const SAT_BANDS = [
      取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
   { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
   // 赤外＝白黒。雲が白く晴れが暗い
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45 },
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45, tintable: true },
   // 雲頂＝明るさが雲・色が雲頂高度。色を保ちたいので合成ではなく透明度で抜く
   { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.40 },
 ];
 const SAT_BAND_DEFAULT = 'B13';
+/* 白黒のバンド（赤外）を目立つ色で塗る。
+   ⚠**雲頂には掛けない**（`tintable` が無い）。あちらは色そのものが雲頂高度の情報で、
+   塗り潰すと読めなくなる。 */
+const SAT_TINTS = [
+  { id: 'none', name: '白' },
+  { id: 'pink', name: 'ピンク', rgb: [1.00, 0.18, 0.72] },
+  { id: 'cyan', name: 'シアン', rgb: [0.20, 0.95, 1.00] },
+];
+const SAT_TINT_DEFAULT = 'none';
+function satTintDef(id) { return SAT_TINTS.find(t => t.id === id) || SAT_TINTS[0]; }
 function satBands() { return SAT_BANDS.filter(b => !b.pending); }
 function satBandDef(id) {
   return satBands().find(b => b.id === id) || satBands()[0] || SAT_BANDS[0];
@@ -4648,7 +4659,7 @@ const MAP_WEATHER = [
      真っ黒に塗り潰れて地図が消える（実機で踏んだ）。そこで blend: 'screen' を付け、
      暗い所ほど下の地図が透ける合成にしてある（詳細は wxPaneFor）。 */
   { id: 'satellite', name: '衛星の雲', kind: 'jmaSat',
-    timesFile: JMA_TIMES_SAT, opacity: 0.55, blend: 'screen', floor: 1.5,
+    timesFile: JMA_TIMES_SAT, opacity: 0.50, blend: 'screen', floor: 1.5,
     minNativeZoom: 3, maxNativeZoom: 6, attribution: '気象庁 ひまわり',
     note: 'ひまわりの雲画像。暗い所ほど地図が透ける。10分ごとに自動更新' },
   /* 雷。N1では出ずN2に変えたが、実機ではまだタイルが404だった（時刻表は取れている）。
@@ -4706,7 +4717,12 @@ function loadMapPrefs() {
     const raw = localStorage.getItem(MAP_LS_SAT_BAND);
     if (raw && satBands().some(b => b.id === raw)) satBand = raw;   // pendingは復元しない
   } catch (e) { /* 読めなければ既定 */ }
-  return { base, overlays, amedasElement, satBand };
+  let satTint = SAT_TINT_DEFAULT;
+  try {
+    const raw = localStorage.getItem(MAP_LS_SAT_TINT);
+    if (raw && SAT_TINTS.some(t => t.id === raw)) satTint = raw;
+  } catch (e) { /* 読めなければ既定 */ }
+  return { base, overlays, amedasElement, satBand, satTint };
 }
 function saveMapPrefs() {
   try {
@@ -4714,6 +4730,7 @@ function saveMapPrefs() {
     localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(mapPrefs.overlays));
     localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
     localStorage.setItem(MAP_LS_SAT_BAND, mapPrefs.satBand);
+    localStorage.setItem(MAP_LS_SAT_TINT, mapPrefs.satTint);
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -4723,7 +4740,7 @@ function saveMapPrefs() {
 let leafletMap = null;
 let leafletMarker = null;
 let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
-                 satBand: SAT_BAND_DEFAULT };
+                 satBand: SAT_BAND_DEFAULT, satTint: SAT_TINT_DEFAULT };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -4867,6 +4884,23 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
    暗く沈む**（実機で踏んだ）。中間を累乗で落とす手もあるが、iOS Safariが
    その形のフィルタを受け付けないので cut で代替している。
    ⚠cutを上げすぎると薄い雲が消える。テストが両端（晴れは消える／雲は残る）を見ている。 */
+/* 雲の色。
+   ⚠**行列の形は変えないこと**（ノードも type も実機で効く形が決まっている。上の注記参照）。
+   変えるのは**値だけ**。
+   - 着色なし … RGBはそのまま通す（雲頂の色分けが残る）
+   - 着色あり … RGBを固定色にし、明るさは**アルファだけ**に載せる。
+     こうすると薄い雲＝薄いピンク、厚い雲＝濃いピンクになり、濃淡が読める
+     （明るさを色にも掛けると、薄い雲が「暗いピンク」になって地図に沈む）。 */
+function applySatMatrix(tint) {
+  const m = document.getElementById('satMatrix');
+  if (!m) return;
+  const lum = '0.30 0.59 0.11 0 0';
+  const vals = (tint && tint.rgb)
+    ? `0 0 0 0 ${tint.rgb[0]}  0 0 0 0 ${tint.rgb[1]}  0 0 0 0 ${tint.rgb[2]}  ${lum}`
+    : `1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  ${lum}`;
+  m.setAttribute('values', vals);
+}
+
 function applySatAlphaCurve(cut) {
   const f = document.getElementById('satAlphaCurve');
   if (!f) return;
@@ -4891,6 +4925,7 @@ function applyWxBlend(def) {
   const b = satBandDef(mapPrefs.satBand);
   if (b.alphaCut != null) {
     applySatAlphaCurve(b.alphaCut);
+    applySatMatrix(b.tintable ? satTintDef(mapPrefs.satTint) : null);
     host.style.mixBlendMode = 'normal';
     host.style.filter = 'url(#satAlpha)';
     return;
@@ -5664,9 +5699,14 @@ function amedasElementChips() {
 
 // ひまわりのバンド切り替え（カラー／赤外／雲頂）。アメダスの要素チップと同じ見た目
 function satBandChips() {
-  return `<div class="amedas-els">` + satBands().map(b =>
+  const chips = `<div class="amedas-els">` + satBands().map(b =>
     `<button class="amedas-el${b.id === mapPrefs.satBand ? ' active' : ''}"
              onclick="setSatBand('${b.id}')">${b.name}</button>`).join('') + `</div>`;
+  // 着色は白黒のバンドのときだけ選べる（雲頂は色が情報なので出さない）
+  if (!satBandDef(mapPrefs.satBand).tintable) return chips;
+  return chips + `<div class="amedas-els sat-tints">` + SAT_TINTS.map(t =>
+    `<button class="amedas-el${t.id === mapPrefs.satTint ? ' active' : ''}"
+             onclick="setSatTint('${t.id}')">${t.name}</button>`).join('') + `</div>`;
 }
 
 function renderLayerPanel() {
@@ -6798,6 +6838,14 @@ function setAmedasElement(id) {
 }
 
 // 衛星のバンド切替（カラー／赤外／雲頂）。新しいタイルが出るまで今の絵は残す
+function setSatTint(id) {
+  mapPrefs.satTint = satTintDef(id).id;
+  saveMapPrefs();
+  const def = findOverlay('satellite');
+  if (def) applyWxBlend(def);      // タイルは貼り直さなくてよい（色は合成側で変わる）
+  renderLayerPanel();
+}
+
 function setSatBand(id) {
   mapPrefs.satBand = satBandDef(id).id;
   saveMapPrefs();

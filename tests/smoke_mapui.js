@@ -153,6 +153,15 @@ function decodePng(buf) {
   }
   return { w, h, ch, data: out };
 }
+// 画像のRGB平均
+function meanRGB(buf) {
+  const img = decodePng(buf);
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < img.data.length; i += img.ch) {
+    r += img.data[i]; g += img.data[i + 1]; b += img.data[i + 2]; n++;
+  }
+  return [r / n, g / n, b / n];
+}
 // 画像の平均輝度（0〜255）
 function meanLum(buf) {
   const img = decodePng(buf);
@@ -698,6 +707,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       funcType: document.getElementById('satAlphaCurve').getAttribute('type'),
       slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
       intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
+      matrix: (document.getElementById('satMatrix').getAttribute('values') || '')
+        .trim().split(/\s+/).map(Number),
+      tintChips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
     });
   });
   const irBlend = await page.evaluate(() => window.readSatOuter());
@@ -715,6 +727,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(curveAt(irBlend, 0.40) === 0,
     '★実機の晴れ（輝度0.40前後）は完全に透ける', { v: curveAt(irBlend, 0.40) });
 
+  /* ⚠**着色を入れた状態で雲頂へ切り替えること。** 着色なしのまま切り替えると
+     行列はどのみち素通しなので、「雲頂にも着色を掛ける」壊し方を見逃す（実際に見逃した）。 */
+  await page.evaluate(() => setSatTint('pink'));
+  await page.waitForTimeout(400);
   await page.evaluate(() => setSatBand('SND'));
   await page.waitForTimeout(900);
   const satBand = await page.evaluate(() => Object.assign(readSatOuter(), {
@@ -725,6 +741,14 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(satBand.saved === 'SND', '選んだバンドが保存される', satBand.saved);
   ok(Math.abs(curveAt(satBand, 0.40)) < 0.01,
     '★バンドを変えたら曲線も書き換わる（前のバンドのcutが残らない）', satBand);
+
+  /* ★雲頂は色そのものが雲頂高度の情報なので、着色は出さないしRGBも素通しのまま */
+  ok(satBand.tintChips.length === 0, '★色が情報のバンドには着色を出さない', satBand.tintChips);
+  ok(satBand.matrix[0] === 1 && satBand.matrix[6] === 1 && satBand.matrix[12] === 1,
+    '★雲頂はRGBをそのまま通す（色分けを潰さない）', satBand.matrix.slice(0, 15));
+
+  await page.evaluate(() => setSatTint('none'));
+  await page.waitForTimeout(300);
 
   // 保留中のバンドは指定しても選ばれない
   const repIgnored = await page.evaluate(() => {
@@ -1712,6 +1736,36 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page6.waitForTimeout(800);
   const cloudOff = await page6.screenshot({ clip: satClip });
   ok(!cloudOn.equals(cloudOff), '★薄い雲も消さない（切り捨てが強すぎない）');
+
+  /* ★着色。白黒の雲をピンクで塗れること。
+     ⚠**属性の確認で済ませない。** 実際に画素がピンクに寄っているかを見る。
+     明るさを色にも掛けてしまうと薄い雲が「暗いピンク」になって地図に沈むので、
+     赤が地図より**明るい**方向に動くことまで確かめる。 */
+  const tinted = await page6.evaluate(async () => {
+    if (!isOverlayOn('satellite')) toggleOverlay('satellite');
+    setSatTint('pink');
+    await new Promise(r => setTimeout(r, 800));
+    return {
+      saved: localStorage.getItem('sotoki.map.satTint'),
+      chips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
+      matrix: (document.getElementById('satMatrix').getAttribute('values') || '')
+        .trim().split(/\s+/).map(Number),
+    };
+  });
+  await page6.waitForTimeout(500);
+  const pinkShot = await page6.screenshot({ clip: satClip });
+  ok(tinted.saved === 'pink', '選んだ色が保存される', tinted.saved);
+  ok(tinted.chips.includes('ピンク'), '着色のチップが出る', tinted.chips);
+  // 明るさはアルファ側（4行目）に残し、RGBは定数（5列目のoffset）にする
+  ok(tinted.matrix[4] > 0.9 && tinted.matrix[9] < 0.4 && tinted.matrix[15] === 0.30,
+    '色は定数・明るさはアルファに載せる', tinted.matrix);
+  const [pr, pg, pb] = meanRGB(pinkShot);
+  const [br, bg, bb] = meanRGB(cloudOff);
+  ok(pr - pg > 12 && pr - pb > 4, '★雲が実際にピンクに寄る', { pinkShot: [pr, pg, pb].map(v => +v.toFixed(1)) });
+  ok(pr >= br - 2, '★薄い雲が暗く沈まない（明るさを色に掛けていない）',
+    { r: +pr.toFixed(1), base: +br.toFixed(1) });
+  await page6.evaluate(() => setSatTint('none'));
+  await page6.waitForTimeout(400);
   /* 濃さを測る。灰色160（輝度0.627）を cut=0.30 / gamma=1.8 で抜くと
      alpha = ((0.627-0.30)/0.70)^1.8 ≒ 0.25。地図と全不透明の間の1/4あたりに来るはず。
      ⚠フィルタの色空間指定（sRGB）を落とすと**線形RGBで計算されて4%まで落ちる**。
