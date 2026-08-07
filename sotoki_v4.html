@@ -1624,32 +1624,13 @@ html, body {
 </style>
 </head>
 <body>
-<!-- 衛星画像を「明るい所ほど不透明」にするフィルタ。
-     ⚠**color-interpolation-filters="sRGB" は必須。** 既定のlinearRGBで計算すると
-     色がくすんで雲頂の色分けが読めなくなる。
-     行列はRGBをそのまま通し、A に輝度（0.30R+0.59G+0.11B）を入れている。
-     feFuncA の傾きと切片は applySatAlphaCurve がバンドごとに書き換える。 -->
-<!-- ⚠**0×0 や display:none で隠さないこと。** WebKitには、寸法の無いSVGだと
-     CSSの `filter: url(#id)` が解決されず**フィルタが丸ごと効かない**不具合がある。
-     実寸を持たせたまま画面外へ逃がすのが安全（実機のiOSで効かずに踏んだ）。 -->
+<!-- 衛星画像を「明るい所ほど不透明」にするフィルタの置き場。
+     ⚠**中身はJSが毎回まるごと作り直す**（buildSatFilter）。理由はそちらの注記。
+     ⚠**0×0 や display:none で隠さないこと。** 寸法の無いSVGだと WebKit が
+     `filter: url(#id)` を解決できず、フィルタが丸ごと効かない（実機で踏んだ）。 -->
 <svg id="sat-filter-defs" aria-hidden="true" focusable="false"
      style="position:absolute;left:-9999px;top:0;width:1px;height:1px;
-            opacity:0;pointer-events:none">
-  <filter id="satAlpha" color-interpolation-filters="sRGB">
-    <feColorMatrix id="satMatrix" type="matrix" values="1 0 0 0 0
-                                         0 1 0 0 0
-                                         0 0 1 0 0
-                                         0.30 0.59 0.11 0 0"/>
-    <!-- ⚠⚠**この形（feComponentTransfer 1段・feFuncA type="linear"）から動かさないこと。**
-         実機のiOS Safariで透けたのはこの形だけ（v4.72.1）。
-         2段に繋いだら丸ごと効かなくなり（v4.73.0）、1段のまま type="table" に
-         変えても効かなかった（v4.73.1）。どちらも実機で踏んでいる。
-         そのため中間を落とす累乗は使わず、**cutを上げることで代替**している。 -->
-    <feComponentTransfer>
-      <feFuncA id="satAlphaCurve" type="linear" slope="1" intercept="0"/>
-    </feComponentTransfer>
-  </filter>
-</svg>
+            opacity:0;pointer-events:none"></svg>
 <div id="app">
 
   <!-- Loading -->
@@ -1735,7 +1716,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.75.1</span>
+    <span id="app-version">v4.76.0</span>
   </div>
 
   <!-- Footer -->
@@ -4877,37 +4858,56 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
    暗部を6と26にすると再現する）。
    contrast(C) は 0.5 − 0.5/C 以下を黒に落とすので、C=1.5 なら約17%以下の暗部が
    まとめて0になり、床の差ごと消える。雲（明るい所）はむしろ締まる。 */
-/* 明るさ（輝度）を透明度にする曲線。
-     alpha = ((輝度 − cut) / (1 − cut)) ^ gamma
-   ⚠ひまわりの「晴れ」は真っ黒ではなく中間の灰色（赤外なら地表の温度）なので、
-   **cutをそこより上に置くこと**。低いと晴れが薄いベールとして残り、**地図全体が
-   暗く沈む**（実機で踏んだ）。中間を累乗で落とす手もあるが、iOS Safariが
-   その形のフィルタを受け付けないので cut で代替している。
-   ⚠cutを上げすぎると薄い雲が消える。テストが両端（晴れは消える／雲は残る）を見ている。 */
-/* 雲の色。
-   ⚠**行列の形は変えないこと**（ノードも type も実機で効く形が決まっている。上の注記参照）。
-   変えるのは**値だけ**。
-   - 着色なし … RGBはそのまま通す（雲頂の色分けが残る）
-   - 着色あり … RGBを固定色にし、明るさは**アルファだけ**に載せる。
-     こうすると薄い雲＝薄いピンク、厚い雲＝濃いピンクになり、濃淡が読める
-     （明るさを色にも掛けると、薄い雲が「暗いピンク」になって地図に沈む）。 */
-function applySatMatrix(tint) {
-  const m = document.getElementById('satMatrix');
-  if (!m) return;
-  const lum = '0.30 0.59 0.11 0 0';
-  const vals = (tint && tint.rgb)
-    ? `0 0 0 0 ${tint.rgb[0]}  0 0 0 0 ${tint.rgb[1]}  0 0 0 0 ${tint.rgb[2]}  ${lum}`
-    : `1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  ${lum}`;
-  m.setAttribute('values', vals);
-}
+/* 衛星画像のフィルタを**まるごと組み立て直す**。
+   ⚠⚠**属性の書き換えで済ませないこと。** iOS Safari は一度評価したフィルタを
+   使い回し、`values` や `slope` を書き換えても絵が変わらない。**idを振り直すだけでも
+   足りない**（要素が同じままなので）。実機で「色を変えても変わらない・レイヤーを
+   貼り直しても変わらない」を踏んだ。
+   **Chromiumは正しく作り直すので、この不具合はヘッドレスでは再現しない。**
+   テストは絵ではなく「値を変えたら要素が入れ替わり `url(#…)` も変わる」で見張る。
 
-function applySatAlphaCurve(cut) {
-  const f = document.getElementById('satAlphaCurve');
-  if (!f) return;
+   中身は2段だけ。**この形から動かさないこと**（実機で効くのはこの形だけ。
+   2段に繋いだ版も feFuncA を table にした版も効かなかった）。
+   1) feColorMatrix … RGBの決め方と、A＝輝度
+      - 着色なし: RGBはそのまま通す（雲頂の色分けが残る）
+      - 着色あり: RGBを**定数**にし、明るさは**アルファだけ**に載せる。
+        薄い雲＝薄いピンク、厚い雲＝濃いピンクで濃淡が読める。
+        明るさを色にも掛けると薄い雲が「暗いピンク」になって地図に沈む
+   2) feComponentTransfer(feFuncA type="linear") … alpha=(輝度−cut)/(1−cut)
+      ⚠ひまわりの「晴れ」は真っ黒ではなく中間の灰色（赤外なら地表の温度）なので
+        **cutをそこより上に置く**。低いと晴れがベールとして残り地図が沈む。
+        上げすぎると薄い雲が消えるので、テストが両端を画素で見ている
+   ⚠`color-interpolation-filters="sRGB"` は必須。既定のlinearRGBだと
+     中間調の透明度が1/8まで落ちて雲がほぼ消える。 */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+let satFilterSeq = 0;
+function buildSatFilter(tint, cut) {
+  const host = document.getElementById('sat-filter-defs');
+  if (!host) return null;
+  const id = 'satAlpha' + (++satFilterSeq);
   const c = Math.max(0, Math.min(0.9, cut || 0));
   const slope = 1 / (1 - c);
-  f.setAttribute('slope', slope.toFixed(4));
-  f.setAttribute('intercept', (-c * slope).toFixed(4));
+  const lum = '0.30 0.59 0.11 0 0';
+  const values = (tint && tint.rgb)
+    ? `0 0 0 0 ${tint.rgb[0]} 0 0 0 0 ${tint.rgb[1]} 0 0 0 0 ${tint.rgb[2]} ${lum}`
+    : `1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 ${lum}`;
+
+  const filt = document.createElementNS(SVG_NS, 'filter');
+  filt.setAttribute('id', id);
+  filt.setAttribute('color-interpolation-filters', 'sRGB');
+  const mat = document.createElementNS(SVG_NS, 'feColorMatrix');
+  mat.setAttribute('type', 'matrix');
+  mat.setAttribute('values', values);
+  const tr = document.createElementNS(SVG_NS, 'feComponentTransfer');
+  const fa = document.createElementNS(SVG_NS, 'feFuncA');
+  fa.setAttribute('type', 'linear');
+  fa.setAttribute('slope', slope.toFixed(4));
+  fa.setAttribute('intercept', (-c * slope).toFixed(4));
+  tr.appendChild(fa);
+  filt.appendChild(mat);
+  filt.appendChild(tr);
+  host.replaceChildren(filt);      // 前の要素は捨てる（使い回させない）
+  return id;
 }
 
 /* ⚠**衛星画像は「合成」ではなく「透明度」で抜くこと**（v4.72.0）。
@@ -4924,24 +4924,13 @@ function applySatAlphaCurve(cut) {
    Chromium は正しく作り直すので**この不具合はヘッドレスでは再現しない**。
    そのため id を毎回振り直し、CSSの `url(#…)` も新しい方を指すようにしている。
    （テストは「値を変えたらidも変わる」ことを見張っている） */
-let satFilterSeq = 0;
-function bumpSatFilterId() {
-  const filt = document.querySelector('#sat-filter-defs filter');
-  if (!filt) return null;
-  const id = 'satAlpha' + (++satFilterSeq);
-  filt.setAttribute('id', id);
-  return id;
-}
-
 function applyWxBlend(def) {
   if (def.kind !== 'jmaSat' || !leafletMap) return;
   const host = leafletMap.getPane('mapSatMask');
   if (!host) return;
   const b = satBandDef(mapPrefs.satBand);
   if (b.alphaCut != null) {
-    applySatAlphaCurve(b.alphaCut);
-    applySatMatrix(b.tintable ? satTintDef(mapPrefs.satTint) : null);
-    const id = bumpSatFilterId();
+    const id = buildSatFilter(b.tintable ? satTintDef(mapPrefs.satTint) : null, b.alphaCut);
     host.style.mixBlendMode = 'normal';
     host.style.filter = id ? `url(#${id})` : '';
     return;

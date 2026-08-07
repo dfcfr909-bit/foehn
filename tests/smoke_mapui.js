@@ -704,11 +704,11 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       filter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
       /* ⚠実機で透けたのは「1段・type=linear」だけ。2段でも table でも効かなかった */
       nodes: document.querySelectorAll('#sat-filter-defs feComponentTransfer').length,
-      funcType: document.getElementById('satAlphaCurve').getAttribute('type'),
-      slope: +document.getElementById('satAlphaCurve').getAttribute('slope'),
-      intercept: +document.getElementById('satAlphaCurve').getAttribute('intercept'),
-      matrix: (document.getElementById('satMatrix').getAttribute('values') || '')
-        .trim().split(/\s+/).map(Number),
+      slope: +document.querySelector('#sat-filter-defs feFuncA').getAttribute('slope'),
+      intercept: +document.querySelector('#sat-filter-defs feFuncA').getAttribute('intercept'),
+      funcType: document.querySelector('#sat-filter-defs feFuncA').getAttribute('type'),
+      matrix: (document.querySelector('#sat-filter-defs feColorMatrix')
+        .getAttribute('values') || '').trim().split(/\s+/).map(Number),
       tintChips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
     });
   });
@@ -1750,14 +1750,18 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     getComputedStyle(leafletMap.getPane('mapSatMask')).filter);
   ok(/satAlpha/.test(filterBefore), 'before の時点でフィルタが載っている（検査の前提）', filterBefore);
   const tinted = await page6.evaluate(async () => {
+    /* 印を付けておき、あとで消えているか＝**要素が作り直されたか**を見る。
+       idを振り直すだけでは iOS Safari が古い絵を使い回す（実機で踏んだ）。 */
+    document.querySelector('#sat-filter-defs filter').dataset.mark = '1';
     setSatTint('pink');
     await new Promise(r => setTimeout(r, 800));
     return {
+      rebuilt: !document.querySelector('#sat-filter-defs filter').dataset.mark,
       filterAfter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
       saved: localStorage.getItem('sotoki.map.satTint'),
       chips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
-      matrix: (document.getElementById('satMatrix').getAttribute('values') || '')
-        .trim().split(/\s+/).map(Number),
+      matrix: (document.querySelector('#sat-filter-defs feColorMatrix')
+        .getAttribute('values') || '').trim().split(/\s+/).map(Number),
     };
   });
   await page6.waitForTimeout(500);
@@ -1767,6 +1771,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
      ⚠**これはChromiumでは絵が正しく変わるので、画素検査では捕まらない。**
      iOS Safari は一度評価したフィルタを使い回し、属性だけ書き換えても絵が変わらない
      （実機で「色を変えても変化なし」を踏んだ）。構造で見張るしかない。 */
+  ok(tinted.rebuilt,
+    '★フィルタは要素ごと作り直す（属性の書き換えだけでは iOS Safari に効かない）', tinted.rebuilt);
   ok(tinted.filterAfter !== filterBefore && /satAlpha/.test(tinted.filterAfter),
     '★フィルタの中身を変えたら参照するidも変える（iOS Safariが作り直さないため）',
     { filterBefore, filterAfter: tinted.filterAfter });
