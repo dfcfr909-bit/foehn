@@ -1123,9 +1123,12 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     watching: geoWatchId != null,
     follow: mapFollow,
     badge: getComputedStyle(document.getElementById('locate-badge')).display,
-    dot: document.querySelectorAll('.me-dot').length,
+    // 現在地マーカーは矢尻（.me-arrow）。方位がまだ取れていない間だけ丸（.me-dot）
+    dot: document.querySelectorAll('.me-dot, .me-arrow').length,
     circle: !!meCircle,
     picked: document.getElementById('map-picked-name').textContent,
+    // ★追跡中は選択地点のピンを出さない（自位置は矢尻で分かる）
+    pinShown: leafletMarker.getElement().style.display !== 'none',
     // 現在地マーカーは「選択地点のピン」とは別物
     separateFromPin: !!meMarker && !!leafletMarker && meMarker !== leafletMarker,
   }));
@@ -1134,6 +1137,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(locOnce.badge === 'none', '追跡していないので隅の印は出ない', locOnce.badge);
   ok(locOnce.dot === 1 && locOnce.circle, '現在地マーカーと誤差の輪が出る', locOnce);
   ok(locOnce.separateFromPin, '現在地は選択地点のピンとは別のマーカー', locOnce.separateFromPin);
+  ok(!locOnce.pinShown, '★追跡中は選択地点のピンを出さない', locOnce.pinShown);
   ok(locOnce.picked && locOnce.picked !== '—',
     '★現在地ボタンで地点も選べる（下部の「現在地」ボタンの役目を引き継ぐ）', locOnce.picked);
 
@@ -1154,10 +1158,12 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const locBack = await page.evaluate(() => ({
     mode: document.getElementById('btn-locate').dataset.mode,
     watching: geoWatchId != null,
-    dot: document.querySelectorAll('.me-dot').length,
+    dot: document.querySelectorAll('.me-dot, .me-arrow').length,
+    pinShown: leafletMarker.getElement().style.display !== 'none',
   }));
   ok(locBack.mode === 'off' && !locBack.watching && locBack.dot === 0,
     '3回目で解除される（マーカーも消える）', locBack);
+  ok(locBack.pinShown, '追跡をやめたら選択地点のピンが戻る', locBack.pinShown);
 
   // 以降のヘディングアップの検査のため、追跡に戻しておく
   await page.click('#btn-locate');
@@ -1183,7 +1189,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     return {
       mode: document.getElementById('btn-locate').dataset.mode,
       follow: mapFollow, watching: geoWatchId != null,
-      dot: document.querySelectorAll('.me-dot').length,
+      dot: document.querySelectorAll('.me-dot, .me-arrow').length,
+      pinShown: leafletMarker.getElement().style.display !== 'none',
       movedToPick: Math.abs(afterPick.lat - far[0]) < 0.05,
       pulledBack: Math.abs(afterGeo.lat - 36.57) < 0.05,
       drift: Math.abs(afterGeo.lat - afterPick.lat),
@@ -1193,6 +1200,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(followPick.follow === false && followPick.mode === 'once',
     '★地点を選んだら追従はやめる（現在地の表示は残す）', followPick);
   ok(followPick.watching && followPick.dot === 1, '追跡そのものは切らない（点は出たまま）', followPick);
+  ok(followPick.pinShown,
+    '★自分で地点を選んだときは、追跡中でもピンを出し直す（何を選んだか分かるように）', followPick);
   ok(!followPick.pulledBack && followPick.drift < 0.02,
     '★次のGPS更新が来ても現在地へ引き戻されない', followPick);
 
@@ -1257,6 +1266,26 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(heading.rimColor !== northRim, '★ヘディングアップでは方位環の色が変わる', { heading: heading.rimColor, north: northRim });
   ok(heading.rotating, '地図の実体を広げるクラスが付く');
 
+  /* ★自位置は車のナビと同じ矢尻で描く（進行方向が一目で分かるように）。
+     方位が取れたら丸（.me-dot）から矢尻（.me-arrow）へ入れ替わる。 */
+  const arrowUp = await page.evaluate(() => {
+    const a = document.querySelector('.me-arrow');
+    return {
+      arrow: !!a, dot: document.querySelectorAll('.me-dot').length,
+      known: headingKnown,
+      rot: a ? a.style.transform : '',
+      w: a ? Math.round(a.getBoundingClientRect().width) : 0,
+      // 矢尻の重心が現在地に来るよう、marginで持ち上げてある
+      shifted: a ? getComputedStyle(a).marginTop : '',
+    };
+  });
+  ok(arrowUp.arrow && arrowUp.dot === 0 && arrowUp.known,
+    '★方位が取れたら現在地は矢尻になる（丸は出さない）', arrowUp);
+  ok(/rotate\(0(\.0)?deg\)/.test(arrowUp.rot),
+    '★ヘディングアップでは矢尻は常に上を向く（方位＋地図の回転＝0）', arrowUp.rot);
+  ok(arrowUp.w >= 24, '矢尻は指で見て分かる大きさ', arrowUp.w);
+  ok(parseFloat(arrowUp.shifted) < 0, '重心を現在地に合わせて持ち上げている', arrowUp.shifted);
+
   // ★回転中でもタップした場所が正しく取れること（補正が効いているか）
   const rotTap = await page.evaluate(() => {
     const c = leafletMap.getContainer();
@@ -1286,6 +1315,14 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(/rotate\(0/.test(northUp.ring || ''), '戻したらNも真上へ戻る', northUp.ring);
   ok(northUp.rimColor === northRim && northUp.pressed === 'false',
     '戻したら方位環の色も元に戻る', northUp);
+
+  // ノースアップでは矢尻が方位のぶん回る（東を向いていれば右向き＝90度）
+  const arrowNorth = await page.evaluate(() => {
+    const a = document.querySelector('.me-arrow');
+    return { rot: a ? a.style.transform : '', heading: headingDeg };
+  });
+  ok(/rotate\(90(\.0)?deg\)/.test(arrowNorth.rot),
+    '★ノースアップでは矢尻が方位のぶん回る（東を向けば右）', arrowNorth);
 
   // ★雨雲の中でも自位置が分かるよう、現在地のまわりだけ雨雲を抜く
   const spot = await page.evaluate(() => {

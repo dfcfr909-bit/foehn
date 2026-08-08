@@ -916,14 +916,19 @@ html, body {
   border: 2px solid #fff;
   box-shadow: 0 0 3px rgba(0,0,0,0.5);
 }
-/* 進行方向を示す扇。ノースアップでは方位に回り、ヘディングアップでは常に上を向く */
-.me-cone {
-  position: absolute; left: 50%; top: 50%;
-  width: 0; height: 0; margin: -30px 0 0 -13px;
-  border-left: 13px solid transparent;
-  border-right: 13px solid transparent;
-  border-bottom: 22px solid rgba(26,115,232,0.35);
-  transform-origin: 50% 100%;
+/* 進行方向を示す矢尻（車のナビと同じ見た目）。
+   ノースアップでは方位に回り、ヘディングアップでは常に上を向く。
+   回転の軸は矢尻の重心（viewBoxの 20,22）＝現在地。marginでそこを座標に合わせる。
+   方位がまだ分からないときだけ .me-dot（丸）で出す。 */
+.me-arrow {
+  display: block;
+  width: 40px; height: 40px; margin: -22px 0 0 -20px;
+  transform-origin: 50% 55%;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.55));
+}
+.me-arrow path {
+  fill: var(--gps-col);
+  stroke: #fff; stroke-width: 2.5; stroke-linejoin: round;
 }
 .me-pin { background: none; border: none; }
 
@@ -1716,7 +1721,7 @@ html, body {
     <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
     <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
-    <span id="app-version">v4.76.1</span>
+    <span id="app-version">v4.77.0</span>
   </div>
 
   <!-- Footer -->
@@ -5647,6 +5652,7 @@ function openMap() {
       applyBaseLayer();
       applyOverlays();
       leafletMarker = L.marker([state.lat, state.lon]).addTo(leafletMap);
+      updatePinVisibility();         // 追跡したまま地図を開き直したときにピンを出さない
       // ピンは長押しでだけ立てる（触れただけで動くのは不快、という指摘で v4.56.0 に変更）
       bindPinLongPress(leafletMap);
       renderLayerPanel();
@@ -5925,7 +5931,19 @@ let mapFollow = false;            // 現在地を画面中央に追い続ける
 let mapHeadingUp = false;         // ヘディングアップ
 let mapRotationDeg = 0;           // 地図に掛けている回転(deg)
 let headingDeg = 0;               // 端末が向いている方位(deg, 真北=0, 時計回り)
+let headingKnown = false;         // 一度でも方位が取れたか（取れるまでは矢尻を出さない）
 let headingHandler = null;
+
+/* 追跡中は選択地点のピンを出さない。自分の位置は矢尻で分かるので、
+   同じ場所に重なるピンは目障りなだけ（実機の画面を見ての指摘）。
+   長押しや検索で**自分から地点を選んだとき**だけ、何を選んだか分かるように戻す。 */
+let pinPickedByUser = false;
+function updatePinVisibility() {
+  if (!leafletMarker) return;
+  const el = leafletMarker.getElement();
+  if (!el) return;
+  el.style.display = (locateMode !== 'off' && !pinPickedByUser) ? 'none' : '';
+}
 
 function updateMapToolButtons() {
   const loc = document.getElementById('btn-locate');
@@ -5975,6 +5993,8 @@ function setLocateMode(mode) {
   if (mode === 'off') { stopTracking(); return; }
   locateMode = mode;
   mapFollow = (mode === 'follow');
+  pinPickedByUser = false;        // 現在地に戻ってきたので、前に選んだピンは引っ込める
+  updatePinVisibility();
   if (geoWatchId == null) startTracking(mapFollow);
   if (mode === 'once') {
     fetchGPS({ keepMap: true });          // 現在地へ寄って、その地点を選ぶ
@@ -5993,6 +6013,7 @@ function startTracking(follow) {
     () => { alert('現在地を取得できませんでした'); stopTracking(); },
     { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
   );
+  updatePinVisibility();
   updateMapToolButtons();
 }
 
@@ -6003,6 +6024,10 @@ function startTracking(follow) {
    ⚠ヘディングアップは**追従が前提でドラッグを止めている**ので一緒に戻すこと。
      残すと「回ったまま・追わない・動かせない」地図になる。 */
 function releaseFollow() {
+  /* ここへ来るのは「利用者が自分で地点を選んだ」ときだけ（長押し・検索・円柱）。
+     何を選んだのか分かるよう、追跡中でもピンを出し直す。 */
+  pinPickedByUser = true;
+  updatePinVisibility();
   if (!mapFollow && locateMode !== 'follow') return;
   mapFollow = false;
   if (locateMode === 'follow') locateMode = 'once';
@@ -6019,6 +6044,8 @@ function stopTracking() {
   if (meMarker) { leafletMap.removeLayer(meMarker); meMarker = null; }
   if (meCircle) { leafletMap.removeLayer(meCircle); meCircle = null; }
   myPos = null;
+  headingKnown = false;
+  updatePinVisibility();        // 追跡をやめたら選択地点のピンを戻す
   updateMeSpotlight();          // 現在地が分からなくなったらマスクも外す
   updateMapToolButtons();
 }
@@ -6043,9 +6070,12 @@ function drawMe() {
   } else {
     meCircle.setLatLng(ll).setRadius(myPos.accuracy || 0);
   }
-  // 扇は「方位 ＋ 地図の回転」ぶん回す。ヘディングアップでは差し引き0になり常に上を向く
-  const cone = headingDeg + mapRotationDeg;
-  const html = `<div class="me-cone" style="transform:rotate(${cone}deg)"></div><div class="me-dot"></div>`;
+  // 矢尻は「方位 ＋ 地図の回転」ぶん回す。ヘディングアップでは差し引き0になり常に上を向く
+  const dir = headingDeg + mapRotationDeg;
+  const html = headingKnown
+    ? `<svg class="me-arrow" viewBox="0 0 40 40" style="transform:rotate(${dir.toFixed(1)}deg)">` +
+      `<path d="M20 4 L32 33 L20 25.5 L8 33 Z"/></svg>`
+    : `<div class="me-dot"></div>`;   // 向きが分からないうちは丸のまま
   if (!meMarker) {
     meMarker = L.marker(ll, { pane: 'mapWeather', interactive: false,
       icon: L.divIcon({ className: 'me-pin', html, iconSize: null }) }).addTo(leafletMap);
@@ -6077,6 +6107,7 @@ async function enableHeading() {
 
 function setHeading(deg) {
   headingDeg = ((deg % 360) + 360) % 360;
+  headingKnown = true;
   if (mapHeadingUp) applyMapRotation(-headingDeg);   // 進行方向を上に向けるので逆に回す
   else drawMe();
 }
@@ -6128,8 +6159,9 @@ function setHeadingUp(on) {
    だからナウキャストは mapNowcast、マーカーは mapWeather と分けてある。 */
 /* 大きさは現在地マーカーを基準に決める。広く抜くと雲の様子が読めなくなるため、
    「マーカーの白フチのすぐ外側だけがふわっと抜ける」程度に留める（v4.59.0で縮小）。
-   ME_DOT_R は .me-dot（16px＋白フチ2px）の外半径。 */
-const ME_DOT_R = 10;
+   ME_DOT_R は現在地マーカーの外半径。矢尻（.me-arrow）は丸より一回り大きいので
+   その幅の半分（24px÷2＋白フチ）に合わせてある。 */
+const ME_DOT_R = 14;
 const SPOT_CLEAR_PX = ME_DOT_R + 1;    // 完全に晴れている半径（マーカーのぶんだけ）
 const SPOT_FADE_PX = ME_DOT_R * 2.6;   // ここまでで元の濃さに戻る（白フチの1〜2倍ぶん）
 
