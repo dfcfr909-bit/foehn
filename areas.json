@@ -1,91 +1,1123 @@
 {
-  "version": 1,
-  "note": "座標は概算。実装時に国土地理院で全点検証すること",
+  "version": 2,
+  "note": "座標は概算。実装時に国土地理院で全点検証すること。hyakumeizanは日本百名山（深田久弥）",
   "areas": [
-    { "id": "hakkoda", "name": "八甲田", "region": "東北", "peaks": [
-      { "name": "八甲田大岳", "lat": 40.6592, "lon": 140.8770, "elev": 1585 },
-      { "name": "高田大岳", "lat": 40.6539, "lon": 140.9086, "elev": 1559 }
-    ]},
-    { "id": "chokai", "name": "鳥海山", "region": "東北", "peaks": [
-      { "name": "新山", "lat": 39.0989, "lon": 140.0486, "elev": 2236 },
-      { "name": "笙ヶ岳", "lat": 39.0972, "lon": 140.0089, "elev": 1635 }
-    ]},
-    { "id": "zao", "name": "蔵王", "region": "東北", "peaks": [
-      { "name": "熊野岳", "lat": 38.1439, "lon": 140.4397, "elev": 1841 },
-      { "name": "刈田岳", "lat": 38.1289, "lon": 140.4436, "elev": 1758 }
-    ]},
-    { "id": "iide", "name": "飯豊連峰", "region": "東北", "peaks": [
-      { "name": "飯豊本山", "lat": 37.8547, "lon": 139.7069, "elev": 2105 },
-      { "name": "大日岳", "lat": 37.8672, "lon": 139.6603, "elev": 2128 }
-    ]},
-    { "id": "oze", "name": "尾瀬・会津駒", "region": "東北", "peaks": [
-      { "name": "燧ヶ岳", "lat": 36.9556, "lon": 139.2853, "elev": 2356 },
-      { "name": "至仏山", "lat": 36.9036, "lon": 139.1736, "elev": 2228 },
-      { "name": "会津駒ヶ岳", "lat": 37.0281, "lon": 139.3572, "elev": 2133 }
-    ]},
-    { "id": "nasu", "name": "那須", "region": "北関東", "peaks": [
-      { "name": "茶臼岳", "lat": 37.1247, "lon": 139.9631, "elev": 1915 },
-      { "name": "三本槍岳", "lat": 37.1494, "lon": 139.9569, "elev": 1917 }
-    ]},
-    { "id": "nikko", "name": "日光", "region": "北関東", "peaks": [
-      { "name": "男体山", "lat": 36.7653, "lon": 139.4906, "elev": 2486 },
-      { "name": "日光白根山", "lat": 36.7989, "lon": 139.3758, "elev": 2578 }
-    ]},
-    { "id": "tanigawa", "name": "谷川・上越国境", "region": "上信越", "peaks": [
-      { "name": "谷川岳", "lat": 36.8378, "lon": 138.9297, "elev": 1977 },
-      { "name": "平標山", "lat": 36.7960, "lon": 138.8450, "elev": 1984 },
-      { "name": "巻機山", "lat": 37.0200, "lon": 138.9680, "elev": 1967 }
-    ]},
-    { "id": "myoko", "name": "妙高・火打", "region": "上信越", "peaks": [
-      { "name": "火打山", "lat": 36.9214, "lon": 138.0697, "elev": 2462 },
-      { "name": "妙高山", "lat": 36.8917, "lon": 138.1131, "elev": 2454 }
-    ]},
-    { "id": "kitaalps_n", "name": "北アルプス北部", "region": "中部", "peaks": [
-      { "name": "白馬岳", "lat": 36.7586, "lon": 137.7586, "elev": 2932 },
-      { "name": "立山（雄山）", "lat": 36.5725, "lon": 137.6172, "elev": 3003 },
-      { "name": "剱岳", "lat": 36.6231, "lon": 137.6169, "elev": 2999 }
-    ]},
-    { "id": "kitaalps_s", "name": "北アルプス南部", "region": "中部", "peaks": [
-      { "name": "槍ヶ岳", "lat": 36.3419, "lon": 137.6475, "elev": 3180 },
-      { "name": "奥穂高岳", "lat": 36.2894, "lon": 137.6478, "elev": 3190 },
-      { "name": "燕岳", "lat": 36.4083, "lon": 137.7128, "elev": 2763 }
-    ]},
-    { "id": "norikura", "name": "乗鞍・御嶽", "region": "中部", "peaks": [
-      { "name": "乗鞍岳", "lat": 36.1067, "lon": 137.5533, "elev": 3026 },
-      { "name": "御嶽山", "lat": 35.8931, "lon": 137.4800, "elev": 3067 }
-    ]},
-    { "id": "yatsu", "name": "八ヶ岳", "region": "中部", "peaks": [
-      { "name": "赤岳", "lat": 35.9708, "lon": 138.3703, "elev": 2899 },
-      { "name": "天狗岳", "lat": 36.0203, "lon": 138.3530, "elev": 2646 }
-    ]},
-    { "id": "chuoalps", "name": "中央アルプス", "region": "中部", "peaks": [
-      { "name": "木曽駒ヶ岳", "lat": 35.7897, "lon": 137.8047, "elev": 2956 },
-      { "name": "空木岳", "lat": 35.7203, "lon": 137.8260, "elev": 2864 }
-    ]},
-    { "id": "minamialps", "name": "南アルプス", "region": "中部", "peaks": [
-      { "name": "北岳", "lat": 35.6740, "lon": 138.2389, "elev": 3193 },
-      { "name": "甲斐駒ヶ岳", "lat": 35.7581, "lon": 138.2367, "elev": 2967 },
-      { "name": "仙丈ヶ岳", "lat": 35.7197, "lon": 138.1830, "elev": 3033 }
-    ]},
-    { "id": "hakusan", "name": "白山", "region": "北陸", "peaks": [
-      { "name": "御前峰", "lat": 36.1553, "lon": 136.7710, "elev": 2702 },
-      { "name": "別山", "lat": 36.1030, "lon": 136.7660, "elev": 2399 }
-    ]},
-    { "id": "fuji", "name": "富士周辺", "region": "中部", "peaks": [
-      { "name": "富士山", "lat": 35.3606, "lon": 138.7274, "elev": 3776 },
-      { "name": "三ツ峠山", "lat": 35.5486, "lon": 138.8030, "elev": 1785 }
-    ]},
-    { "id": "omine", "name": "大峰・大台", "region": "近畿", "peaks": [
-      { "name": "八経ヶ岳", "lat": 34.1740, "lon": 135.9070, "elev": 1915 },
-      { "name": "日出ヶ岳", "lat": 34.1830, "lon": 136.1060, "elev": 1695 }
-    ]},
-    { "id": "shikoku", "name": "石鎚・剣山", "region": "四国", "peaks": [
-      { "name": "石鎚山", "lat": 33.7670, "lon": 133.1150, "elev": 1982 },
-      { "name": "剣山", "lat": 33.8540, "lon": 134.0940, "elev": 1955 }
-    ]},
-    { "id": "kuju", "name": "九重・祖母", "region": "九州", "peaks": [
-      { "name": "久住山", "lat": 33.0860, "lon": 131.2490, "elev": 1787 },
-      { "name": "祖母山", "lat": 32.8260, "lon": 131.3460, "elev": 1756 }
-    ]}
+    {
+      "id": "hakkoda",
+      "name": "八甲田",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "八甲田大岳",
+          "lat": 40.6592,
+          "lon": 140.877,
+          "elev": 1585,
+          "hyakumeizan": true
+        },
+        {
+          "name": "高田大岳",
+          "lat": 40.6539,
+          "lon": 140.9086,
+          "elev": 1559
+        }
+      ]
+    },
+    {
+      "id": "chokai",
+      "name": "鳥海山",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "新山",
+          "lat": 39.0989,
+          "lon": 140.0486,
+          "elev": 2236,
+          "hyakumeizan": true
+        },
+        {
+          "name": "笙ヶ岳",
+          "lat": 39.0972,
+          "lon": 140.0089,
+          "elev": 1635
+        }
+      ]
+    },
+    {
+      "id": "zao",
+      "name": "蔵王",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "熊野岳",
+          "lat": 38.1439,
+          "lon": 140.4397,
+          "elev": 1841,
+          "hyakumeizan": true
+        },
+        {
+          "name": "刈田岳",
+          "lat": 38.1289,
+          "lon": 140.4436,
+          "elev": 1758
+        }
+      ]
+    },
+    {
+      "id": "iide",
+      "name": "飯豊連峰",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "飯豊本山",
+          "lat": 37.8547,
+          "lon": 139.7069,
+          "elev": 2105,
+          "hyakumeizan": true
+        },
+        {
+          "name": "大日岳",
+          "lat": 37.8672,
+          "lon": 139.6603,
+          "elev": 2128
+        }
+      ]
+    },
+    {
+      "id": "oze",
+      "name": "尾瀬・会津駒",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "燧ヶ岳",
+          "lat": 36.9556,
+          "lon": 139.2853,
+          "elev": 2356,
+          "hyakumeizan": true
+        },
+        {
+          "name": "至仏山",
+          "lat": 36.9036,
+          "lon": 139.1736,
+          "elev": 2228,
+          "hyakumeizan": true
+        },
+        {
+          "name": "会津駒ヶ岳",
+          "lat": 37.0281,
+          "lon": 139.3572,
+          "elev": 2133,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "nasu",
+      "name": "那須",
+      "region": "北関東",
+      "peaks": [
+        {
+          "name": "茶臼岳",
+          "lat": 37.1247,
+          "lon": 139.9631,
+          "elev": 1915,
+          "hyakumeizan": true
+        },
+        {
+          "name": "三本槍岳",
+          "lat": 37.1494,
+          "lon": 139.9569,
+          "elev": 1917
+        }
+      ]
+    },
+    {
+      "id": "nikko",
+      "name": "日光",
+      "region": "北関東",
+      "peaks": [
+        {
+          "name": "日光白根山",
+          "lat": 36.7989,
+          "lon": 139.3758,
+          "elev": 2578,
+          "hyakumeizan": true
+        },
+        {
+          "name": "男体山",
+          "lat": 36.7653,
+          "lon": 139.4906,
+          "elev": 2486,
+          "hyakumeizan": true
+        },
+        {
+          "name": "皇海山",
+          "lat": 36.7364,
+          "lon": 139.34,
+          "elev": 2144,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "tanigawa",
+      "name": "谷川・上越国境",
+      "region": "上信越",
+      "peaks": [
+        {
+          "name": "苗場山",
+          "lat": 36.8461,
+          "lon": 138.6931,
+          "elev": 2145,
+          "hyakumeizan": true
+        },
+        {
+          "name": "平標山",
+          "lat": 36.796,
+          "lon": 138.845,
+          "elev": 1984
+        },
+        {
+          "name": "谷川岳",
+          "lat": 36.8378,
+          "lon": 138.9297,
+          "elev": 1977,
+          "hyakumeizan": true
+        },
+        {
+          "name": "巻機山",
+          "lat": 37.02,
+          "lon": 138.968,
+          "elev": 1967,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "myoko",
+      "name": "妙高・火打",
+      "region": "上信越",
+      "peaks": [
+        {
+          "name": "火打山",
+          "lat": 36.9214,
+          "lon": 138.0697,
+          "elev": 2462,
+          "hyakumeizan": true
+        },
+        {
+          "name": "妙高山",
+          "lat": 36.8917,
+          "lon": 138.1131,
+          "elev": 2454,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kitaalps_n",
+      "name": "北アルプス北部",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "立山（雄山）",
+          "lat": 36.5725,
+          "lon": 137.6172,
+          "elev": 3003,
+          "hyakumeizan": true
+        },
+        {
+          "name": "剱岳",
+          "lat": 36.6231,
+          "lon": 137.6169,
+          "elev": 2999,
+          "hyakumeizan": true
+        },
+        {
+          "name": "白馬岳",
+          "lat": 36.7586,
+          "lon": 137.7586,
+          "elev": 2932,
+          "hyakumeizan": true
+        },
+        {
+          "name": "薬師岳",
+          "lat": 36.4642,
+          "lon": 137.5442,
+          "elev": 2926,
+          "hyakumeizan": true
+        },
+        {
+          "name": "鹿島槍ヶ岳",
+          "lat": 36.6217,
+          "lon": 137.7469,
+          "elev": 2889,
+          "hyakumeizan": true
+        },
+        {
+          "name": "五竜岳",
+          "lat": 36.6008,
+          "lon": 137.7525,
+          "elev": 2814,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kitaalps_s",
+      "name": "北アルプス南部",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "奥穂高岳",
+          "lat": 36.2894,
+          "lon": 137.6478,
+          "elev": 3190,
+          "hyakumeizan": true
+        },
+        {
+          "name": "槍ヶ岳",
+          "lat": 36.3419,
+          "lon": 137.6475,
+          "elev": 3180,
+          "hyakumeizan": true
+        },
+        {
+          "name": "笠ヶ岳",
+          "lat": 36.2842,
+          "lon": 137.5556,
+          "elev": 2898,
+          "hyakumeizan": true
+        },
+        {
+          "name": "常念岳",
+          "lat": 36.3364,
+          "lon": 137.7275,
+          "elev": 2857,
+          "hyakumeizan": true
+        },
+        {
+          "name": "燕岳",
+          "lat": 36.4083,
+          "lon": 137.7128,
+          "elev": 2763
+        },
+        {
+          "name": "焼岳",
+          "lat": 36.2264,
+          "lon": 137.5872,
+          "elev": 2455,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "norikura",
+      "name": "乗鞍・御嶽",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "乗鞍岳",
+          "lat": 36.1067,
+          "lon": 137.5533,
+          "elev": 3026,
+          "hyakumeizan": true
+        },
+        {
+          "name": "御嶽山",
+          "lat": 35.8931,
+          "lon": 137.48,
+          "elev": 3067,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "yatsu",
+      "name": "八ヶ岳",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "赤岳",
+          "lat": 35.9708,
+          "lon": 138.3703,
+          "elev": 2899,
+          "hyakumeizan": true
+        },
+        {
+          "name": "天狗岳",
+          "lat": 36.0203,
+          "lon": 138.353,
+          "elev": 2646
+        }
+      ]
+    },
+    {
+      "id": "chuoalps",
+      "name": "中央アルプス",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "木曽駒ヶ岳",
+          "lat": 35.7897,
+          "lon": 137.8047,
+          "elev": 2956,
+          "hyakumeizan": true
+        },
+        {
+          "name": "空木岳",
+          "lat": 35.7203,
+          "lon": 137.826,
+          "elev": 2864,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "minamialps",
+      "name": "南アルプス",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "北岳",
+          "lat": 35.674,
+          "lon": 138.2389,
+          "elev": 3193,
+          "hyakumeizan": true
+        },
+        {
+          "name": "間ノ岳",
+          "lat": 35.6461,
+          "lon": 138.2278,
+          "elev": 3190,
+          "hyakumeizan": true
+        },
+        {
+          "name": "仙丈ヶ岳",
+          "lat": 35.7197,
+          "lon": 138.183,
+          "elev": 3033,
+          "hyakumeizan": true
+        },
+        {
+          "name": "甲斐駒ヶ岳",
+          "lat": 35.7581,
+          "lon": 138.2367,
+          "elev": 2967,
+          "hyakumeizan": true
+        },
+        {
+          "name": "鳳凰山",
+          "lat": 35.6994,
+          "lon": 138.3125,
+          "elev": 2841,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "hakusan",
+      "name": "白山",
+      "region": "北陸",
+      "peaks": [
+        {
+          "name": "御前峰",
+          "lat": 36.1553,
+          "lon": 136.771,
+          "elev": 2702,
+          "hyakumeizan": true
+        },
+        {
+          "name": "別山",
+          "lat": 36.103,
+          "lon": 136.766,
+          "elev": 2399
+        }
+      ]
+    },
+    {
+      "id": "fuji",
+      "name": "富士周辺",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "富士山",
+          "lat": 35.3606,
+          "lon": 138.7274,
+          "elev": 3776,
+          "hyakumeizan": true
+        },
+        {
+          "name": "三ツ峠山",
+          "lat": 35.5486,
+          "lon": 138.803,
+          "elev": 1785
+        }
+      ]
+    },
+    {
+      "id": "omine",
+      "name": "大峰・大台",
+      "region": "近畿",
+      "peaks": [
+        {
+          "name": "八経ヶ岳",
+          "lat": 34.174,
+          "lon": 135.907,
+          "elev": 1915,
+          "hyakumeizan": true
+        },
+        {
+          "name": "日出ヶ岳",
+          "lat": 34.183,
+          "lon": 136.106,
+          "elev": 1695,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "shikoku",
+      "name": "石鎚・剣山",
+      "region": "四国",
+      "peaks": [
+        {
+          "name": "石鎚山",
+          "lat": 33.767,
+          "lon": 133.115,
+          "elev": 1982,
+          "hyakumeizan": true
+        },
+        {
+          "name": "剣山",
+          "lat": 33.854,
+          "lon": 134.094,
+          "elev": 1955,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kuju",
+      "name": "九重・祖母",
+      "region": "九州",
+      "peaks": [
+        {
+          "name": "久住山",
+          "lat": 33.086,
+          "lon": 131.249,
+          "elev": 1787,
+          "hyakumeizan": true
+        },
+        {
+          "name": "祖母山",
+          "lat": 32.826,
+          "lon": 131.346,
+          "elev": 1756,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "rishiri",
+      "name": "利尻",
+      "region": "北海道",
+      "peaks": [
+        {
+          "name": "利尻山",
+          "lat": 45.1786,
+          "lon": 141.2428,
+          "elev": 1721,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "shiretoko",
+      "name": "知床",
+      "region": "北海道",
+      "peaks": [
+        {
+          "name": "羅臼岳",
+          "lat": 44.0764,
+          "lon": 145.1228,
+          "elev": 1661,
+          "hyakumeizan": true
+        },
+        {
+          "name": "斜里岳",
+          "lat": 43.7658,
+          "lon": 144.7194,
+          "elev": 1547,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "akan",
+      "name": "阿寒",
+      "region": "北海道",
+      "peaks": [
+        {
+          "name": "雌阿寒岳",
+          "lat": 43.3864,
+          "lon": 144.0086,
+          "elev": 1499,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "daisetsu",
+      "name": "大雪山系",
+      "region": "北海道",
+      "peaks": [
+        {
+          "name": "旭岳",
+          "lat": 43.6636,
+          "lon": 142.8544,
+          "elev": 2291,
+          "hyakumeizan": true
+        },
+        {
+          "name": "トムラウシ山",
+          "lat": 43.5292,
+          "lon": 142.8506,
+          "elev": 2141,
+          "hyakumeizan": true
+        },
+        {
+          "name": "十勝岳",
+          "lat": 43.4183,
+          "lon": 142.6864,
+          "elev": 2077,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "hidaka",
+      "name": "日高",
+      "region": "北海道",
+      "peaks": [
+        {
+          "name": "幌尻岳",
+          "lat": 42.7061,
+          "lon": 142.6739,
+          "elev": 2052,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "yotei",
+      "name": "羊蹄",
+      "region": "北海道",
+      "peaks": [
+        {
+          "name": "羊蹄山",
+          "lat": 42.8272,
+          "lon": 140.8111,
+          "elev": 1898,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "iwaki",
+      "name": "岩木",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "岩木山",
+          "lat": 40.6564,
+          "lon": 140.3031,
+          "elev": 1625,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "hachimantai",
+      "name": "八幡平・岩手",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "八幡平",
+          "lat": 39.9578,
+          "lon": 140.8536,
+          "elev": 1613,
+          "hyakumeizan": true
+        },
+        {
+          "name": "岩手山",
+          "lat": 39.8514,
+          "lon": 141.0011,
+          "elev": 2038,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "hayachine",
+      "name": "早池峰",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "早池峰山",
+          "lat": 39.5556,
+          "lon": 141.4894,
+          "elev": 1917,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "gassan",
+      "name": "月山",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "月山",
+          "lat": 38.5486,
+          "lon": 140.0272,
+          "elev": 1984,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "asahi",
+      "name": "朝日連峰",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "大朝日岳",
+          "lat": 38.1417,
+          "lon": 139.9331,
+          "elev": 1871,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "bandai",
+      "name": "磐梯・吾妻・安達太良",
+      "region": "東北",
+      "peaks": [
+        {
+          "name": "西吾妻山",
+          "lat": 37.7331,
+          "lon": 140.1567,
+          "elev": 2035,
+          "hyakumeizan": true
+        },
+        {
+          "name": "安達太良山",
+          "lat": 37.6222,
+          "lon": 140.2872,
+          "elev": 1700,
+          "hyakumeizan": true
+        },
+        {
+          "name": "磐梯山",
+          "lat": 37.6011,
+          "lon": 140.0722,
+          "elev": 1816,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "jomo",
+      "name": "赤城・武尊",
+      "region": "北関東",
+      "peaks": [
+        {
+          "name": "武尊山",
+          "lat": 36.7975,
+          "lon": 139.1361,
+          "elev": 2158,
+          "hyakumeizan": true
+        },
+        {
+          "name": "黒檜山",
+          "lat": 36.5606,
+          "lon": 139.1936,
+          "elev": 1828,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "tsukuba",
+      "name": "筑波",
+      "region": "北関東",
+      "peaks": [
+        {
+          "name": "筑波山",
+          "lat": 36.2253,
+          "lon": 140.1069,
+          "elev": 877,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "asama",
+      "name": "浅間・草津",
+      "region": "上信越",
+      "peaks": [
+        {
+          "name": "草津白根山",
+          "lat": 36.6436,
+          "lon": 138.5281,
+          "elev": 2160,
+          "hyakumeizan": true
+        },
+        {
+          "name": "四阿山",
+          "lat": 36.5417,
+          "lon": 138.4058,
+          "elev": 2354,
+          "hyakumeizan": true
+        },
+        {
+          "name": "浅間山",
+          "lat": 36.4061,
+          "lon": 138.5231,
+          "elev": 2568,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "okuchichibu",
+      "name": "奥秩父",
+      "region": "関東",
+      "peaks": [
+        {
+          "name": "両神山",
+          "lat": 35.9925,
+          "lon": 138.8394,
+          "elev": 1723,
+          "hyakumeizan": true
+        },
+        {
+          "name": "瑞牆山",
+          "lat": 35.8919,
+          "lon": 138.5872,
+          "elev": 2230,
+          "hyakumeizan": true
+        },
+        {
+          "name": "金峰山",
+          "lat": 35.8697,
+          "lon": 138.6203,
+          "elev": 2599,
+          "hyakumeizan": true
+        },
+        {
+          "name": "甲武信ヶ岳",
+          "lat": 35.9128,
+          "lon": 138.7231,
+          "elev": 2475,
+          "hyakumeizan": true
+        },
+        {
+          "name": "雲取山",
+          "lat": 35.8556,
+          "lon": 138.9439,
+          "elev": 2017,
+          "hyakumeizan": true
+        },
+        {
+          "name": "大菩薩嶺",
+          "lat": 35.7481,
+          "lon": 138.8461,
+          "elev": 2057,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "tanzawa",
+      "name": "丹沢",
+      "region": "関東",
+      "peaks": [
+        {
+          "name": "丹沢山",
+          "lat": 35.4739,
+          "lon": 139.1636,
+          "elev": 1567,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "amagi",
+      "name": "天城",
+      "region": "関東",
+      "peaks": [
+        {
+          "name": "天城山",
+          "lat": 34.8542,
+          "lon": 139,
+          "elev": 1406,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "echigo",
+      "name": "越後三山・平ヶ岳",
+      "region": "上信越",
+      "peaks": [
+        {
+          "name": "越後駒ヶ岳",
+          "lat": 37.0731,
+          "lon": 139.0847,
+          "elev": 2003,
+          "hyakumeizan": true
+        },
+        {
+          "name": "平ヶ岳",
+          "lat": 36.9436,
+          "lon": 139.1656,
+          "elev": 2141,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "amakazari",
+      "name": "雨飾・高妻",
+      "region": "上信越",
+      "peaks": [
+        {
+          "name": "雨飾山",
+          "lat": 36.9061,
+          "lon": 137.9536,
+          "elev": 1963,
+          "hyakumeizan": true
+        },
+        {
+          "name": "高妻山",
+          "lat": 36.7778,
+          "lon": 138.0631,
+          "elev": 2353,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kitaalps_c",
+      "name": "北アルプス中部",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "黒部五郎岳",
+          "lat": 36.3928,
+          "lon": 137.5386,
+          "elev": 2840,
+          "hyakumeizan": true
+        },
+        {
+          "name": "鷲羽岳",
+          "lat": 36.4083,
+          "lon": 137.6081,
+          "elev": 2924,
+          "hyakumeizan": true
+        },
+        {
+          "name": "水晶岳",
+          "lat": 36.4278,
+          "lon": 137.5936,
+          "elev": 2986,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "minamialps_s",
+      "name": "南アルプス南部",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "塩見岳",
+          "lat": 35.5717,
+          "lon": 138.1789,
+          "elev": 3052,
+          "hyakumeizan": true
+        },
+        {
+          "name": "悪沢岳",
+          "lat": 35.4917,
+          "lon": 138.1806,
+          "elev": 3141,
+          "hyakumeizan": true
+        },
+        {
+          "name": "赤石岳",
+          "lat": 35.46,
+          "lon": 138.1583,
+          "elev": 3121,
+          "hyakumeizan": true
+        },
+        {
+          "name": "聖岳",
+          "lat": 35.4139,
+          "lon": 138.1436,
+          "elev": 3013,
+          "hyakumeizan": true
+        },
+        {
+          "name": "光岳",
+          "lat": 35.3364,
+          "lon": 138.0872,
+          "elev": 2592,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kirigamine",
+      "name": "霧ヶ峰・美ヶ原",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "美ヶ原",
+          "lat": 36.2236,
+          "lon": 138.1103,
+          "elev": 2034,
+          "hyakumeizan": true
+        },
+        {
+          "name": "霧ヶ峰",
+          "lat": 36.1053,
+          "lon": 138.1917,
+          "elev": 1925,
+          "hyakumeizan": true
+        },
+        {
+          "name": "蓼科山",
+          "lat": 36.1017,
+          "lon": 138.2953,
+          "elev": 2531,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "ena",
+      "name": "恵那",
+      "region": "中部",
+      "peaks": [
+        {
+          "name": "恵那山",
+          "lat": 35.4372,
+          "lon": 137.6006,
+          "elev": 2191,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "arashima",
+      "name": "荒島",
+      "region": "北陸",
+      "peaks": [
+        {
+          "name": "荒島岳",
+          "lat": 35.9297,
+          "lon": 136.5981,
+          "elev": 1523,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "ibuki",
+      "name": "伊吹",
+      "region": "近畿",
+      "peaks": [
+        {
+          "name": "伊吹山",
+          "lat": 35.4172,
+          "lon": 136.4064,
+          "elev": 1377,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "daisen",
+      "name": "大山",
+      "region": "中国",
+      "peaks": [
+        {
+          "name": "大山",
+          "lat": 35.3711,
+          "lon": 133.5461,
+          "elev": 1729,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "aso",
+      "name": "阿蘇",
+      "region": "九州",
+      "peaks": [
+        {
+          "name": "高岳",
+          "lat": 32.8844,
+          "lon": 131.1042,
+          "elev": 1592,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kirishima",
+      "name": "霧島",
+      "region": "九州",
+      "peaks": [
+        {
+          "name": "韓国岳",
+          "lat": 31.9331,
+          "lon": 130.8617,
+          "elev": 1700,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "kaimon",
+      "name": "開聞",
+      "region": "九州",
+      "peaks": [
+        {
+          "name": "開聞岳",
+          "lat": 31.1806,
+          "lon": 130.5281,
+          "elev": 924,
+          "hyakumeizan": true
+        }
+      ]
+    },
+    {
+      "id": "yakushima",
+      "name": "屋久島",
+      "region": "九州",
+      "peaks": [
+        {
+          "name": "宮之浦岳",
+          "lat": 30.3358,
+          "lon": 130.5058,
+          "elev": 1936,
+          "hyakumeizan": true
+        }
+      ]
+    }
   ]
 }

@@ -4,6 +4,8 @@ const fs = require('fs');
 
 const HTML = fs.readFileSync(require('path').join(__dirname,'..','sotoki_v4.html'), 'utf8');
 const AREAS = fs.readFileSync(require('path').join(__dirname,'..','areas.json'), 'utf8');
+// 山域の数は areas.json から取る。直書きすると山域を足すたびにテストが落ちる
+const AREA_COUNT = JSON.parse(AREAS).areas.length;
 const UPLOT_JS = fs.readFileSync(__dirname + '/node_modules/uplot/dist/uPlot.iife.min.js', 'utf8');
 const UPLOT_CSS = fs.readFileSync(__dirname + '/node_modules/uplot/dist/uPlot.min.css', 'utf8');
 
@@ -183,7 +185,7 @@ function fakeBatch(url) {
     !areaJump.noDistinctCard && !areaJump.missing &&
     !areaJump.toggled && !areaJump.overlayOpen &&
     areaJump.locationName === areaJump.wantName &&
-    rankState.overlayOpen && rankState.cardCount === 20 && rankState.hasUnjudgeable &&
+    rankState.overlayOpen && rankState.cardCount === AREA_COUNT && rankState.hasUnjudgeable &&
     expanded.open && expanded.peakRows >= 2 &&
     tomorrow.badgeCols === 1 &&
     !afterJump.overlayOpen && afterJump.locationName === peakName && afterJump.chartCanvases === 4;
