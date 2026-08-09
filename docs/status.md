@@ -1,4 +1,4 @@
-# 現状（最終更新: 2026-08-07 / v4.77.0）
+# 現状（最終更新: 2026-08-09 / v4.77.0）
 
 セッションを始めたら、まずこのファイルを読む。
 設計判断の理由は `docs/adr/`、軽い判断・地雷は `docs/decisions.md`。
@@ -8,14 +8,19 @@
 
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
-- **開発ブランチ**: `claude/phase-two-xx5bxn`
+- **開発ブランチ**: `claude/stage-3-readme-oz8gje`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
 
 ## 進行中
 
-- ドキュメント構成の移行 段階2（`docs/project_structure_proposal.md` 第14節）。
-  `docs/adr/`（ADR 5本＋テンプレ）と `docs/decisions.md` を新設し、CLAUDE.md に導線と
-  「禁止・地雷」節を追加。段階3以降（README / spec分割 / Issue運用）は未着手
+- ドキュメント構成の移行 段階3（`docs/project_structure_proposal.md` 第14節）。
+  1行だった `README.md` を人間向けの入口として書き直した（概要・公開URL・使い方・
+  開発者向けの3コマンド・ドキュメント目次・免責・出典）。段階2までは実施済み。
+  段階4以降（spec分割＋`code_map.md` / Issue運用 / `.claude/`）は未着手
+- **ライセンスは未設定のまま**（人間の判断待ち）。README は「検討中」と書いてあり、
+  `LICENSE` ファイルは作っていない。決まったら README のライセンス節と合わせて追加する
+- `netlify.toml` は**残す**と判断した。GitHub Pages は読まないので配信に影響せず、
+  PRのNetlifyプレビューが現状唯一のCIチェックのため（消すのはいつでもできる）
 
 ## 未完・要確認
 
@@ -43,12 +48,22 @@
 
 ## 次セッションの最初のプロンプト
 
-> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階3**
-> （`README.md` を書く）を実施して。`origin/main` から新しいブランチを切ること。
-> 内容は提案書 第4節のとおり——何のアプリか（3行）／公開URL／使い方（`docs/install.md` へ導線）／
-> 開発者向けの3コマンド（ローカル起動・テスト・デプロイ）／ドキュメント目次（`docs/` へのリンク。
-> `docs/adr/` と `docs/decisions.md` も入れる）。
-> **ライセンスと免責は必ず書くこと**——バックカントリー用途なので
-> 「気象判断の責任は利用者にある」旨を明記する。
-> 現状の `README.md` は1行（8バイト）なので全面的に書き直してよい。
-> 人間向けの文書なので、AI向けの `CLAUDE.md` と内容を重複させすぎないこと。
+> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階4**
+> （`docs/spec/` へ仕様を分割し、`docs/spec/code_map.md` を作る）を実施して。
+> `origin/main` から新しいブランチを切ること。
+>
+> 分割元は `docs/archive/handoff_v4.md`（**原本なので読むだけ。一切編集しない**）。
+> 提案書 第2節の移行マッピングどおり、`spec/overview.md`（画面構成）／`chart.md`
+> （チャート4枚の軸・パディング定数）／`ui.md`（ヘッダー・円柱ピッカー・スクラバー）／
+> `data.md`（Open-Meteo と補助リクエスト）／`judge.md`（ABC評価。**変更禁止領域である旨を明記**）／
+> `pwa.md`（manifest・sw.js）に振り分ける。
+> **書き方は現在形のみ・上書き前提**（履歴はgitが持つ。「〜に変更した」と書かない）。
+> 1ファイル150〜250行が目安で、300行を超えたら割る。
+>
+> いちばん効くのは `code_map.md`（提案書 第5節）。`sotoki_v4.html` は約3,400行あり、
+> AIが全文を読むと消費が大きい。**関数名・役割・目安行の表**を作り、CLAUDE.md から
+> 「本体を読む前にまずこれ」と導線を張る。行番号はズレるので**±50行の目安**と割り切り、
+> その旨を `code_map.md` の冒頭に書いておくこと（ズレたら関数名でgrepすればよい）。
+>
+> 終わったら `docs/adr/` と `docs/decisions.md` の内容を spec に**写さない**こと
+> （判断の理由はADR、仕様はspec、と役割を分ける）。CLAUDE.md のファイルマップも更新する。
