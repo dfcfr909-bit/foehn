@@ -1,19 +1,21 @@
 # 現状（最終更新: 2026-08-07 / v4.77.0）
 
 セッションを始めたら、まずこのファイルを読む。
+設計判断の理由は `docs/adr/`、軽い判断・地雷は `docs/decisions.md`。
 仕様の詳細・過去の経緯は `docs/archive/handoff_v4.md`（原本・更新しない）にある。
 
 ## いまの状態
 
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
-- **開発ブランチ**: `claude/naginavi-docs-phase1-v5z0q5`
+- **開発ブランチ**: `claude/phase-two-xx5bxn`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
 
 ## 進行中
 
-- ドキュメント構成の移行 段階1（`docs/project_structure_proposal.md` 第14節）。
-  段階2以降（ADR / README / spec分割）は未着手
+- ドキュメント構成の移行 段階2（`docs/project_structure_proposal.md` 第14節）。
+  `docs/adr/`（ADR 5本＋テンプレ）と `docs/decisions.md` を新設し、CLAUDE.md に導線と
+  「禁止・地雷」節を追加。段階3以降（README / spec分割 / Issue運用）は未着手
 
 ## 未完・要確認
 
@@ -41,8 +43,12 @@
 
 ## 次セッションの最初のプロンプト
 
-> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階2**を実施して。
-> `docs/archive/handoff_v4.md` の「重要な経緯（同じ失敗を繰り返さないため）」節から
-> ADRを4〜5本（単一HTML維持 / uPlot採用 / GitHub Pages移行 / 天気記号を自前ベクター /
-> 風速はms指定）切り出し、`docs/adr/` と `docs/decisions.md` を新設する。
-> テンプレは提案書 第6節にある。原本は編集しないこと。
+> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階3**
+> （`README.md` を書く）を実施して。`origin/main` から新しいブランチを切ること。
+> 内容は提案書 第4節のとおり——何のアプリか（3行）／公開URL／使い方（`docs/install.md` へ導線）／
+> 開発者向けの3コマンド（ローカル起動・テスト・デプロイ）／ドキュメント目次（`docs/` へのリンク。
+> `docs/adr/` と `docs/decisions.md` も入れる）。
+> **ライセンスと免責は必ず書くこと**——バックカントリー用途なので
+> 「気象判断の責任は利用者にある」旨を明記する。
+> 現状の `README.md` は1行（8バイト）なので全面的に書き直してよい。
+> 人間向けの文書なので、AI向けの `CLAUDE.md` と内容を重複させすぎないこと。
