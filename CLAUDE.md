@@ -20,6 +20,8 @@
 
 - 命名: camelCase（JS）、コメント日本語
 - 段階ごとにcommit分割、各段階完了時に動作確認を求めること
+- コミットは日本語＋prefix（`feat:` / `fix:` / `docs:` / `refactor:` / `chore:` / `test:`）。
+  リリースは `main` マージ後に `git tag v4.xx.0` → **詳細は `docs/workflow.md`**
 
 ## 構成
 

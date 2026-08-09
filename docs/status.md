@@ -3,46 +3,51 @@
 セッションを始めたら、まずこのファイルを読む。
 現行仕様は `docs/spec/`（**本体を読む前に `docs/spec/code_map.md`**）。
 設計判断の理由は `docs/adr/`、軽い判断・地雷は `docs/decisions.md`。
+**未来のタスクは GitHub Issues**、進め方は `docs/workflow.md`。
 過去の経緯は `docs/archive/handoff_v4.md`（原本・更新しない）にある。
 
 ## いまの状態
 
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
 - **本体**: `sotoki_v4.html` 単一ファイル（**7,137行 / 関数約290**）。バンドラなし、uPlotは `vendor/` に同梱
-- **開発ブランチ**: `claude/new-session-3ewldq`
+- **開発ブランチ**: `claude/stage-5-issue-ops`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
 
 ## 進行中
 
-- ドキュメント構成の移行 段階4（`docs/project_structure_proposal.md` 第14節）。
-  `docs/spec/` に仕様を7枚（`overview` / `chart` / `ui` / `map` / `data` / `judge` / `pwa`）に
-  分割し、本体の関数索引 `docs/spec/code_map.md` を作った。
-  `CLAUDE.md` / `README.md` から導線を張ってある。段階3までは実施済み。
-  段階5以降（Issue運用 / `.claude/`）は未着手
-  - 提案書 第5節は本体を3,400行として書かれているが、実測は7,137行。
-    提案書自体は動かさず、実測値は `code_map.md` の冒頭に書いた
-- **ライセンスは未設定のまま**（人間の判断待ち）。README は「検討中」と書いてあり、
-  `LICENSE` ファイルは作っていない。決まったら README のライセンス節と合わせて追加する
+- ドキュメント構成の移行 段階5（`docs/project_structure_proposal.md` 第14節）。
+  Issueテンプレ2種（タスク / 実機確認）を `.github/ISSUE_TEMPLATE/` に置き、
+  ラベル4種・コミットprefix・タグ・ブランチの運用を `docs/workflow.md` にまとめた。
+  **「未完・要確認」表の11行はIssue #54〜#65 へ移した。** 段階4までは実施済み。
+  残るは段階6（`.claude/` にスラッシュコマンドと permissions）のみ
+  - ⚠ **ラベルがまだ作られていない。** `bug` は既定であるが、
+    `feature` / `chore` / `needs-decision` は**未作成**なので Issue はラベル無しで立ててある。
+    GitHubのUIで3つ作ってから一括で付け直すこと（`docs/workflow.md` に定義がある）
 - `netlify.toml` は**残す**と判断した。GitHub Pages は読まないので配信に影響せず、
   PRのNetlifyプレビューが現状唯一のCIチェックのため（消すのはいつでもできる）
 
 ## 未完・要確認
 
-| 項目 | 内容 |
-|---|---|
-| **AI全国概況が非表示** | `GLM_API_KEY` を GitHub Secrets に登録し、Actions「AI全国概況の生成」を手動実行するまでカードは出ない。手順は `docs/ai_outlook.md` |
-| **気圧面ごとの雲量** | models未指定の補助リクエストで14層（1000〜200hPa）を要求し、未対応なら低・中・高の3層合成にフォールバックする。**実機で層が出ることは確認済み**だが、フォールバック側の見た目は未確認 |
-| **新雪ランキングの座標生成** | `node scripts/buildSpots.mjs` が**未実行**（開発環境からOSM/GSI/JMA/Open-Meteoのいずれにも到達できないため）。`data/spots.json` が無いとタブは案内文を出すだけ。手順は `docs/snow_ranking.md` |
-| **JMA bosai のCORS** | 新雪ランキングはアメダスをブラウザから直に叩く前提。**実機で通るか未確認**。通らなければ `worker/` にプロキシを足す |
-| **スクラバー帯のなぞり心地** | v4.30.0。1時間の幅はチャートと共通（`pxPerHourVal`）なので、密度を変えるには `HOURS_PER_SCREEN` を変える（チャートの表示時間数も一緒に変わる点に注意） |
-| **CS立体図（保留中）** | v4.62.0で追加したが実機で出ず、v4.63.1でUIから隠した（`pending: true`）。石川県・白山市 z10 で「この範囲に表示なし」＝この配信は石川県をカバーしていない。**配信範囲の分かるURLが手に入ったら `url` を差し替えて `pending` を消せば戻る** |
-| **地図レイヤーの実機確認** | 開発環境から地理院・OSM・Esriに到達できずタイルが出るか未確認。**火山土地条件図はレイヤーIDが不明**で `pending`。過去空中写真のカバー範囲・Esriの正式attribution・iOSのストレージ実測も未確認。一覧は `docs/map-selector-requirements.md` §14 |
-| **雨の予告の分きざみ** | v4.67.0。ナウキャストのタイルを地点の1画素だけ読む。**気象庁のタイルがCORSヘッダを返すかは実機未確認**。返さなければ毎時データの見込みだけが残る＝壊れはしないが片肺。確認点は「雨のとき `#map-rain` の色が変わるか」。`NOWC_ALPHA_MIN` の閾値も要調整 |
-| **雲の着色（実機未確認）** | v4.75.0で追加、v4.76.0でフィルタを要素ごと作り直すよう修正。**この修正版は実機で未確認**。効かなければ着色は諦めて `SAT_TINTS` から出さない扱いを勧める。iOSのSVGフィルタは**ヘッドレスで再現しない不具合を3回踏んでいる**ので深追いしない |
-| **ひまわりカラーの虫食い配信（保留中）** | v4.71.0でチップから隠した（`SAT_BANDS` の `pending: true`）。切り分け済み: 合成・不透明度・basetime使い回し・書き出し待ちはいずれも無罪。残る容疑は `band`/`prod` の値（`REP`/`ETC`）か、カラーだけ配信範囲・ズームが違うか。**次にやること: 一時的に `pending` を外し、パネルの「一部しか取得できません（N%）」と失敗タイルのzを見る** |
-| **jma_seamlessの実予報期間** | v4.31.0で `forecast_days=9` に拡張したが、**実際に何日先まで返すかは未検証**（開発環境からOpen-Meteoに到達できない）。末尾のnullは切り落とすので表示は壊れないが、7日先まで埋まっているかは実機で要確認 |
+**Issueへ移した。** 詳細は各Issueにある（確認する場所・判定の分かれ目・逃げ道つき）。
+ここには一覧だけ置く。
 
-> この表は11行あり、提案書の目安（10行）を超えている。段階5でIssue化して減らす。
+| # | 項目 | 種別 |
+|---|---|---|
+| [#54](https://github.com/dfcfr909-bit/SotoKi/issues/54) | ひまわりカラーの虫食い配信（保留中） | 実機確認 |
+| [#55](https://github.com/dfcfr909-bit/SotoKi/issues/55) | 雲の着色（`SAT_TINTS`）が効いているか | 実機確認 |
+| [#56](https://github.com/dfcfr909-bit/SotoKi/issues/56) | 雨の予告の分きざみ（気象庁タイルのCORS） | 実機確認 |
+| [#57](https://github.com/dfcfr909-bit/SotoKi/issues/57) | 地図レイヤーが表示されるか（火山土地条件図のID等） | 実機確認 |
+| [#58](https://github.com/dfcfr909-bit/SotoKi/issues/58) | jma_seamlessの実予報期間 | 実機確認 |
+| [#59](https://github.com/dfcfr909-bit/SotoKi/issues/59) | 気圧面ごとの雲量・3層フォールバックの見た目 | 実機確認 |
+| [#60](https://github.com/dfcfr909-bit/SotoKi/issues/60) | JMA bosai のCORS（#61が先） | 実機確認 |
+| [#61](https://github.com/dfcfr909-bit/SotoKi/issues/61) | `buildSpots.mjs` 未実行（`data/spots.json` が無い） | タスク |
+| [#62](https://github.com/dfcfr909-bit/SotoKi/issues/62) | AI全国概況が非表示（`GLM_API_KEY` 待ち） | 要判断 |
+| [#63](https://github.com/dfcfr909-bit/SotoKi/issues/63) | CS立体図の配信範囲（URL待ち） | 要判断 |
+| [#64](https://github.com/dfcfr909-bit/SotoKi/issues/64) | スクラバー帯のなぞり心地 | タスク |
+| [#65](https://github.com/dfcfr909-bit/SotoKi/issues/65) | ライセンス未設定 | 要判断 |
+
+> **この表は増やさない。** 新しい未確認が出たら Issue を立てて1行足す。
+> 運用は `docs/workflow.md`。
 
 ## 直近の変更（3件まで。古いものは消す）
 
@@ -52,23 +57,33 @@
 
 ## 次セッションの最初のプロンプト
 
-> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階5**
-> （Issueテンプレ・ラベル・コミットprefix・タグ運用の開始）を実施して。
+> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階6**
+> （`.claude/` にスラッシュコマンドと permissions を置く）を実施して。
 > `origin/main` から新しいブランチを切ること。
 >
 > やること:
-> 1. **Issueテンプレート**を `.github/ISSUE_TEMPLATE/` に置く。最低限「実機確認」用と
->    「不具合」用の2種。実機確認テンプレには**確認する場所・見るべき画面・
->    判定の分かれ目**を書く欄を作る（「実機で確認する所は〇〇」という書き方が
->    `docs/status.md` に既にある。あれをそのまま型にする）
-> 2. **ラベル**を決める（例: `実機確認待ち` / `保留` / `地雷` / `ドキュメント`）。
->    一覧を `CONTRIBUTING.md` か `docs/` のどこかに1枚で書く
-> 3. **`docs/status.md` の「未完・要確認」表をIssueへ移す。** いま11行あり提案書の
->    目安（10行）を超えている。**移したらstatus.mdの表は行を減らし、Issue番号だけ残す**
-> 4. **コミットprefix**（`docs:` / `fix:` / `feat:` など）と**タグ運用**
->    （`v4.77.0` のようにリリース時に打つか）を決めて `CLAUDE.md` の規約に1〜2行足す
+> 1. **`.claude/settings.json` の permissions** を整える。毎回聞かれて煩わしいものを
+>    許可に入れる（`node tests/run-all.js` / `git` の読み取り系 / `grep`・`ls` など）。
+>    **破壊的なものは入れない**（`rm -rf` / `git push --force` / `wrangler` の秘密操作）
+> 2. **スラッシュコマンド**を `.claude/commands/` に置く。候補:
+>    - `/test` … `cd tests && npm install`（初回）→ `node tests/run-all.js` を全件流す
+>    - `/status` … `docs/status.md` を読み、開発ブランチと `origin/main` の差を出す
+>    - `/spec <名前>` … `docs/spec/` の該当ファイルと `code_map.md` を開く
+>    - `/release <版>` … 版数表記の更新箇所を示し、タグの打ち方を出す
+> 3. `CLAUDE.md` に `.claude/` の存在を**1行だけ**足す（L0は増やさない）
+>
+> ⚠ `.claude/hooks/session-start.sh` は**既にある。触らない**
+> （ブランチ鮮度チェック。第13節の事故対策）。
 >
 > 制約: **コードは1行も変更しない。** 段階ごとにcommitを分割する。
-> `.claude/hooks/session-start.sh` には触らない。アプリ名は「ナギナビ」。
-> 完了時は `node tests/run-all.js` を全件流し（初回は `cd tests && npm install`）、
-> `docs/status.md` を更新してドラフトPRを作る。
+> アプリ名は「ナギナビ」。完了時は `node tests/run-all.js` を全件流し
+> （初回は `cd tests && npm install`）、`docs/status.md` を更新してドラフトPRを作る。
+
+## 未処理の申し送り
+
+- **ラベル3つ（`feature` / `chore` / `needs-decision`）をGitHubのUIで作る。**
+  作ったら #54〜#65 に付け直す（定義は `docs/workflow.md`）
+- **予報山域の拡張**（未Issue化）。日本百名山をランキングへ追加し、
+  100〜300名山を地図に△でプロットしたい。**先に座標データの出所を決める必要がある**
+  （`buildSpots.mjs` と同じく開発環境から OSM/国土地理院に到達できない → #61 と同根）。
+  ランキング拡張・地図の△プロット・座標調達の3本に割るのが妥当
