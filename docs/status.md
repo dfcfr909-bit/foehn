@@ -1,22 +1,26 @@
 # 現状（最終更新: 2026-08-09 / v4.77.0）
 
 セッションを始めたら、まずこのファイルを読む。
+現行仕様は `docs/spec/`（**本体を読む前に `docs/spec/code_map.md`**）。
 設計判断の理由は `docs/adr/`、軽い判断・地雷は `docs/decisions.md`。
-仕様の詳細・過去の経緯は `docs/archive/handoff_v4.md`（原本・更新しない）にある。
+過去の経緯は `docs/archive/handoff_v4.md`（原本・更新しない）にある。
 
 ## いまの状態
 
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
-- **本体**: `sotoki_v4.html` 単一ファイル（約3,400行）。バンドラなし、uPlotは `vendor/` に同梱
-- **開発ブランチ**: `claude/stage-3-readme-oz8gje`
+- **本体**: `sotoki_v4.html` 単一ファイル（**7,137行 / 関数約290**）。バンドラなし、uPlotは `vendor/` に同梱
+- **開発ブランチ**: `claude/new-session-3ewldq`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
 
 ## 進行中
 
-- ドキュメント構成の移行 段階3（`docs/project_structure_proposal.md` 第14節）。
-  1行だった `README.md` を人間向けの入口として書き直した（概要・公開URL・使い方・
-  開発者向けの3コマンド・ドキュメント目次・免責・出典）。段階2までは実施済み。
-  段階4以降（spec分割＋`code_map.md` / Issue運用 / `.claude/`）は未着手
+- ドキュメント構成の移行 段階4（`docs/project_structure_proposal.md` 第14節）。
+  `docs/spec/` に仕様を7枚（`overview` / `chart` / `ui` / `map` / `data` / `judge` / `pwa`）に
+  分割し、本体の関数索引 `docs/spec/code_map.md` を作った。
+  `CLAUDE.md` / `README.md` から導線を張ってある。段階3までは実施済み。
+  段階5以降（Issue運用 / `.claude/`）は未着手
+  - 提案書 第5節は本体を3,400行として書かれているが、実測は7,137行。
+    提案書自体は動かさず、実測値は `code_map.md` の冒頭に書いた
 - **ライセンスは未設定のまま**（人間の判断待ち）。README は「検討中」と書いてあり、
   `LICENSE` ファイルは作っていない。決まったら README のライセンス節と合わせて追加する
 - `netlify.toml` は**残す**と判断した。GitHub Pages は読まないので配信に影響せず、
@@ -48,22 +52,23 @@
 
 ## 次セッションの最初のプロンプト
 
-> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階4**
-> （`docs/spec/` へ仕様を分割し、`docs/spec/code_map.md` を作る）を実施して。
+> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階5**
+> （Issueテンプレ・ラベル・コミットprefix・タグ運用の開始）を実施して。
 > `origin/main` から新しいブランチを切ること。
 >
-> 分割元は `docs/archive/handoff_v4.md`（**原本なので読むだけ。一切編集しない**）。
-> 提案書 第2節の移行マッピングどおり、`spec/overview.md`（画面構成）／`chart.md`
-> （チャート4枚の軸・パディング定数）／`ui.md`（ヘッダー・円柱ピッカー・スクラバー）／
-> `data.md`（Open-Meteo と補助リクエスト）／`judge.md`（ABC評価。**変更禁止領域である旨を明記**）／
-> `pwa.md`（manifest・sw.js）に振り分ける。
-> **書き方は現在形のみ・上書き前提**（履歴はgitが持つ。「〜に変更した」と書かない）。
-> 1ファイル150〜250行が目安で、300行を超えたら割る。
+> やること:
+> 1. **Issueテンプレート**を `.github/ISSUE_TEMPLATE/` に置く。最低限「実機確認」用と
+>    「不具合」用の2種。実機確認テンプレには**確認する場所・見るべき画面・
+>    判定の分かれ目**を書く欄を作る（「実機で確認する所は〇〇」という書き方が
+>    `docs/status.md` に既にある。あれをそのまま型にする）
+> 2. **ラベル**を決める（例: `実機確認待ち` / `保留` / `地雷` / `ドキュメント`）。
+>    一覧を `CONTRIBUTING.md` か `docs/` のどこかに1枚で書く
+> 3. **`docs/status.md` の「未完・要確認」表をIssueへ移す。** いま11行あり提案書の
+>    目安（10行）を超えている。**移したらstatus.mdの表は行を減らし、Issue番号だけ残す**
+> 4. **コミットprefix**（`docs:` / `fix:` / `feat:` など）と**タグ運用**
+>    （`v4.77.0` のようにリリース時に打つか）を決めて `CLAUDE.md` の規約に1〜2行足す
 >
-> いちばん効くのは `code_map.md`（提案書 第5節）。`sotoki_v4.html` は約3,400行あり、
-> AIが全文を読むと消費が大きい。**関数名・役割・目安行の表**を作り、CLAUDE.md から
-> 「本体を読む前にまずこれ」と導線を張る。行番号はズレるので**±50行の目安**と割り切り、
-> その旨を `code_map.md` の冒頭に書いておくこと（ズレたら関数名でgrepすればよい）。
->
-> 終わったら `docs/adr/` と `docs/decisions.md` の内容を spec に**写さない**こと
-> （判断の理由はADR、仕様はspec、と役割を分ける）。CLAUDE.md のファイルマップも更新する。
+> 制約: **コードは1行も変更しない。** 段階ごとにcommitを分割する。
+> `.claude/hooks/session-start.sh` には触らない。アプリ名は「ナギナビ」。
+> 完了時は `node tests/run-all.js` を全件流し（初回は `cd tests && npm install`）、
+> `docs/status.md` を更新してドラフトPRを作る。

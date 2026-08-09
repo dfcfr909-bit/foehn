@@ -23,7 +23,10 @@
 
 ## 構成
 
-- `sotoki_v4.html` — 現行版（改修ベース）
+- `sotoki_v4.html` — 現行版（改修ベース）。7,000行超あるので
+  **本体を読む前にまず `docs/spec/code_map.md`（関数索引）を見る**
+- `docs/spec/` — **現行仕様**（`overview` / `chart` / `ui` / `map` / `data` / `judge` / `pwa`
+  ＋ `code_map.md`）。「いまどうなっているか」はここ
 - `docs/status.md` — **現状・進行中・未完事項・次セッションの最初のプロンプト（毎回読む）**
 - `docs/adr/` — **設計判断の記録（ADR）。「なぜそうなっているか」と却下した案はここ**（不変。覆すときは新ADR）
 - `docs/decisions.md` — 軽い判断・調整値・実装上の落とし穴の1行ログ（追記のみ）

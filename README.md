@@ -61,6 +61,7 @@ node tests/run-all.js     # リポジトリ直下から
 | | |
 |---|---|
 | [docs/status.md](docs/status.md) | 現状・進行中・未完事項。**まずこれ** |
+| [docs/spec/](docs/spec/) | 現行仕様。**[code_map.md](docs/spec/code_map.md) が本体の関数索引** |
 | [docs/adr/](docs/adr/) | 設計判断の記録。「なぜそうなっているか」と却下した案 |
 | [docs/decisions.md](docs/decisions.md) | 軽い判断・調整値・実装上の落とし穴の1行ログ |
 | [docs/install.md](docs/install.md) | PWAインストール手順・アイコン再生成 |
