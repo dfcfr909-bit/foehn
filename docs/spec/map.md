@@ -230,6 +230,11 @@
 | `pickMapPoint(lat, lon, name)` | 検索結果・百名山の△ | **渡された名前を使う**。`mapFlyTo` でその地点へ飛ぶ |
 | `pickPinPoint(lat, lng)` | 長押しで落としたピン | 地名が分からないので**逆ジオコーディングで引く** |
 
+選んだ地点の**緯度経度**は `updateLatLonLabel()` が `#map-latlon` に4桁で出す。
+⚠ **消したり桁を落としたりしないこと。** `areas.json` の座標が山頂を指しているかを
+人が確かめる唯一の手段（#67）。開発環境から地理院に到達できず、座標の正否を
+機械で決められないため。長押しで山頂を選び、この数字を `areas.json` に写す。
+
 表示名は `setPickedName`、
 移動は `mapFlyTo(lat, lon, zoom)`（`flyTo`, duration 0.8s。`setView` の瞬間移動は使わない）。
 検索は `doMapSearch()`。

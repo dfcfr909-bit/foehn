@@ -1,0 +1,52 @@
+name: 山頂座標の検査
+
+# areas.json の座標が本当に山頂を指しているか調べる（#67）。
+# 手動実行のみ。結果は Actions のログとサマリーに出るだけで、何もコミットしない。
+#
+# なぜ Actions で回すか:
+#   開発環境からは国土地理院に到達できず、手元では走らせられない（#61 と同じ制約）。
+#   Actions なら外に出られるうえ、**スマホからでも実行できる**。
+on:
+  workflow_dispatch:
+    inputs:
+      tol:
+        description: '許容差(m)。これを超える差を「要確認」として出す'
+        required: false
+        default: '200'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 差が見つかると exit 1 で終わるので、結果を握ってサマリーに出す。
+      # ⚠ 失敗扱いにしないこと。「要確認が見つかった」は正常な結果であって、
+      #    ワークフローの故障ではない。赤くすると次から誰も回さなくなる。
+      - name: 座標を検査
+        id: run
+        run: |
+          set +e
+          node scripts/checkPeaks.mjs --tol "${{ inputs.tol }}" | tee result.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: 結果をサマリーへ
+        run: |
+          {
+            echo '## 山頂座標の検査結果'
+            echo
+            echo '```'
+            cat result.txt
+            echo '```'
+            echo
+            echo '座標を直すときは **`lat`/`lon` を直すこと。`elev` を下げて辻褄を合わせない**。'
+            echo '正しい座標は、アプリの地図で山頂を長押しすると下段に出る。'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -49,6 +49,8 @@
 - `tests/` — スモークテスト（改修のたびに全件実行する）
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 - `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
+- `scripts/checkPeaks.mjs` — `areas.json` の座標が山頂を指しているか検査（要ネットワーク）。
+  手元から地理院に到達できないので **GitHub Actions「山頂座標の検査」から手動実行する**
 
 ## 改修計画
 

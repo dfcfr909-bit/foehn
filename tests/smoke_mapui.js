@@ -1667,11 +1667,20 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       label, name: state.locationName,
       picked: (document.getElementById('map-picked-name') || {}).textContent || '',
       moved: Math.abs(after[0] - before[0]) + Math.abs(after[1] - before[1]) > 1e-4,
-      twoArg: typeof pickPinPoint === 'function' && pickMapPoint.length === 3,
+      // 引数の数そのものではなく「名前つきで選ぶ版が生きているか」を見る
+      // （標高など引数が増えても落とさない。長押し版は2引数のまま）
+      twoArg: typeof pickPinPoint === 'function'
+        && pickPinPoint.length === 2 && pickMapPoint.length >= 3,
     };
   });
-  ok(picked.twoArg, '★pickMapPointが3引数版のまま（長押しはpickPinPointに分離）', picked);
+  ok(picked.twoArg, '★名前つきで選ぶpickMapPointが生きている（長押しはpickPinPointに分離）', picked);
   ok(picked.moved, '★検索結果をタップすると地図がその地点へ飛ぶ', picked);
+  /* ★選んだ地点の緯度経度を出す（#67）。areas.json の座標が山頂を指しているか
+     人が確かめる唯一の手段なので、消したり桁を落としたりしないこと。
+     開発環境から地理院に到達できず、座標の正否を機械で決められないため。 */
+  const latlon = await pageS.evaluate(() => (document.getElementById('map-latlon') || {}).textContent || '');
+  ok(/^-?\d+\.\d{4}, -?\d+\.\d{4}$/.test(latlon),
+    '★選んだ地点の緯度経度を4桁で出す（座標検証の手段）', latlon);
   ok(picked.label.includes(picked.name) || picked.picked.includes(picked.name),
     '★タップした名前がそのまま地点名になる（逆ジオコーディングし直さない）', picked);
 
@@ -1958,7 +1967,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     console.log('MAPUI SMOKE FAILED');
     process.exit(1);
   }
-  console.log(JSON.stringify({ init, esri, areas, whenAfter, areasFar, relief, rrim, elev: elev.dec, restored, fallback }, null, 2));
+  console.log(JSON.stringify({ init, esri, areas, whenAfter, latlon, areasFar, relief, rrim, elev: elev.dec, restored, fallback }, null, 2));
   console.log(`タイル取得 ${tileHits.length}件`);
   console.log('MAPUI SMOKE PASSED');
 })();

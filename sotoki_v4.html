@@ -832,6 +832,14 @@ html, body {
 #map-picked b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #map-elev { font-size: 11px; color: var(--text2); flex-shrink: 0; }
 #map-elev:empty { display: none; }
+/* 選んだ地点の緯度経度。areas.json の座標が山頂を指しているか人が確かめるための表示
+   （#67。長押しで山頂を選び、ここの数字を areas.json に写す）。
+   タップでコピーできるよう pointer-events は殺さない */
+#map-latlon {
+  font-size: 10px; font-family: var(--font-mono); color: var(--text2);
+  flex-shrink: 0; user-select: all; -webkit-user-select: all;
+}
+#map-latlon:empty { display: none; }
 /* 円柱はヘッダーから引っ越してくる。浮いているので背景を敷いて地図と分ける */
 #map-fav-slot {
   min-width: 0; display: flex;
@@ -1170,6 +1178,7 @@ html, body {
   }
   #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
   #map-overlay #map-elev { color: #f2f4f7; background: rgba(12,14,17,0.88); }
+  #map-overlay #map-latlon { color: #cfd6de; background: rgba(12,14,17,0.88); }
 }
 
 /* 案内文は浮かせたうえ、**しばらくすると消える**。
@@ -1758,7 +1767,7 @@ html, body {
         <div class="pop-row"><span class="pop-ico" id="pop-wx">☀️</span><span class="pop-grade" id="pop-grade">A</span></div>
         <div class="pop-row"><span class="pop-k">気温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
         <div class="pop-row"><span class="pop-k">降水</span><span class="pop-v" id="pop-prec">--</span><span class="pop-sub" id="pop-rain">—</span></div>
-        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windw">—</span></div>
+        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windsrc"></span><span class="pop-sub" id="pop-windw">—</span></div>
         <div class="pop-row" id="pop-gust-row"><span class="pop-k">突風</span><span class="pop-v" id="pop-gust">--</span><span class="pop-sub">m/s</span></div>
         <div class="pop-row"><span class="pop-k">気圧</span><span class="pop-v" id="pop-dp">--</span><span class="pop-sub">hPa/6h</span></div>
       </div>
@@ -1826,7 +1835,7 @@ html, body {
         <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
         <div id="map-rain" class="hidden"></div>
         <div id="map-foot">
-          <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
+          <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span><span id="map-latlon"></span></div>
           <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
           <div id="map-attribution"></div>
         </div>
@@ -1959,6 +1968,8 @@ const state = {
   daily: null,       // 日の出・日の入り
   elevation: null,      // 地点標高(m)。Open-Meteoが返すモデル格子の標高（API用）
   demElevation: null,   // 標高タイルから読んだ実際の地点標高(m)。表示用（displayElevation参照）
+  summitElev: null,     // 峰と分かっている場合の山頂標高(m)。areas.jsonの値。判定の風の高度に使う
+                        // （DEMより優先。座標が山頂からずれていても外さないため。ADR-0006）
   cloudProfiles: null,   // 時刻→[[高度m, 雲量%], ...]（気圧面データ。無ければ3層合成）
   sliderIndex: 0,    // デフォルト：現在時刻
 };
@@ -1969,6 +1980,65 @@ const PAST_HOURS = 72;   // 「実績+予報」表示時に遡る時間数
 // 判定閾値（A→B→Cの境界）。風速はm/s（APIにwind_speed_unit=msを指定して取得）。
 //   ※以前は風速をkm/hのまま m/s として判定していたため約3.6倍厳しくなっていた。
 //     単位を正した上で、当初のm/s基準の閾値に戻している。
+/* ------ 判定に使う風の高度（ADR-0006） ------
+   ⚠ **地上10m風で判定しないこと。** モデルの格子（MSMで約5km）では孤立峰の地形が
+   平滑化されて潰れるため、山頂の風が出ない。皇海山(2,144m)ではモデル地形が1,405mで、
+   10m風 2.7m/s に対し山頂高度(800hPa)の風は 21.0m/s だった（実測）。
+   モデル地形より高く突き出た山ほど判定が甘くなる＝危険側にズレる。
+   標高を渡しても直らない（elevation は気温にしか効かない）→ docs/adr/0006-summit-wind.md */
+const WIND_LEVELS = [   // [hPa, 標準大気での高度m]。日本の山（約600〜3,800m）を覆う
+  [925, 760], [900, 990], [850, 1460], [800, 1950], [700, 3010], [600, 4200],
+];
+// 山頂がモデル地形よりこれだけ高いときに気圧面の風へ切り替える（地中の外挿値を拾わないため）
+const WIND_LEVEL_MIN_RISE = 100;
+
+// 山頂高度に最も近い気圧面。範囲外なら端の層に寄せる
+function windLevelFor(elevM) {
+  let best = WIND_LEVELS[0];
+  for (const lv of WIND_LEVELS) {
+    if (Math.abs(lv[1] - elevM) < Math.abs(best[1] - elevM)) best = lv;
+  }
+  return best;
+}
+
+/* どの高度の風で判定するかを決める。
+   ⚠ **山頂がモデル地形より高くないときは地上10m風のまま。**
+   気圧面が地中になり、無意味な外挿値を拾うため。
+   戻り値の kind は 'level'（山頂高度の気圧面）/ 'ground'（地上10m）。 */
+function pickWindSource(summitM, modelM) {
+  if (typeof summitM !== 'number' || !isFinite(summitM)) {
+    return { kind: 'ground', reason: 'noElev' };
+  }
+  if (typeof modelM === 'number' && isFinite(modelM)) {
+    // モデル地形が分かる（メテオグラム）: 山頂が十分高いときだけ気圧面へ
+    if (summitM <= modelM + WIND_LEVEL_MIN_RISE) {
+      return { kind: 'ground', reason: 'flat', summitM, modelM };
+    }
+  } else if (summitM < WIND_LEVELS[0][1]) {
+    // モデル地形が分からない（ランキングは山頂標高を指定して取るので返らない）:
+    // いちばん低い気圧面より下なら気圧面を使う意味が無い
+    return { kind: 'ground', reason: 'low', summitM };
+  }
+  const [hPa, alt] = windLevelFor(summitM);
+  return { kind: 'level', hPa, alt, summitM, modelM };
+}
+
+/* 判定に使っている風がどこの風か、一言で言う（画面に出す用）。
+   ⚠ **地上風に落ちたことを黙らない。** 落ちた理由まで出す。
+   黙って甘い判定に戻るのが、この件でいちばん危ない失敗の仕方（ADR-0006）。 */
+function windSourceLabel(src) {
+  if (!src) return '地上10m';
+  if (src.kind === 'level') {
+    return src.fellBack ? '地上10m（山頂の風が取れず）' : `${Math.round(src.summitM)}m`;
+  }
+  if (src.reason === 'noElev') return '地上10m（標高不明）';
+  // ⚠ 落ちた理由が「山頂がモデル地形より高くない」ときは**読んだ標高を出す**。
+  // 座標が山頂からずれていると DEM が斜面を読んで静かにここへ落ちる。
+  // 数字が出ていないと、実機で「なぜ地上風なのか」を切り分けられない（実際に踏んだ）
+  if (typeof src.summitM === 'number') return `地上10m（山頂${Math.round(src.summitM)}m）`;
+  return '地上10m';
+}
+
 const THRESH = {
   day:  { windA:5,  windB:10 },
   camp: { windA:3,  windB:8  },   // 切替UIは撤去済み。judgePointの構造を変えないため定義は残す
@@ -1986,16 +2056,30 @@ async function fetchWeather(lat, lon) {
   // past_days=3で過去3日分（解析値）も、forecast_days=9で先7日ぶんに余裕を持たせて取得。
   // 表示範囲は applyRange で切り出す。jma_seamlessが実際に何日先まで返すかはモデル依存
   // （GSMの予報期間まで）なので、足りない分はprocessDataが末尾のnullを切り落とす
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=jma_seamless`;
+  // 山頂高度の風（ADR-0006）。jma_seamless が気圧面の風を返すことは実測で確認済み
+  // （models未指定の値と完全一致）。**補助リクエストではなく本体で取る**のは、
+  // モデルを混ぜないため／通信を増やさないため／判定が後から覆らないため
+  const lvVars = WIND_LEVELS.map(([hPa]) => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa`).join(',');
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=jma_seamless`;
   try {
-    const res = await fetch(url);
+    // 山頂標高（地理院DEM）は**判定の入力**なので、気象データと一緒に待つ。
+    // 先に判定を出してから覆ると、安全に関わる表示が化ける（ADR-0006）
+    const [res, dem] = await Promise.all([
+      fetch(url),
+      fetchPointElevation(lat, lon).catch(() => null),
+    ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
-    state.fullData = processData(json);          // dpressは全期間の文脈で算出済み
     state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
-    state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // 地点標高(m)
-    // 標高タイルの実測値は地点ごとの値なので、別地点なら捨てる
-    if (state.lat !== lat || state.lon !== lon) state.demElevation = null;
+    state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // モデル格子の標高(m)
+    state.demElevation = (typeof dem === 'number' && isFinite(dem)) ? dem : null;
+    // どの高度の風で判定するかを先に決める（processData がその層を読む）
+    // ⚠ displayElevation() ではなく demElevation を渡す。DEMが取れなかったときに
+    // モデル標高で埋めると「山頂＝モデル地形」と誤認して黙って地上風に落ちる
+    // ⚠ 峰と分かっているならその標高を優先する。DEMは座標が少しずれるだけで
+    // 斜面を読み、静かに地上風へ落ちる（皇海山で踏んだ）
+    state.windSource = pickWindSource(state.summitElev ?? state.demElevation, state.elevation);
+    state.fullData = processData(json, state.windSource);   // dpressは全期間の文脈で算出済み
     state.lat = lat;
     state.lon = lon;
     applyRange();                                // 表示範囲を切り出し
@@ -2145,9 +2229,18 @@ function applyRange() {
   state.sliderIndex = nowIdx - start;   // 現在時刻の位置にカーソルを合わせる
 }
 
-function processData(json) {
+/* windSrc は pickWindSource() の戻り値。'level' なら wind/wdir に山頂高度の
+   気圧面風を入れる（ADR-0006）。⚠ judgePoint は d.wind を見るだけなので、
+   **判定ロジックには一切触れずに入力の質だけを上げている。**
+   その層が返ってこなかったときは地上10m風へ落とし、windSrc.fellBack を立てて
+   画面に出す（黙って甘い判定に戻さない）。 */
+function processData(json, windSrc) {
   const h = json.hourly;
   const len = h.time.length; // past_days + forecast_days ぶん
+  const useLevel = windSrc && windSrc.kind === 'level';
+  const lvSpd = useLevel ? h[`wind_speed_${windSrc.hPa}hPa`] : null;
+  const lvDir = useLevel ? h[`wind_direction_${windSrc.hPa}hPa`] : null;
+  if (useLevel && !lvSpd) windSrc.fellBack = true;   // 層が返ってこなかった
   const data = [];
   for (let i = 0; i < len; i++) {
     const dt = new Date(h.time[i]);
@@ -2159,8 +2252,11 @@ function processData(json) {
       precip: h.precipitation[i],
       snow: h.snowfall[i],
       pressure: h.surface_pressure[i],
-      wind: h.windspeed_10m[i],
-      wdir: h.winddirection_10m ? h.winddirection_10m[i] : null,
+      // 判定・表示に使う風。山頂高度が取れていればその層の値（ADR-0006）
+      wind: (lvSpd && lvSpd[i] != null) ? lvSpd[i] : h.windspeed_10m[i],
+      wdir: (lvDir && lvDir[i] != null) ? lvDir[i]
+            : (h.winddirection_10m ? h.winddirection_10m[i] : null),
+      wind10: h.windspeed_10m[i],   // 地上10m風。参考用に残す（判定には使わない）
       gust: h.windgusts_10m ? h.windgusts_10m[i] : null,   // 突風(m/s)
       wcode: h.weathercode[i],
       cloud: h.cloudcover[i],
@@ -2437,6 +2533,7 @@ function updateFavStar() {
 
 // 地点選択（現在地点と同じなら正面合わせのみ、違えば天気取得）
 function selectFav(lat, lon, name) {
+  state.summitElev = null;      // お気に入りは標高を持たない。DEMに任せる
   if (sameLoc({ lat, lon }, state)) { centerActiveChip(); return; }
   state.lat = lat;
   state.lon = lon;
@@ -2636,6 +2733,9 @@ function updatePopup() {
 
   document.getElementById('pop-wind').textContent = d.wind != null ? Math.round(d.wind) : '--';
   document.getElementById('pop-windw').textContent = windWord(d.wind) || '—';
+  // どこの高度の風かを添える（ADR-0006）。地上10m風に落ちているときも黙らない
+  const wsEl = document.getElementById('pop-windsrc');
+  if (wsEl) wsEl.textContent = `@${windSourceLabel(state.windSource)}`;
   // 突風は取得できたときのみ行を表示
   const gustRow = document.getElementById('pop-gust-row');
   if (d.gust != null) {
@@ -5584,7 +5684,7 @@ function drawAreas(bounds, opacity) {
       m.bindTooltip(`${escapeHtml(p.name)} ${p.elev}m<br>日本百名山・${escapeHtml(area.name)}`);
       // 押したらその峰を選ぶ。名前が分かっているので逆ジオコーディングは要らない。
       // 地図は開いたまま（閉じるのは利用者の操作）
-      m.on('click', () => pickMapPoint(p.lat, p.lon, p.name));
+      m.on('click', () => pickMapPoint(p.lat, p.lon, p.name, p.elev));
       weatherMarkers.push(m);
     }
   }
@@ -6040,6 +6140,16 @@ function updateElevationLabel() {
   try { if (leafletMap) buildCharts(); } catch (e) { /* 描画前なら無視 */ }
 }
 
+/* 選んだ地点の緯度経度を出す。areas.json の座標が本当に山頂を指しているかを
+   人が確かめるための表示（#67）。長押しで山頂を選び、ここの数字を写せばよい。
+   ⚠ 桁は areas.json と揃えて4桁（約11m）。これより細かくしても地図の指の精度で意味がない。 */
+function updateLatLonLabel() {
+  const el = document.getElementById('map-latlon');
+  if (!el) return;
+  if (typeof state.lat !== 'number' || typeof state.lon !== 'number') { el.textContent = ''; return; }
+  el.textContent = `${state.lat.toFixed(4)}, ${state.lon.toFixed(4)}`;
+}
+
 /* ------ タイルキャッシュの使用量表示・削除（Service Workerと会話する） ------ */
 function swMessage(payload) {
   return new Promise(resolve => {
@@ -6082,10 +6192,12 @@ async function clearTileCache() {
 
 /* ------ 地名検索（Nominatim） ------ */
 // 地図上に選択マーカーを移動し、地点を確定して天気取得
-function pickMapPoint(lat, lon, name) {
+function pickMapPoint(lat, lon, name, elev) {
   state.lat = lat;
   state.lon = lon;
   state.locationName = name;
+  // 百名山の△など標高が分かっている選択では渡ってくる（ADR-0006）
+  state.summitElev = (typeof elev === 'number' && isFinite(elev)) ? elev : null;
   releaseFollow();                   // 選んだ地点から現在地へ引き戻されないように
   setPickedName(name);
   document.getElementById('map-results').innerHTML = '';   // 選んだら候補は畳む
@@ -6095,6 +6207,7 @@ function pickMapPoint(lat, lon, name) {
 
 // 地点名の表示（地図を開いたまま選べるので、今どこを選んでいるか常に出す）
 function setPickedName(name) {
+  updateLatLonLabel();          // 地点名が変わる＝地点が変わったとき
   const el = document.getElementById('map-picked-name');
   if (el) el.textContent = name || '—';
 }
@@ -6568,6 +6681,7 @@ function showMapHint() {
    名前が捨てられ、mapFlyTo も呼ばれず地図が動かなかった。 */
 function pickPinPoint(lat, lng) {
   leafletMarker.setLatLng([lat, lng]);
+  state.summitElev = null;      // 長押しの任意地点は山頂と限らない。DEMに任せる
   releaseFollow();                   // 選んだ場所から現在地へ引き戻されないように
   state.lat = lat;
   state.lon = lng;
@@ -6814,12 +6928,19 @@ function resolveRankDates(kind) {
 async function fetchRankData(dates) {
   const areas = await loadAreas();
   const peaks = areas.areas.flatMap(a => a.peaks);
-  const key = `${dates.join('_')}_v${areas.version}_${peaks.length}`;
+  // 判定に使う気圧面（ADR-0006）。峰ごとに必要な層だけを要求する
+  // （110地点ぶんの変数が増えるとレートに効くため。全6層でなく実際に使う5層で足りる）
+  const levels = [...new Set(peaks.map(p => {
+    const s = pickWindSource(p.elev, null);
+    return s.kind === 'level' ? s.hPa : null;
+  }).filter(Boolean))];
+  const key = `${dates.join('_')}_v${areas.version}_${peaks.length}_${levels.join('-')}`;
   if (rankFetchCache[key]) return rankFetchCache[key];
 
   const lats  = peaks.map(p => p.lat).join(',');
   const lons  = peaks.map(p => p.lon).join(',');
   const elevs = peaks.map(p => p.elev).join(',');
+  const lvVars = levels.map(hPa => `,wind_speed_${hPa}hPa`).join('');
   // start_date/end_dateではなくforecast_daysで取得（将来日の欠落を防ぐ確実な方式）。
   // 今日から対象最終日までをカバーする日数を算出し、判定は日付でフィルタ
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
@@ -6827,7 +6948,7 @@ async function fetchRankData(dates) {
   const daysAhead = Math.round((maxDate - today0) / 86400e3);
   const fdays = Math.min(16, Math.max(1, daysAhead + 1));
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&elevation=${elevs}` +
-    `&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,weathercode,cloudcover` +
+    `&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,weathercode,cloudcover${lvVars}` +
     `&timezone=Asia%2FTokyo&wind_speed_unit=ms&forecast_days=${fdays}&models=jma_seamless`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6879,7 +7000,10 @@ async function buildRanking(dates) {
       const raw = results[flatIdx++];
       let days;
       try {
-        const hourData = raw && raw.hourly ? processData(raw) : null;
+        // 山頂標高で判定する（ADR-0006）。ランキングは areas.json の elev があるので
+        // DEMを引く必要がない。標高はAPIに渡してあるのでモデル地形は返らない
+        const hourData = raw && raw.hourly
+          ? processData(raw, pickWindSource(peak.elev, null)) : null;
         days = dates.map(ds => hourData ? judgePeakDay(hourData, ds) : null);
       } catch {
         days = dates.map(() => null);   // 失敗地点は判定不能でフォールバック
@@ -6965,7 +7089,7 @@ function renderRankList(rows, dates) {
         return `<td><span class="pd-grade rb-${g}">${g}</span>` +
           `<div class="pd-metrics">風${d.maxWind.toFixed(0)} 雨${d.sumPrecip.toFixed(0)}${snowTxt}${tempTxt}</div>${reasonTxt}</td>`;
       }).join('');
-      return `<tr><td><button class="peak-link" data-lat="${pr.peak.lat}" data-lon="${pr.peak.lon}" data-name="${pr.peak.name}">${pr.peak.name}</button>` +
+      return `<tr><td><button class="peak-link" data-lat="${pr.peak.lat}" data-lon="${pr.peak.lon}" data-elev="${pr.peak.elev}" data-name="${pr.peak.name}">${pr.peak.name}</button>` +
         `<div class="peak-elev">${pr.peak.elev}m</div></td>${cells}</tr>`;
     }).join('');
 
@@ -6975,7 +7099,7 @@ function renderRankList(rows, dates) {
         <div class="rank-name">
           <div class="rn-main">${repPeak
             ? `<button class="area-link" data-lat="${repPeak.peak.lat}" data-lon="${repPeak.peak.lon}"` +
-              ` data-name="${repPeak.peak.name}">${row.area.name}</button>`
+              ` data-elev="${repPeak.peak.elev}" data-name="${repPeak.peak.name}">${row.area.name}</button>`
             : row.area.name}</div>
           <div class="rn-sub">${row.area.region}</div>
           ${reasonHtml}
@@ -6993,18 +7117,23 @@ function renderRankList(rows, dates) {
     card.querySelectorAll('.peak-link, .area-link').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon));
+        gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon),
+        btn.dataset.elev ? parseFloat(btn.dataset.elev) : null);
       });
     });
     list.appendChild(card);
   });
 }
 
-// 峰名タップ → 既存96hメテオグラムへ遷移
-function gotoPeak(name, lat, lon) {
+/* 峰名タップ → 既存96hメテオグラムへ遷移。
+   ⚠ **標高が分かっているなら渡すこと**（ADR-0006）。判定に使う風の高度がこれで決まる。
+   渡さないとDEM頼みになり、座標が山頂から少しずれているだけで斜面の標高を読んで
+   静かに地上風の判定へ落ちる（皇海山で実際に踏んだ。座標が約490mずれていた）。 */
+function gotoPeak(name, lat, lon, elev) {
   state.lat = lat;
   state.lon = lon;
   state.locationName = name;
+  state.summitElev = (typeof elev === 'number' && isFinite(elev)) ? elev : null;
   closeRank();
   fetchWeather(lat, lon);
 }
@@ -7176,7 +7305,7 @@ function renderSnowList() {
           <div class="snow-name-line">
             <span class="snow-name">${r.lat != null && r.lon != null
               ? `<button class="spot-link" data-lat="${r.lat}" data-lon="${r.lon}"` +
-                ` data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</button>`
+                ` data-elev="${r.elevation}" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</button>`
               : escapeHtml(r.name)}</span>
             <span class="snow-tag ${r.type}">${tag}</span>
             <span class="snow-area">${escapeHtml(r.area)}</span>
@@ -7201,7 +7330,8 @@ function renderSnowList() {
   // 地点名を押したらその地点の96hメテオグラムへ（登山指数タブの峰名と同じ振る舞い）
   list.querySelectorAll('.spot-link').forEach(btn => {
     btn.addEventListener('click', () => {
-      gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon));
+      gotoPeak(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon),
+        btn.dataset.elev ? parseFloat(btn.dataset.elev) : null);
     });
   });
 }

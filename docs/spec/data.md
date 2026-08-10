@@ -23,6 +23,16 @@ https://api.open-meteo.com/v1/forecast
 ⚠ **`wind_speed_unit=ms` を必ず指定する。** Open-Meteo の既定は km/h。
 → `docs/adr/0005-wind-unit-ms.md`
 
+⚠ **気圧面の風（`wind_speed_{hPa}hPa` / `wind_direction_{hPa}hPa`）も本体で取る。**
+`WIND_LEVELS` の6層（925/900/850/800/700/600）。ABC評価は地上10m風ではなく
+**山頂高度の気圧面風**で行う → `judge.md` / `docs/adr/0006-summit-wind.md`
+
+`jma_seamless` は気圧面の風を返す（models未指定の値と完全一致することを実測で確認）。
+**補助リクエストに逃がさない**理由は3つ——モデルが混ざらない／通信が増えない／
+**判定が後から覆らない**（補助は非同期なので、先に A を出してから C に化ける）。
+
+標高（地理院DEM）は**判定の入力**なので、気象データと `Promise.all` で一緒に待つ。
+
 - `past_days=3` で過去3日ぶん（解析値）、`forecast_days=9` で先に余裕を持たせる
 - 応答は `processData(json)` が整形して `state.fullData` に入る。
   **末尾の null は切り落とす**ので、モデルが返さない先まで指定しても表示は壊れない
