@@ -9,24 +9,22 @@
 ## いまの状態
 
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
-- **本体**: `sotoki_v4.html` 単一ファイル（**7,137行 / 関数約290**）。バンドラなし、uPlotは `vendor/` に同梱
-- **開発ブランチ**: `claude/hyakumeizan-areas`
+- **本体**: `sotoki_v4.html` 単一ファイル（**7,296行 / 関数約295**）。バンドラなし、uPlotは `vendor/` に同梱
+- **開発ブランチ**: `claude/69-area-layer`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
 
 ## 進行中
 
-- **予報山域の拡張。** `areas.json` を 20山域/45峰 → **51山域/110峰**にし、
-  **日本百名山100座すべて**を入れた。峰に `hyakumeizan` フラグを足してある
-  （判定には使わない。地図の△プロットで使い回す）。粒度の方針は `docs/spec/judge.md`。
+- **地図の山域・百名山レイヤー（#69）を実装した。** `areas.json` から山域の面・
+  ラベル・百名山の△を描く。色はランキングを開いた後にその日の判定（A/B/C）になる。
+  **この描画のために気象データを取りに行かない**（地図を開いただけで全国ぶんを引くと重い）
+  - あわせて `pickMapPoint` の二重定義を直した。**検索結果をタップしても地図が動かず、
+    渡した名前が捨てられていた**（長押し側を `pickPinPoint` に分離）
+- 予報山域は **51山域/110峰**（日本百名山100座を含む）。
   **座標は未検証（#67）／Open-Meteoのレートは未確認（#68）**
-  - 次は**地図の山域レイヤー（#69）**。山域の面＋百名山の△を `areas.json` から描く。
-    写真のような一般的な山脈図の公式タイルは無いので、自前データではなく
-    ランキングの山域をそのまま描く方針にした
-- ドキュメント構成の移行は**段階5まで完了**（`docs/project_structure_proposal.md` 第14節）。
-  残るは段階6（`.claude/` にスラッシュコマンドと permissions）のみ
-  - ⚠ **ラベルがまだ作られていない。** `bug` は既定であるが、
-    `feature` / `chore` / `needs-decision` は**未作成**なので Issue はラベル無しで立ててある。
-    GitHubのUIで3つ作ってから一括で付け直すこと（`docs/workflow.md` に定義がある）
+- ドキュメント構成の移行は**段階5まで完了**。残るは段階6（`.claude/`）のみ
+  - ⚠ **ラベルがまだ作られていない。** `feature` / `chore` / `needs-decision` は未作成で、
+    Issue はラベル無しで立ててある（定義は `docs/workflow.md`）
 - `netlify.toml` は**残す**と判断した。GitHub Pages は読まないので配信に影響せず、
   PRのNetlifyプレビューが現状唯一のCIチェックのため（消すのはいつでもできる）
 
@@ -51,37 +49,33 @@
 | [#65](https://github.com/dfcfr909-bit/SotoKi/issues/65) | ライセンス未設定 | 要判断 |
 | [#67](https://github.com/dfcfr909-bit/SotoKi/issues/67) | `areas.json` の座標110点を地理院で検証 | タスク |
 | [#68](https://github.com/dfcfr909-bit/SotoKi/issues/68) | ランキング110地点がOpen-Meteoのレートに収まるか | 実機確認 |
-| [#69](https://github.com/dfcfr909-bit/SotoKi/issues/69) | 地図の山域レイヤー（面＋百名山の△） | タスク |
+| [#71](https://github.com/dfcfr909-bit/SotoKi/issues/71) | 山域レイヤーの見た目（札の重なり・△の見え方） | 実機確認 |
 
 > **この表は増やさない。** 新しい未確認が出たら Issue を立てて1行足す。
 > 運用は `docs/workflow.md`。
 
 ## 直近の変更（3件まで。古いものは消す）
 
+- 地図に山域・百名山レイヤーを追加（#69）。検索結果タップの不具合も修正
 - 全国山域ランキングに日本百名山100座を追加（51山域/110峰）
 - v4.77.0 自位置を車のナビと同じ矢尻で描く。追跡中は選択地点のピンを出さない
-- v4.76.1 衛星・レーダーが最新の実況を貼るよう `latestObsTime` に統一（時刻ズレの修正）
 
 ## 次セッションの最初のプロンプト
 
-> docs/status.md を読んだうえで、**Issue #69（地図の山域レイヤー）**を実装して。
-> `origin/main` から新しいブランチを切ること。
+> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階6**
+> （`.claude/` にスラッシュコマンドと permissions を置く）を実施して。
+> `origin/main` から新しいブランチを切ること。**ドキュメント整理はこれで最後**。
 >
-> `areas.json`（51山域/110峰）から地図に描く。追加データは要らない。
-> 1. **山域の面** … 峰の重心を中心に、最遠の峰までの距離＋余白を半径にした円を
->    うっすら塗り、重心に山域名のラベルを置く
-> 2. **百名山の△** … `hyakumeizan: true` の峰に△。ズームで間引く
-> 3. できれば山域の色をその日の判定（A/B/C。`GRADE_COL`）にする
+> 1. **`.claude/settings.json` の permissions** … 毎回聞かれて煩わしいものを許可に入れる
+>    （`node tests/run-all.js` / `git` の読み取り系 / `grep`・`ls` など）。
+>    **破壊的なものは入れない**（`rm -rf` / `git push --force` / `wrangler` の秘密操作）
+> 2. **スラッシュコマンド**を `.claude/commands/` に置く。候補:
+>    `/test`（16件流す）/ `/status`（status.md＋ブランチ鮮度）/
+>    `/spec <名前>`（該当specと code_map を開く）/ `/release <版>`（版数の更新箇所とタグ）
+> 3. `CLAUDE.md` に `.claude/` の存在を**1行だけ**足す（L0は増やさない）
 >
-> 既存の**アメダスの点描画**（`drawAmedas` / `refreshWeatherPoints`）がほぼ流用できる。
-> レイヤー定義は `MAP_OVERLAYS` の表に足す（**URLやズーム範囲はコードでなく表を直す**）。
-> ヘディングアップ時にラベルと△が立つよう `--map-rot` で逆回転させること。
->
-> ⚠ **マスクは pane に直接掛けない**（Leafletのpaneは0×0。入れ物を挟む）。
-> ⚠ ABC評価ロジック（`abcScore` / `abcScoreInv` / `judgePoint`）は変更禁止。
->
-> 本体を読む前に `docs/spec/code_map.md`、地図の仕様は `docs/spec/map.md` を見ること。
-> 完了時は `node tests/run-all.js` を全件流し、`docs/status.md` を更新してドラフトPRを作る。
+> ⚠ `.claude/hooks/session-start.sh` は**既にある。触らない**。
+> 制約: **コードは1行も変更しない。** 段階ごとにcommitを分割する。
 
 ## 未処理の申し送り
 
@@ -89,5 +83,10 @@
   作ったら #54〜#65 に付け直す（定義は `docs/workflow.md`）
 - **二百・三百名山**は保留。選定に揺れがあり同名峰の同定も要るため、まず百名山だけで作る。
   広げるなら `hyakumeizan` と同じ形で `nihyaku` / `sanbyaku` を足す（座標調達は #61/#67 と同根）
-- **石鎚・剣山の山域が広すぎる**（2峰で91km）。既存の山域なので今回は触っていないが、
-  粒度の方針（`docs/spec/judge.md`）からは外れている。割るかどうかは要判断
+- **山域の分け方に見直したい所がある**（円の中心が主峰からズレる形で表面化した）。
+  計算式ではなく**データ側**の問題なので、#67 の座標検証と一緒に見るとよい。
+  - `富士周辺` … 富士山＋三ツ峠山。**富士山は独立峰なので1座だけの山域が素直**
+    （三ツ峠山は百名山でなく山塊も別。いま中心が11km北へ寄っている）
+  - `石鎚・剣山` … 2峰で**91km**。粒度の方針（`docs/spec/judge.md`）から外れている
+  - `九重・祖母` … 30km。上2つほどではないが同種
+  - ⚠ 円の中心の計算式（重心）は**変えない**と決めた。理由は `docs/decisions.md` 2026-08-09

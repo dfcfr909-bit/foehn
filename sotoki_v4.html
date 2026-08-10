@@ -733,6 +733,30 @@ html, body {
   box-shadow: 0 3px 12px rgba(0,0,0,0.3);
 }
 #map-results:empty { display: none; }
+
+/* 山域の色が「いつの判定か」。検索行の下に1行だけ浮かせる。
+   ⚠ 下地は rgba(var(--surface-rgb), α)。白で直書きするとダークモードで読めなくなる。
+   器（#map-top）ではなく単独で置いているので pointer-events は none にして
+   下の地図を触れるままにする（札の下で地図が死ぬと全画面にした意味が無い）。 */
+#map-when {
+  position: absolute;
+  left: 8px;
+  top: calc(60px + var(--sa-top));
+  z-index: 1100;
+  pointer-events: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(var(--surface-rgb), 0.88);
+  border: 1px solid rgba(0,0,0,0.18);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.22);
+  font-size: 11px; font-weight: 700; color: var(--text);
+  white-space: nowrap;
+}
+#map-when .mw-key { font-size: 9px; font-weight: 800; opacity: 0.65; }
+#map-when.hidden { display: none; }
+/* 検索結果が出ている間は隠す（結果の札と重なるため） */
+#map-results:not(:empty) ~ #map-when { display: none; }
 .map-result-item {
   padding: 11px 14px;
   min-height: 44px;
@@ -1062,6 +1086,41 @@ html, body {
 .amedas-box b small { font-size: 8px; opacity: 0.75; }
 .amedas-box .amedas-arrow { font-style: normal; font-size: 12px; line-height: 1; }
 .amedas-box span { font-size: 8px; color: #444; }
+/* 山域・百名山レイヤー。ヘディングアップで地図ごと回るので、
+   札と△は --map-rot で逆回転させて立てる（タイル内の文字は画像なので回ったまま）。
+   ⚠ 下地は rgba(var(--surface-rgb), α)。白で直書きするとダークモードで白地に白文字になる */
+.area-label, .peak-tri { background: none; border: none; }
+.area-label-box {
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  background: rgba(var(--surface-rgb), 0.80);
+  border: 1px solid rgba(0,0,0,0.20);
+  font-size: 10px; font-weight: 700; color: var(--text);
+  white-space: nowrap;
+}
+.area-label-box .area-grade {
+  font-style: normal; font-size: 9px; font-weight: 800; color: #fff;
+  min-width: 12px; text-align: center;
+  padding: 0 2px; border-radius: 3px;
+}
+.peak-tri-box {
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
+  display: inline-flex; flex-direction: column; align-items: center;
+  line-height: 1; white-space: nowrap;
+}
+/* △そのもの。フチを付けて、濃いベースマップ（航空写真）でも見えるようにする */
+.peak-tri-box i {
+  font-style: normal; font-size: 12px; color: #6b3a1a;
+  text-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 3px rgba(255,255,255,0.8);
+}
+.peak-tri-box span {
+  font-size: 8px; font-weight: 700; color: var(--text);
+  padding: 0 3px; border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.78);
+}
+
 .wind-box {
   transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
   display: inline-flex; align-items: center; gap: 1px;
@@ -1759,6 +1818,8 @@ html, body {
         </div>
       </div>
       <div id="map-results"></div>
+      <!-- 山域の色が「いつの判定か」を出す。レイヤーがオンで色が付いているときだけ -->
+      <div id="map-when" class="hidden"></div>
 
       <!-- 下に浮かぶもの：案内文／地点名＋出典／お気に入り円柱 -->
       <div id="map-bottom">
@@ -2612,6 +2673,11 @@ function resetPopupPosition() {
 /* ============================================================
    ABC JUDGMENT
    ============================================================ */
+/* ABC判定の色。スクラバー帯のバーと地図の山域レイヤーで共通に使う。
+   判定不能（データなし）は GRADE_COL_NONE。 */
+const GRADE_COL = { A: '#2a7d4f', B: '#e8a020', C: '#d03030' };
+const GRADE_COL_NONE = '#9aa4b2';
+
 function abcScore(val, a, b) {
   if (val == null) return 0;
   if (val < a) return 0;
@@ -4356,13 +4422,12 @@ function drawScrubber() {
     if (x1 > x0) ctx.fillRect(x0, 0, x1 - x0, cssH);
   });
 
-  const GRADE_COL = { A: '#2a7d4f', B: '#e8a020', C: '#d03030' };
   const barTop = 17, barH = 17;
   const precBase = cssH - 2, precMax = 16;
 
   for (let i = 0; i < data.length; i++) {
     // ABC判定バー
-    ctx.fillStyle = GRADE_COL[judgePoint(data[i]).grade] || '#9aa4b2';
+    ctx.fillStyle = GRADE_COL[judgePoint(data[i]).grade] || GRADE_COL_NONE;
     ctx.fillRect(cell(i) + 0.5, barTop, pph - 1, barH);
     // 降水バー（5mm/hで振り切れ。雪は水色）
     const mm = data[i].precip || 0;
@@ -4502,6 +4567,11 @@ const MAP_BASE_DEFAULT = 'pale';   // オーバーレイの下地として最も
 
 /* オーバーレイ（複数同時可）。opacityは既定の透過率 */
 const MAP_OVERLAYS = [
+  /* 山域・百名山（areas.json から描く。タイルではないので配信元も利用条件も無い）。
+     一般的な「山地・山脈図」は配信タイルが無いうえ、あってもランキングの山域とズレる。
+     ここで描くのは**ランキングの評価単位そのもの**なので、地図と一覧が必ず一致する。 */
+  { id: 'areas', name: '山域・百名山', kind: 'areas', opacity: 0.45,
+    note: '山域の範囲と百名山。ランキングを開いた後は判定の色になる' },
   { id: 'rrimLike',  name: '赤色立体図風', composite: true, opacity: 0.70,
     minNativeZoom: 3, maxNativeZoom: 15, attribution: '国土地理院（陰影起伏図・傾斜量図）',
     note: '陰影起伏図に傾斜量図を乗算合成' },
@@ -4780,7 +4850,7 @@ function applyOverlays() {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
     } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
       addTimedTileLayer(def, item.opacity);
-    } else if (def.kind === 'amedas' || def.kind === 'windArrows') {
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'areas') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
       const layer = L.tileLayer(def.url,
@@ -5399,10 +5469,136 @@ function drawWindArrows(bounds, opacity) {
     .catch(e => setLayerStatus('windArrows', `取得できません（${e.message}）`));
 }
 
+/* ------ 山域・百名山レイヤー（areas.json から描く） ------
+   タイルではなく手持ちのデータなので通信ゼロ。ランキングの評価単位そのものを
+   描くので、地図と一覧が必ず一致する（一般的な山脈図を重ねるとズレて混乱する）。
+
+   ・山域の面 … 峰の重心を中心に、最遠の峰＋余白を半径にした円
+   ・山域ラベル … 重心に山域名（狭いズームでは重なるので z が上がってから）
+   ・百名山 … hyakumeizan の峰に△
+   ・色 … ランキングを開いた後は、その日の判定（A/B/C）で塗る。
+           まだ開いていなければ判定なしの灰色。**この描画のために取りに行かない**
+           （地図を開いただけで全国ぶんの気象データを引くと通信が重い） */
+const AREA_LABEL_MIN_ZOOM = 7;   // 山域名を出すズーム（これ未満は面だけ）
+const PEAK_NAME_MIN_ZOOM  = 9;   // 峰の名前を△に添えるズーム
+const AREA_PAD_KM = 4;           // 山域の円に持たせる余白
+const AREA_MIN_R_KM = 5;         // 1座だけの山域でも最低これだけの半径にする
+let areaGradeById = null;        // 山域id -> 'A'|'B'|'C'（ランキングの結果。無ければnull）
+
+// 2点間の距離(km)。山域の広がりを測るだけなので球面近似で足りる
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, rad = d => d * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const x = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+// 山域の中心（峰の重心）と半径(m)。峰が1つでも AREA_MIN_R_KM の円になる
+function areaShape(area) {
+  const n = area.peaks.length;
+  const lat = area.peaks.reduce((s, p) => s + p.lat, 0) / n;
+  const lon = area.peaks.reduce((s, p) => s + p.lon, 0) / n;
+  const far = Math.max(...area.peaks.map(p => haversineKm(lat, lon, p.lat, p.lon)));
+  return { lat, lon, radius: Math.max(AREA_MIN_R_KM, far + AREA_PAD_KM) * 1000 };
+}
+
+/* 山域の色が「いつの判定か」を上部に出す。
+   色の出所はランキングの選択日（rankDates）と行動時間帯（rankHourWindow）なので、
+   **地図側に独立した日付を持たせない**（二重管理になり必ず食い違う）。
+   ランキングをまだ開いていない＝色が無いときは出さない（パネルの案内に任せる）。 */
+function updateMapWhen() {
+  const el = document.getElementById('map-when');
+  if (!el) return;
+  const on = isMapOpen() && isOverlayOn('areas') && areaGradeById && rankDates.length;
+  el.classList.toggle('hidden', !on);
+  if (!on) return;
+  const [ws, we] = rankHourWindow(rankDates[0]);
+  const isToday = rankDates[0] === fmtDateISO(new Date());
+  const days = rankDates.map(ds => {
+    const d = new Date(ds + 'T00:00');
+    return `${d.getMonth() + 1}/${d.getDate()}(${rankDowChar(ds)})`;
+  }).join('・');
+  el.innerHTML = `<span class="mw-key">判定</span>${escapeHtml(days)} ` +
+    `${ws}〜${we}時` + (isToday ? '（今から先）' : '');
+}
+
+function drawAreas(bounds, opacity) {
+  if (!areasData) {
+    loadAreas()
+      .then(() => { setLayerStatus('areas', ''); refreshWeatherPoints(); })
+      .catch(e => setLayerStatus('areas', `取得できません（${e.message}）`));
+    setLayerStatus('areas', '取得中…');
+    return;
+  }
+  setLayerStatus('areas', '');
+  const z = leafletMap.getZoom();
+  let shown = 0;
+
+  for (const area of areasData.areas) {
+    const s = areaShape(area);
+    // 円が画面に一切かからない山域は飛ばす（緯度1度≒111km で粗く判定）
+    const degR = s.radius / 111000;
+    if (!bounds.intersects(L.latLngBounds(
+      [s.lat - degR, s.lon - degR], [s.lat + degR, s.lon + degR]))) continue;
+    shown++;
+
+    const grade = areaGradeById ? areaGradeById[area.id] : null;
+    const col = grade ? GRADE_COL[grade] : GRADE_COL_NONE;
+    const circle = L.circle([s.lat, s.lon], {
+      radius: s.radius, pane: 'mapWeather', interactive: false,
+      color: col, weight: 1.5, opacity: Math.min(1, opacity + 0.25),
+      fillColor: col, fillOpacity: opacity * 0.35,
+    }).addTo(leafletMap);
+    weatherMarkers.push(circle);
+
+    if (z >= AREA_LABEL_MIN_ZOOM) {
+      const gradeTxt = grade ? `<i class="area-grade" style="background:${col}">${grade}</i>` : '';
+      const label = L.marker([s.lat, s.lon], {
+        pane: 'mapWeather', opacity,
+        icon: L.divIcon({
+          className: 'area-label',
+          html: `<div class="area-label-box">${gradeTxt}${escapeHtml(area.name)}</div>`,
+          iconSize: null,
+        }),
+      }).addTo(leafletMap);
+      label.bindTooltip(`${escapeHtml(area.name)}（${escapeHtml(area.region)}）<br>` +
+        area.peaks.map(p => `${escapeHtml(p.name)} ${p.elev}m`).join(' / '));
+      weatherMarkers.push(label);
+    }
+
+    // 百名山の△。判定には使わないフラグなので、ここでの見せ方だけに効く
+    for (const p of area.peaks) {
+      if (!p.hyakumeizan) continue;
+      if (!bounds.contains([p.lat, p.lon])) continue;
+      const name = z >= PEAK_NAME_MIN_ZOOM
+        ? `<span>${escapeHtml(p.name)}</span>` : '';
+      const m = L.marker([p.lat, p.lon], {
+        pane: 'mapWeather', opacity,
+        icon: L.divIcon({
+          className: 'peak-tri',
+          html: `<div class="peak-tri-box"><i>▲</i>${name}</div>`,
+          iconSize: null,
+        }),
+      }).addTo(leafletMap);
+      m.bindTooltip(`${escapeHtml(p.name)} ${p.elev}m<br>日本百名山・${escapeHtml(area.name)}`);
+      // 押したらその峰を選ぶ。名前が分かっているので逆ジオコーディングは要らない。
+      // 地図は開いたまま（閉じるのは利用者の操作）
+      m.on('click', () => pickMapPoint(p.lat, p.lon, p.name));
+      weatherMarkers.push(m);
+    }
+  }
+
+  if (!shown) setLayerStatus('areas', 'この範囲に山域がありません');
+  else if (!areaGradeById) setLayerStatus('areas', 'ランキングを開くと判定の色になります');
+}
+
 function refreshWeatherPoints() {
   if (!leafletMap) return;
   clearWeatherMarkers();
   const bounds = leafletMap.getBounds();
+  if (isOverlayOn('areas')) drawAreas(bounds, overlayOpacity('areas'));
+  updateMapWhen();
   if (isOverlayOn('amedas')) drawAmedas(bounds, overlayOpacity('amedas'));
   if (isOverlayOn('windArrows')) drawWindArrows(bounds, overlayOpacity('windArrows'));
   updateThunderIcons();
@@ -6365,7 +6561,12 @@ function showMapHint() {
 }
 
 // 地点の確定。地図は閉じない（続けて別の地点を見比べられるようにするため v4.51.0）
-function pickMapPoint(lat, lng) {
+/* 長押しで落としたピン。地名が分からないので逆ジオコーディングで名前を引く。
+   ⚠ 名前が分かっている選択（検索結果・百名山の△）は pickMapPoint を使うこと。
+   以前はこの関数も pickMapPoint という名前で、後から宣言されたこちらが
+   3引数版を巻き上げで上書きしていた。そのせいで検索結果をタップしても
+   名前が捨てられ、mapFlyTo も呼ばれず地図が動かなかった。 */
+function pickPinPoint(lat, lng) {
   leafletMarker.setLatLng([lat, lng]);
   releaseFollow();                   // 選んだ場所から現在地へ引き戻されないように
   state.lat = lat;
@@ -6397,7 +6598,7 @@ function bindPinLongPress(map) {
       pinHoldTimer = null;
       hidePinHold();
       if (navigator.vibrate) navigator.vibrate(15);   // 手袋でも確定が分かるように
-      pickMapPoint(target.lat, target.lng);
+      pickPinPoint(target.lat, target.lng);
     }, PIN_HOLD_MS);
   };
   const moveCheck = (clientX, clientY) => {
@@ -6823,6 +7024,11 @@ async function refreshRanking() {
   try {
     const rows = await buildRanking(rankDates);
     renderRankList(rows, rankDates);
+    // 地図の山域レイヤーに判定の色を渡す。**この結果を地図から取りに行かせない**
+    // （地図を開いただけで全国ぶんの気象データを引くと通信が重い）
+    areaGradeById = {};
+    rows.forEach(r => { if (r.best <= 2) areaGradeById[r.area.id] = rankGradeChar(r.best); });
+    if (isMapOpen() && isOverlayOn('areas')) refreshWeatherPoints();
   } catch (e) {
     list.innerHTML = `<div class="rank-msg">取得失敗: ${e.message}</div>`;
   }

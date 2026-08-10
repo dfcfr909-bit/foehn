@@ -397,6 +397,88 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(esri.attribution.includes('Esri'), '出典がEsriに変わる', esri.attribution);
   ok(esri.activeCount === 1, '切替後もactiveは1つだけ', esri.activeCount);
 
+  /* ================= 2.5 山域・百名山レイヤー =================
+     areas.json から描く。タイルではないので通信は増えない（areas.json 1本だけ）。
+     判定の色はランキングを開いた後にだけ付く（地図から気象データを取りに行かない）。 */
+  await page.evaluate(() => { leafletMap.setView([36.4, 138.0], 8); toggleOverlay('areas'); });
+  await page.waitForTimeout(400);
+  const areas = await page.evaluate(() => {
+    const boxes = [...document.querySelectorAll('.area-label-box')];
+    const tris = [...document.querySelectorAll('.peak-tri-box')];
+    return {
+      on: isOverlayOn('areas'),
+      labels: boxes.length,
+      tris: tris.length,
+      // 円（面）はSVGのpathで出る。山域ラベルの数以上あるはず
+      circles: document.querySelectorAll('.leaflet-pane path').length,
+      labelText: boxes.length ? boxes[0].textContent : '',
+      hasGrade: boxes.some(b => b.querySelector('.area-grade')),
+      status: (document.querySelector('.layer-status[data-id="areas"]') || {}).textContent || '',
+      // 回転補正（ヘディングアップで札が立つこと）
+      rotates: boxes.length ? getComputedStyle(boxes[0]).transform !== 'none' : false,
+      triRotates: tris.length ? getComputedStyle(tris[0]).transform !== 'none' : false,
+    };
+  });
+  ok(areas.on, '山域レイヤーが有効になる');
+  ok(areas.labels > 0, '山域ラベルが出る', areas.labels);
+  ok(areas.circles > 0, '山域の面（円）が描かれる', areas.circles);
+  ok(areas.tris > 0, '百名山の△が出る', areas.tris);
+  ok(!areas.hasGrade, 'ランキング前は判定の色を付けない（勝手に取りに行かない）');
+  ok(areas.status.includes('ランキング'),
+    '判定の色がまだ無いことをパネルに出す（黙って灰色にしない）', areas.status);
+  ok(areas.rotates && areas.triRotates,
+    '★札と△は--map-rotで逆回転させる（ヘディングアップで倒れない）', areas);
+
+  /* ★「いつの判定か」の表記。色の出所はランキングの選択日なので、
+     ランキングを開く前は出さず、開いた後に日付＋行動時間帯を出す。
+     地図側に独立した日付を持たせない（二重管理になり必ず食い違う）。 */
+  const whenBefore = await page.evaluate(() => {
+    const el = document.getElementById('map-when');
+    return { hidden: el.classList.contains('hidden'), text: el.textContent };
+  });
+  ok(whenBefore.hidden, '★ランキング前は「いつの判定か」を出さない（色が無いので）', whenBefore);
+
+  const whenAfter = await page.evaluate(() => {
+    // ランキングを組んだ後の状態を作る（buildRankingは通信するのでここでは結果だけ渡す）
+    areaGradeById = { fuji: 'A' };
+    rankDates = [fmtDateISO(new Date(Date.now() + 86400e3))];   // 明日
+    refreshWeatherPoints();
+    const el = document.getElementById('map-when');
+    return { hidden: el.classList.contains('hidden'), text: el.textContent.trim() };
+  });
+  ok(!whenAfter.hidden, '★ランキング後は「いつの判定か」を出す', whenAfter);
+  ok(/\d+\/\d+\(.\)/.test(whenAfter.text) && whenAfter.text.includes('時'),
+    '★日付と行動時間帯の両方を出す', whenAfter.text);
+
+  // 山域レイヤーを切ると表記も消える（色が無いのに日付だけ残らない）
+  const whenOff = await page.evaluate(() => {
+    toggleOverlay('areas');
+    const el = document.getElementById('map-when');
+    const r = el.classList.contains('hidden');
+    toggleOverlay('areas');
+    return r;
+  });
+  ok(whenOff, '★レイヤーを切ると表記も消える', whenOff);
+
+  // ズームを引くと山域名は消え、面と△は残る（低ズームで札が重ならないように）
+  await page.evaluate(() => leafletMap.setView([36.4, 138.0], 6));
+  await page.waitForTimeout(400);
+  const areasFar = await page.evaluate(() => ({
+    labels: document.querySelectorAll('.area-label-box').length,
+    circles: document.querySelectorAll('.leaflet-pane path').length,
+  }));
+  ok(areasFar.labels === 0, '低ズームでは山域名を出さない（重なって読めなくなるため）',
+    areasFar.labels);
+  ok(areasFar.circles > 0, '低ズームでも山域の面は残る', areasFar.circles);
+
+  await page.evaluate(() => { toggleOverlay('areas'); leafletMap.setView([36.57, 137.65], 11); });
+  await page.waitForTimeout(200);
+  const areasOff = await page.evaluate(() => ({
+    labels: document.querySelectorAll('.area-label-box').length,
+    tris: document.querySelectorAll('.peak-tri-box').length,
+  }));
+  ok(areasOff.labels === 0 && areasOff.tris === 0, 'オフにすると消える', areasOff);
+
   /* ================= 3. オーバーレイと透過スライダー ================= */
   await page.evaluate(() => toggleOverlay('relief'));
   await page.waitForTimeout(300);
@@ -1569,6 +1651,30 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   });
   ok(searched.n > 0 && searched.shown, '検索結果が出る（以降の検査の前提）', searched);
 
+  /* ★検索結果をタップしたら、その名前のまま地図がその地点へ飛ぶこと。
+     以前は pickMapPoint が二重定義で、後から宣言された「長押しのピン」用
+     （2引数・逆ジオコーディング）が3引数版を巻き上げで上書きしていた。
+     そのせいで**渡した名前が捨てられ、mapFlyTo も呼ばれず地図が動かなかった**。
+     長押しの方は pickPinPoint に分けてある。 */
+  const picked = await pageS.evaluate(async () => {
+    const before = [leafletMap.getCenter().lat, leafletMap.getCenter().lng];
+    const item = document.querySelector('.map-result-item');
+    const label = item.textContent.trim();
+    item.click();
+    await new Promise(r => setTimeout(r, 1200));
+    const after = [leafletMap.getCenter().lat, leafletMap.getCenter().lng];
+    return {
+      label, name: state.locationName,
+      picked: (document.getElementById('map-picked-name') || {}).textContent || '',
+      moved: Math.abs(after[0] - before[0]) + Math.abs(after[1] - before[1]) > 1e-4,
+      twoArg: typeof pickPinPoint === 'function' && pickMapPoint.length === 3,
+    };
+  });
+  ok(picked.twoArg, '★pickMapPointが3引数版のまま（長押しはpickPinPointに分離）', picked);
+  ok(picked.moved, '★検索結果をタップすると地図がその地点へ飛ぶ', picked);
+  ok(picked.label.includes(picked.name) || picked.picked.includes(picked.name),
+    '★タップした名前がそのまま地点名になる（逆ジオコーディングし直さない）', picked);
+
   await pageS.click('#btn-layers');
   await pageS.waitForTimeout(600);
   const trapped = await pageS.evaluate(() => {
@@ -1852,7 +1958,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     console.log('MAPUI SMOKE FAILED');
     process.exit(1);
   }
-  console.log(JSON.stringify({ init, esri, relief, rrim, elev: elev.dec, restored, fallback }, null, 2));
+  console.log(JSON.stringify({ init, esri, areas, whenAfter, areasFar, relief, rrim, elev: elev.dec, restored, fallback }, null, 2));
   console.log(`タイル取得 ${tileHits.length}件`);
   console.log('MAPUI SMOKE PASSED');
 })();

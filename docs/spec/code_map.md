@@ -2,7 +2,7 @@
 
 **本体を読む前にまずこれを見る。**
 
-`sotoki_v4.html` は単一HTML構成で、実測 **7,137行 / 関数 約290**（2026-08-09 時点）。
+`sotoki_v4.html` は単一HTML構成で、実測 **7,300行 / 関数 約295**（2026-08-09 時点）。
 全文を読むと消費が大きいので、「どのブロックの、どの関数か」をここで当たってから
 その周辺だけを読む。
 
@@ -164,6 +164,7 @@
 
 | 関数 | 役割 | 目安行 |
 |---|---|---|
+| `GRADE_COL` / `GRADE_COL_NONE` | 判定の色。スクラバー帯と地図の山域レイヤーで共通 | 約 2613 |
 | `abcScore(val, a, b)` | 高いほど悪い項目のスコア（0/1/2） | 約 2615 |
 | `abcScoreInv(val, a, b)` | 低いほど悪い項目のスコア（体感気温） | 約 2621 |
 | `judgePoint(d)` | **ABC判定本体。** `{ grade, reasons }` を返す | 約 2628 |
@@ -350,6 +351,10 @@
 | 関数 | 役割 | 目安行 |
 |---|---|---|
 | `clearWeatherMarkers()` | 点レイヤーの掃除 | 約 5249 |
+| `drawAreas(bounds, opacity)` | **山域の面＋ラベル＋百名山の△**（`areas.json` から描く） | 約 5315 |
+| `updateMapWhen()` | 山域の色が「いつの判定か」を上部に出す（`#map-when`） | 約 5297 |
+| `areaShape(area)` | 山域の中心（峰の重心）と半径 | 約 5285 |
+| `haversineKm(...)` | 2点間の距離(km)。山域の広がりを測る | 約 5275 |
 | `loadAmedas()` | アメダス実測の取得 | 約 5255 |
 | `drawAmedas(bounds, opacity)` | 表示範囲ぶんの点を描く（最大140地点） | 約 5283 |
 | `loadWindGrid(bounds)` | 画面を5×5に割った代表点の風を1リクエストで | 約 5331 |
@@ -396,7 +401,8 @@ SW 側の実装は `sw.js` → `pwa.md`
 
 | 関数 | 役割 | 目安行 |
 |---|---|---|
-| `pickMapPoint(lat, lon, name)` | **地点の確定**（`releaseFollow` を呼ぶ） | 約 5889 / 6368 |
+| `pickMapPoint(lat, lon, name)` | **名前つきの地点確定**（検索結果・百名山の△）。`mapFlyTo` で飛ぶ | 約 6002 |
+| `pickPinPoint(lat, lng)` | **長押しのピン**。逆ジオコーディングで名前を引く。⚠ 上と混ぜない | 約 6481 |
 | `setPickedName(name)` | 地点名の表示 | 約 5901 |
 | `mapFlyTo(lat, lon, zoom)` | `flyTo` 0.8s（`setView` の瞬間移動は使わない） | 約 5908 |
 | `updatePinVisibility()` | 追跡中は選択地点のピンを出さない | 約 5941 |
