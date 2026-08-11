@@ -9,6 +9,12 @@ name: 山頂座標の検査
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'check=ズレている峰を洗い出す / snap=正しい座標の修正案を出す'
+        required: false
+        default: 'check'
+        type: choice
+        options: [check, snap]
       tol:
         description: '許容差(m)。これを超える差を「要確認」として出す'
         required: false
@@ -31,11 +37,19 @@ jobs:
       # ⚠ 失敗扱いにしないこと。「要確認が見つかった」は正常な結果であって、
       #    ワークフローの故障ではない。赤くすると次から誰も回さなくなる。
       - name: 座標を検査
-        id: run
+        if: inputs.mode == 'check'
         run: |
           set +e
           node scripts/checkPeaks.mjs --tol "${{ inputs.tol }}" | tee result.txt
-          echo "code=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # 修正案を出すだけ。**--write は付けない**（勝手に areas.json を書き換えない）。
+      # 出た座標は人が見てから適用する。同じ標高の別の峰に吸着する可能性があるため
+      - name: 山頂へ吸着させた修正案
+        if: inputs.mode == 'snap'
+        run: |
+          set +e
+          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" | tee result.txt
           exit 0
 
       - name: 結果をサマリーへ
@@ -48,5 +62,7 @@ jobs:
             echo '```'
             echo
             echo '座標を直すときは **`lat`/`lon` を直すこと。`elev` を下げて辻褄を合わせない**。'
-            echo '正しい座標は、アプリの地図で山頂を長押しすると下段に出る。'
+            echo 'snap の修正案は**提案**であって自動適用しない。移動距離の大きいものは'
+            echo '地図で目視確認すること（同じ標高の別の峰に吸着している可能性がある）。'
+            echo '手で読み取りたいときは、アプリの地図で山頂を長押しすると下段に座標が出る。'
           } >> "$GITHUB_STEP_SUMMARY"
