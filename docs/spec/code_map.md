@@ -533,12 +533,6 @@ UMD で `self.snowRanking` に生やす。**ABC評価とは完全に独立**
 
 Service Worker。キャッシュ方針・タイルキャッシュのLRU → `pwa.md`
 
-### `kyt_form.html`
-
-**気象アプリとは独立した別物**（インシデントレポートKYT分析用紙。A4印刷用）。
-仕様は `docs/kyt_form.md`、下書き生成の契約は `docs/kyt_generate.md`、
-Cloudflare Worker は `worker/` と `docs/kyt_worker.md`。
-
 ## 関連
 
 - 仕様 → このディレクトリの各ファイル（`overview.md` から）

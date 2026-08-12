@@ -20,9 +20,6 @@ const TESTS = [
   ['smoke_tilecache', '地図タイルキャッシュ（対象ホスト・cache-first・LRU・削除）'],
   ['smoke_rain',   '雨の予告（毎時の見込み・ナウキャスト1画素読み・分きざみ）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
-  ['smoke_kyt',    'KYT分析用紙（様式寸法・上限字数・印刷1枚・溢れ検知）'],
-  ['smoke_worker', '下書き生成Worker（秘密パス・CORS・日次上限・内部を漏らさない）'],
-  ['smoke_or_infographic', '手術室安全インフォグラフィック（6事例・○×2面・文字は実テキスト・1カラム切替）'],
 ];
 
 let failed = 0;

@@ -13,7 +13,12 @@
   事故を出し、閾値を緩める対症療法まで踏んだ） → `docs/adr/0005-wind-unit-ms.md`
 - **天気記号を `destination-out` で抜かない**（下の白い座布団ごと消える）
   → `docs/adr/0004-vector-glyph.md`
-- **秘密は `wrangler secret` で登録。`wrangler.toml` に書かない** → `docs/kyt_worker.md`
+- **このリポジトリは public。** GitHub Pages で配信しており、置いたものは誰でも見られる。
+  院内情報・施設名・部署名・個人名・業務上の非公開情報を書かない。
+  一度コミットすると履歴に残り、あとから消すには全履歴の書き換えが要る
+  （実際に様式の出典として施設名を書いてしまい、公開状態になった）
+- **院内資料（KYT分析用紙・手術室インフォグラフィック）をこのリポジトリに戻さない。**
+  別リポジトリ `hospital-safety`（private）へ移した → `docs/adr/0007-split-hospital-safety.md`
 - **破壊的変更は実行前に要確認**
 
 ## 規約
@@ -40,19 +45,10 @@
   仕様は `docs/snow_ranking.md`。**ABC評価とは独立**（`judgePoint`等を参照しない）
 - `docs/map-selector-requirements.md` — 地図選択画面（レイヤー・標高タイル・タイルキャッシュ）
 - `docs/install.md` — PWAインストール手順・アイコン再生成
-- `kyt_form.html` — インシデントレポートKYT分析用紙（A4印刷用）。**気象アプリとは独立した別物**
-- `docs/kyt_form.md` — 上記の様式仕様・寸法定数・次段階（生成API連携）の差し込み口
-- `docs/kyt_generate.md` — 下書き生成の契約（サーバ関数とのやり取り・プロンプト）
-- `or_safety_infographic.html` — 手術室 安全確認インフォグラフィック（6事例・掲示用）。
-  **気象アプリとは独立した別物**。文字は実テキスト、イラストは `illustrations/` の画像
-- `docs/or_infographic.md` — 上記の仕様・イラスト生成手順・未了事項
-- `worker/` — 下書き生成のCloudflare Worker。手順は `docs/kyt_worker.md`
-  （**秘密はwrangler secretで登録。wrangler.tomlに書かない**）
 - `manifest.webmanifest` / `sw.js` / `icons/` — PWA一式（アイコン原図は `icons/icon.svg`）
 - `tests/` — スモークテスト（改修のたびに全件実行する）
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 - `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
-- `scripts/gen-or-illustrations.mjs` — 手術室インフォグラフィックのイラスト生成（Gemini API）
 - `scripts/checkPeaks.mjs` / `scripts/snapPeaks.mjs` — `areas.json` の座標の検査と山頂への吸着。
   手元から地理院に到達できないので **GitHub Actions「山頂座標の検査」から手動実行する**
 

@@ -73,8 +73,8 @@ node tests/run-all.js     # リポジトリ直下から
 | [docs/archive/handoff_v4.md](docs/archive/handoff_v4.md) | 仕様の詳細と過去の経緯（原本・更新しない） |
 | [CLAUDE.md](CLAUDE.md) | AI（Claude Code）向けの規約と禁止事項 |
 
-`kyt_form.html` と `docs/kyt_*.md` は**インシデントレポートのKYT分析用紙**で、
-気象アプリとは独立した別プロジェクト。同じリポジトリに同居しているだけ。
+院内向けの資料（インシデントレポートKYT分析用紙・手術室 安全確認インフォグラフィック）は
+別リポジトリ `hospital-safety` へ移した。経緯は [ADR-0007](docs/adr/0007-split-hospital-safety.md)。
 
 ---
 
