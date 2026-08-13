@@ -231,8 +231,12 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       try {
         const fresh = await fetch(req);
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone());
+        // ⚠ res.ok を必ず見る。404や500を焼き付けると、以後は圏外でも
+        //   そのエラーが返り「圏外でも画面が立ち上がる」という目的が壊れる
+        if (fresh && fresh.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(req, fresh.clone());
+        }
         return fresh;
       } catch {
         return (await caches.match(req)) || (await caches.match('./sotoki_v4.html')) ||
