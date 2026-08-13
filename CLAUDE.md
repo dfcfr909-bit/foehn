@@ -50,6 +50,7 @@
 - `docs/install.md` — PWAインストール手順・アイコン再生成
 - `manifest.webmanifest` / `sw.js` / `icons/` — PWA一式（アイコン原図は `icons/icon.svg`）
 - `tests/` — スモークテスト（改修のたびに全件実行する）
+- `.claude/` — スラッシュコマンド（`/test` `/status` `/spec` `/release`）・permissions・起動時のブランチ鮮度フック
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 - `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
 - `scripts/checkPeaks.mjs` / `scripts/snapPeaks.mjs` — `areas.json` の座標の検査と山頂への吸着。
