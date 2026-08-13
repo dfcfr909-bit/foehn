@@ -1,0 +1,42 @@
+name: スモークテスト
+
+# PRごとに tests/run-all.js を回す。
+# Netlify のデプロイプレビューを廃止した代わりのCIチェック → docs/adr/0008-remove-netlify.md
+#
+# ⚠ プレビューと違って「見た目」は検証しない。実機確認は別途、マージ後に公開URLで行う。
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 依存を取得
+        working-directory: tests
+        run: npm install
+
+      # 開発環境では /opt/pw-browsers/chromium が同梱されているが、
+      # ランナーには無いので取りに行く。パスは PW_CHROMIUM でテストへ渡す
+      - name: Chromium を用意
+        working-directory: tests
+        run: npx --yes playwright@1.49.0 install --with-deps chromium
+
+      - name: 全件実行
+        working-directory: tests
+        run: |
+          # playwright install が置いた実体。バージョンごとにディレクトリ名が変わるので glob で拾う
+          bin=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome | head -1)
+          echo "Chromium: $bin"
+          PW_CHROMIUM="$bin" node run-all.js

@@ -69,7 +69,7 @@ function pngSize(file) {
   // index.html は即 sotoki_v4.html へリダイレクトするので、本体を直接開いて確認する
   const UPLOT_JS = fs.readFileSync(__dirname + '/node_modules/uplot/dist/uPlot.iife.min.js', 'utf8');
   const UPLOT_CSS = fs.readFileSync(__dirname + '/node_modules/uplot/dist/uPlot.min.css', 'utf8');
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true });
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/*', route => {

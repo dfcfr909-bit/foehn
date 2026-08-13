@@ -229,7 +229,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const fails = [];
   const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefined ? ` … ${JSON.stringify(extra)}` : '')); };
 
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true });
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
   const errors = [];
   const tileHits = [];
   const demHits = [];
@@ -860,7 +860,16 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(beforeRefresh.interval === 5 * 60 * 1000, '自動更新は5分間隔', beforeRefresh.interval);
   ok(beforeRefresh.timerOn, '地図を開いている間はタイマーが動く', beforeRefresh.timerOn);
   await page.evaluate(() => refreshWeatherLayers());
-  await page.waitForTimeout(1000);
+  /* ⚠ 固定待ちにしないこと。古いレイヤーが外れるのは新しい方のタイルが
+     読めたとき（`onLoad: dropPrev`）で、遅い環境では1秒では終わらない。
+     固定1000msにしていたためCIで「3枚残っている」と落ちた。
+     逃げ道の `WX_DROP_MS`（8秒）より長く待って、条件が満たされるまで見る。 */
+  const wxLayerCount = () => {
+    let n = 0; leafletMap.eachLayer(l => { if (l._url && /jmatile|himawari/.test(l._url)) n++; }); return n;
+  };
+  await page.waitForFunction(
+    `(${wxLayerCount.toString()})() === 2`, null, { timeout: 12000 },
+  ).catch(() => {});   // 落ちたときの実数は下の ok() に出させる
   const afterRefresh = await page.evaluate(() => ({
     radar: overlayTileLayers.radar._url,
     sat: overlayTileLayers.satellite._url,

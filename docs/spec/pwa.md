@@ -15,8 +15,9 @@
 | `theme_color` | `#ffffff` |
 | `icons` | 192 / 512（`purpose: any`）＋ maskable 512 |
 
-`start_url` と `scope` を相対にしてあるのは、GitHub Pages のサブパスでも
-Netlify プレビューでもそのまま動かすため → `docs/adr/0003-github-pages.md`
+`start_url` と `scope` を相対にしてあるのは、GitHub Pages が
+**サブパス配信（`/SotoKi/`）**だから。絶対パスにするとPWAが壊れる
+→ `docs/adr/0003-github-pages.md`
 
 ## アイコン
 

@@ -9,6 +9,8 @@
 ## いまの状態
 
 - **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
+  - ⚠ **いまは配信されていない。** ADR-0007 の対応でリポジトリを private にしたため
+    （無料枠では private リポジトリの Pages は止まる）。公開に戻すかは未決 → ADR-0008
 - **本体**: `sotoki_v4.html` 単一ファイル（**7,380行 / 関数約300**）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/summit-wind`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
@@ -27,7 +29,9 @@
 - 予報山域は **51山域/110峰**（日本百名山100座）。座標は未検証（#67）
 - ドキュメント構成の移行は**段階5まで完了**。残るは段階6（`.claude/`）のみ
   - ⚠ **ラベルがまだ作られていない。** `feature` / `chore` / `needs-decision` は未作成
-- `netlify.toml` は**残す**と判断した（PRのNetlifyプレビューが唯一のCIチェックのため）
+- **Netlify は撤去した（ADR-0008）。** プロジェクトを削除し `netlify.toml` も消した。
+  PRのチェックは GitHub Actions のスモークテスト（`.github/workflows/test.yml`）に置き換え
+  - ⚠ **マージ前に実機で触る手段は無くなった。** 実機確認はマージ後に公開URLで行う
 
 ## 未完・要確認
 

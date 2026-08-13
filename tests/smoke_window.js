@@ -28,7 +28,7 @@ function fakeWeather() {
 }
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true });
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 780 } });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));

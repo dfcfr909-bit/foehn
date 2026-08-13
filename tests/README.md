@@ -11,7 +11,8 @@ npm install          # playwright-core・uplot・leaflet を取得
 ```
 
 Chromium本体は環境に同梱のものを使う（`/opt/pw-browsers/chromium`）。
-`playwright install` は不要。別環境で動かす場合は各テストの `executablePath` を調整する。
+`playwright install` は不要。**別の場所にある Chromium を使うときは `PW_CHROMIUM`
+環境変数でパスを渡す**（CIはこれで解決している → `.github/workflows/test.yml`）。
 
 ## 実行
 

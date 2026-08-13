@@ -33,7 +33,10 @@ for (const [name, desc] of TESTS) {
   } catch (e) {
     failed++;
     console.log('FAIL');
-    console.log(String(e.stdout || '').split('\n').slice(-25).join('\n'));
+    // ⚠ 末尾だけ出すと、失敗した条件の一覧が上に流れて**見えないことがある**
+    //   （CIでこれを踏んだ）。落ちたときは全部出す。
+    console.log(String(e.stdout || ''));
+    if (e.stderr && String(e.stderr).trim()) console.log(String(e.stderr));
   }
 }
 console.log(failed === 0 ? `\n✅ 全${TESTS.length}件PASS` : `\n❌ ${failed}件FAIL`);

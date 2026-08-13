@@ -25,7 +25,7 @@ const OUTLOOK_FULL = JSON.stringify({
 const OUTLOOK_EMPTY = JSON.stringify({ generatedAt:null, pattern:'', sections:[], status:'pending', disclaimer:'x' });
 
 async function run(outlookBody){
-  const browser = await chromium.launch({ executablePath:'/opt/pw-browsers/chromium', headless:true });
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless:true });
   const page = await browser.newPage({ viewport:{width:390,height:820} });
   const errors=[]; page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*', route=>{
