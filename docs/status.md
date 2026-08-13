@@ -1,4 +1,4 @@
-# 現状（最終更新: 2026-08-09 / v4.77.0）
+# 現状（最終更新: 2026-08-13 / v4.77.0）
 
 セッションを始めたら、まずこのファイルを読む。
 現行仕様は `docs/spec/`（**本体を読む前に `docs/spec/code_map.md`**）。
@@ -8,13 +8,19 @@
 
 ## いまの状態
 
-- **公開URL**: https://dfcfr909-bit.github.io/foehn/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
+- **公開URL**: https://dfcfr909-bit.github.io/foehn/ （`index.html` が `sotoki_v4.html` にリダイレクト）
   - ⚠ **リポジトリを `SotoKi` から `foehn` へ作り直した（ADR-0009）。**
     履歴の SHA・Issue番号・公開URLがすべて変わっている。
-    旧URLで入れた PWA は別物として端末に残るので、**入れ直して古い方を消すこと**
+    **旧 `SotoKi` のクローンは使えない**（全SHAが別物）。取り直すこと
+  - **Pages は Actions 方式で配信している**（`.github/workflows/pages.yml`）。
+    設定画面で「Deploy from a branch」が選べなかったため → `docs/decisions.md`
+    `main` にマージすると自動でデプロイされる
 - **本体**: `sotoki_v4.html` 単一ファイル（**7,380行 / 関数約300**）。バンドラなし、uPlotは `vendor/` に同梱
-- **開発ブランチ**: `claude/summit-wind`
-  - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
+  - ⚠ **ファイル名は変えない。** `sw.js`・`index.html`・`manifest`・テスト・`code_map.md` が
+    この名前に依存している（55箇所）。リネームするなら独立したPRで
+- **アプリ名は「ナギナビ」/ `NAGI NAV`。** 変えたのはリポジトリ名だけ
+- **開発ブランチ**: `origin/main` から毎回新しく切る
+  （`git checkout -B <branch> origin/main`）。前回は `claude/sotoki-foehn-migration-cdiddb`（マージ済み）
 
 ## 進行中
 
@@ -56,17 +62,22 @@
 | [#13](https://github.com/dfcfr909-bit/foehn/issues/13) | `areas.json` の座標を検証（`checkPeaks.mjs` で洗い出し→地図で読み取り） | タスク |
 | [#14](https://github.com/dfcfr909-bit/foehn/issues/14) | ランキング110地点がOpen-Meteoのレートに収まるか | 実機確認 |
 | [#15](https://github.com/dfcfr909-bit/foehn/issues/15) | 山域レイヤーの見た目（札の重なり・△の見え方） | 実機確認 |
+| [#16](https://github.com/dfcfr909-bit/foehn/issues/16) | 山頂高度の風による判定が実際の予報と合うか（ADR-0006） | 実機確認 |
 
 > **この表は増やさない。** 新しい未確認が出たら Issue を立てて1行足す。
 > 運用は `docs/workflow.md`。
 
 ## 直近の変更（3件まで。古いものは消す）
 
+- **`SotoKi` → `foehn` へリポジトリを作り直した（ADR-0009）。** 履歴から対象外の資料を除去。
+  Issue16件を復元（旧 #54〜#73 → 新 #1〜#16）、URL・表記・Issue番号を置換
+- **Pages を Actions 方式に**（`.github/workflows/pages.yml`）。設定画面でブランチ配信を選べなかったため
 - ABC評価の風速を山頂高度の気圧面風にした（判定が甘すぎた。ADR-0006）
-- 地図に山域・百名山レイヤーを追加（#69）。検索結果タップの不具合も修正
-- 全国山域ランキングに日本百名山100座を追加（51山域/110峰）
 
 ## 次セッションの最初のプロンプト
+
+⚠ このリポジトリは `SotoKi` から作り直した `foehn`（ADR-0009）。
+手元に旧 `SotoKi` のクローンがあっても**使わずに取り直すこと**（全SHAが別物）。
 
 > docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階6**
 > （`.claude/` にスラッシュコマンドと permissions を置く）を実施して。
@@ -85,6 +96,17 @@
 
 ## 未処理の申し送り
 
+- ⚠ **`sw.js` がエラー応答をキャッシュしてしまう（未修正のバグ）。**
+  ナビゲーション処理（`sw.js` の `req.mode === 'navigate'` の分岐）が
+  `const fresh = await fetch(req); cache.put(req, fresh.clone());` となっていて、
+  **`res.ok` を見ていない**。404や500が返るとそれをHTMLキャッシュに焼き付け、
+  以後は圏外でもそのエラーが返る。**「圏外でも画面が立ち上がる」という `sw.js` の
+  目的が壊れる**（`docs/spec/pwa.md`）。同ファイルの静的ファイル側は `res.ok` を見ているので、
+  ナビゲーション側だけの漏れ。`res.ok` を確認してから `cache.put` するだけで直る。
+  移行作業中に発見。別件なので手を付けていない
+- **旧リポジトリ `SotoKi` はまだ削除していない。** Issue16件の復元は済んでいるので削除して構わない
+  （`https://github.com/dfcfr909-bit/SotoKi/settings` 最下部 Danger Zone）。
+  旧URLの PWA は端末に別アプリとして残り、開くと GitHub の404が出る
 - **ラベル3つ（`feature` / `chore` / `needs-decision`）をGitHubのUIで作る。**
   作ったら #1〜#12 に付け直す（定義は `docs/workflow.md`）
 - **二百・三百名山**は保留。選定に揺れがあり同名峰の同定も要るため、まず百名山だけで作る。
