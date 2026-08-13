@@ -36,7 +36,8 @@
 - 予報山域は **51山域/110峰**（日本百名山100座）。座標は未検証（#13）
 - **ドキュメント構成の移行は完了した（段階6まで）。** `docs/project_structure_proposal.md` は役目を終えた
   - `.claude/` にスラッシュコマンド（`/test` `/status` `/spec` `/release`）と permissions を置いた
-  - ⚠ **ラベルがまだ作られていない。** `feature` / `chore` / `needs-decision` は未作成
+  - ラベル `feature` / `chore` / `needs-decision` は**作成済み**（`bug` は既定のもの）。
+    ⚠ **Issue #1〜#16 への付け直しはまだ**（2026-08-13 時点でどれも未ラベル）
 - **Netlify は撤去した（ADR-0008）。** プロジェクトを削除し `netlify.toml` も消した。
   PRのチェックは GitHub Actions のスモークテスト（`.github/workflows/test.yml`）に置き換え
   - ⚠ **マージ前に実機で触る手段は無くなった。** 実機確認はマージ後に公開URLで行う
@@ -70,41 +71,34 @@
 
 ## 直近の変更（3件まで。古いものは消す）
 
+- **`sw.js` がエラー応答をHTMLキャッシュに焼き付ける不具合を直した**（`res.ok` を見る）。
+  `smoke_pwa` に検査を追加
 - **`.claude/` にスラッシュコマンドと permissions を置いた（段階6）。** ドキュメント整理はこれで終わり
 - **`SotoKi` → `foehn` へリポジトリを作り直した（ADR-0009）。** 履歴から対象外の資料を除去。
   Issue16件を復元（旧 #54〜#73 → 新 #1〜#16）、URL・表記・Issue番号を置換
-- **Pages を Actions 方式に**（`.github/workflows/pages.yml`）。設定画面でブランチ配信を選べなかったため
 
 ## 次セッションの最初のプロンプト
 
 ⚠ このリポジトリは `SotoKi` から作り直した `foehn`（ADR-0009）。
 手元に旧 `SotoKi` のクローンがあっても**使わずに取り直すこと**（全SHAが別物）。
 
-> docs/status.md を読んだうえで、**`sw.js` がエラー応答をキャッシュする不具合**を直して。
+> docs/status.md を読んだうえで、**Issue #13（`areas.json` の座標の検証）**を進めて。
 > `origin/main` から新しいブランチを切ること。
 >
-> - ナビゲーション処理（`req.mode === 'navigate'` の分岐）が
->   `const fresh = await fetch(req); cache.put(req, fresh.clone());` となっていて
->   **`res.ok` を見ていない**。404や500をHTMLキャッシュに焼き付け、
->   以後は圏外でもそのエラーを返す（`sw.js` の目的が壊れる → `docs/spec/pwa.md`）
-> - 同ファイルの**静的ファイル側は `res.ok` を見ている**。そちらに揃えるだけで直る
-> - `CACHE_VERSION` は上げなくてよい（配信ファイルの構成は変わらない）
-> - 受け入れ条件: `node tests/run-all.js` 全16件PASS。`smoke_pwa` に
->   **エラー応答を焼き付けない**ことの検査を足せるとなおよい
+> - 手元から地理院に到達できないので、**GitHub Actions「山頂座標の検査」から
+>   `checkPeaks.mjs` を手動実行**する。そこで出たズレの一覧が出発点
+> - ⚠ **座標ズレは判定を甘くする**（モデル地形が低く出て風が弱くなる。ADR-0006）。
+>   峰と分かっている選択では `areas.json` の標高を優先し、DEM頼みにしない
+> - **山域の分け方の見直しと同じ根**なので一緒に見る（下の申し送り）。
+>   `富士周辺` / `石鎚・剣山`(91km) / `九重・祖母`(30km) の3つ。
+>   ⚠ 円の中心の計算式（重心）は**変えない**と決めてある → `docs/decisions.md` 2026-08-09
+> - 受け入れ条件: `node tests/run-all.js` 全16件PASS（`smoke_snap` が座標まわりの砦）
 >
 > 触ってはいけないもの: ABC評価ロジック（`abcScore` / `abcScoreInv` / `judgePoint`）。
 > 制約: 段階ごとにcommitを分割し、各段階の完了時に動作確認を求めること。
 
 ## 未処理の申し送り
 
-- ⚠ **`sw.js` がエラー応答をキャッシュしてしまう（未修正のバグ）。**
-  ナビゲーション処理（`sw.js` の `req.mode === 'navigate'` の分岐）が
-  `const fresh = await fetch(req); cache.put(req, fresh.clone());` となっていて、
-  **`res.ok` を見ていない**。404や500が返るとそれをHTMLキャッシュに焼き付け、
-  以後は圏外でもそのエラーが返る。**「圏外でも画面が立ち上がる」という `sw.js` の
-  目的が壊れる**（`docs/spec/pwa.md`）。同ファイルの静的ファイル側は `res.ok` を見ているので、
-  ナビゲーション側だけの漏れ。`res.ok` を確認してから `cache.put` するだけで直る。
-  移行作業中に発見。別件なので手を付けていない
 - ⚠ **`smoke_mapui` の「古いレイヤーは残さない（重ならない）」がCIで稀に落ちる（フレーク）。**
   2026-08-13、`docs/status.md` しか変えていないPRで落ち、**再実行で通った**（手元では常にPASS）。
   落ちたときの `smoke_mapui` は約105秒かかっており、条件待ちの上限が遅いランナーで
@@ -116,8 +110,9 @@
 - **旧リポジトリ `SotoKi` はまだ削除していない。** Issue16件の復元は済んでいるので削除して構わない
   （`https://github.com/dfcfr909-bit/SotoKi/settings` 最下部 Danger Zone）。
   旧URLの PWA は端末に別アプリとして残り、開くと GitHub の404が出る
-- **ラベル3つ（`feature` / `chore` / `needs-decision`）をGitHubのUIで作る。**
-  作ったら #1〜#12 に付け直す（定義は `docs/workflow.md`）
+- **ラベルを Issue に付け直す**（作成は済んだ。定義は `docs/workflow.md`）。
+  一覧でチェックを入れて右上の Label から一括で付けられる。
+  `needs-decision` … #9 #10 #12 ／ `feature` … #11 ／ `chore` … 残り（#1〜#8, #13〜#16）
 - **二百・三百名山**は保留。選定に揺れがあり同名峰の同定も要るため、まず百名山だけで作る。
   広げるなら `hyakumeizan` と同じ形で `nihyaku` / `sanbyaku` を足す（座標調達は #8/#13 と同根）
 - **山域の分け方に見直したい所がある**（円の中心が主峰からズレる形で表面化した）。
