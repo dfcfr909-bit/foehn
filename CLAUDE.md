@@ -41,7 +41,7 @@
 - `docs/adr/` — **設計判断の記録（ADR）。「なぜそうなっているか」と却下した案はここ**（不変。覆すときは新ADR）
 - `docs/decisions.md` — 軽い判断・調整値・実装上の落とし穴の1行ログ（追記のみ）
 - `docs/archive/handoff_v4.md` — 旧・引き継ぎメモの原本。**仕様の詳細と過去の経緯はここ**（更新しない）
-- `docs/project_structure_proposal.md` — ドキュメント構成の移行計画（段階2まで実施済み）
+- `docs/project_structure_proposal.md` — ドキュメント構成の移行計画（段階6まで実施済み。移行は完了）
 - `docs/requirements_renewal.md` — 全面改修 要件定義書
 - `docs/ai_outlook.md` — AI全国概況（GLM × GitHub Actions）
 - `snowRanking.js` / `data/spots.*` / `scripts/buildSpots.mjs` — 新雪ランキング。
