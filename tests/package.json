@@ -1,7 +1,7 @@
 {
   "name": "sotoki-tests",
   "private": true,
-  "description": "SotoKi スモークテスト（ヘッドレスChromium）",
+  "description": "foehn スモークテスト（ヘッドレスChromium）",
   "scripts": {
     "test": "node run-all.js"
   },

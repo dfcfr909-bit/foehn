@@ -53,7 +53,7 @@ PRのチェックは **GitHub Actions でスモークテスト（`tests/run-all.
 ## 影響
 
 - **PRでマージ前に実機で触れなくなった。** 実機確認はマージ後に
-  https://dfcfr909-bit.github.io/SotoKi/ で行う。
+  https://dfcfr909-bit.github.io/foehn/ で行う。
   代わりに PR で16件のスモークテストが自動で回る
 - ADR-0003 の「PRに出てくる Netlify のプレビューURLは確認用であって本番ではない」は、
   **プレビュー自体が無くなったので該当しなくなった**（ADR-0003 は不変。ここで更新する）

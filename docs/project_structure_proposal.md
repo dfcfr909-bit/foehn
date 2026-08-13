@@ -409,7 +409,7 @@ CLAUDE.md に明記して、AIから言わせる：
 # 現状（最終更新: 2026-08-07 / v4.42.0）
 
 ## いまの状態
-- 公開URL: https://dfcfr909-bit.github.io/SotoKi/
+- 公開URL: https://dfcfr909-bit.github.io/foehn/
 - 本体: sotoki_v4.html（約3,400行、単一ファイル）
 - 開発ブランチ: claude/xxx（マージ済みなら origin/main から作り直す）
 

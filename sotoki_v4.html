@@ -833,7 +833,7 @@ html, body {
 #map-elev { font-size: 11px; color: var(--text2); flex-shrink: 0; }
 #map-elev:empty { display: none; }
 /* 選んだ地点の緯度経度。areas.json の座標が山頂を指しているか人が確かめるための表示
-   （#67。長押しで山頂を選び、ここの数字を areas.json に写す）。
+   （#13。長押しで山頂を選び、ここの数字を areas.json に写す）。
    タップでコピーできるよう pointer-events は殺さない */
 #map-latlon {
   font-size: 10px; font-family: var(--font-mono); color: var(--text2);
@@ -6141,7 +6141,7 @@ function updateElevationLabel() {
 }
 
 /* 選んだ地点の緯度経度を出す。areas.json の座標が本当に山頂を指しているかを
-   人が確かめるための表示（#67）。長押しで山頂を選び、ここの数字を写せばよい。
+   人が確かめるための表示（#13）。長押しで山頂を選び、ここの数字を写せばよい。
    ⚠ 桁は areas.json と揃えて4桁（約11m）。これより細かくしても地図の指の精度で意味がない。 */
 function updateLatLonLabel() {
   const el = document.getElementById('map-latlon');

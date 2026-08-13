@@ -1,7 +1,7 @@
-# SotoKi 全面改修 要件定義書
+# foehn 全面改修 要件定義書
 
 作成日: 2026-07-21 / 承認者: Kato
-対象: SotoKi（バックカントリー気象PWA / Netlify / Open-Meteo JMAモデル / Leaflet）
+対象: foehn（バックカントリー気象PWA / Netlify / Open-Meteo JMAモデル / Leaflet）
 
 ## 背景・不満点
 
