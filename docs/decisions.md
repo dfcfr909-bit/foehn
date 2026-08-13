@@ -42,3 +42,9 @@
   ⚠ DEMは約10mメッシュの標本なので、山頂の公称標高より数m低く出る
   （皇海山は 2,144m に対し 2,141m）。**それ以上下がらなければ山頂を捉えている。**
   `elev` の方を実測値に書き換えないこと（公称の山頂標高が正）。
+- **GitHub Pages は Actions 方式で配信する**（`.github/workflows/pages.yml`）。移行後の `foehn` で
+  Settings → Pages の Source が「GitHub Actions」しか選べず、手順書が指定した
+  「Deploy from a branch（main / root）」を選択できなかったため。**配信されるファイルも公開URLも
+  ブランチ配信と同じ**で、変わるのは配信の仕組みだけ。`configure-pages` の `enablement: true` で
+  Pages の有効化自体もワークフロー側から行う（設定画面から有効にできなかったので、
+  手作業を残さないため）。⚠ 直下をまるごと上げるので、置いたものは公開される。
