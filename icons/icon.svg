@@ -1,4 +1,4 @@
-<!-- SotoKi アプリアイコンの原図。ここからPNGを書き出す（scripts/gen-icons.mjs）。
+<!-- foehn アプリアイコンの原図。ここからPNGを書き出す（scripts/gen-icons.mjs）。
      配色はアプリ本体のテーマ変数に合わせている（朝焼け→空、山は文字色、日は橙）。 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>

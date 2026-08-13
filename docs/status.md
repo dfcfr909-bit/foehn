@@ -8,9 +8,10 @@
 
 ## いまの状態
 
-- **公開URL**: https://dfcfr909-bit.github.io/SotoKi/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
-  - ⚠ **いまは配信されていない。** ADR-0007 の対応でリポジトリを private にしたため
-    （無料枠では private リポジトリの Pages は止まる）。公開に戻すかは未決 → ADR-0008
+- **公開URL**: https://dfcfr909-bit.github.io/foehn/ （GitHub Pages。`index.html` が `sotoki_v4.html` にリダイレクト）
+  - ⚠ **リポジトリを `SotoKi` から `foehn` へ作り直した（ADR-0009）。**
+    履歴の SHA・Issue番号・公開URLがすべて変わっている。
+    旧URLで入れた PWA は別物として端末に残るので、**入れ直して古い方を消すこと**
 - **本体**: `sotoki_v4.html` 単一ファイル（**7,380行 / 関数約300**）。バンドラなし、uPlotは `vendor/` に同梱
 - **開発ブランチ**: `claude/summit-wind`
   - PRがマージ済みの場合は**毎回 `origin/main` から作り直す**（`git checkout -B <branch> origin/main`）
@@ -23,10 +24,10 @@
   - `judgePoint` / `THRESH` は**一切変更していない**。変えたのは入力データの質だけ
   - ⚠ **ランキングの見え方が一変する。** A の山域の多くが B/C になる。これが正しい姿。
     「厳しくなった」と言われても**閾値を戻さないこと**（ADR-0005と同じ罠）
-  - 実機確認は #73。**座標ズレで判定が甘くなる**ことが分かったので、
+  - 実機確認は #16。**座標ズレで判定が甘くなる**ことが分かったので、
     峰と分かっている選択では `areas.json` の標高を優先する（DEM頼みにしない）
-- 地図の山域・百名山レイヤー（#69）は実装済み。見た目の実機確認は #71
-- 予報山域は **51山域/110峰**（日本百名山100座）。座標は未検証（#67）
+- 地図の山域・百名山レイヤー（#69）は実装済み。見た目の実機確認は #15
+- 予報山域は **51山域/110峰**（日本百名山100座）。座標は未検証（#13）
 - ドキュメント構成の移行は**段階5まで完了**。残るは段階6（`.claude/`）のみ
   - ⚠ **ラベルがまだ作られていない。** `feature` / `chore` / `needs-decision` は未作成
 - **Netlify は撤去した（ADR-0008）。** プロジェクトを削除し `netlify.toml` も消した。
@@ -40,21 +41,21 @@
 
 | # | 項目 | 種別 |
 |---|---|---|
-| [#54](https://github.com/dfcfr909-bit/SotoKi/issues/54) | ひまわりカラーの虫食い配信（保留中） | 実機確認 |
-| [#55](https://github.com/dfcfr909-bit/SotoKi/issues/55) | 雲の着色（`SAT_TINTS`）が効いているか | 実機確認 |
-| [#56](https://github.com/dfcfr909-bit/SotoKi/issues/56) | 雨の予告の分きざみ（気象庁タイルのCORS） | 実機確認 |
-| [#57](https://github.com/dfcfr909-bit/SotoKi/issues/57) | 地図レイヤーが表示されるか（火山土地条件図のID等） | 実機確認 |
-| [#58](https://github.com/dfcfr909-bit/SotoKi/issues/58) | jma_seamlessの実予報期間 | 実機確認 |
-| [#59](https://github.com/dfcfr909-bit/SotoKi/issues/59) | 気圧面ごとの雲量・3層フォールバックの見た目 | 実機確認 |
-| [#60](https://github.com/dfcfr909-bit/SotoKi/issues/60) | JMA bosai のCORS（#61が先） | 実機確認 |
-| [#61](https://github.com/dfcfr909-bit/SotoKi/issues/61) | `buildSpots.mjs` 未実行（`data/spots.json` が無い） | タスク |
-| [#62](https://github.com/dfcfr909-bit/SotoKi/issues/62) | AI全国概況が非表示（`GLM_API_KEY` 待ち） | 要判断 |
-| [#63](https://github.com/dfcfr909-bit/SotoKi/issues/63) | CS立体図の配信範囲（URL待ち） | 要判断 |
-| [#64](https://github.com/dfcfr909-bit/SotoKi/issues/64) | スクラバー帯のなぞり心地 | タスク |
-| [#65](https://github.com/dfcfr909-bit/SotoKi/issues/65) | ライセンス未設定 | 要判断 |
-| [#67](https://github.com/dfcfr909-bit/SotoKi/issues/67) | `areas.json` の座標を検証（`checkPeaks.mjs` で洗い出し→地図で読み取り） | タスク |
-| [#68](https://github.com/dfcfr909-bit/SotoKi/issues/68) | ランキング110地点がOpen-Meteoのレートに収まるか | 実機確認 |
-| [#71](https://github.com/dfcfr909-bit/SotoKi/issues/71) | 山域レイヤーの見た目（札の重なり・△の見え方） | 実機確認 |
+| [#1](https://github.com/dfcfr909-bit/foehn/issues/1) | ひまわりカラーの虫食い配信（保留中） | 実機確認 |
+| [#2](https://github.com/dfcfr909-bit/foehn/issues/2) | 雲の着色（`SAT_TINTS`）が効いているか | 実機確認 |
+| [#3](https://github.com/dfcfr909-bit/foehn/issues/3) | 雨の予告の分きざみ（気象庁タイルのCORS） | 実機確認 |
+| [#4](https://github.com/dfcfr909-bit/foehn/issues/4) | 地図レイヤーが表示されるか（火山土地条件図のID等） | 実機確認 |
+| [#5](https://github.com/dfcfr909-bit/foehn/issues/5) | jma_seamlessの実予報期間 | 実機確認 |
+| [#6](https://github.com/dfcfr909-bit/foehn/issues/6) | 気圧面ごとの雲量・3層フォールバックの見た目 | 実機確認 |
+| [#7](https://github.com/dfcfr909-bit/foehn/issues/7) | JMA bosai のCORS（#8が先） | 実機確認 |
+| [#8](https://github.com/dfcfr909-bit/foehn/issues/8) | `buildSpots.mjs` 未実行（`data/spots.json` が無い） | タスク |
+| [#9](https://github.com/dfcfr909-bit/foehn/issues/9) | AI全国概況が非表示（`GLM_API_KEY` 待ち） | 要判断 |
+| [#10](https://github.com/dfcfr909-bit/foehn/issues/10) | CS立体図の配信範囲（URL待ち） | 要判断 |
+| [#11](https://github.com/dfcfr909-bit/foehn/issues/11) | スクラバー帯のなぞり心地 | タスク |
+| [#12](https://github.com/dfcfr909-bit/foehn/issues/12) | ライセンス未設定 | 要判断 |
+| [#13](https://github.com/dfcfr909-bit/foehn/issues/13) | `areas.json` の座標を検証（`checkPeaks.mjs` で洗い出し→地図で読み取り） | タスク |
+| [#14](https://github.com/dfcfr909-bit/foehn/issues/14) | ランキング110地点がOpen-Meteoのレートに収まるか | 実機確認 |
+| [#15](https://github.com/dfcfr909-bit/foehn/issues/15) | 山域レイヤーの見た目（札の重なり・△の見え方） | 実機確認 |
 
 > **この表は増やさない。** 新しい未確認が出たら Issue を立てて1行足す。
 > 運用は `docs/workflow.md`。
@@ -85,11 +86,11 @@
 ## 未処理の申し送り
 
 - **ラベル3つ（`feature` / `chore` / `needs-decision`）をGitHubのUIで作る。**
-  作ったら #54〜#65 に付け直す（定義は `docs/workflow.md`）
+  作ったら #1〜#12 に付け直す（定義は `docs/workflow.md`）
 - **二百・三百名山**は保留。選定に揺れがあり同名峰の同定も要るため、まず百名山だけで作る。
-  広げるなら `hyakumeizan` と同じ形で `nihyaku` / `sanbyaku` を足す（座標調達は #61/#67 と同根）
+  広げるなら `hyakumeizan` と同じ形で `nihyaku` / `sanbyaku` を足す（座標調達は #8/#13 と同根）
 - **山域の分け方に見直したい所がある**（円の中心が主峰からズレる形で表面化した）。
-  計算式ではなく**データ側**の問題なので、#67 の座標検証と一緒に見るとよい。
+  計算式ではなく**データ側**の問題なので、#13 の座標検証と一緒に見るとよい。
   - `富士周辺` … 富士山＋三ツ峠山。**富士山は独立峰なので1座だけの山域が素直**
     （三ツ峠山は百名山でなく山塊も別。いま中心が11km北へ寄っている）
   - `石鎚・剣山` … 2峰で**91km**。粒度の方針（`docs/spec/judge.md`）から外れている

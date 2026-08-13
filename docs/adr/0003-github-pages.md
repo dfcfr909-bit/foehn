@@ -12,7 +12,7 @@
 ## 決定
 
 公開先を **GitHub Pages**（静的ファイル直接配信）に移した。
-公開URLは https://dfcfr909-bit.github.io/SotoKi/ で、
+公開URLは https://dfcfr909-bit.github.io/foehn/ で、
 `index.html` が `sotoki_v4.html` へリダイレクトする中継になっている。
 
 ## 理由 / 検討した代案
@@ -38,7 +38,7 @@
 - **PRに出てくる Netlify のプレビューURLは確認用であって本番ではない。**
   残置のCIとして今も動いているが、そこで動いたことを「公開できた」と判断しないこと
 - `manifest.webmanifest` の `start_url` / `scope` は **`./`（相対）** にしてある。
-  GitHub Pages はサブパス配信（`/SotoKi/`）なので、絶対パスにするとPWAが壊れる
+  GitHub Pages はサブパス配信（`/foehn/`）なので、絶対パスにするとPWAが壊れる
 - サーバ側の処理は増やせない。必要になったら `worker/`（Cloudflare Worker）側に置く
 - 公開URLが404になるという報告が出た場合、疑うのは
   GitHub Pages の公開設定か `index.html`（リダイレクト中継）の配信

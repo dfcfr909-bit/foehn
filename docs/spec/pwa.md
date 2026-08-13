@@ -16,7 +16,7 @@
 | `icons` | 192 / 512（`purpose: any`）＋ maskable 512 |
 
 `start_url` と `scope` を相対にしてあるのは、GitHub Pages が
-**サブパス配信（`/SotoKi/`）**だから。絶対パスにするとPWAが壊れる
+**サブパス配信（`/foehn/`）**だから。絶対パスにするとPWAが壊れる
 → `docs/adr/0003-github-pages.md`
 
 ## アイコン
