@@ -20,7 +20,7 @@
     この名前に依存している（55箇所）。リネームするなら独立したPRで
 - **アプリ名は「ナギナビ」/ `NAGI NAV`。** 変えたのはリポジトリ名だけ
 - **開発ブランチ**: `origin/main` から毎回新しく切る
-  （`git checkout -B <branch> origin/main`）。前回は `claude/sotoki-foehn-migration-cdiddb`（マージ済み）
+  （`git checkout -B <branch> origin/main`）。前回は `claude/foehn-claude-setup-gryofy`（PR #20）
 
 ## 進行中
 
@@ -34,7 +34,8 @@
     峰と分かっている選択では `areas.json` の標高を優先する（DEM頼みにしない）
 - 地図の山域・百名山レイヤー（#69）は実装済み。見た目の実機確認は #15
 - 予報山域は **51山域/110峰**（日本百名山100座）。座標は未検証（#13）
-- ドキュメント構成の移行は**段階5まで完了**。残るは段階6（`.claude/`）のみ
+- **ドキュメント構成の移行は完了した（段階6まで）。** `docs/project_structure_proposal.md` は役目を終えた
+  - `.claude/` にスラッシュコマンド（`/test` `/status` `/spec` `/release`）と permissions を置いた
   - ⚠ **ラベルがまだ作られていない。** `feature` / `chore` / `needs-decision` は未作成
 - **Netlify は撤去した（ADR-0008）。** プロジェクトを削除し `netlify.toml` も消した。
   PRのチェックは GitHub Actions のスモークテスト（`.github/workflows/test.yml`）に置き換え
@@ -69,30 +70,30 @@
 
 ## 直近の変更（3件まで。古いものは消す）
 
+- **`.claude/` にスラッシュコマンドと permissions を置いた（段階6）。** ドキュメント整理はこれで終わり
 - **`SotoKi` → `foehn` へリポジトリを作り直した（ADR-0009）。** 履歴から対象外の資料を除去。
   Issue16件を復元（旧 #54〜#73 → 新 #1〜#16）、URL・表記・Issue番号を置換
 - **Pages を Actions 方式に**（`.github/workflows/pages.yml`）。設定画面でブランチ配信を選べなかったため
-- ABC評価の風速を山頂高度の気圧面風にした（判定が甘すぎた。ADR-0006）
 
 ## 次セッションの最初のプロンプト
 
 ⚠ このリポジトリは `SotoKi` から作り直した `foehn`（ADR-0009）。
 手元に旧 `SotoKi` のクローンがあっても**使わずに取り直すこと**（全SHAが別物）。
 
-> docs/status.md を読んだうえで、`docs/project_structure_proposal.md` の**段階6**
-> （`.claude/` にスラッシュコマンドと permissions を置く）を実施して。
-> `origin/main` から新しいブランチを切ること。**ドキュメント整理はこれで最後**。
+> docs/status.md を読んだうえで、**`sw.js` がエラー応答をキャッシュする不具合**を直して。
+> `origin/main` から新しいブランチを切ること。
 >
-> 1. **`.claude/settings.json` の permissions** … 毎回聞かれて煩わしいものを許可に入れる
->    （`node tests/run-all.js` / `git` の読み取り系 / `grep`・`ls` など）。
->    **破壊的なものは入れない**（`rm -rf` / `git push --force` / `wrangler` の秘密操作）
-> 2. **スラッシュコマンド**を `.claude/commands/` に置く。候補:
->    `/test`（16件流す）/ `/status`（status.md＋ブランチ鮮度）/
->    `/spec <名前>`（該当specと code_map を開く）/ `/release <版>`（版数の更新箇所とタグ）
-> 3. `CLAUDE.md` に `.claude/` の存在を**1行だけ**足す（L0は増やさない）
+> - ナビゲーション処理（`req.mode === 'navigate'` の分岐）が
+>   `const fresh = await fetch(req); cache.put(req, fresh.clone());` となっていて
+>   **`res.ok` を見ていない**。404や500をHTMLキャッシュに焼き付け、
+>   以後は圏外でもそのエラーを返す（`sw.js` の目的が壊れる → `docs/spec/pwa.md`）
+> - 同ファイルの**静的ファイル側は `res.ok` を見ている**。そちらに揃えるだけで直る
+> - `CACHE_VERSION` は上げなくてよい（配信ファイルの構成は変わらない）
+> - 受け入れ条件: `node tests/run-all.js` 全16件PASS。`smoke_pwa` に
+>   **エラー応答を焼き付けない**ことの検査を足せるとなおよい
 >
-> ⚠ `.claude/hooks/session-start.sh` は**既にある。触らない**。
-> 制約: **コードは1行も変更しない。** 段階ごとにcommitを分割する。
+> 触ってはいけないもの: ABC評価ロジック（`abcScore` / `abcScoreInv` / `judgePoint`）。
+> 制約: 段階ごとにcommitを分割し、各段階の完了時に動作確認を求めること。
 
 ## 未処理の申し送り
 
@@ -110,6 +111,8 @@
   足りていないと思われる。**同じ症状は PR #77 でも直している**（固定1000ms待ち → 条件待ち）ので、
   待ち方をもう一段見直す余地がある。**まず再実行すること。**
   他のテストが道連れで落ちていないか（1件だけの失敗か）を確認材料にする
+  - PR #20（`.claude/` のみの変更）でも**手元で**同じ1件だけ落ち、単体で流し直すと通った（1分45秒）。
+    CIより遅い環境なら手元でも出る。**再現は「遅いこと」で、変更内容とは無関係**
 - **旧リポジトリ `SotoKi` はまだ削除していない。** Issue16件の復元は済んでいるので削除して構わない
   （`https://github.com/dfcfr909-bit/SotoKi/settings` 最下部 Danger Zone）。
   旧URLの PWA は端末に別アプリとして残り、開くと GitHub の404が出る
