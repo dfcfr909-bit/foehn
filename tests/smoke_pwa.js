@@ -13,6 +13,16 @@ const INDEX = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const SW = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const MANIFEST = fs.readFileSync(path.join(ROOT, 'manifest.webmanifest'), 'utf8');
 
+// sw.js のナビゲーション処理（HTMLを返す分岐）だけを切り出す。
+// 静的ファイル側・タイル側にも cache.put があるので、ファイル全体で調べると
+// 「どこかに res.ok がある」だけで通ってしまい、検査にならない。
+function navBlock(src) {
+  const from = src.indexOf("req.mode === 'navigate'");
+  if (from < 0) return null;
+  const to = src.indexOf('e.respondWith', src.indexOf('e.respondWith', from) + 1);
+  return src.slice(from, to > from ? to : undefined);
+}
+
 // PNGのIHDRから幅・高さを読む（画像ライブラリなしでサイズを確認する）
 function pngSize(file) {
   const b = fs.readFileSync(file);
@@ -59,6 +69,15 @@ function pngSize(file) {
     hasActivate: /addEventListener\('activate'/.test(SW),
     // HTMLはネットワーク優先（古い画面が残らないこと）
     htmlNetworkFirst: /req\.mode === 'navigate'/.test(SW) && /const fresh = await fetch\(req\)/.test(SW),
+    // ⚠ エラー応答を焼き付けないこと。404や500をHTMLキャッシュに入れると
+    //   以後は圏外でもそれが返り、「圏外でも立ち上がる」目的が壊れる
+    htmlSkipsErrorResponses: (() => {
+      const block = navBlock(SW);
+      if (!block) return false;
+      const guard = block.search(/\bfresh\.ok\b/);
+      const put = block.search(/cache\.put\(/);
+      return guard >= 0 && put >= 0 && guard < put;   // ok を見てから put していること
+    })(),
     // 気象APIなど外部はキャッシュしない
     skipsCrossOrigin: /if \(!isAppAsset\(url\)/.test(SW),
     // 古いキャッシュを消す
@@ -117,7 +136,8 @@ function pngSize(file) {
     refs.appleIcon && refs.favicon && refs.appleCapable && refs.registersSw &&
     // Service Workerの要件と更新方針
     swChecks.hasFetchHandler && swChecks.hasInstall && swChecks.hasActivate &&
-    swChecks.htmlNetworkFirst && swChecks.skipsCrossOrigin && swChecks.cleansOldCaches &&
+    swChecks.htmlNetworkFirst && swChecks.htmlSkipsErrorResponses &&
+    swChecks.skipsCrossOrigin && swChecks.cleansOldCaches &&
     // ブラウザからmanifestが読める
     linked && linked.display === 'standalone' && linked.short_name === 'NAGI NAV';
 
