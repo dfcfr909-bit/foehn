@@ -23,12 +23,14 @@ on:
         description: 'snapの探索半径(km)。既定6では届かない峰がある（大朝日岳・皇海山など）'
         required: false
         default: '6'
-      all:
-        description: 'snapで全110峰を見る。offだと「ズレている峰」だけに絞る'
+      # ⚠ 選択肢に on/off・yes/no を使わないこと。YAMLが真偽値として解釈するため
+      #    許可値の一覧が空になり、workflow_dispatch が422で弾かれる。
+      scope:
+        description: 'snapの対象。changed=ズレている峰だけ / all=全110峰'
         required: false
-        default: 'off'
+        default: 'changed'
         type: choice
-        options: [off, on]
+        options: [changed, all]
 
 permissions:
   contents: read
@@ -60,7 +62,7 @@ jobs:
         run: |
           set +e
           node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" --radius "${{ inputs.radius }}" \
-            ${{ inputs.all == 'on' && '--all' || '' }} | tee result.txt
+            ${{ inputs.scope == 'all' && '--all' || '' }} | tee result.txt
           exit 0
 
       - name: 結果をサマリーへ
