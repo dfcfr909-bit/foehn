@@ -863,21 +863,39 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   /* ⚠ 固定待ちにしないこと。古いレイヤーが外れるのは新しい方のタイルが
      読めたとき（`onLoad: dropPrev`）で、遅い環境では1秒では終わらない。
      固定1000msにしていたためCIで「3枚残っている」と落ちた。
-     逃げ道の `WX_DROP_MS`（8秒）より長く待って、条件が満たされるまで見る。 */
-  const wxLayerCount = () => {
-    let n = 0; leafletMap.eachLayer(l => { if (l._url && /jmatile|himawari/.test(l._url)) n++; }); return n;
+     逃げ道の `WX_DROP_MS`（8秒）より長く待って、条件が満たされるまで見る。
+
+     ⚠ **上限は WX_DROP_MS から導く。固定値に戻さないこと。**
+     `addTimedTileLayer` は `await jmaTimes()` の**あと**に新しいレイヤーを作り、
+     そこから逃げ道の8秒を数え始める。外れるのは「refreshから8秒後」ではなく
+     「jmaTimes が解決してから8秒後」なので、固定値だと逃げ道より短くなりうる。
+     条件が満たされ次第すぐ抜けるので、速い環境では待たされない。 */
+  const dropMs = await page.evaluate(() => WX_DROP_MS);
+  const wxLayerUrls = () => {
+    const a = []; leafletMap.eachLayer(l => { if (l._url && /jmatile|himawari/.test(l._url)) a.push(l._url); }); return a;
   };
+  const waitStart = Date.now();
   await page.waitForFunction(
-    `(${wxLayerCount.toString()})() === 2`, null, { timeout: 12000 },
-  ).catch(() => {});   // 落ちたときの実数は下の ok() に出させる
+    `(${wxLayerUrls.toString()})().length === 2`, null, { timeout: dropMs + 12000 },
+  ).catch(() => {});   // 落ちたときの中身は下の ok() に出させる
+  const waited = Date.now() - waitStart;
+  /* ⚠ 落ちたときに**残っているレイヤーのURLと staleWxLayers の中身**を出すこと。
+     枚数だけ出していた頃はCIで「3」としか分からず、3枚目が
+     「外れ損ねた古いレイヤー」なのか「別種のレイヤー」なのかも切り分けられなかった
+     （2026-08-13、CIで2回連続。3回目の再実行では通り、原因不明のまま）。 */
   const afterRefresh = await page.evaluate(() => ({
     radar: overlayTileLayers.radar._url,
     sat: overlayTileLayers.satellite._url,
     layers: (() => { let n = 0; leafletMap.eachLayer(l => { if (l._url && /jmatile|himawari/.test(l._url)) n++; }); return n; })(),
+    urls: (() => { const a = []; leafletMap.eachLayer(l => { if (l._url && /jmatile|himawari/.test(l._url)) a.push(l._url); }); return a; })(),
+    stale: staleWxLayers.size,
+    staleUrls: [...staleWxLayers].map(l => l._url),
+    onNow: ['radar', 'satellite', 'thunder'].filter(id => isOverlayOn(id)),
   }));
   ok(/20260131121000/.test(afterRefresh.radar), '更新後は新しいbasetimeで貼り直す', afterRefresh.radar);
   ok(/20260131124000/.test(afterRefresh.sat), '衛星も新しいbasetimeで貼り直す', afterRefresh.sat);
-  ok(afterRefresh.layers === 2, '古いレイヤーは残さない（重ならない）', afterRefresh.layers);
+  ok(afterRefresh.layers === 2, '古いレイヤーは残さない（重ならない）',
+    { ...afterRefresh, waited, dropMs, budget: dropMs + 12000 });
 
 
 
