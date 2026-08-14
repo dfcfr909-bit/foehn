@@ -73,21 +73,43 @@ async function fetchJson(url) {
   throw lastErr;
 }
 
+/* 名前が「その山そのもの」を指しているか。
+   ⚠ **部分一致で通さないこと。** 地名辞書に山が無いと、住所や施設が返ってくる。
+     実際に踏んだ誤検出:
+       飯豊本山   → 「福島県小野町大字飯豊本飯豊」（100.67km）
+       立山（雄山）→ 「富山県中新川郡立山町」（28.91km）
+       甲斐駒ヶ岳 → 「山梨県甲斐市」（27.43km）
+       八甲田大岳 → 「青森県黒石市八甲」（22.49km）
+       日光白根山 → 「日光白根山ロープウェイ」（3.69km）
+     どれも「離れている＝別の山を指している」と誤って報告されていた。
+     ⚠ **誤検出を放っておくと、本物の要確認（大朝日岳13.25km・平ヶ岳6.64km・
+        五竜岳6.41km）がその中に埋もれて見えなくなる。** それがこの絞り込みの目的。 */
+function titleMatches(title, name) {
+  const t = String(title).trim();
+  if (t === name) return true;
+  // 「立山（雄山）」のように括弧つきで持っている峰は、括弧の前で照合する
+  const base = name.replace(/[（(].*$/, '').trim();
+  return base.length > 1 && t === base;
+}
+
 /* 名前で引き、areas.json の座標に最も近い候補を返す。
    ⚠ 「1件目」を採らないこと。同名の山が各地にあるので順番に意味は無い。 */
 async function lookup(peak) {
   const json = await fetchJson(`${SEARCH_URL}?q=${encodeURIComponent(peak.name)}`);
   const feats = Array.isArray(json) ? json : (json && json.features) || [];
-  let best = null;
+  let best = null, seen = 0;
   for (const f of feats) {
     const c = f && f.geometry && f.geometry.coordinates;
     if (!Array.isArray(c) || c.length < 2) continue;
+    const title = (f.properties && f.properties.title) || '';
+    if (!titleMatches(title, peak.name)) continue;   // 住所・施設は見ない
     const lon = Number(c[0]), lat = Number(c[1]);
     if (!isFinite(lat) || !isFinite(lon)) continue;
+    seen++;
     const d = haversineKm(peak.lat, peak.lon, lat, lon);
-    if (!best || d < best.d) best = { lat, lon, d, title: (f.properties && f.properties.title) || '' };
+    if (!best || d < best.d) best = { lat, lon, d, title };
   }
-  return { best, count: feats.length };
+  return { best, count: feats.length, seen };
 }
 
 const areas = JSON.parse(fs.readFileSync(path.join(ROOT, 'areas.json'), 'utf8'));
