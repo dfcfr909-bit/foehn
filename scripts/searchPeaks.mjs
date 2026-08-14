@@ -25,6 +25,7 @@
  * 使い方:
  *   node scripts/searchPeaks.mjs             # 全110峰
  *   node scripts/searchPeaks.mjs --far 3     # これ以上離れていたら「要確認」。既定3km
+ *   node scripts/searchPeaks.mjs --samename 50  # これ以上離れたら「同名の別の山」。既定50km
  *
  * ⚠ 開発環境からは国土地理院に到達できない。GitHub Actions「山頂座標の検査」から回す。
  */
@@ -43,7 +44,14 @@ const arg = (name, def) => {
   const i = process.argv.indexOf('--' + name);
   return i > -1 ? Number(process.argv[i + 1]) : def;
 };
-const FAR_KM = arg('far', 3);    // これを超えて離れていたら要確認
+const FAR_KM = arg('far', 3);      // これを超えて離れていたら要確認
+/* これを超えたら「座標のズレ」ではなく「同名の別の山」とみなす。
+   ⚠ 山が地名辞書に無いと、遠くの同名峰しか候補に残らない。実際に出たもの:
+     笙ヶ岳（鳥海山）→ 養老山地の笙ヶ岳 525km
+     悪沢岳（南ア）  → 尾瀬付近の同名地点 178km（南アのそれは「荒川東岳」名で載る）
+   これを「別の山を指している疑い」に混ぜると、**直すべきものが無い所を疑わせる**。
+   これほど離れた座標なら checkPeaks の標高照合が先に落ちるので、区別してよい。 */
+const SAMENAME_KM = arg('samename', 50);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const rad = d => d * Math.PI / 180;
@@ -119,7 +127,7 @@ console.log(`areas.json v${areas.version} … ${areas.areas.length}山域 / ${pe
 console.log(`地名検索と突き合わせ、${FAR_KM}km 以上離れていたら「要確認」として出します`);
 console.log('⚠ これは山の同定のための照合。座標の採用は DEM（snapPeaks）側で決めること。\n');
 
-const far = [], missing = [], failed = [];
+const far = [], sameName = [], missing = [], failed = [];
 for (let i = 0; i < peaks.length; i++) {
   const p = peaks[i];
   progress(i + 1, peaks.length);
@@ -127,7 +135,8 @@ for (let i = 0; i < peaks.length; i++) {
   try { r = await lookup(p); }
   catch (e) { failed.push({ p, err: e.message }); await sleep(SLEEP_MS); continue; }
   if (!r.best) { missing.push(p); await sleep(SLEEP_MS); continue; }
-  if (r.best.d >= FAR_KM) far.push({ p, ...r.best });
+  if (r.best.d >= SAMENAME_KM) sameName.push({ p, ...r.best });
+  else if (r.best.d >= FAR_KM) far.push({ p, ...r.best });
   await sleep(SLEEP_MS);
 }
 if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(40) + '\r');
@@ -144,13 +153,25 @@ if (far.length) {
   console.log('\n離れている＝areas.json が別の山を指している疑い。');
   console.log('⚠ ただし地名の代表点は最高地点とは限らないので、**そのまま採用しないこと**。');
   console.log('   「どの山か」を確かめたうえで、座標は snapPeaks の吸着結果から採る。');
-} else if (!missing.length && !failed.length) {
+} else if (!missing.length && !failed.length && !sameName.length) {
   console.log(`✅ 全${peaks.length}峰が地名検索の位置と ${FAR_KM}km 以内`);
 } else {
   // ⚠ 照合できなかった峰があるのに ✅ を出さないこと。
   //    「検証していない峰が検証済みに見える」のがこの手の道具のいちばん悪い嘘。
   console.log(`${FAR_KM}km 以上離れた峰はありません` +
-    `（ただし ${missing.length + failed.length}峰は照合できていない。下記）`);
+    `（ただし ${missing.length + failed.length + sameName.length}峰は照合できていない。下記）`);
+}
+
+if (sameName.length) {
+  sameName.sort((a, b) => b.d - a.d);
+  console.log(`\n同名の別の山しか見つからなかったもの ${sameName.length}件` +
+    `（${SAMENAME_KM}km 超。**座標の誤りではない**）:`);
+  for (const f of sameName) {
+    console.log(`  ${f.p.area} / ${f.p.name}（${f.p.elev}m） … ` +
+      `最も近い同名の候補は ${f.lat.toFixed(4)},${f.lon.toFixed(4)}（${Math.round(f.d)}km）`);
+  }
+  console.log('  ⚠ その山が地名辞書に無いという意味であって、areas.json が間違っている');
+  console.log('    わけではない。標高の照合（checkPeaks）の結果と併せて判断すること。');
 }
 
 if (missing.length) {
@@ -162,4 +183,4 @@ if (failed.length) {
   for (const f of failed) console.log(`  ${f.p.area} / ${f.p.name} … ${f.err}`);
 }
 // 照合できなかったものも「素通り」にしない（合否は人が見る前提だが、印は残す）
-process.exit(far.length || missing.length || failed.length ? 1 : 0);
+process.exit(far.length || sameName.length || missing.length || failed.length ? 1 : 0);
