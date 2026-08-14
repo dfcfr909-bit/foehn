@@ -23,6 +23,12 @@ on:
         description: 'snapの探索半径(km)。既定6では届かない峰がある（大朝日岳・皇海山など）'
         required: false
         default: '6'
+      all:
+        description: 'snapで全110峰を見る。offだと「ズレている峰」だけに絞る'
+        required: false
+        default: 'off'
+        type: choice
+        options: [off, on]
 
 permissions:
   contents: read
@@ -53,7 +59,8 @@ jobs:
         if: inputs.mode == 'snap'
         run: |
           set +e
-          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" --radius "${{ inputs.radius }}" | tee result.txt
+          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" --radius "${{ inputs.radius }}" \
+            ${{ inputs.all == 'on' && '--all' || '' }} | tee result.txt
           exit 0
 
       - name: 結果をサマリーへ

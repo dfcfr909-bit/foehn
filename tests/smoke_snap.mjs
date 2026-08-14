@@ -6,10 +6,12 @@
  *   だから elev を識別子にして「一致する点のうち最も近いもの」を採る。
  *   ここではその区別が本当に効いているかを、合成の地形で確かめる。
  *
- * ⚠ **二番目に危ないのは「稜線の肩を掴む」こと。**
- *   広い山頂部では公称標高±MATCH の点が帯状に並ぶので、「一致する点のうち
- *   最も近いもの」は山頂を通り過ぎて手前の肩に当たりうる。吸着先の周囲に
- *   もっと高い点があれば峰ではない、という検査（⚠稜線？）が効くかを見る。
+ * ⚠ **二番目に危ないのは「一致窓の下端で止まる」こと。**
+ *   一致窓は ±MATCH なので elev−MATCH の等高線がいちばん外に広がり、
+ *   「一致する最も近い点」は山頂の手前・約MATCH m低い肩に当たる。
+ *   #13 では要確認12峰の**全部**が elev−14〜15m に着地した（規則的な偏り）。
+ *   いまは「周囲に自分より高い点が無い＝峰の芯」を条件に足してある。
+ *   その条件が本当に効いているかを場面2〜3で確かめる。
  *
  * 通信はスタブする（開発環境から地理院に到達できないため）。
  */
@@ -124,43 +126,72 @@ if (line1) {
       { dDecoyKm: +dDecoy.toFixed(2) });
     ok(Math.abs(h - 2898) <= 15, '吸着先の標高が elev と一致する', h);
   }
-  ok(!line1.includes('稜線'), '単独の峰に「稜線？」は付かない', line1);
 }
 
-/* --- 場面2: 稜線の肩を掴んだら印を付けること ---
-   公称 2,000m の峰。元の座標の側に 2,000m の肩を張り出させ、
-   その 300m 先に本当の高み 2,040m を置く。
-   「elev に一致する最も近い点」は肩に当たるので、⚠稜線？ が出てほしい。 */
-const SHOULDER = { lat: 36.5000, lon: 137.5000, h: 2000, r: 80 };
-const REAL_TOP = { lat: 36.5027, lon: 137.5000, h: 2040, r: 80 };   // 肩の約300m北
+/* --- 場面2: 一致窓の下端（肩）でなく山頂の芯を採ること ---
+   #13 で実際に踏んだ偏りの再現。山頂 2,898m を芯に、その周りを 2,884m
+   （＝elev−14m、一致窓 ±15m の内側）の輪で囲む。元の座標は輪の外・約3km南。
+
+   ⚠ 「一致する最も近い点」を採る実装は**必ず輪の手前側**に着地する。
+      要確認12峰の全部が elev−14〜15m に着地したのがこれ。
+      芯を採るには「周囲にもっと高い点が無い」条件が要る。 */
+const CORE = { lat: 36.5100, lon: 137.5000, h: 2898, r: 70 };
+const SHELF = { lat: 36.5100, lon: 137.5000, h: 2884, r: 500 };   // 芯を囲む輪
 
 const out2 = runSnap({
-  ground: 1500,
-  features: [SHOULDER, REAL_TOP],
-  peaks: [{ name: '肩ヶ岳', lat: 36.4900, lon: 137.5000, elev: 2000, hyakumeizan: true }],
+  ground: 1600,
+  features: [SHELF, CORE],   // 後のものが優先されるので芯が上書きする
+  peaks: [{ name: '芯ヶ岳', lat: 36.4830, lon: 137.5000, elev: 2898, hyakumeizan: true }],
 });
 console.log(out2);
 
-const line2 = out2.split('\n').find(l => l.includes('肩ヶ岳') && l.includes('→'));
+const line2 = out2.split('\n').find(l => l.includes('芯ヶ岳') && l.includes('→'));
 ok(!!line2, '場面2でも修正案が出る', out2.slice(0, 400));
 if (line2) {
-  ok(line2.includes('稜線'), '★★★肩を掴んだら「稜線？」が付く（0.5km以内に高い点がある）', line2);
-  ok(/2040m/.test(line2), '近傍の最高点の標高を併記する', line2);
-  // 形は崩さない。ここが崩れると場面1の読み取りも壊れる
-  ok(/→\s*[\d.]+,[\d.]+\s+\d+m/.test(line2), '「稜線？」が付いても修正案の形は読める', line2);
+  const m = line2.match(/→\s*([\d.]+),([\d.]+)\s+(\d+)m/);
+  ok(!!m, '修正案の形が読める', line2);
+  if (m) {
+    const lat = Number(m[1]), lon = Number(m[2]), h = Number(m[3]);
+    const dCore = Math.hypot((lat - CORE.lat) * 111, (lon - CORE.lon) * 89);
+    ok(h === 2898, '★★★山頂の芯(2,898m)を採る（肩の2,884mで止まらない）', { h, line2 });
+    ok(dCore < 0.1, '芯の座標へ寄る', { lat, lon, dCoreKm: +dCore.toFixed(3) });
+  }
 }
-ok(/「稜線？」が付いた 1件/.test(out2), '稜線の件数をまとめて出す', out2.slice(-500));
 
-/* --- 場面3: --write は「稜線？」を書き込まない --- */
+/* --- 場面3: 肩しか無ければ「決められなかった」に落とすこと ---
+   2,884m の輪の芯を、公称より高い 2,950m にする。
+   輪は一致窓には入るが局所最高点ではなく、芯は局所最高点だが標高が合わない。
+   ＝**採ってよい点が1つも無い**地形。
+
+   ⚠ ここで肩(2,884m)を拾って返す実装に戻ると、場面2の検査をすり抜ける。
+   ⚠ 「平らな台地」は肩ではない。周囲に自分より高い点が無ければ、それは
+      その地形の頂上なので採ってよい（同値は許す）。ここで落としたいのは
+      **もっと高い芯を持つ輪**だけ。 */
 const out3 = runSnap({
-  ground: 1500,
-  features: [SHOULDER, REAL_TOP],
-  peaks: [{ name: '肩ヶ岳', lat: 36.4900, lon: 137.5000, elev: 2000, hyakumeizan: true }],
+  ground: 1600,
+  features: [{ lat: 36.5100, lon: 137.5000, h: 2884, r: 500 },
+             { lat: 36.5100, lon: 137.5000, h: 2950, r: 70 }],
+  peaks: [{ name: '肩ヶ岳', lat: 36.4830, lon: 137.5000, elev: 2898, hyakumeizan: true }],
+});
+ok(/決められなかったもの/.test(out3) && out3.includes('肩ヶ岳'),
+  '★肩しか無ければ黙って返さず「決められなかった」に落とす', out3.slice(-500));
+
+/* 平らな台地は採ってよい（メサ状の山頂を弾かないこと） */
+const out3b = runSnap({
+  ground: 1600,
+  features: [{ lat: 36.5100, lon: 137.5000, h: 2898, r: 500 }],
+  peaks: [{ name: '台ヶ岳', lat: 36.4830, lon: 137.5000, elev: 2898, hyakumeizan: true }],
+});
+ok(/台ヶ岳.*→/.test(out3b), '平らな台地は「決められなかった」にしない', out3b.slice(-500));
+
+/* --- 場面4: --write は決まったものだけ書く --- */
+const out4 = runSnap({
+  ground: 1600,
+  features: [SHELF, CORE],
+  peaks: [{ name: '芯ヶ岳', lat: 36.4830, lon: 137.5000, elev: 2898, hyakumeizan: true }],
   args: ['--write'],
 });
-ok(/書き込みから外しました/.test(out3), '★--write は疑わしい吸着先を書かない', out3.slice(-400));
-ok(!/areas.json の [1-9]件を書き換え/.test(out3), '疑わしいものだけのときは1件も書かない',
-  out3.slice(-400));
+ok(/areas.json の 1件を書き換え/.test(out4), '--write が修正案を書き込む', out4.slice(-400));
 
 if (fails.length) {
   console.log(`FAILED ${fails.length}件:`);

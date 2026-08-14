@@ -5,9 +5,15 @@
  *
  * ⚠ 探索範囲でいちばん高い点を採ってはいけない。
  *   笠ヶ岳(2,898m)の近くには槍ヶ岳(3,180m)や穂高(3,190m)があるので、
- *   最高点を採ると**隣の別の山に吸着する**。
- *   代わりに **elev と一致する点のうち、元の座標にいちばん近いもの**を採る。
- *   公称の山頂標高を「山の識別子」として使い、近さで決める。
+ *   最高点を採ると**隣の別の山に吸着する**。公称の山頂標高を「山の識別子」として使う。
+ *
+ * ⚠ かといって「elev と一致する最も近い点」も採ってはいけない。
+ *   一致窓は ±MATCH なので **elev−MATCH の等高線**がいちばん外側に広がり、
+ *   元の座標がずれているとその手前側の肩を掴む。#13 で要確認12峰の**全部**が
+ *   `elev−14〜15m` に着地した（規則的な偏り）。詳細は findSummit の注記。
+ *
+ *   採るのは **elev と一致し、かつ周囲 LOCALMAX_KM に自分より高い点が無い（＝峰の芯）
+ *   点のうち、元の座標にいちばん近いもの**。
  *
  * データ: 国土地理院の標高タイル（CSV形式）。
  *   https://cyberjapandata.gsi.go.jp/xyz/dem/{z}/{x}/{y}.txt
@@ -40,8 +46,7 @@ const DEM_Z = 14;            // dem（DEM10B）のネイティブズーム
 const SLEEP_MS = 120;        // タイル1枚で6.5万点取れるので、点APIほど回数は要らない
 const FETCH_TIMEOUT_MS = 20000;  // 1本のリクエストがこれを超えたら諦めて再試行する
 const FETCH_TRIES = 3;
-const LOCALMAX_KM = 0.5;     // 吸着先が「この範囲でいちばん高い」かを見る
-const LOCALMAX_TOL_M = 5;    // DEMの標本誤差ぶん。これを超えて高い点があれば稜線を疑う
+const LOCALMAX_KM = 0.5;     // 吸着先はこの範囲でいちばん高い点でなければならない
 const PROGRESS_EVERY = 10;   // 非TTYではこの件数ごとに1行出す
 
 const arg = (name, def) => {
@@ -150,8 +155,22 @@ async function loadTile(tx, ty) {
   });
 }
 
-/* 山頂を探す。elev と MATCH 以内で一致する点のうち、元の座標に最も近いものを返す。
-   一致が1つも無ければ、範囲内の最高点を「参考」として返す（採用はしない）。 */
+/* 山頂を探す。
+   ⚠ **「elev に一致する最も近い点」を採ってはいけない。**
+     一致窓は ±MATCH なので、山頂を芯とする円錐では **elev−MATCH の等高線**が
+     いちばん外側に広がる。元の座標がずれていると、その等高線のうち手前側の点が
+     「最も近い一致点」になり、**山頂の手前・約MATCH m低い肩で止まる**。
+     しかも止まる向きは常に元のズレの方向なので、**誤差が誤差を呼ぶ**。
+     #13 で28峰を回したとき、要確認12峰の**全部**が `elev−14〜15m` に着地した
+     （平ヶ岳 −15 / 笠ヶ岳 −14 / 常念岳 −14 …）。偶然ではなく規則的な偏りだった。
+
+   だから条件を2つにする。
+     ① elev と MATCH 以内で一致する ②周囲 LOCALMAX_KM に自分より高い点が無い
+   ②を満たす点＝峰の芯。肩は①を満たしても②で落ちる。
+   その中から元の座標に最も近いものを採る（近さで山を選ぶ役割は変えない）。
+
+   ⚠ **「範囲の最高点」を採る形には戻さないこと。** 笠ヶ岳(2,898m)の近くには
+     槍ヶ岳(3,180m)や穂高(3,190m)があり、隣の別の山へ飛ぶ。①はそれを防いでいる。 */
 async function findSummit(peak) {
   const dLat = RADIUS_KM / 111;
   const dLon = RADIUS_KM / (111 * Math.cos(rad(peak.lat)));
@@ -167,58 +186,92 @@ async function findSummit(peak) {
     for (let ty = ty0; ty <= ty1; ty++) tiles.push({ tx, ty, p: demTile(tx, ty) });
   }
 
-  let best = null, highest = null, errors = [];
-  const loaded = [];
+  /* 探索範囲を1枚の格子に並べ直す。局所最高点の判定を移動最大値フィルタで
+     一度に済ませるため（点ごとに周囲を舐めると桁違いに遅い）。
+     データ無しは -Infinity。NaN にすると比較が常に false になり、
+     フィルタの単調デックから抜けなくなる。 */
+  const W = (tx1 - tx0 + 1) * 256, H = (ty1 - ty0 + 1) * 256;
+  const grid = new Float32Array(W * H).fill(-Infinity);
+  const errors = [];
   for (const t of tiles) {
-    const grid = await t.p;
-    if (!grid) continue;
-    if (grid.err) { errors.push(grid.err); continue; }
-    loaded.push({ tx: t.tx, ty: t.ty, grid });
+    const g = await t.p;
+    if (!g) continue;
+    if (g.err) { errors.push(g.err); continue; }
+    const ox = (t.tx - tx0) * 256, oy = (t.ty - ty0) * 256;
     for (let py = 0; py < 256; py++) {
-      const row = grid[py];
+      const row = g[py];
       if (!row) continue;
       for (let px = 0; px < 256; px++) {
         const h = row[px];
-        if (h == null || !isFinite(h)) continue;
-        if (!highest || h > highest.h) {
-          const p = tilePixelToLonLat(t.tx, t.ty, px, py, DEM_Z);
-          highest = { ...p, h };
-        }
-        if (Math.abs(h - peak.elev) > MATCH) continue;
-        const p = tilePixelToLonLat(t.tx, t.ty, px, py, DEM_Z);
-        const d = haversineKm(peak.lat, peak.lon, p.lat, p.lon);
-        if (d > RADIUS_KM) continue;                 // 箱の角が半径を超える分を落とす
-        if (!best || d < best.d) best = { ...p, h, d };
+        if (h != null && isFinite(h)) grid[(oy + py) * W + ox + px] = h;
       }
     }
   }
 
-  /* 吸着先が本当に「峰」かを確かめる。
-     ⚠ 「elev に一致する点のうち最も近いもの」は、**稜線の途中**にも当たりうる。
-        広い山頂部では公称標高±MATCH の点が帯状に並ぶので、元の座標に近い側の
-        肩を掴んで山頂を通り過ぎることがある。周囲 LOCALMAX_KM にもっと高い点が
-        あれば、そこは峰ではない。**通信は増えない**（取得済みのタイルを見るだけ）。 */
-  if (best) best.localMax = localMaxAround(loaded, best);
+  // 1画素の地上寸法（Webメルカトルなので緯度で縮む）
+  const mPerPx = 156543.03392 * Math.cos(rad(peak.lat)) / Math.pow(2, DEM_Z);
+  const R = Math.max(1, Math.round(LOCALMAX_KM * 1000 / mPerPx));
+  const win = maxFilter(grid, W, H, R);
+
+  let best = null, highest = null;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const h = grid[i];
+      if (h === -Infinity) continue;
+      if (!highest || h > highest.h) {
+        highest = { ...pixelToLonLat(tx0, ty0, x, y), h };
+      }
+      if (Math.abs(h - peak.elev) > MATCH) continue;   // ①標高が一致する
+      if (h < win[i]) continue;                        // ②周囲にもっと高い点が無い
+      const p = pixelToLonLat(tx0, ty0, x, y);
+      const d = haversineKm(peak.lat, peak.lon, p.lat, p.lon);
+      if (d > RADIUS_KM) continue;                     // 箱の角が半径を超える分を落とす
+      if (!best || d < best.d) best = { ...p, h, d };
+    }
+  }
   return { best, highest, errors };
 }
 
-// best の周囲 LOCALMAX_KM でいちばん高い点（best 自身を含む）
-function localMaxAround(loaded, best) {
-  let top = { lat: best.lat, lon: best.lon, h: best.h };
-  for (const { tx, ty, grid } of loaded) {
-    for (let py = 0; py < 256; py++) {
-      const row = grid[py];
-      if (!row) continue;
-      for (let px = 0; px < 256; px++) {
-        const h = row[px];
-        if (h == null || !isFinite(h) || h <= top.h) continue;
-        const p = tilePixelToLonLat(tx, ty, px, py, DEM_Z);
-        if (haversineKm(best.lat, best.lon, p.lat, p.lon) > LOCALMAX_KM) continue;
-        top = { ...p, h };
+// 並べ直した格子の画素 → 緯度経度
+function pixelToLonLat(tx0, ty0, x, y) {
+  return tilePixelToLonLat(tx0 + Math.floor(x / 256), ty0 + Math.floor(y / 256),
+    x % 256, y % 256, DEM_Z);
+}
+
+/* 幅 2R+1 の移動最大値（横→縦の2段）。単調減少デックで O(画素数)。
+   これが無いと、点ごとに周囲 R 画素を舐めることになり実用にならない。 */
+function maxFilter(src, W, H, R) {
+  const tmp = new Float32Array(W * H);
+  const out = new Float32Array(W * H);
+  const q = new Int32Array(Math.max(W, H));
+
+  for (let y = 0; y < H; y++) {
+    const base = y * W;
+    let head = 0, tail = 0, j = 0;
+    for (let x = 0; x < W; x++) {
+      for (const hi = Math.min(W - 1, x + R); j <= hi; j++) {
+        const v = src[base + j];
+        while (tail > head && src[base + q[tail - 1]] <= v) tail--;
+        q[tail++] = j;
       }
+      while (q[head] < x - R) head++;
+      tmp[base + x] = src[base + q[head]];
     }
   }
-  return top;
+  for (let x = 0; x < W; x++) {
+    let head = 0, tail = 0, j = 0;
+    for (let y = 0; y < H; y++) {
+      for (const hi = Math.min(H - 1, y + R); j <= hi; j++) {
+        const v = tmp[j * W + x];
+        while (tail > head && tmp[q[tail - 1] * W + x] <= v) tail--;
+        q[tail++] = j;
+      }
+      while (q[head] < y - R) head++;
+      out[y * W + x] = tmp[q[head] * W + x];
+    }
+  }
+  return out;
 }
 
 // SNAP_AREAS はテスト用の差し替え口（合成の地形で吸着ルールを検査するため）
@@ -266,33 +319,25 @@ for (let i = 0; i < targets.length; i++) {
   }
   const moved = best.d;
   if (moved < 0.02) continue;   // 20m未満は動かす意味がない
-  fixes.push({
-    p, lat: +best.lat.toFixed(4), lon: +best.lon.toFixed(4), h: best.h, moved,
-    // 周囲にもっと高い点があれば、掴んだのは山頂ではなく稜線の肩
-    ridge: best.localMax && best.localMax.h > best.h + LOCALMAX_TOL_M ? best.localMax : null,
-  });
+  fixes.push({ p, lat: +best.lat.toFixed(4), lon: +best.lon.toFixed(4), h: best.h, moved });
 }
 progressEnd();
 
 if (fixes.length) {
   fixes.sort((a, b) => b.moved - a.moved);
   console.log(`修正案 ${fixes.length}件（移動距離の大きい順）\n`);
-  console.log('  山域            峰            現在の座標          → 山頂の座標         標高   移動');
+  console.log('  山域            峰            現在の座標          → 山頂の座標         標高   Δ    移動');
   for (const f of fixes) {
+    const d = Math.round(f.h - f.p.elev);   // DEMは山頂を数m低く読む。±MATCH に収まる
     console.log(`  ${f.p.area.padEnd(14)} ${f.p.name.padEnd(12)} ` +
       `${f.p.lat.toFixed(4)},${f.p.lon.toFixed(4)} → ${f.lat.toFixed(4)},${f.lon.toFixed(4)} ` +
-      `${String(Math.round(f.h)).padStart(5)}m ${f.moved.toFixed(2).padStart(6)}km` +
-      (f.ridge ? `  ⚠稜線？ ${LOCALMAX_KM}km以内に ${Math.round(f.ridge.h)}m` +
-        `（${f.ridge.lat.toFixed(4)},${f.ridge.lon.toFixed(4)}）` : ''));
+      `${String(Math.round(f.h)).padStart(5)}m ${((d > 0 ? '+' : '') + d).padStart(4)}m ` +
+      `${f.moved.toFixed(2).padStart(6)}km`);
   }
+  console.log(`\n吸着先は「周囲${LOCALMAX_KM}kmに自分より高い点が無い＝峰の芯」だけに限っている。`);
+  console.log('Δ は DEM の読みと公称標高の差で、数m低く出るのが正常（皇海山 2,144m→2,141m）。');
   console.log('\n⚠ **移動距離が大きいものは地図で目視確認すること。**');
   console.log('   同じ標高の別の峰に吸着している可能性がある（elevを識別子にしているため）。');
-  const ridges = fixes.filter(f => f.ridge);
-  if (ridges.length) {
-    console.log(`\n⚠ 「稜線？」が付いた ${ridges.length}件は、吸着先の周囲 ${LOCALMAX_KM}km に`);
-    console.log('   もっと高い点がある＝峰ではなく肩を掴んでいる疑い。**そのまま採用しないこと。**');
-    console.log('   併記した座標は近傍の最高点だが、それが目的の峰とは限らない（隣の山かもしれない）。');
-  }
 }
 
 if (unresolved.length) {
@@ -307,10 +352,8 @@ if (!fixes.length && !unresolved.length) console.log('✅ 動かす必要のあ�
    「同じ山域の同じ峰名」で引き当てて、取り違えを防ぐ。 */
 if (WRITE && fixes.length) {
   const doc = JSON.parse(fs.readFileSync(areasPath, 'utf8'));
-  let n = 0, skipped = 0;
+  let n = 0;
   for (const f of fixes) {
-    // 稜線の疑いが出たものは書かない。疑わしいと分かっている値を入れる意味がない
-    if (f.ridge) { skipped++; continue; }
     const area = doc.areas.find(a => a.name === f.p.area);
     const peak = area && area.peaks.find(p => p.name === f.p.name);
     if (!peak) { console.log(`⚠ 書き換えられなかった: ${f.p.area} / ${f.p.name}`); continue; }
@@ -318,7 +361,6 @@ if (WRITE && fixes.length) {
     peak.lon = f.lon;
     n++;
   }
-  if (skipped) console.log(`\n⚠ 「稜線？」の ${skipped}件は書き込みから外しました（手で確認する）。`);
   fs.writeFileSync(areasPath, JSON.stringify(doc, null, 2) + '\n');
   console.log(`\n✍ areas.json の ${n}件を書き換えました。**git diff で必ず確認すること。**`);
 }
