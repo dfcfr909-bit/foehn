@@ -23,6 +23,10 @@ on:
         description: 'snapの探索半径(km)。既定6では届かない峰がある（大朝日岳・皇海山など）'
         required: false
         default: '6'
+      match:
+        description: 'snapで「山頂と一致」とみなす標高差(m)。既定15。尖った山頂はDEMが低く読むので広げる'
+        required: false
+        default: '15'
       # ⚠ 選択肢に on/off・yes/no を使わないこと。YAMLが真偽値として解釈するため
       #    許可値の一覧が空になり、workflow_dispatch が422で弾かれる。
       scope:
@@ -62,7 +66,7 @@ jobs:
         run: |
           set +e
           node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" --radius "${{ inputs.radius }}" \
-            ${{ inputs.scope == 'all' && '--all' || '' }} | tee result.txt
+            --match "${{ inputs.match }}" ${{ inputs.scope == 'all' && '--all' || '' }} | tee result.txt
           exit 0
 
       # 名前から座標を引いて「そもそも別の山を指していないか」を見る。
