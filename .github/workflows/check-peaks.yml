@@ -16,9 +16,9 @@ on:
         type: choice
         options: [check, snap, search]
       tol:
-        description: '許容差(m)。これを超える差を「要確認」として出す'
+        description: '許容差(m)。これを超える差を「要確認」として出す。200では笙ヶ岳級のズレを通す'
         required: false
-        default: '200'
+        default: '100'
       radius:
         description: 'snapの探索半径(km)。既定6では届かない峰がある（大朝日岳・皇海山など）'
         required: false
