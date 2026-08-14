@@ -6774,7 +6774,7 @@ const NAME_VARIANT_GROUPS = [
   ['ヶ', 'ケ', 'ガ', 'が', 'ヵ', 'カ'],   // 笙ヶ岳 / 笙ケ岳 / 笙ガ岳
   ['ノ', 'の', '之'],                     // 間ノ岳 / 間の岳
 ];
-const SEARCH_VARIANT_MAX = 3;   // 相手方(Nominatim)を叩く回数の上限
+const SEARCH_VARIANT_MAX = 3;   // 1つの情報源を叩く回数の上限
 
 /* 検索語の表記揺れを作る。元の語を先頭に、多くて SEARCH_VARIANT_MAX 個まで。
    ⚠ 上限を外さないこと。1語で6通り投げると Nominatim の利用条件から外れる。 */
@@ -6793,6 +6793,39 @@ function nameSearchVariants(q, max = SEARCH_VARIANT_MAX) {
   return out;
 }
 
+// 同じ地点が情報源ごとに重複するのを畳むための正規化
+function normalizeSearchName(s) {
+  let t = String(s).normalize('NFKC').trim().replace(/[\s・]/g, '');
+  for (const group of NAME_VARIANT_GROUPS) {
+    for (const ch of group.slice(1)) t = t.split(ch).join(group[0]);
+  }
+  return t;
+}
+
+/* 国土地理院の地名検索。**OSMは日本の山名の網羅性が低い。**
+   実例（#13）: 「釈迦ヶ岳」でOSMが返すのは山梨の2件だけで、
+   **矢板（高原山）の釈迦ヶ岳が出てこない**。件数上限の問題ではなく
+   （2件しか返っていない）、その名前で索引に載っていない。
+   笙ガ岳もOSM側では引けなかった。**情報源を足すしか手が無い。**
+
+   ⚠ ブラウザから叩けるか（CORS）は環境依存。**失敗しても黙って捨てる**ので、
+     読めなければ OSM だけの結果に戻るだけで、検索そのものは壊れない。 */
+async function gsiPlaceSearch(term) {
+  const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(term)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  const list = Array.isArray(json) ? json : (json && json.features) || [];
+  return list.map(f => {
+    const c = f && f.geometry && f.geometry.coordinates;
+    if (!Array.isArray(c) || c.length < 2) return null;
+    const lat = Number(c[1]), lon = Number(c[0]);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    const title = (f.properties && f.properties.title) || term;
+    return { lat: String(lat), lon: String(lon), display_name: title, _src: '国土地理院' };
+  }).filter(Boolean);
+}
+
 async function doMapSearch() {
   const input = document.getElementById('map-search-input');
   const q = input.value.trim();
@@ -6800,18 +6833,29 @@ async function doMapSearch() {
   if (!q) { results.innerHTML = ''; return; }
   results.innerHTML = '<div class="map-result-msg">検索中…</div>';
   try {
-    // 日本国内に限定して山名・地名を検索。表記揺れぶんだけ順に引く
+    /* 日本国内に限定して山名・地名を検索。表記揺れぶんだけ順に引き、
+       **2つの情報源を混ぜる**（OSMは日本の山名の網羅性が低いため）。 */
     const seen = new Set(), items = [];
-    for (const term of nameSearchVariants(q)) {
+    const add = item => {
+      const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
+      if (!isFinite(lat) || !isFinite(lon)) return;
+      // 情報源が違えば座標も少し違う。名前と約1km四方で畳む
+      const name = normalizeSearchName((item.display_name || '').split(',')[0]);
+      const key = `${name}@${lat.toFixed(2)},${lon.toFixed(2)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(item);
+    };
+    const terms = nameSearchVariants(q);
+    for (const term of terms) {
       const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=jp&accept-language=ja&limit=8&q=${encodeURIComponent(term)}`;
       const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      for (const item of await res.json()) {
-        const key = item.place_id || `${item.lat},${item.lon}`;
-        if (seen.has(key)) continue;      // 揺れ違いで同じ地点が重なる
-        seen.add(key);
-        items.push(item);
-      }
+      (await res.json()).forEach(add);
+    }
+    // ⚠ 地理院側は落ちても黙って捨てる。読めなければOSMだけの結果に戻る
+    for (const term of terms) {
+      try { (await gsiPlaceSearch(term)).forEach(add); } catch (e) { /* 読めない環境 */ }
     }
     if (!items.length) {
       results.innerHTML = '<div class="map-result-msg">見つかりませんでした</div>';
@@ -6837,9 +6881,10 @@ async function doMapSearch() {
       const name = full.split(',')[0].trim() || q;
       const el = document.createElement('div');
       el.className = 'map-result-item';
+      const sub = item._src ? `${full}（${item._src}）` : full;
       el.innerHTML =
         `<div class="map-result-name">${name}</div>` +
-        `<div class="map-result-sub">${full}</div>`;
+        `<div class="map-result-sub">${sub}</div>`;
       el.addEventListener('click', () => pickMapPoint(lat, lon, name));
       results.appendChild(el);
     });

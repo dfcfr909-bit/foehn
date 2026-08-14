@@ -37,6 +37,21 @@ const NOMINATIM = {
   '笙ケ岳': [YAMAGATA],       // 揺れを当てて初めて出る
   '笙ガ岳': [YAMAGATA],       // 同じ地点（重複するはず）
   '間ノ岳': [{ place_id: 3, lat: '35.6460', lon: '138.2282', display_name: '間ノ岳, 日本' }],
+  // ⚠ **OSMは日本の山名の網羅性が低い。** 釈迦ヶ岳は山梨の2件しか返らず、
+  //   矢板（高原山）が出てこない。件数上限ではなく索引に無い（実機で確認）
+  '釈迦ヶ岳': [
+    { place_id: 10, lat: '35.6480', lon: '138.7060', display_name: '釈迦ヶ岳, 笛吹市, 山梨県, 日本' },
+    { place_id: 11, lat: '35.5340', lon: '138.4600', display_name: '釈迦ヶ岳, 市川三郷町, 西八代郡, 山梨県, 日本' },
+  ],
+};
+
+/* 国土地理院の地名検索。OSMに無い峰を埋める役。
+   矢板（高原山）の釈迦ヶ岳はこちらにだけある。 */
+const YAITA = { title: '釈迦ヶ岳', lon: 139.7772, lat: 36.8990 };
+const GSI = {
+  '釈迦ヶ岳': [YAITA],
+  '笙ヶ岳': [], '笙ケ岳': [], '笙ガ岳': [],
+  '富士山': [{ title: '富士山', lon: 138.7274, lat: 35.3606 }],
 };
 
 (async () => {
@@ -45,7 +60,8 @@ const NOMINATIM = {
   const browser = await chromium.launch({
     executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
   const errors = [];
-  const hits = [];
+  const hits = [], gsiHits = [];
+  let gsiBlocked = false;
 
   const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   page.on('pageerror', e => errors.push(e.message));
@@ -64,6 +80,16 @@ const NOMINATIM = {
       hits.push(q);
       return route.fulfill({ contentType: 'application/json',
         body: JSON.stringify(NOMINATIM[q] || []),
+        headers: { 'access-control-allow-origin': '*' } });
+    }
+    if (url.includes('msearch.gsi.go.jp/address-search')) {
+      const q = new URL(url).searchParams.get('q');
+      gsiHits.push(q);
+      if (gsiBlocked) return route.abort();   // CORSで読めない環境の再現
+      return route.fulfill({ contentType: 'application/json',
+        body: JSON.stringify((GSI[q] || []).map(r => ({
+          geometry: { coordinates: [r.lon, r.lat] }, properties: { title: r.title },
+        }))),
         headers: { 'access-control-allow-origin': '*' } });
     }
     if (url.includes('api.open-meteo.com')) {
@@ -115,13 +141,46 @@ const NOMINATIM = {
     '★同じ地点を重複して出さない（ケとガで2回引いても1件）', rows);
   ok(hits.length <= 3, '★★Nominatimを叩く回数が上限内', hits);
 
+  /* --- OSMに無い峰を地理院が埋めること ---
+     ⚠ 実機で踏んだ件。「釈迦ヶ岳」はOSMだと山梨の2件しか返らず、
+       矢板（高原山）が出てこなかった。**情報源を足すしか手が無い。** */
+  hits.length = 0; gsiHits.length = 0;
+  const shaka = await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '釈迦ヶ岳';
+    await doMapSearch();
+    return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+      name: el.querySelector('.map-result-name').textContent,
+      sub: el.querySelector('.map-result-sub').textContent,
+    }));
+  });
+  ok(shaka.length === 3, '★★OSMの2件に地理院の1件が加わる', shaka);
+  ok(shaka.some(r => r.sub.includes('国土地理院')),
+    '★★★OSMに無い峰（矢板の釈迦ヶ岳）が地理院側から出る', shaka);
+  ok(shaka.some(r => r.sub.includes('笛吹市')) && shaka.some(r => r.sub.includes('市川三郷町')),
+    'OSM側の候補も消えていない', shaka);
+  ok(gsiHits.length >= 1, '地理院にも問い合わせている', gsiHits);
+
+  /* --- 地理院が読めない環境（CORS）でも壊れないこと ---
+     ⚠ ブラウザから叩けるかは環境依存。**読めなければOSMだけに戻る**だけで、
+       検索そのものが失敗してはいけない。 */
+  gsiBlocked = true;
+  const fallback = await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '釈迦ヶ岳';
+    await doMapSearch();
+    return [...document.querySelectorAll('#map-results .map-result-item')].map(el =>
+      el.querySelector('.map-result-sub').textContent);
+  });
+  ok(fallback.length === 2, '★★地理院が読めなくてもOSMの結果は出る（検索が壊れない）', fallback);
+  ok(!fallback.some(t => t.includes('国土地理院')), '読めなかった側は混ざらない', fallback);
+  gsiBlocked = false;
+
   /* --- 揺れの無い語では余計に叩かないこと --- */
   hits.length = 0;
   await page.evaluate(async () => {
     document.getElementById('map-search-input').value = '富士山';
     await doMapSearch();
   });
-  ok(hits.length === 1, '揺れの無い語は1回だけ叩く', hits);
+  ok(hits.length === 1, '揺れの無い語はOSMを1回だけ叩く', hits);
 
   ok(!errors.length, 'ページ内で例外が出ていない', errors);
   await browser.close();
