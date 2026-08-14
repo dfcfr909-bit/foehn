@@ -19,6 +19,10 @@ on:
         description: '許容差(m)。これを超える差を「要確認」として出す'
         required: false
         default: '200'
+      radius:
+        description: 'snapの探索半径(km)。既定6では届かない峰がある（大朝日岳・皇海山など）'
+        required: false
+        default: '6'
 
 permissions:
   contents: read
@@ -49,7 +53,7 @@ jobs:
         if: inputs.mode == 'snap'
         run: |
           set +e
-          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" | tee result.txt
+          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" --radius "${{ inputs.radius }}" | tee result.txt
           exit 0
 
       - name: 結果をサマリーへ
