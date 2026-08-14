@@ -48,6 +48,7 @@ const FETCH_TIMEOUT_MS = 20000;  // 1本のリクエストがこれを超えた�
 const FETCH_TRIES = 3;
 const LOCALMAX_KM = 0.5;     // 吸着先はこの範囲でいちばん高い点でなければならない
 const PROGRESS_EVERY = 10;   // 非TTYではこの件数ごとに1行出す
+const TILE_CACHE_MAX = 400;  // 抱えるタイルの上限（1枚256KB）。超えたら古いものから捨てる
 
 const arg = (name, def) => {
   const i = process.argv.indexOf('--' + name);
@@ -124,12 +125,25 @@ async function fetchTile(url) {
 }
 
 /* キャッシュには「値」ではなく「約束」を入れる。同じタイルへの並行要求が
-   二重に飛ぶのを防ぐため（並列化で初めて起きるようになった）。 */
+   二重に飛ぶのを防ぐため（並列化で初めて起きるようになった）。
+
+   ⚠ **際限なく溜めないこと。** タイルを入れ子配列で持ったまま全部残していた頃、
+     `--all`（110峰・約4,000枚）で**ヒープ4GBを使い切って落ちた**（90/110で OOM）。
+     いまは Float32Array（1枚256KB）で持ち、古いものから捨てる。
+     隣り合う峰はタイルを共有するので、数百枚あれば取り直しはほとんど起きない。 */
 const tileCache = new Map();
 function demTile(tx, ty) {
   const key = `${tx}/${ty}`;
-  if (!tileCache.has(key)) tileCache.set(key, loadTile(tx, ty));
-  return tileCache.get(key);
+  if (tileCache.has(key)) {
+    const hit = tileCache.get(key);
+    tileCache.delete(key); tileCache.set(key, hit);   // 使ったものを新しい側へ
+    return hit;
+  }
+  const p = loadTile(tx, ty);
+  tileCache.set(key, p);
+  // Map は挿入順を保つので、先頭が最も古い
+  while (tileCache.size > TILE_CACHE_MAX) tileCache.delete(tileCache.keys().next().value);
+  return p;
 }
 async function loadTile(tx, ty) {
   const url = DEM_URL.replace('{z}', DEM_Z).replace('{x}', tx).replace('{y}', ty);
@@ -138,11 +152,20 @@ async function loadTile(tx, ty) {
     try {
       const res = await fetchTile(url);
       if (res.ok) {
-        const txt = await res.text();
-        // 256行 × 256列のCSV。データ無しは "e"
-        grid = txt.trim().split('\n').map(line =>
-          line.split(',').map(v => (v === 'e' || v === '') ? null : Number(v)));
-        if (grid.length !== 256) grid = null;   // 想定と違う形なら使わない
+        // 256行 × 256列のCSV。データ無しは "e"。無い所は -Infinity にしておく
+        // （NaN にすると移動最大値フィルタの比較が常に false になって壊れる）
+        const lines = (await res.text()).trim().split('\n');
+        if (lines.length === 256) {
+          grid = new Float32Array(65536).fill(-Infinity);
+          for (let y = 0; y < 256; y++) {
+            const cols = lines[y].split(',');
+            for (let x = 0; x < 256; x++) {
+              const v = cols[x];
+              if (v && v !== 'e') { const n = +v; if (isFinite(n)) grid[y * 256 + x] = n; }
+            }
+          }
+        }
+        // 想定と違う形なら使わない（grid は null のまま）
       } else if (res.status !== 404) {
         throw new Error('HTTP ' + res.status);
       }
@@ -199,12 +222,7 @@ async function findSummit(peak) {
     if (g.err) { errors.push(g.err); continue; }
     const ox = (t.tx - tx0) * 256, oy = (t.ty - ty0) * 256;
     for (let py = 0; py < 256; py++) {
-      const row = g[py];
-      if (!row) continue;
-      for (let px = 0; px < 256; px++) {
-        const h = row[px];
-        if (h != null && isFinite(h)) grid[(oy + py) * W + ox + px] = h;
-      }
+      grid.set(g.subarray(py * 256, py * 256 + 256), (oy + py) * W + ox);
     }
   }
 
@@ -298,8 +316,8 @@ if (!ALL) {
     progress(i + 1, cells.length, '対象を選別中');
     const grid = await tile;
     if (!grid || grid.err) { kept.push(p); continue; }   // 読めないものは念のため対象に
-    const h = grid[Math.floor((yf - ty) * 256)]?.[Math.floor((xf - tx) * 256)];
-    if (h == null || Math.abs(p.elev - h) > TOL) kept.push(p);
+    const h = grid[Math.floor((yf - ty) * 256) * 256 + Math.floor((xf - tx) * 256)];
+    if (h === -Infinity || Math.abs(p.elev - h) > TOL) kept.push(p);
   }
   progressEnd();
   targets = kept;
