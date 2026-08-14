@@ -22,6 +22,12 @@
  * ⚠ 同名の山は各地にある（駒ヶ岳・大日岳・別山…）。だから
  *   **areas.json の座標に最も近い候補**を選ぶ。全国から名前だけで選ばない。
  *
+ * ⚠ **山名は辞書ごとに表記が違う。1字違うだけで空振りする。**
+ *   鳥海山の笙ヶ岳は地理院に「笙**ガ**岳」で載っている。「笙ヶ岳」で引くと
+ *   岐阜県の笙ヶ岳(908m)しか返らず、**525km離れているので「同名の別の山」と
+ *   誤って結論づけていた**（実際には辞書に有り、引けていなかっただけ）。
+ *   揺れを作って引き直し、名前の照合も揺れを吸収してから行う。
+ *
  * 使い方:
  *   node scripts/searchPeaks.mjs             # 全110峰
  *   node scripts/searchPeaks.mjs --far 3     # これ以上離れていたら「要確認」。既定3km
@@ -52,6 +58,38 @@ const FAR_KM = arg('far', 3);      // これを超えて離れていたら要確
    これを「別の山を指している疑い」に混ぜると、**直すべきものが無い所を疑わせる**。
    これほど離れた座標なら checkPeaks の標高照合が先に落ちるので、区別してよい。 */
 const SAMENAME_KM = arg('samename', 50);
+
+/* 山名の表記揺れ。同じ山が辞書ごとに違う字で載っている。 */
+const NAME_VARIANT_GROUPS = [
+  ['ヶ', 'ケ', 'ガ', 'が', 'ヵ', 'カ'],   // 笙ヶ岳 / 笙ケ岳 / 笙ガ岳
+  ['ノ', 'の', '之'],                     // 間ノ岳 / 間の岳
+];
+const VARIANT_MAX = 3;   // 1峰あたりに引く回数の上限（相手方への配慮）
+
+// 照合用に揺れをならす。各組の先頭の字へ寄せる
+function normalizeName(s) {
+  let t = String(s).normalize('NFKC').trim().replace(/[\s・]/g, '');
+  for (const group of NAME_VARIANT_GROUPS) {
+    for (const ch of group.slice(1)) t = t.split(ch).join(group[0]);
+  }
+  return t;
+}
+
+// 引くための表記揺れ。元の語を先頭に、多くて VARIANT_MAX 個まで
+function nameVariants(q, max = VARIANT_MAX) {
+  const out = [q];
+  for (const group of NAME_VARIANT_GROUPS) {
+    const hit = group.find(ch => q.includes(ch));
+    if (!hit) continue;
+    for (const ch of group) {
+      if (ch === hit) continue;
+      const v = q.split(hit).join(ch);
+      if (!out.includes(v)) out.push(v);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const rad = d => d * Math.PI / 180;
@@ -93,18 +131,24 @@ async function fetchJson(url) {
      ⚠ **誤検出を放っておくと、本物の要確認（大朝日岳13.25km・平ヶ岳6.64km・
         五竜岳6.41km）がその中に埋もれて見えなくなる。** それがこの絞り込みの目的。 */
 function titleMatches(title, name) {
-  const t = String(title).trim();
-  if (t === name) return true;
+  const t = normalizeName(title);
+  if (t === normalizeName(name)) return true;
   // 「立山（雄山）」のように括弧つきで持っている峰は、括弧の前で照合する
   const base = name.replace(/[（(].*$/, '').trim();
-  return base.length > 1 && t === base;
+  return base.length > 1 && t === normalizeName(base);
 }
 
 /* 名前で引き、areas.json の座標に最も近い候補を返す。
    ⚠ 「1件目」を採らないこと。同名の山が各地にあるので順番に意味は無い。 */
 async function lookup(peak) {
-  const json = await fetchJson(`${SEARCH_URL}?q=${encodeURIComponent(peak.name)}`);
-  const feats = Array.isArray(json) ? json : (json && json.features) || [];
+  // 表記揺れぶんだけ順に引いて混ぜる（1字違いで空振りしないため）
+  const feats = [];
+  for (const term of nameVariants(peak.name)) {
+    const json = await fetchJson(`${SEARCH_URL}?q=${encodeURIComponent(term)}`);
+    const list = Array.isArray(json) ? json : (json && json.features) || [];
+    feats.push(...list);
+    await sleep(SLEEP_MS);
+  }
   let best = null, seen = 0;
   for (const f of feats) {
     const c = f && f.geometry && f.geometry.coordinates;
