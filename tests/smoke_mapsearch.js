@@ -14,6 +14,7 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const ROOT = path.join(__dirname, '..');
 const HTML = fs.readFileSync(path.join(ROOT, 'sotoki_v4.html'), 'utf8');
 const ENGINE = fs.readFileSync(path.join(ROOT, 'snowRanking.js'), 'utf8');
@@ -25,6 +26,40 @@ const LEAFLET_CSS = fs.readFileSync(__dirname + '/node_modules/leaflet/dist/leaf
 
 // 鳥海山（新山）付近を見ている状態にする
 const LAT = 39.0994, LON = 140.0489;
+
+/* --- 標高タイル（国土地理院 dem_png）を組み立てる ---
+   x = R*65536 + G*256 + B、標高 = x * 0.01。単色のPNGを返せば1画素読みで足りる。 */
+const CRC_T = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function CRC(buf) { let c = 0xffffffff; for (const b of buf) c = CRC_T[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function pngChunk(type, data) {
+  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+  const t = Buffer.from(type, 'ascii');
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(CRC(Buffer.concat([t, data])));
+  return Buffer.concat([len, t, data, crc]);
+}
+function demPng(metres) {
+  const x = Math.round(metres * 100);
+  const r = (x >> 16) & 255, g = (x >> 8) & 255, b = x & 255;
+  const W = 256, H = 256;
+  const raw = Buffer.alloc((W * 3 + 1) * H);
+  for (let y = 0; y < H; y++) {
+    const o = y * (W * 3 + 1);
+    for (let xx = 0; xx < W; xx++) { raw[o + 1 + xx * 3] = r; raw[o + 2 + xx * 3] = g; raw[o + 3 + xx * 3] = b; }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+// タイル番号 → そのタイルの中心の緯度経度（どの候補のタイルかを見分ける）
+function tileCenter(z, x, y) {
+  const n = Math.pow(2, z);
+  const lon = (x + 0.5) / n * 360 - 180;
+  const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI;
+  return { lat, lon };
+}
 
 /* 実物の Nominatim の振る舞いを模す。**表記が完全に一致したときだけ返す。**
    これが今回の不具合の本体なので、ここを緩めると検査にならない。 */
@@ -45,11 +80,19 @@ const NOMINATIM = {
   ],
 };
 
+/* 五竜岳。地理院は同名を2つ返す。**標高を併記しないと選び分けられない**
+   （実機で確認。1,585m の方と 2,814m の北アルプス）。 */
+const GORYU_LOW  = { title: '五龍岳', lon: 140.1500, lat: 38.9000, elev: 1585 };
+const GORYU_HIGH = { title: '五龍岳', lon: 137.7526, lat: 36.6584, elev: 2814 };
+
 /* 国土地理院の地名検索。OSMに無い峰を埋める役。
    矢板（高原山）の釈迦ヶ岳はこちらにだけある。 */
-const YAITA = { title: '釈迦ヶ岳', lon: 139.7772, lat: 36.8990 };
+const YAITA = { title: '釈迦ヶ岳', lon: 139.7772, lat: 36.8990, elev: 1795 };
 const GSI = {
   '釈迦ヶ岳': [YAITA],
+  // ⚠ 地理院は竜／龍を自前で吸収して「五龍岳」を返す（実機で確認）。
+  //    こちらで漢字の揺れを作る必要は無いので、キーは打った字のまま
+  '五竜岳': [GORYU_LOW, GORYU_HIGH],
   '笙ヶ岳': [], '笙ケ岳': [], '笙ガ岳': [],
   '富士山': [{ title: '富士山', lon: 138.7274, lat: 35.3606 }],
 };
@@ -60,8 +103,8 @@ const GSI = {
   const browser = await chromium.launch({
     executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
   const errors = [];
-  const hits = [], gsiHits = [];
-  let gsiBlocked = false;
+  const hits = [], gsiHits = [], demHits = [];
+  let gsiBlocked = false, demBlocked = false;
 
   const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   page.on('pageerror', e => errors.push(e.message));
@@ -90,6 +133,20 @@ const GSI = {
         body: JSON.stringify((GSI[q] || []).map(r => ({
           geometry: { coordinates: [r.lon, r.lat] }, properties: { title: r.title },
         }))),
+        headers: { 'access-control-allow-origin': '*' } });
+    }
+    if (url.includes('/xyz/dem_png/')) {
+      demHits.push(url);
+      if (demBlocked) return route.abort();   // 標高が読めない環境の再現
+      const m = url.match(/dem_png\/(\d+)\/(\d+)\/(\d+)\.png/);
+      const c = tileCenter(Number(m[1]), Number(m[2]), Number(m[3]));
+      // いちばん近い候補の標高を返す
+      let best = null;
+      for (const p of [GORYU_LOW, GORYU_HIGH, YAITA]) {
+        const d = Math.hypot(c.lat - p.lat, c.lon - p.lon);
+        if (!best || d < best.d) best = { d, elev: p.elev || 1000 };
+      }
+      return route.fulfill({ contentType: 'image/png', body: demPng(best.elev),
         headers: { 'access-control-allow-origin': '*' } });
     }
     if (url.includes('api.open-meteo.com')) {
@@ -173,6 +230,47 @@ const GSI = {
   ok(fallback.length === 2, '★★地理院が読めなくてもOSMの結果は出る（検索が壊れない）', fallback);
   ok(!fallback.some(t => t.includes('国土地理院')), '読めなかった側は混ざらない', fallback);
   gsiBlocked = false;
+
+  /* --- 同名峰は標高で選び分けられること ---
+     ⚠ 実機で踏んだ件。「五竜岳」で地理院が同名を2つ返し、**どちらが北アルプスか
+       名前と住所だけでは分からなかった**。標高を併記すれば一目で選べる。 */
+  const goryu = await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '五竜岳';
+    await doMapSearch();
+    await new Promise(r => setTimeout(r, 600));   // 標高は一覧を出したあとに埋まる
+    return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+      name: el.querySelector('.map-result-name').textContent,
+      elev: el.querySelector('.map-result-elev').textContent,
+    }));
+  });
+  ok(goryu.length === 2, '同名2件が出る', goryu);
+  ok(goryu.some(r => r.elev === '2814m') && goryu.some(r => r.elev === '1585m'),
+    '★★★同名峰に標高が併記され、選び分けられる', goryu);
+
+  /* ⚠ **選択中の地点の標高を壊さないこと。**
+     候補の標高読みは `state.demElevation` を触ってはいけない。 */
+  const kept = await page.evaluate(async () => {
+    state.demElevation = 12345;                       // 目印
+    document.getElementById('map-search-input').value = '五竜岳';
+    await doMapSearch();
+    await new Promise(r => setTimeout(r, 600));
+    return state.demElevation;
+  });
+  ok(kept === 12345, '★★候補の標高読みが選択中の地点の標高を上書きしない', kept);
+
+  /* --- 標高が読めなくても一覧は出ること --- */
+  demBlocked = true;
+  const noElev = await page.evaluate(async () => {
+    demCache.clear();   // ⚠ 前の検索でキャッシュ済み。消さないと「読めた」ままになる
+    document.getElementById('map-search-input').value = '釈迦ヶ岳';
+    await doMapSearch();
+    await new Promise(r => setTimeout(r, 600));
+    return [...document.querySelectorAll('#map-results .map-result-item')].map(el =>
+      el.querySelector('.map-result-elev').textContent);
+  });
+  ok(noElev.length === 3, '★標高が読めなくても候補は出る（一覧を止めない）', noElev);
+  ok(noElev.every(t => t === ''), '読めなかった標高は空のまま', noElev);
+  demBlocked = false;
 
   /* --- 揺れの無い語では余計に叩かないこと --- */
   hits.length = 0;

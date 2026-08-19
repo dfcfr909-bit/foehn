@@ -770,6 +770,9 @@ html, body {
 .map-result-item:active { background: var(--bg2); }
 .map-result-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .map-result-sub { font-size: 11px; color: var(--text3); }
+/* 同名峰の選び分けは標高がいちばん確実（五竜岳の1,585mと2,814m）。
+   名前の右に控えめに添える。読み取り待ちの間は空のまま */
+.map-result-elev { font-size: 12px; font-weight: 400; color: var(--text3); margin-left: 6px; }
 .map-result-msg { padding: 12px 14px; font-size: 12px; color: var(--text3); text-align: center; }
 /* overflow:hidden が要る。レイヤーパネルは閉じているとき translateY(101%) で
    下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
@@ -6093,13 +6096,13 @@ function decodeDemPixel(r, g, b) {
 const demCache = new Map();
 function demKey(lat, lon) { return `${lat.toFixed(4)},${lon.toFixed(4)}`; }
 
-function fetchPointElevation(lat, lon) {
+/* 副作用なしで1点の標高を読む。
+   ⚠ **`state` を触らないこと。** 検索候補の標高を出すのにも使うので、
+     ここで `state.demElevation` を書くと**選択中の地点の標高が上書きされる**。
+     選択地点の更新は `fetchPointElevation` の側だけで行う。 */
+function readDemElevation(lat, lon) {
   const key = demKey(lat, lon);
-  if (demCache.has(key)) {
-    state.demElevation = demCache.get(key);
-    updateElevationLabel();
-    return Promise.resolve(state.demElevation);
-  }
+  if (demCache.has(key)) return Promise.resolve(demCache.get(key));
   const { tx, ty, px, py } = lonLatToTilePixel(lat, lon, DEM_ZOOM);
   const url = DEM_TILE_URL.replace('{z}', DEM_ZOOM).replace('{x}', tx).replace('{y}', ty);
   return new Promise(resolve => {
@@ -6116,12 +6119,19 @@ function fetchPointElevation(lat, lon) {
         elev = decodeDemPixel(d[0], d[1], d[2]);
       } catch (e) { elev = null; }        // CORS等で読めなくても地図は止めない
       demCache.set(key, elev);
-      state.demElevation = elev;
-      updateElevationLabel();
       resolve(elev);
     };
-    img.onerror = () => { demCache.set(key, null); state.demElevation = null; updateElevationLabel(); resolve(null); };
+    img.onerror = () => { demCache.set(key, null); resolve(null); };
     img.src = url;
+  });
+}
+
+// 選択地点の標高を読んで表示まで更新する（こちらは state を触る）
+function fetchPointElevation(lat, lon) {
+  return readDemElevation(lat, lon).then(elev => {
+    state.demElevation = elev;
+    updateElevationLabel();
+    return elev;
   });
 }
 
@@ -6883,10 +6893,20 @@ async function doMapSearch() {
       el.className = 'map-result-item';
       const sub = item._src ? `${full}（${item._src}）` : full;
       el.innerHTML =
-        `<div class="map-result-name">${name}</div>` +
+        `<div class="map-result-name">${name}<span class="map-result-elev"></span></div>` +
         `<div class="map-result-sub">${sub}</div>`;
+      /* ⚠ **第4引数（山頂標高）は渡さない。** ここで渡せるのはDEMの読みであって
+         公称の山頂標高ではない。`state.summitElev` は areas.json の値のための席で、
+         DEMは `state.demElevation` に入って自動で使われる（`docs/spec/judge.md`）。 */
       el.addEventListener('click', () => pickMapPoint(lat, lon, name));
       results.appendChild(el);
+      /* 標高を添える。⚠ **読み取りを待って一覧を止めないこと。**
+         候補ぶんのタイルを引くので、先に一覧を出してから埋める。 */
+      readDemElevation(lat, lon).then(elev => {
+        if (typeof elev !== 'number' || !isFinite(elev)) return;
+        const sp = el.querySelector('.map-result-elev');
+        if (sp) sp.textContent = `${Math.round(elev)}m`;
+      });
     });
   } catch (e) {
     results.innerHTML = `<div class="map-result-msg">検索失敗: ${e.message}</div>`;
