@@ -10,15 +10,31 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check=ズレている峰を洗い出す / snap=正しい座標の修正案を出す'
+        description: 'check=ズレを洗い出す / snap=修正案を出す / search=地名検索と突き合わせる'
         required: false
         default: 'check'
         type: choice
-        options: [check, snap]
+        options: [check, snap, search]
       tol:
-        description: '許容差(m)。これを超える差を「要確認」として出す'
+        description: '許容差(m)。これを超える差を「要確認」として出す。200では笙ヶ岳級のズレを通す'
         required: false
-        default: '200'
+        default: '100'
+      radius:
+        description: 'snapの探索半径(km)。既定6では届かない峰がある（大朝日岳・皇海山など）'
+        required: false
+        default: '6'
+      match:
+        description: 'snapで「山頂と一致」とみなす標高差(m)。既定15。尖った山頂はDEMが低く読むので広げる'
+        required: false
+        default: '15'
+      # ⚠ 選択肢に on/off・yes/no を使わないこと。YAMLが真偽値として解釈するため
+      #    許可値の一覧が空になり、workflow_dispatch が422で弾かれる。
+      scope:
+        description: 'snapの対象。changed=ズレている峰だけ / all=全110峰'
+        required: false
+        default: 'changed'
+        type: choice
+        options: [changed, all]
 
 permissions:
   contents: read
@@ -49,7 +65,17 @@ jobs:
         if: inputs.mode == 'snap'
         run: |
           set +e
-          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" | tee result.txt
+          node scripts/snapPeaks.mjs --tol "${{ inputs.tol }}" --radius "${{ inputs.radius }}" \
+            --match "${{ inputs.match }}" ${{ inputs.scope == 'all' && '--all' || '' }} | tee result.txt
+          exit 0
+
+      # 名前から座標を引いて「そもそも別の山を指していないか」を見る。
+      # ⚠ 標高の根拠にはしない（地名の代表点は最高地点とは限らない）。
+      - name: 地名検索と突き合わせ
+        if: inputs.mode == 'search'
+        run: |
+          set +e
+          node scripts/searchPeaks.mjs | tee result.txt
           exit 0
 
       - name: 結果をサマリーへ

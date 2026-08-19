@@ -53,8 +53,11 @@
 - `.claude/` — スラッシュコマンド（`/test` `/status` `/spec` `/release`）・permissions・起動時のブランチ鮮度フック
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 - `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
-- `scripts/checkPeaks.mjs` / `scripts/snapPeaks.mjs` — `areas.json` の座標の検査と山頂への吸着。
+- `scripts/checkPeaks.mjs` / `scripts/snapPeaks.mjs` / `scripts/searchPeaks.mjs` —
+  `areas.json` の座標の検査・山頂への吸着・地名検索との突き合わせ。
   手元から地理院に到達できないので **GitHub Actions「山頂座標の検査」から手動実行する**
+  （`mode` は `check` / `snap` / `search`）。
+  **標高で「山頂かどうか」、名前で「どの山か」**を見る分担 → `docs/decisions.md` 2026-08-14
 
 ## 改修計画
 

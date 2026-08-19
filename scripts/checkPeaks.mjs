@@ -28,7 +28,15 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GSI = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php';
 const SLEEP_MS = 250;        // 相手方に負荷をかけない間隔
-const DEFAULT_TOL_M = 200;   // これを超える差を「要確認」とする
+/* これを超える差を「要確認」とする。
+   ⚠ **200m では緩すぎる。** #13 で笙ヶ岳（1,635m）が 200m の網を抜けた。
+     座標は山頂から1km以上外れていたのに、指していた斜面が 1,518m あったため
+     差は 117m にとどまり「合格」になっていた。**「全110峰が200m以内」でも
+     山頂を指しているとは限らない。**
+   全110峰を許容差60mで洗い直したところ、要確認は笙ヶ岳のただ1件だった
+     （＝正しく山頂に載っている109峰はすべて60m以内）。
+     笙ヶ岳の117mとの間を取って100mにしてある。 */
+const DEFAULT_TOL_M = 100;
 
 const argTol = process.argv.indexOf('--tol');
 const TOL = argTol > -1 ? Number(process.argv[argTol + 1]) : DEFAULT_TOL_M;

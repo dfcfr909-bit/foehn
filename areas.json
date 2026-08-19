@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "note": "座標は概算。実装時に国土地理院で全点検証すること。hyakumeizanは日本百名山（深田久弥）",
+  "note": "座標は国土地理院で全110峰を検証済み（2026-08-14 / #13）。hyakumeizanは日本百名山（深田久弥）",
   "areas": [
     {
       "id": "hakkoda",
@@ -9,15 +9,15 @@
       "peaks": [
         {
           "name": "八甲田大岳",
-          "lat": 40.6592,
-          "lon": 140.877,
+          "lat": 40.6589,
+          "lon": 140.8772,
           "elev": 1585,
           "hyakumeizan": true
         },
         {
           "name": "高田大岳",
-          "lat": 40.6539,
-          "lon": 140.9086,
+          "lat": 40.6527,
+          "lon": 140.9084,
           "elev": 1559
         }
       ]
@@ -29,15 +29,15 @@
       "peaks": [
         {
           "name": "新山",
-          "lat": 39.0989,
-          "lon": 140.0486,
+          "lat": 39.0994,
+          "lon": 140.0489,
           "elev": 2236,
           "hyakumeizan": true
         },
         {
           "name": "笙ヶ岳",
-          "lat": 39.0972,
-          "lon": 140.0089,
+          "lat": 39.0927,
+          "lon": 140.002,
           "elev": 1635
         }
       ]
@@ -49,15 +49,15 @@
       "peaks": [
         {
           "name": "熊野岳",
-          "lat": 38.1439,
-          "lon": 140.4397,
+          "lat": 38.1438,
+          "lon": 140.4399,
           "elev": 1841,
           "hyakumeizan": true
         },
         {
           "name": "刈田岳",
-          "lat": 38.1289,
-          "lon": 140.4436,
+          "lat": 38.1277,
+          "lon": 140.4481,
           "elev": 1758
         }
       ]
@@ -69,15 +69,15 @@
       "peaks": [
         {
           "name": "飯豊本山",
-          "lat": 37.8547,
-          "lon": 139.7069,
+          "lat": 37.8548,
+          "lon": 139.7071,
           "elev": 2105,
           "hyakumeizan": true
         },
         {
           "name": "大日岳",
-          "lat": 37.8672,
-          "lon": 139.6603,
+          "lat": 37.8331,
+          "lon": 139.6606,
           "elev": 2128
         }
       ]
@@ -89,22 +89,22 @@
       "peaks": [
         {
           "name": "燧ヶ岳",
-          "lat": 36.9556,
+          "lat": 36.9551,
           "lon": 139.2853,
           "elev": 2356,
           "hyakumeizan": true
         },
         {
           "name": "至仏山",
-          "lat": 36.9036,
-          "lon": 139.1736,
+          "lat": 36.9034,
+          "lon": 139.1732,
           "elev": 2228,
           "hyakumeizan": true
         },
         {
           "name": "会津駒ヶ岳",
-          "lat": 37.0281,
-          "lon": 139.3572,
+          "lat": 37.0476,
+          "lon": 139.3537,
           "elev": 2133,
           "hyakumeizan": true
         }
@@ -124,8 +124,8 @@
         },
         {
           "name": "三本槍岳",
-          "lat": 37.1494,
-          "lon": 139.9569,
+          "lat": 37.1502,
+          "lon": 139.9614,
           "elev": 1917
         }
       ]
@@ -137,15 +137,15 @@
       "peaks": [
         {
           "name": "日光白根山",
-          "lat": 36.7989,
-          "lon": 139.3758,
+          "lat": 36.7986,
+          "lon": 139.3759,
           "elev": 2578,
           "hyakumeizan": true
         },
         {
           "name": "男体山",
-          "lat": 36.7653,
-          "lon": 139.4906,
+          "lat": 36.7651,
+          "lon": 139.4909,
           "elev": 2486,
           "hyakumeizan": true
         },
@@ -165,28 +165,28 @@
       "peaks": [
         {
           "name": "苗場山",
-          "lat": 36.8461,
-          "lon": 138.6931,
+          "lat": 36.8459,
+          "lon": 138.6903,
           "elev": 2145,
           "hyakumeizan": true
         },
         {
           "name": "平標山",
-          "lat": 36.796,
-          "lon": 138.845,
+          "lat": 36.8178,
+          "lon": 138.8219,
           "elev": 1984
         },
         {
           "name": "谷川岳",
-          "lat": 36.8378,
-          "lon": 138.9297,
+          "lat": 36.8371,
+          "lon": 138.9301,
           "elev": 1977,
           "hyakumeizan": true
         },
         {
           "name": "巻機山",
-          "lat": 37.02,
-          "lon": 138.968,
+          "lat": 36.9785,
+          "lon": 138.9645,
           "elev": 1967,
           "hyakumeizan": true
         }
@@ -199,15 +199,15 @@
       "peaks": [
         {
           "name": "火打山",
-          "lat": 36.9214,
-          "lon": 138.0697,
+          "lat": 36.9227,
+          "lon": 138.0681,
           "elev": 2462,
           "hyakumeizan": true
         },
         {
           "name": "妙高山",
-          "lat": 36.8917,
-          "lon": 138.1131,
+          "lat": 36.8913,
+          "lon": 138.1135,
           "elev": 2454,
           "hyakumeizan": true
         }
@@ -220,15 +220,15 @@
       "peaks": [
         {
           "name": "立山（雄山）",
-          "lat": 36.5725,
-          "lon": 137.6172,
+          "lat": 36.5759,
+          "lon": 137.6198,
           "elev": 3003,
           "hyakumeizan": true
         },
         {
           "name": "剱岳",
-          "lat": 36.6231,
-          "lon": 137.6169,
+          "lat": 36.6233,
+          "lon": 137.617,
           "elev": 2999,
           "hyakumeizan": true
         },
@@ -241,22 +241,22 @@
         },
         {
           "name": "薬師岳",
-          "lat": 36.4642,
-          "lon": 137.5442,
+          "lat": 36.4688,
+          "lon": 137.5448,
           "elev": 2926,
           "hyakumeizan": true
         },
         {
           "name": "鹿島槍ヶ岳",
-          "lat": 36.6217,
-          "lon": 137.7469,
+          "lat": 36.6245,
+          "lon": 137.747,
           "elev": 2889,
           "hyakumeizan": true
         },
         {
           "name": "五竜岳",
-          "lat": 36.6008,
-          "lon": 137.7525,
+          "lat": 36.6584,
+          "lon": 137.7526,
           "elev": 2814,
           "hyakumeizan": true
         }
@@ -269,42 +269,42 @@
       "peaks": [
         {
           "name": "奥穂高岳",
-          "lat": 36.2894,
-          "lon": 137.6478,
+          "lat": 36.2892,
+          "lon": 137.648,
           "elev": 3190,
           "hyakumeizan": true
         },
         {
           "name": "槍ヶ岳",
-          "lat": 36.3419,
-          "lon": 137.6475,
+          "lat": 36.342,
+          "lon": 137.6477,
           "elev": 3180,
           "hyakumeizan": true
         },
         {
           "name": "笠ヶ岳",
-          "lat": 36.2842,
-          "lon": 137.5556,
+          "lat": 36.3155,
+          "lon": 137.5504,
           "elev": 2898,
           "hyakumeizan": true
         },
         {
           "name": "常念岳",
-          "lat": 36.3364,
-          "lon": 137.7275,
+          "lat": 36.3255,
+          "lon": 137.7277,
           "elev": 2857,
           "hyakumeizan": true
         },
         {
           "name": "燕岳",
-          "lat": 36.4083,
+          "lat": 36.4067,
           "lon": 137.7128,
           "elev": 2763
         },
         {
           "name": "焼岳",
-          "lat": 36.2264,
-          "lon": 137.5872,
+          "lat": 36.2268,
+          "lon": 137.5874,
           "elev": 2455,
           "hyakumeizan": true
         }
@@ -317,15 +317,15 @@
       "peaks": [
         {
           "name": "乗鞍岳",
-          "lat": 36.1067,
-          "lon": 137.5533,
+          "lat": 36.1065,
+          "lon": 137.5536,
           "elev": 3026,
           "hyakumeizan": true
         },
         {
           "name": "御嶽山",
-          "lat": 35.8931,
-          "lon": 137.48,
+          "lat": 35.893,
+          "lon": 137.4805,
           "elev": 3067,
           "hyakumeizan": true
         }
@@ -345,8 +345,8 @@
         },
         {
           "name": "天狗岳",
-          "lat": 36.0203,
-          "lon": 138.353,
+          "lat": 36.0191,
+          "lon": 138.3554,
           "elev": 2646
         }
       ]
@@ -365,8 +365,8 @@
         },
         {
           "name": "空木岳",
-          "lat": 35.7203,
-          "lon": 137.826,
+          "lat": 35.719,
+          "lon": 137.8171,
           "elev": 2864,
           "hyakumeizan": true
         }
@@ -379,22 +379,22 @@
       "peaks": [
         {
           "name": "北岳",
-          "lat": 35.674,
+          "lat": 35.6746,
           "lon": 138.2389,
           "elev": 3193,
           "hyakumeizan": true
         },
         {
           "name": "間ノ岳",
-          "lat": 35.6461,
-          "lon": 138.2278,
+          "lat": 35.646,
+          "lon": 138.2282,
           "elev": 3190,
           "hyakumeizan": true
         },
         {
           "name": "仙丈ヶ岳",
-          "lat": 35.7197,
-          "lon": 138.183,
+          "lat": 35.72,
+          "lon": 138.1836,
           "elev": 3033,
           "hyakumeizan": true
         },
@@ -407,8 +407,8 @@
         },
         {
           "name": "鳳凰山",
-          "lat": 35.6994,
-          "lon": 138.3125,
+          "lat": 35.7018,
+          "lon": 138.3047,
           "elev": 2841,
           "hyakumeizan": true
         }
@@ -421,15 +421,15 @@
       "peaks": [
         {
           "name": "御前峰",
-          "lat": 36.1553,
-          "lon": 136.771,
+          "lat": 36.155,
+          "lon": 136.7715,
           "elev": 2702,
           "hyakumeizan": true
         },
         {
           "name": "別山",
-          "lat": 36.103,
-          "lon": 136.766,
+          "lat": 36.1055,
+          "lon": 136.7658,
           "elev": 2399
         }
       ]
@@ -448,8 +448,8 @@
         },
         {
           "name": "三ツ峠山",
-          "lat": 35.5486,
-          "lon": 138.803,
+          "lat": 35.5493,
+          "lon": 138.8092,
           "elev": 1785
         }
       ]
@@ -461,15 +461,15 @@
       "peaks": [
         {
           "name": "八経ヶ岳",
-          "lat": 34.174,
-          "lon": 135.907,
+          "lat": 34.1736,
+          "lon": 135.9075,
           "elev": 1915,
           "hyakumeizan": true
         },
         {
           "name": "日出ヶ岳",
-          "lat": 34.183,
-          "lon": 136.106,
+          "lat": 34.1852,
+          "lon": 136.1092,
           "elev": 1695,
           "hyakumeizan": true
         }
@@ -483,14 +483,14 @@
         {
           "name": "石鎚山",
           "lat": 33.767,
-          "lon": 133.115,
+          "lon": 133.1158,
           "elev": 1982,
           "hyakumeizan": true
         },
         {
           "name": "剣山",
-          "lat": 33.854,
-          "lon": 134.094,
+          "lat": 33.8536,
+          "lon": 134.0944,
           "elev": 1955,
           "hyakumeizan": true
         }
@@ -510,8 +510,8 @@
         },
         {
           "name": "祖母山",
-          "lat": 32.826,
-          "lon": 131.346,
+          "lat": 32.8281,
+          "lon": 131.347,
           "elev": 1756,
           "hyakumeizan": true
         }
@@ -524,8 +524,8 @@
       "peaks": [
         {
           "name": "利尻山",
-          "lat": 45.1786,
-          "lon": 141.2428,
+          "lat": 45.1785,
+          "lon": 141.242,
           "elev": 1721,
           "hyakumeizan": true
         }
@@ -538,15 +538,15 @@
       "peaks": [
         {
           "name": "羅臼岳",
-          "lat": 44.0764,
-          "lon": 145.1228,
+          "lat": 44.0758,
+          "lon": 145.1222,
           "elev": 1661,
           "hyakumeizan": true
         },
         {
           "name": "斜里岳",
-          "lat": 43.7658,
-          "lon": 144.7194,
+          "lat": 43.7657,
+          "lon": 144.7178,
           "elev": 1547,
           "hyakumeizan": true
         }
@@ -574,21 +574,21 @@
         {
           "name": "旭岳",
           "lat": 43.6636,
-          "lon": 142.8544,
+          "lon": 142.8541,
           "elev": 2291,
           "hyakumeizan": true
         },
         {
           "name": "トムラウシ山",
-          "lat": 43.5292,
-          "lon": 142.8506,
+          "lat": 43.5271,
+          "lon": 142.8487,
           "elev": 2141,
           "hyakumeizan": true
         },
         {
           "name": "十勝岳",
-          "lat": 43.4183,
-          "lon": 142.6864,
+          "lat": 43.4178,
+          "lon": 142.6863,
           "elev": 2077,
           "hyakumeizan": true
         }
@@ -601,8 +601,8 @@
       "peaks": [
         {
           "name": "幌尻岳",
-          "lat": 42.7061,
-          "lon": 142.6739,
+          "lat": 42.7194,
+          "lon": 142.6828,
           "elev": 2052,
           "hyakumeizan": true
         }
@@ -615,8 +615,8 @@
       "peaks": [
         {
           "name": "羊蹄山",
-          "lat": 42.8272,
-          "lon": 140.8111,
+          "lat": 42.8266,
+          "lon": 140.8115,
           "elev": 1898,
           "hyakumeizan": true
         }
@@ -629,7 +629,7 @@
       "peaks": [
         {
           "name": "岩木山",
-          "lat": 40.6564,
+          "lat": 40.6559,
           "lon": 140.3031,
           "elev": 1625,
           "hyakumeizan": true
@@ -643,15 +643,15 @@
       "peaks": [
         {
           "name": "八幡平",
-          "lat": 39.9578,
-          "lon": 140.8536,
+          "lat": 39.956,
+          "lon": 140.855,
           "elev": 1613,
           "hyakumeizan": true
         },
         {
           "name": "岩手山",
-          "lat": 39.8514,
-          "lon": 141.0011,
+          "lat": 39.8526,
+          "lon": 141.001,
           "elev": 2038,
           "hyakumeizan": true
         }
@@ -664,8 +664,8 @@
       "peaks": [
         {
           "name": "早池峰山",
-          "lat": 39.5556,
-          "lon": 141.4894,
+          "lat": 39.5584,
+          "lon": 141.489,
           "elev": 1917,
           "hyakumeizan": true
         }
@@ -678,8 +678,8 @@
       "peaks": [
         {
           "name": "月山",
-          "lat": 38.5486,
-          "lon": 140.0272,
+          "lat": 38.5491,
+          "lon": 140.0269,
           "elev": 1984,
           "hyakumeizan": true
         }
@@ -692,8 +692,8 @@
       "peaks": [
         {
           "name": "大朝日岳",
-          "lat": 38.1417,
-          "lon": 139.9331,
+          "lat": 38.2605,
+          "lon": 139.9223,
           "elev": 1871,
           "hyakumeizan": true
         }
@@ -706,15 +706,15 @@
       "peaks": [
         {
           "name": "西吾妻山",
-          "lat": 37.7331,
-          "lon": 140.1567,
+          "lat": 37.7381,
+          "lon": 140.1408,
           "elev": 2035,
           "hyakumeizan": true
         },
         {
           "name": "安達太良山",
-          "lat": 37.6222,
-          "lon": 140.2872,
+          "lat": 37.6211,
+          "lon": 140.2878,
           "elev": 1700,
           "hyakumeizan": true
         },
@@ -734,15 +734,15 @@
       "peaks": [
         {
           "name": "武尊山",
-          "lat": 36.7975,
-          "lon": 139.1361,
+          "lat": 36.8052,
+          "lon": 139.1326,
           "elev": 2158,
           "hyakumeizan": true
         },
         {
           "name": "黒檜山",
-          "lat": 36.5606,
-          "lon": 139.1936,
+          "lat": 36.5604,
+          "lon": 139.1933,
           "elev": 1828,
           "hyakumeizan": true
         }
@@ -769,22 +769,22 @@
       "peaks": [
         {
           "name": "草津白根山",
-          "lat": 36.6436,
-          "lon": 138.5281,
+          "lat": 36.6439,
+          "lon": 138.5277,
           "elev": 2160,
           "hyakumeizan": true
         },
         {
           "name": "四阿山",
           "lat": 36.5417,
-          "lon": 138.4058,
+          "lon": 138.4129,
           "elev": 2354,
           "hyakumeizan": true
         },
         {
           "name": "浅間山",
-          "lat": 36.4061,
-          "lon": 138.5231,
+          "lat": 36.4065,
+          "lon": 138.523,
           "elev": 2568,
           "hyakumeizan": true
         }
@@ -797,29 +797,29 @@
       "peaks": [
         {
           "name": "両神山",
-          "lat": 35.9925,
-          "lon": 138.8394,
+          "lat": 36.0234,
+          "lon": 138.8412,
           "elev": 1723,
           "hyakumeizan": true
         },
         {
           "name": "瑞牆山",
-          "lat": 35.8919,
-          "lon": 138.5872,
+          "lat": 35.8935,
+          "lon": 138.592,
           "elev": 2230,
           "hyakumeizan": true
         },
         {
           "name": "金峰山",
-          "lat": 35.8697,
-          "lon": 138.6203,
+          "lat": 35.8716,
+          "lon": 138.6254,
           "elev": 2599,
           "hyakumeizan": true
         },
         {
           "name": "甲武信ヶ岳",
-          "lat": 35.9128,
-          "lon": 138.7231,
+          "lat": 35.909,
+          "lon": 138.729,
           "elev": 2475,
           "hyakumeizan": true
         },
@@ -832,8 +832,8 @@
         },
         {
           "name": "大菩薩嶺",
-          "lat": 35.7481,
-          "lon": 138.8461,
+          "lat": 35.7487,
+          "lon": 138.8455,
           "elev": 2057,
           "hyakumeizan": true
         }
@@ -846,8 +846,8 @@
       "peaks": [
         {
           "name": "丹沢山",
-          "lat": 35.4739,
-          "lon": 139.1636,
+          "lat": 35.4743,
+          "lon": 139.1627,
           "elev": 1567,
           "hyakumeizan": true
         }
@@ -860,8 +860,8 @@
       "peaks": [
         {
           "name": "天城山",
-          "lat": 34.8542,
-          "lon": 139,
+          "lat": 34.8628,
+          "lon": 139.0017,
           "elev": 1406,
           "hyakumeizan": true
         }
@@ -874,15 +874,15 @@
       "peaks": [
         {
           "name": "越後駒ヶ岳",
-          "lat": 37.0731,
-          "lon": 139.0847,
+          "lat": 37.1236,
+          "lon": 139.0753,
           "elev": 2003,
           "hyakumeizan": true
         },
         {
           "name": "平ヶ岳",
-          "lat": 36.9436,
-          "lon": 139.1656,
+          "lat": 37.0021,
+          "lon": 139.1708,
           "elev": 2141,
           "hyakumeizan": true
         }
@@ -895,15 +895,15 @@
       "peaks": [
         {
           "name": "雨飾山",
-          "lat": 36.9061,
-          "lon": 137.9536,
+          "lat": 36.902,
+          "lon": 137.9627,
           "elev": 1963,
           "hyakumeizan": true
         },
         {
           "name": "高妻山",
-          "lat": 36.7778,
-          "lon": 138.0631,
+          "lat": 36.8,
+          "lon": 138.0519,
           "elev": 2353,
           "hyakumeizan": true
         }
@@ -916,22 +916,22 @@
       "peaks": [
         {
           "name": "黒部五郎岳",
-          "lat": 36.3928,
-          "lon": 137.5386,
+          "lat": 36.3926,
+          "lon": 137.5399,
           "elev": 2840,
           "hyakumeizan": true
         },
         {
           "name": "鷲羽岳",
-          "lat": 36.4083,
-          "lon": 137.6081,
+          "lat": 36.4029,
+          "lon": 137.6053,
           "elev": 2924,
           "hyakumeizan": true
         },
         {
           "name": "水晶岳",
-          "lat": 36.4278,
-          "lon": 137.5936,
+          "lat": 36.4263,
+          "lon": 137.6028,
           "elev": 2986,
           "hyakumeizan": true
         }
@@ -944,36 +944,36 @@
       "peaks": [
         {
           "name": "塩見岳",
-          "lat": 35.5717,
-          "lon": 138.1789,
+          "lat": 35.5738,
+          "lon": 138.1832,
           "elev": 3052,
           "hyakumeizan": true
         },
         {
           "name": "悪沢岳",
-          "lat": 35.4917,
-          "lon": 138.1806,
+          "lat": 35.5008,
+          "lon": 138.1824,
           "elev": 3141,
           "hyakumeizan": true
         },
         {
           "name": "赤石岳",
-          "lat": 35.46,
-          "lon": 138.1583,
+          "lat": 35.4611,
+          "lon": 138.1573,
           "elev": 3121,
           "hyakumeizan": true
         },
         {
           "name": "聖岳",
-          "lat": 35.4139,
-          "lon": 138.1436,
+          "lat": 35.4225,
+          "lon": 138.1396,
           "elev": 3013,
           "hyakumeizan": true
         },
         {
           "name": "光岳",
-          "lat": 35.3364,
-          "lon": 138.0872,
+          "lat": 35.3382,
+          "lon": 138.0839,
           "elev": 2592,
           "hyakumeizan": true
         }
@@ -986,22 +986,22 @@
       "peaks": [
         {
           "name": "美ヶ原",
-          "lat": 36.2236,
-          "lon": 138.1103,
+          "lat": 36.2259,
+          "lon": 138.1075,
           "elev": 2034,
           "hyakumeizan": true
         },
         {
           "name": "霧ヶ峰",
-          "lat": 36.1053,
-          "lon": 138.1917,
+          "lat": 36.1029,
+          "lon": 138.1966,
           "elev": 1925,
           "hyakumeizan": true
         },
         {
           "name": "蓼科山",
-          "lat": 36.1017,
-          "lon": 138.2953,
+          "lat": 36.1037,
+          "lon": 138.2951,
           "elev": 2531,
           "hyakumeizan": true
         }
@@ -1014,8 +1014,8 @@
       "peaks": [
         {
           "name": "恵那山",
-          "lat": 35.4372,
-          "lon": 137.6006,
+          "lat": 35.4432,
+          "lon": 137.5978,
           "elev": 2191,
           "hyakumeizan": true
         }
@@ -1028,8 +1028,8 @@
       "peaks": [
         {
           "name": "荒島岳",
-          "lat": 35.9297,
-          "lon": 136.5981,
+          "lat": 35.9343,
+          "lon": 136.6013,
           "elev": 1523,
           "hyakumeizan": true
         }
@@ -1042,8 +1042,8 @@
       "peaks": [
         {
           "name": "伊吹山",
-          "lat": 35.4172,
-          "lon": 136.4064,
+          "lat": 35.4178,
+          "lon": 136.4063,
           "elev": 1377,
           "hyakumeizan": true
         }
@@ -1056,8 +1056,8 @@
       "peaks": [
         {
           "name": "大山",
-          "lat": 35.3711,
-          "lon": 133.5461,
+          "lat": 35.3712,
+          "lon": 133.5463,
           "elev": 1729,
           "hyakumeizan": true
         }
@@ -1070,8 +1070,8 @@
       "peaks": [
         {
           "name": "高岳",
-          "lat": 32.8844,
-          "lon": 131.1042,
+          "lat": 32.8843,
+          "lon": 131.1039,
           "elev": 1592,
           "hyakumeizan": true
         }
@@ -1084,8 +1084,8 @@
       "peaks": [
         {
           "name": "韓国岳",
-          "lat": 31.9331,
-          "lon": 130.8617,
+          "lat": 31.9341,
+          "lon": 130.8615,
           "elev": 1700,
           "hyakumeizan": true
         }
@@ -1098,8 +1098,8 @@
       "peaks": [
         {
           "name": "開聞岳",
-          "lat": 31.1806,
-          "lon": 130.5281,
+          "lat": 31.1799,
+          "lon": 130.5284,
           "elev": 924,
           "hyakumeizan": true
         }
@@ -1112,8 +1112,8 @@
       "peaks": [
         {
           "name": "宮之浦岳",
-          "lat": 30.3358,
-          "lon": 130.5058,
+          "lat": 30.336,
+          "lon": 130.5043,
           "elev": 1936,
           "hyakumeizan": true
         }
