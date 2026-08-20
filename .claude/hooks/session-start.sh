@@ -10,6 +10,31 @@ set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
+# --- プロジェクトの取り違え防止 ---
+# 目的: 別プロジェクト（インシデント解決君・Ethicる！・blog記事下書き君・青）の
+# 指示を、このリポジトリで実行してしまう事故を防ぐ。
+#
+# ⚠ **機械で照合するのが要点。AIの自己申告に任せない。**
+#    取り違えているときほど「合っています」と自信を持って報告するので、
+#    「1行目にプロジェクト名を出す」だけでは何も防げない（人が気づくための印）。
+#    リモートURLは事実なので、こちらが真の判定になる。
+PROJECT_NAME="Foehn–フェーン–（アウトドア特化天気予報 / アプリ名はナギナビ）"
+EXPECT_REMOTE="dfcfr909-bit/foehn"
+remote=$(git remote get-url origin 2>/dev/null || echo '(リモートなし)')
+case "$remote" in
+  *"$EXPECT_REMOTE"*)
+    echo "【プロジェクト】${PROJECT_NAME}"
+    ;;
+  *)
+    cat <<MSG
+‼️‼️ プロジェクト不一致。**作業を止めて人に確認すること。**
+   期待: ${EXPECT_REMOTE}
+   実際: ${remote}
+   別プロジェクトのリポジトリで作業しようとしている可能性があります。
+MSG
+    ;;
+esac
+
 # 取得できなくても致命的ではないので失敗は握りつぶす
 timeout 20 git fetch --quiet origin 2>/dev/null
 
