@@ -1,0 +1,111 @@
+name: タグを打つ
+
+# リリースタグを Actions から打つ。
+#
+# なぜ要るか:
+#   **Claude のセッションからは `git push` でタグを送れない**（403）。
+#   そのためタグ打ちだけが人の手に残り、実際 v4.77.0 から7つマージが進んでも
+#   タグは止まったままになった。ここを塞ぐ。
+#
+# ⚠ **版数の正は `sotoki_v4.html` の `<span id="app-version">`。** タグはその目印。
+#    だから版数を**手で打たせて HTML と突き合わせる**（二重入力）。
+#    片方だけでは事故を止められない——
+#      HTMLから読むだけ  → 「HTMLの上げ忘れ」をそのまま通す
+#      入力を信じるだけ  → 「打ち間違い」をそのまま通す
+#
+# ⚠ **タグは消せる**（`git push --delete origin vX.Y.Z`）。
+#    `refs/pull/*` と違って後戻りできるので、打ち直しは可能。
+#    ただし**他人が取得したあとで打ち直すと食い違う**ので、打つ前に止める方を厚くしてある。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '打つ版数（例 v4.78.0）。sotoki_v4.html の表記と一致しないと落ちる'
+        required: true
+        type: string
+
+# タグを送るために必要。**この1つだけ**にしてある
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: 版数を確かめてタグを打つ
+    runs-on: ubuntu-latest
+    steps:
+      # ⚠ タグの有無を見るので、履歴とタグを全部取る
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ⚠ **作業ブランチでは打たない** → docs/workflow.md「タグ」
+      - name: main であることを確かめる
+        run: |
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "✗ タグは main にマージされたあとに打つ（いま: $GITHUB_REF_NAME）"
+            exit 1
+          fi
+          echo "✓ main"
+
+      # ⚠ **`${{ inputs.version }}` を run: の中へ直に書かないこと。**
+      #    シェルに展開されるので、入力がそのままコマンドとして解釈されうる。
+      #    env 経由で渡し、`"$VERSION"` として引用して使う。
+      #    （書式は checkVersion.mjs 側でも `^v\d+\.\d+\.\d+$` に絞ってある）
+      - name: 版数が配信物と一致するか
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/checkVersion.mjs "$VERSION"
+
+      - name: そのタグが既に無いか
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "✗ タグ $VERSION は既にある（$(git rev-parse --short "refs/tags/$VERSION")）"
+            echo "  打ち直すなら先に消すこと: git push --delete origin $VERSION"
+            exit 1
+          fi
+          echo "✓ $VERSION はまだ無い"
+
+      # ⚠ **テストを通っていない中身にタグを付けない。** タグの値打ちは
+      #    「あの時動いていた版を1ファイルで取り出せる」ことなので、
+      #    動いていたことを確かめずに打つと目印の意味が薄れる。
+      - name: スモークテスト
+        working-directory: tests
+        run: |
+          npm install
+          node run-all.js
+
+      # ⚠ ここで公開URLとの一致は見ない。マージ直後は Pages の配信が
+      #    間に合っておらず、**中身の問題でない赤**が出るため
+      #    （`公開URLの検証` の deliver ジョブが別途デプロイ後に見ている）。
+
+      - name: タグを打つ
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+          echo "✓ $VERSION を $(git rev-parse --short HEAD) に打った"
+
+      - name: 結果をサマリーへ
+        if: always()
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo '## タグ'
+            echo
+            echo "- 版数: \`$VERSION\`"
+            echo "- コミット: \`$(git rev-parse --short HEAD)\`"
+            echo "- 結果: ${{ job.status }}"
+            echo
+            echo '打ち直すときは先に消す: `git push --delete origin '"$VERSION"'`'
+          } >> "$GITHUB_STEP_SUMMARY"
