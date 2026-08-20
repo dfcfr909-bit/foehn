@@ -30,6 +30,9 @@
 - 段階ごとにcommit分割、各段階完了時に動作確認を求めること
 - コミットは日本語＋prefix（`feat:` / `fix:` / `docs:` / `refactor:` / `chore:` / `test:`）。
   リリースは `main` マージ後に `git tag v4.xx.0` → **詳細は `docs/workflow.md`**
+- **マージ: CIが緑なら確認なしでよい。** ただし ABC評価・`areas.json` の座標/標高・
+  `sw.js`/`manifest`/`icons`・外部の情報源・公開範囲に触れるものは**必ず確認**
+  → `docs/workflow.md`「マージ（確認なしでよい範囲）」
 
 ## 構成
 
