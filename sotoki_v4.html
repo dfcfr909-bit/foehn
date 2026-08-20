@@ -5609,8 +5609,6 @@ function drawWindArrows(bounds, opacity) {
    ⚠ **風より粗いズームでこそ意味がある。** 総観規模（高低気圧の配置）を見るものなので、
      拡大しすぎると画面内の気圧がほぼ一様になり、等圧線が1本も出ない。
      だから風（`WIND_MIN_ZOOM = 7`）とは逆に、**上限**を設けてある。 */
-const PRESS_MIN_ZOOM = 3;        // これ未満は日本が画面に収まらない
-const PRESS_MAX_ZOOM = 8;        // これを超えると画面内が一様で線が出ない
 const PRESS_INTERVAL_HPA = 4;    // 天気図の慣習（4hPaごと）
 const PRESS_BOLD_EVERY = 20;     // 1000/1020 のような節目を太くする
 
@@ -5622,6 +5620,12 @@ const PRESS_BOLD_EVERY = 20;     // 1000/1020 のような節目を太くする
      地図タイルが固定の升目に切られているのと同じ考え方。 */
 const PRESS_STEPS_DEG = [0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8];   // 升目の候補（粗い方へ落ちる）
 const PRESS_MAX_POINTS = 130;    // 1回に取る点数の上限（レートは #14）
+/* ⚠ **気圧配置は総観規模で見るもの。** 画面が狭くてもこの広さぶんは計算する
+     （山を見る縮尺で等圧線が1本も画面に入らない、を防ぐ）。 */
+const PRESS_MIN_SPAN_DEG = 24;
+/* 描画用に格子を細かくする倍率。⚠ **通信は増えない**（持っている点の間を埋めるだけ）。
+   ⚠ 見た目が滑らかになるだけで**精度は上がらない**。H/L は元の格子から採る。 */
+const PRESS_REFINE = 4;
 /* ⚠ 429 を受けたら**しばらく取りに行かない**。取り直しを続けると解けない。 */
 const PRESS_COOLDOWN_MS = 90000;
 const PRESS_CACHE_MAX = 8;       // 行き来しても取り直さないための控え
@@ -5641,9 +5645,22 @@ const PRESS_PROMINENCE_HPA = 0.8;
 function pressureBox(bounds) {
   const s0 = bounds.getSouth(), w0 = bounds.getWest();
   const n0 = bounds.getNorth(), e0 = bounds.getEast();
+  /* ⚠ **気圧配置は必ず総観規模の広さで計算する。** 画面の範囲だけで作ると、
+       山を見る縮尺では等圧線が1本も画面に入らず「何も出ない」ことになる
+       （実機で「大まかな気圧配置が把握しにくい」と指摘を受けた 2026-08-20）。
+       画面が狭いときは中心を保ったまま PRESS_MIN_SPAN_DEG まで広げる。
+       画面の外へはみ出した線は地図が勝手に切ってくれるので、無駄にはならない。 */
+  const cLat = (s0 + n0) / 2, cLon = (w0 + e0) / 2;
+  const halfLat = Math.max((n0 - s0) / 2, PRESS_MIN_SPAN_DEG / 2);
+  const halfLon = Math.max((e0 - w0) / 2, PRESS_MIN_SPAN_DEG / 2);
+  const s2 = cLat - halfLat, n2 = cLat + halfLat;
+  const w2 = cLon - halfLon, e2 = cLon + halfLon;
   for (const step of PRESS_STEPS_DEG) {
-    const s1 = Math.floor(s0 / step) * step, n1 = Math.ceil(n0 / step) * step;
-    const w1 = Math.floor(w0 / step) * step, e1 = Math.ceil(e0 / step) * step;
+    /* ⚠ **升目1つぶんの余白を足して取る。** 縁の点は極値と判定しないので、
+         画面いっぱいに取ると**画面端の高気圧・低気圧が永久に出ない**。
+         余白があれば、画面の端にある極値もちゃんと8近傍がそろって判定できる。 */
+    const s1 = Math.floor(s2 / step) * step - step, n1 = Math.ceil(n2 / step) * step + step;
+    const w1 = Math.floor(w2 / step) * step - step, e1 = Math.ceil(e2 / step) * step + step;
     const ny = Math.round((n1 - s1) / step) + 1, nx = Math.round((e1 - w1) / step) + 1;
     if (ny * nx > PRESS_MAX_POINTS) continue;
     const lats = [], lons = [];
@@ -5653,6 +5670,49 @@ function pressureBox(bounds) {
   }
   // いちばん粗い升目でも収まらない（極端に広い表示）
   return null;
+}
+
+/* 描画用に格子を細かくする（Catmull-Rom）。
+   ⚠⚠ **これは見た目を滑らかにするだけで、精度は上がらない。**
+     持っている情報は粗い格子のままで、間を埋めているだけ。
+     **だから H/L の位置はこの細かい格子から採らない**（元の格子の実測点から採る）。
+     滑らかな線に釣られて「細かく分かっている」と思わせないための線引き。
+   なぜ要るか: 等圧線は格子点の間を直線で結ぶので、点が少ないと**多角形に見える**
+     （実機で「輪郭がやたらと角張っている」と指摘を受けた 2026-08-20）。
+     気圧の場はもともと滑らかなので、間を滑らかに埋めるのは筋が通る。
+   ⚠ 単純な線形補間では滑らかにならない。marching squares 自体が辺の上で
+     線形補間しているので、**同じ形の折れ線が細かくなるだけ**。3次で埋める必要がある。 */
+function refineGrid(g, factor) {
+  const at = (i, j) => pressAt(g, Math.min(Math.max(i, 0), g.n - 1), Math.min(Math.max(j, 0), g.nx - 1));
+  // Catmull-Rom（4点から t の位置を3次で埋める）
+  const cr = (p0, p1, p2, p3, t) => {
+    const t2 = t * t, t3 = t2 * t;
+    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+                  (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+  };
+  const ny = (g.n - 1) * factor + 1, nx = (g.nx - 1) * factor + 1;
+  const lats = [], lons = [], vals = new Array(ny * nx).fill(null);
+  const dLat = (g.lats[g.n - 1] - g.lats[0]) / (ny - 1);
+  const dLon = (g.lons[g.nx - 1] - g.lons[0]) / (nx - 1);
+  for (let i = 0; i < ny; i++) lats.push(g.lats[0] + i * dLat);
+  for (let j = 0; j < nx; j++) lons.push(g.lons[0] + j * dLon);
+  for (let i = 0; i < ny; i++) {
+    const fi = i / factor, i1 = Math.min(Math.floor(fi), g.n - 2), ti = fi - i1;
+    for (let j = 0; j < nx; j++) {
+      const fj = j / factor, j1 = Math.min(Math.floor(fj), g.nx - 2), tj = fj - j1;
+      const rows = [];
+      let missing = false;
+      for (let di = -1; di <= 2 && !missing; di++) {
+        const a = at(i1 + di, j1 - 1), b = at(i1 + di, j1), c = at(i1 + di, j1 + 1), d = at(i1 + di, j1 + 2);
+        // ⚠ 欠測が混じる所は埋めない（推測で埋めると、無い所に線が出る）
+        if (a == null || b == null || c == null || d == null) { missing = true; break; }
+        rows.push(cr(a, b, c, d, tj));
+      }
+      if (missing) continue;
+      vals[i * nx + j] = cr(rows[0], rows[1], rows[2], rows[3], ti);
+    }
+  }
+  return { key: g.key + ':r' + factor, n: ny, nx, step: dLat, lats, lons, vals };
 }
 
 /* 選択時刻の海面気圧を固定の升目で取る。
@@ -5830,21 +5890,25 @@ function isobarLevels(g) {
   return out;
 }
 
+/* ⚠ **ズームで打ち切らない。** 以前は z8 を超えると「広い範囲で見るものです」と出して
+     何も描かなかったが、**山を見る縮尺で気圧配置が消えるのは使い勝手として逆**だった
+     （実機で指摘を受けた 2026-08-20）。いまは `pressureBox` が画面が狭くても
+     総観規模の広さで計算するので、どの縮尺でも「そこを通る等圧線」が出る。 */
 function drawPressure(bounds, opacity) {
-  const z = leafletMap.getZoom();
-  if (z < PRESS_MIN_ZOOM) { setLayerStatus('pressure', 'もう少し拡大すると表示されます'); return; }
-  // ⚠ 縮尺が細かいと画面内の気圧差が無くなる。「線が出ない」ではなく理由を出す
-  if (z > PRESS_MAX_ZOOM) { setLayerStatus('pressure', '気圧配置は広い範囲で見るものです。縮小してください'); return; }
   loadPressureGrid(bounds)
     .then(g => {
       if (!isOverlayOn('pressure')) return;
+      /* 線は細かい格子から、H/L は**元の格子から**。
+         ⚠ 補間は見た目を滑らかにするだけで精度は上がらないので、
+           **極値の位置まで補間から採ると、無い精度があるように見せてしまう。** */
+      const fine = refineGrid(g, PRESS_REFINE);
       const levels = isobarLevels(g);
       /* ⚠ **線分ごとにレイヤーを作らないこと。** 等圧線は1本の高さでも数十の線分に
            割れるので、線分ごとに `L.polyline` を作ると画面に数百のSVG要素が並び、
            地図を動かすたびに作り直して**目に見えて重くなる**（実機で指摘を受けた）。
            Leaflet は「線分の配列」を1つのレイヤーとして描けるので、**高さごとに1つ**にする。 */
       levels.forEach(level => {
-        const segs = isobarSegments(g, level);
+        const segs = isobarSegments(fine, level);
         if (!segs.length) return;
         const bold = level % PRESS_BOLD_EVERY === 0;
         const line = L.polyline(segs, {
@@ -5867,7 +5931,7 @@ function drawPressure(bounds, opacity) {
         weatherMarkers.push(m);
       });
       if (!levels.length) setLayerStatus('pressure', 'この範囲は気圧がほぼ一様です');
-      else setLayerStatus('pressure', `等圧線 ${PRESS_INTERVAL_HPA}hPaごと`);
+      else setLayerStatus('pressure', `等圧線 ${PRESS_INTERVAL_HPA}hPaごと（${g.step}度間隔の計算値）`);
     })
     .catch(e => setLayerStatus('pressure', `取得できません（${e.message}）`));
 }
