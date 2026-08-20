@@ -1,7 +1,7 @@
 ---
 description: 版数の更新箇所を洗い出してタグを打つ手順を示す
 argument-hint: <版数 例 v4.78.0>
-allowed-tools: Read, Edit, Grep, Bash(grep*), Bash(git tag), Bash(git tag -l*), Bash(git log*), Bash(git status*), Bash(git rev-parse*)
+allowed-tools: Read, Edit, Grep, Bash(grep*), Bash(git tag -l*), Bash(git log*), Bash(git status*), Bash(git rev-parse*)
 ---
 
 `$ARGUMENTS` へ版数を上げる。
@@ -30,14 +30,28 @@ grep -rn 'v4\.[0-9]*\.[0-9]*' sotoki_v4.html docs/status.md
 
 ## タグを打つ
 
-```bash
-git tag $ARGUMENTS
-git push origin $ARGUMENTS
-```
+⚠ **`git tag` を手元で打たない。** Claude のセッションからは `git push` でタグを
+送れない（403）ので、手元で打っても届かない。
+
+**版数を上げるPRを `main` にマージしたあと、Actions「タグを打つ」を実行する。**
+
+- ワークフロー: `.github/workflows/release.yml`（`workflow_dispatch`）
+- ブランチに `main` を選び、`version` に `$ARGUMENTS` を入れる
+
+止まる条件（どれも「打つ前に止める」ためのもの）:
+
+| 止まる | なぜ |
+|---|---|
+| `main` 以外で実行した | 作業ブランチのタグは意味が違う |
+| `version` が HTML の表記と食い違う | **中身が古いまま新しいタグが付く**のを防ぐ |
+| そのタグが既にある | 打ち直しは先に消してから |
+| スモークテストが落ちる | 動いていない中身に目印を付けない |
+
+⚠ **順番が肝。HTMLを上げてマージ → それからタグ。** 逆にすると止まる。
 
 単一HTML構成なので、**タグさえあれば「あの時動いていた版」を1ファイルで取り出せる**。
 
 ## 最後に
 
-- `node tests/run-all.js` が全16件PASSしていること
+- `node tests/run-all.js` が全件PASSしていること
 - `docs/status.md` の「直近の変更」を更新する（**3件まで**。古いものは消す）

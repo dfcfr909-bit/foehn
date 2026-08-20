@@ -22,6 +22,7 @@ const TESTS = [
   ['smoke_tilecache', '地図タイルキャッシュ（対象ホスト・cache-first・LRU・削除）'],
   ['smoke_rain',   '雨の予告（毎時の見込み・ナウキャスト1画素読み・分きざみ）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
+  ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
 ];
 
 let failed = 0;
