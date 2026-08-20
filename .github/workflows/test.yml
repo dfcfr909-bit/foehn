@@ -9,6 +9,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch: {}
+  # 他のワークフローから呼べるようにする。
+  # ⚠ **同じ手順を書き写さないため。** release.yml に Chromium の用意を書き写したとき、
+  #    それを落として「タグを打つ」が落ちた（実際に踏んだ 2026-08-20）。
+  #    テストの走らせ方が要るワークフローは、書き写さずにこれを呼ぶこと。
+  workflow_call: {}
 
 permissions:
   contents: read
