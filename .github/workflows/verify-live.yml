@@ -11,8 +11,20 @@ name: 公開URLの検証
 # ⚠ **実機確認の代わりにはならない。** iOS Safari とホーム画面のPWAは
 #    Chromium とは別物で、このリポジトリはiOS特有の不具合を2回踏んでいる。
 #
-# ⚠ **外部（Nominatim・国土地理院）を実際に叩く。** 相手方への配慮から
-#    デプロイ後と手動実行だけにしてある。**定期実行を足さないこと。**
+# ジョブを2つに分けてある。**性質がまったく違うため。**
+#
+#   deliver … 配信物の sha256 照合。**外部を1つも叩かない**（GitHub Pages のみ）。
+#             赤は必ず「本当に配信されていない」を意味する。毎デプロイで自動。
+#             Chromium も npm install も要らないので数十秒で終わる
+#   browser … 実ブラウザ＋Nominatim・地理院の疎通。**外部を実際に叩く**ので
+#             **手動実行のみ**
+#
+# ⚠ **browser を workflow_run（毎デプロイ）に広げないこと。**
+#    Nominatim の制限はIP単位で、Actions のランナーは他人のCIと共有の(Azure)IPを使う。
+#    こちらの行儀と無関係に絞られうるので、自動で回すと
+#    **「赤いが直すところが無い」通知**が定期的に出る。
+#    赤の意味が「壊した／相手が落ちた／IPが絞られた」に割れた検査は、
+#    そのうち誰も見なくなる。**定期実行（schedule）も足さないこと。**
 on:
   workflow_run:
     workflows: ["Pages へデプロイ"]
@@ -27,8 +39,13 @@ on:
 permissions:
   contents: read
 
+env:
+  LIVE_URL: ${{ inputs.url || 'https://dfcfr909-bit.github.io/foehn/sotoki_v4.html' }}
+
 jobs:
-  verify:
+  # ---- ① 配信物の同一性（毎デプロイ・外部を叩かない） ----
+  deliver:
+    name: 配信物の同一性
     runs-on: ubuntu-latest
     # デプロイが失敗していたら見に行っても意味がない
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
@@ -44,6 +61,41 @@ jobs:
         with:
           node-version: '20'
 
+      # Pages の配信が行き渡るまで少し待つ（デプロイ直後は古いものが返ることがある）
+      - name: 反映を待つ
+        if: github.event_name == 'workflow_run'
+        run: sleep 30
+
+      # ⚠ npm install も Chromium も要らない（--only=deploy は Node の標準機能だけ）。
+      #    足すと軽さが失われるので、必要になっても browser ジョブ側に足すこと。
+      - name: 配信物を照合
+        working-directory: tests
+        run: node verify-live.mjs "$LIVE_URL" --only=deploy | tee result.txt
+
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## ① 配信物の同一性'
+            echo
+            echo '```'
+            cat tests/result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---- ② 実ブラウザでの起動と外部の疎通（手動実行のみ） ----
+  browser:
+    name: 実ブラウザと外部の疎通
+    runs-on: ubuntu-latest
+    # ⚠ **ここを外して毎デプロイに戻さないこと。** 理由は先頭の注記のとおり。
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: 依存を取得
         working-directory: tests
         run: npm install
@@ -52,23 +104,17 @@ jobs:
         working-directory: tests
         run: npx --yes playwright@1.49.0 install --with-deps chromium
 
-      # Pages の配信が行き渡るまで少し待つ（デプロイ直後は古いものが返ることがある）
-      - name: 反映を待つ
-        if: github.event_name == 'workflow_run'
-        run: sleep 30
-
-      - name: 公開URLを検証
+      - name: 実ブラウザで検証
         working-directory: tests
         run: |
           bin=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome | head -1)
-          PW_CHROMIUM="$bin" node verify-live.mjs "${{ inputs.url || 'https://dfcfr909-bit.github.io/foehn/sotoki_v4.html' }}" \
-            | tee result.txt
+          PW_CHROMIUM="$bin" node verify-live.mjs "$LIVE_URL" --only=browser | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
         run: |
           {
-            echo '## 公開URLの検証結果'
+            echo '## ② 実ブラウザでの起動と外部の疎通'
             echo
             echo '```'
             cat tests/result.txt 2>/dev/null || echo '（出力なし）'
