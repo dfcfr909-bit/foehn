@@ -1,0 +1,78 @@
+name: 公開URLの検証
+
+# デプロイされたものが本当に期待どおりかを、公開URLに対して確かめる。
+#
+# なぜ要るか:
+#   スモークテスト（test.yml）は**手元のHTMLを読み込んで通信をスタブする**ので、
+#   「デプロイされたか」「外部APIが実際に叩けるか」は一切分からない。
+#   #27 では「標高が出ない」の原因が不具合ではなく**未マージ**だった、という
+#   往復が2回起きた。ここを機械で潰す。
+#
+# ⚠ **実機確認の代わりにはならない。** iOS Safari とホーム画面のPWAは
+#    Chromium とは別物で、このリポジトリはiOS特有の不具合を2回踏んでいる。
+#
+# ⚠ **外部（Nominatim・国土地理院）を実際に叩く。** 相手方への配慮から
+#    デプロイ後と手動実行だけにしてある。**定期実行を足さないこと。**
+on:
+  workflow_run:
+    workflows: ["Pages へデプロイ"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: '検証するURL（既定は公開URL）'
+        required: false
+        default: 'https://dfcfr909-bit.github.io/foehn/sotoki_v4.html'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # デプロイが失敗していたら見に行っても意味がない
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      # ⚠ **配信物と比べる相手は「デプロイされたコミット」でなければならない。**
+      #    既定の checkout だと workflow_run の元コミットが取れず、
+      #    「一致しない」と嘘の失敗を出す。
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 依存を取得
+        working-directory: tests
+        run: npm install
+
+      - name: Chromium を用意
+        working-directory: tests
+        run: npx --yes playwright@1.49.0 install --with-deps chromium
+
+      # Pages の配信が行き渡るまで少し待つ（デプロイ直後は古いものが返ることがある）
+      - name: 反映を待つ
+        if: github.event_name == 'workflow_run'
+        run: sleep 30
+
+      - name: 公開URLを検証
+        working-directory: tests
+        run: |
+          bin=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome | head -1)
+          PW_CHROMIUM="$bin" node verify-live.mjs "${{ inputs.url || 'https://dfcfr909-bit.github.io/foehn/sotoki_v4.html' }}" \
+            | tee result.txt
+
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## 公開URLの検証結果'
+            echo
+            echo '```'
+            cat tests/result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+            echo
+            echo '⚠ これは実機確認の代わりではない。iOS Safari とホーム画面のPWAは別途。'
+          } >> "$GITHUB_STEP_SUMMARY"
