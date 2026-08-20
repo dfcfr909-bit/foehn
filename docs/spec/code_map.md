@@ -363,6 +363,12 @@
 | `drawAmedas(bounds, opacity)` | 表示範囲ぶんの点を描く（最大140地点） | 約 5283 |
 | `loadWindGrid(bounds)` | 画面を5×5に割った代表点の風を1リクエストで | 約 5331 |
 | `drawWindArrows(bounds, opacity)` | 矢印（向きは風向+180°） | 約 5375 |
+| `loadPressureGrid(bounds)` | 画面を9×9に割った海面気圧を1リクエストで（#26） | 約 5626 |
+| `pressAt(g, i, j)` | 格子の添字→気圧。欠測は null | 約 5670 |
+| `pressureExtremes(g)` | 高気圧/低気圧の中心。⚠ **縁は極値と呼ばない**・起伏0.8hPa以上 | 約 5685 |
+| `isobarSegments(g, level)` | 等圧線（marching squares）。⚠ 鞍部は4隅の平均で向きを決める | 約 5719 |
+| `isobarLevels(g)` | 引くべき等圧線の値（4hPaごと） | 約 5763 |
+| `drawPressure(bounds, opacity)` | H(青)/L(赤)と等圧線。⚠ 拡大しすぎは案内を出す | 約 5773 |
 | `refreshWeatherPoints()` | 地図が動くたびに描き直す | 約 5402 |
 | `updateThunderIcons()` / `paintThunderIcons()` | **タイル画像を走査して雷マークを置く** | 約 5453 / 5458 |
 | `releaseThunderScan()` / `clearThunderIcons()` | 走査canvasの解放（メモリ） | 約 5435 / 5446 |

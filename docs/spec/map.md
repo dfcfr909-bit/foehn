@@ -109,7 +109,8 @@
 ## 気象レイヤー（`MAP_WEATHER`）
 
 アメダス実測（点）・降雨レーダー・衛星の雲（ひまわり）・雷（気象庁ナウキャスト）・
-風向風速（Open-Meteo）。詳細な一覧は `docs/map-selector-requirements.md` §15・§18。
+風向風速（Open-Meteo）・気圧配置（Open-Meteo）。
+詳細な一覧は `docs/map-selector-requirements.md` §15・§18。
 
 - **Windy 風のアニメーション風速は無い**。画面を `WIND_GRID_N`(5)×5 に割った代表点の風を
   1リクエストで取り、矢印を置く（`loadWindGrid` / `drawWindArrows`）。
@@ -125,6 +126,28 @@
 - **気象レイヤーは SW のキャッシュ対象に入れない**（`TILE_HOSTS` に足さない）→ `pwa.md`
 
 描画は `clearWeatherMarkers` / `loadAmedas` / `drawAmedas` / `refreshWeatherPoints`。
+
+### 気圧配置（`pressure` / `drawPressure`）— #26
+
+高気圧 **H(青)** ／低気圧 **L(赤)** と等圧線。風と同じく画面を格子に割って
+Open-Meteo で `pressure_msl` をまとめ取りする（`loadPressureGrid`。`PRESS_GRID_N`=9）。
+**新しい情報源は増やしていない。**
+
+- **等圧線は `PRESS_INTERVAL_HPA`(4) hPa ごと**（天気図の慣習）。
+  `PRESS_BOLD_EVERY`(20) の倍数＝1000/1020 のような節目は太くする
+- **H/L は局所極値**（`pressureExtremes`）。⚠ 条件は2つ——
+  ①8近傍すべてより高い（低い）②その差が `PRESS_PROMINENCE_HPA`(0.8) 以上。
+  **起伏の条件が無いと、モデルの数値の揺れを拾って H と L が画面中に乱立する**
+- ⚠ **格子の縁は極値と呼ばない。** 画面の端は「そこで見るのをやめた場所」であって
+  高気圧の中心ではない。通すと**地図を動かすたびに H が縁を滑る**。
+  #13 で「探索範囲の最高点」を山頂と取り違えかけたのと同じ罠
+- ⚠ **風とはズームの向きが逆。** `PRESS_MIN_ZOOM`(3)〜`PRESS_MAX_ZOOM`(8)。
+  総観規模を見るものなので、**拡大しすぎると画面内が一様になり線が1本も出ない**。
+  そのとき「線が出ない」ではなく「広い範囲で見るものです」と理由を出す
+- 等圧線は marching squares。⚠ **鞍部（対角だけが高い升）は2通りに引ける。**
+  4隅の平均で向きを決める。決めずに固定すると**等圧線が×印に交差した図**になる
+- ⚠ **表示だけの機能。ABC評価には一切関与させない**
+  （`judgePoint` / `abcScore` / `THRESH` を参照しない。`tests/smoke_pressure.mjs` が見張る）
 
 ### 時刻つきタイルの貼り替え
 
