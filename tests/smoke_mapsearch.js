@@ -67,6 +67,16 @@ const GIFU = { place_id: 1, lat: '35.2838', lon: '136.5112',
   display_name: '笙ヶ岳, 大垣市, 岐阜県, 日本' };
 const YAMAGATA = { place_id: 2, lat: '39.0927', lon: '140.0020',
   display_name: '笙ケ岳 二峰, 遊佐町, 飽海郡, 山形県, 日本' };
+/* 五竜岳。地理院は同名を2つ返す。**標高を併記しないと選び分けられない**
+   （実機で確認。1,585m の方と 2,814m の北アルプス）。 */
+const GORYU_LOW  = { title: '五龍岳', lon: 140.1500, lat: 38.9000, elev: 1585 };
+// ⚠ areas.json の五竜岳（36.6584,137.7526）に合わせること。ここをずらすと
+//    百名山の照合（名前＋5km以内）が外れて検査にならない
+const GORYU_HIGH = { title: '五龍岳', lon: 137.7526, lat: 36.6584, elev: 2814 };
+// OSM側は「五竜岳」で返す。**漢字が違うだけの同じ山**なので畳めていないと2行出る
+const GORYU_OSM  = { place_id: 20, lat: '36.6585', lon: '137.7527',
+  display_name: '五竜岳, 黒部市, 富山県, 日本' };
+
 const NOMINATIM = {
   '笙ヶ岳': [GIFU],           // 素直に打つとこれしか出ない
   '笙ケ岳': [YAMAGATA],       // 揺れを当てて初めて出る
@@ -78,12 +88,8 @@ const NOMINATIM = {
     { place_id: 10, lat: '35.6480', lon: '138.7060', display_name: '釈迦ヶ岳, 笛吹市, 山梨県, 日本' },
     { place_id: 11, lat: '35.5340', lon: '138.4600', display_name: '釈迦ヶ岳, 市川三郷町, 西八代郡, 山梨県, 日本' },
   ],
+  '五竜岳': [GORYU_OSM],
 };
-
-/* 五竜岳。地理院は同名を2つ返す。**標高を併記しないと選び分けられない**
-   （実機で確認。1,585m の方と 2,814m の北アルプス）。 */
-const GORYU_LOW  = { title: '五龍岳', lon: 140.1500, lat: 38.9000, elev: 1585 };
-const GORYU_HIGH = { title: '五龍岳', lon: 137.7526, lat: 36.6584, elev: 2814 };
 
 /* 国土地理院の地名検索。OSMに無い峰を埋める役。
    矢板（高原山）の釈迦ヶ岳はこちらにだけある。 */
@@ -241,11 +247,43 @@ const GSI = {
     return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
       name: el.querySelector('.map-result-name').textContent,
       elev: el.querySelector('.map-result-elev').textContent,
+      badge: (el.querySelector('.map-result-badge') || {}).textContent || '',
     }));
   });
-  ok(goryu.length === 2, '同名2件が出る', goryu);
+  ok(goryu.length === 2, '★★漢字違いの同じ山を畳む（五竜岳/五龍岳で2行にしない）', goryu);
   ok(goryu.some(r => r.elev === '2814m') && goryu.some(r => r.elev === '1585m'),
     '★★★同名峰に標高が併記され、選び分けられる', goryu);
+  ok(goryu.filter(r => r.badge === '百名山').length === 1,
+    '★★★百名山の方にだけ印が付く', goryu);
+  ok((goryu.find(r => r.badge === '百名山') || {}).elev === '2814m',
+    '印が付くのは2,814mの方（北アルプス）', goryu);
+
+  /* --- 並べ替えのトグル ---
+     ⚠ **既定は「近い順」から動かさないこと。** 標高は後から埋まるので、
+       標高順を既定にすると一覧が出るまで待つことになる。
+     ⚠ **標高が埋まっても勝手に並べ替えないこと。** 押そうとした瞬間に
+       行が入れ替わると押し間違える。 */
+  const sortState = await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '五竜岳';
+    await doMapSearch();
+    const first = () => document.querySelector('#map-results .map-result-item .map-result-name').textContent;
+    const nearFirst = first();                       // 標高が埋まる前
+    await new Promise(r => setTimeout(r, 600));      // 埋まったあと
+    const stillNearFirst = first();
+    const chips = [...document.querySelectorAll('.map-sort-chip')].map(b => b.textContent);
+    const onLabel = (document.querySelector('.map-sort-chip.on') || {}).textContent;
+    // 「高い順」を押す
+    [...document.querySelectorAll('.map-sort-chip')].find(b => b.textContent === '高い順').click();
+    const highFirst = document.querySelector('#map-results .map-result-item .map-result-elev').textContent;
+    const onAfter = (document.querySelector('.map-sort-chip.on') || {}).textContent;
+    return { nearFirst, stillNearFirst, chips, onLabel, highFirst, onAfter };
+  });
+  ok(sortState.chips.join('/') === '近い順/高い順', '並べ替えの札が出る', sortState.chips);
+  ok(sortState.onLabel === '近い順', '★★既定は「近い順」', sortState);
+  ok(sortState.nearFirst === sortState.stillNearFirst,
+    '★★★標高が埋まっても勝手に並べ替えない（押し間違いを防ぐ）', sortState);
+  ok(sortState.highFirst === '2814m', '★★「高い順」を押すと高い方が先頭に来る', sortState);
+  ok(sortState.onAfter === '高い順', '押した札が選択状態になる', sortState);
 
   /* ⚠ **選択中の地点の標高を壊さないこと。**
      候補の標高読みは `state.demElevation` を触ってはいけない。 */
