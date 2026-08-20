@@ -19,6 +19,8 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = fs.readFileSync(path.join(ROOT, 'sotoki_v4.html'), 'utf8');
 const UPLOT_JS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/uplot/dist/uPlot.iife.min.js'), 'utf8');
 const UPLOT_CSS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/uplot/dist/uPlot.min.css'), 'utf8');
+const LEAFLET_JS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/leaflet/dist/leaflet.js'), 'utf8');
+const LEAFLET_CSS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/leaflet/dist/leaflet.css'), 'utf8');
 
 const fails = [];
 const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefined ? ` … ${JSON.stringify(extra).slice(0, 300)}` : '')); };
@@ -57,14 +59,19 @@ await page.route('**/*', route => {
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
   if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
   if (url.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
-  return route.abort();       // 気圧の検査に通信は要らない
+  if (url.includes('leaflet.js') || url.includes('leaflet.min.js')) return route.fulfill({ contentType: 'application/javascript', body: LEAFLET_JS });
+  if (url.includes('leaflet.css') || url.includes('leaflet.min.css')) return route.fulfill({ contentType: 'text/css', body: LEAFLET_CSS });
+  if (url.includes('cyberjapandata') || url.includes('tile')) return route.fulfill({ status: 204, body: '' });
+  return route.abort();       // 気圧の検査に外部の通信は要らない
 });
 await page.goto('https://sotoki.test/');
 await page.waitForTimeout(600);
 
 // 格子を組み立てるヘルパ（緯度経度は等間隔。値は行 i（南→北）× 列 j（西→東））
 const mkGrid = rows => ({
-  key: 't', n: rows.length,
+  key: 't',
+  n: rows.length,          // 行数（緯度方向）
+  nx: rows[0].length,      // ⚠ 列数（経度方向）。升目は長方形になりうるので分けて持つ
   lats: rows.map((_, i) => 30 + i),
   lons: rows[0].map((_, j) => 130 + j),
   vals: rows.flat(),
@@ -145,7 +152,7 @@ const bad = segs.flat().filter(([la, lo2]) => !isFinite(la) || !isFinite(lo2));
 ok(bad.length === 0, '★★NaN の座標を出さない', bad);
 // 双一次補間で端点の気圧を復元し、指定した値に一致するか見る
 const err = await page.evaluate(([g, ss]) => {
-  const at = (i, j) => g.vals[i * g.n + j];
+  const at = (i, j) => g.vals[i * g.nx + j];
   let worst = 0;
   for (const seg of ss) for (const [la, lo2] of seg) {
     const fi = la - g.lats[0], fj = lo2 - g.lons[0];
@@ -163,7 +170,7 @@ ok(err < 0.5, '★★線分の端点が本当に1004hPaの所にある（補間�
    ⚠ 対角だけが高い形（ケース5/10）は2通りに引ける。決めずに固定すると
      等圧線が×印に交差した図になり、天気図として読めなくなる。 */
 const saddle = {
-  key: 't', n: 2, lats: [30, 31], lons: [130, 131],
+  key: 't', n: 2, nx: 2, lats: [30, 31], lons: [130, 131],
   /* ⚠ 並びは vals[i*n + j]（i=緯度の行・南から、j=経度の列・西から）。
        鞍部にするには**対角**を高くする: bl(0,0) と tr(1,1) が高く、br(0,1) と tl(1,0) が低い。
        最初 [1010,1000,1010,1000] と書いてしまい、これは「左の列が高い」だけの
@@ -194,6 +201,124 @@ ok(hSegs.flat().every(([la, lo2]) => isFinite(la) && isFinite(lo2)),
   '★欠測のある升を飛ばす（NaN を線にしない）', hSegs.slice(0, 3));
 ok((await call('pressureExtremes', holed)).length === 0,
   '★欠測が近傍にある点は極値と判定しない');
+
+/* --- 場面8: 長方形の格子で行と列を取り違えないこと ---
+   ⚠ 升目は表示範囲に合わせて縦横の点数が変わる。片方の数だけで添字を計算すると、
+     **画面が横長のときだけ H の位置が飛ぶ**という気づきにくい壊れ方をする。 */
+const wide = mkGrid([
+  [1000, 1000, 1000, 1000, 1000, 1000, 1000],
+  [1000, 1000, 1000, 1004, 1000, 1000, 1000],
+  [1000, 1000, 1004, 1012, 1004, 1000, 1000],
+  [1000, 1000, 1000, 1004, 1000, 1000, 1000],
+  [1000, 1000, 1000, 1000, 1000, 1000, 1000],
+]);
+const eW = await call('pressureExtremes', wide);
+ok(eW.length === 1 && eW[0].type === 'H', '★横長の格子でも極値は1つ', eW);
+// 行2（lat=32）・列3（lon=133）に置いた山。行列を取り違えると lon=132 などになる
+ok(eW.length && eW[0].lat === 32 && eW[0].lon === 133,
+  '★★★横長の格子で行と列を取り違えない', eW[0]);
+
+/* --- 場面9: 升目は「固定」であること（429 の原因を断つ） ---
+   ⚠ **これが実機で HTTP 429 を出した原因。** 画面の四隅から格子を作ると、
+     少し動かすたびに点の緯度経度が変わってキャッシュが一度も効かず、
+     地図を動かすたびに数十点を取りに行っていた。 */
+const mkB = (s2, w, n, e) => ({ getSouth: () => s2, getWest: () => w, getNorth: () => n, getEast: () => e });
+const box = await page.evaluate(b => pressureBox({
+  getSouth: () => b[0], getWest: () => b[1], getNorth: () => b[2], getEast: () => b[3] }),
+  [30.2, 130.2, 45.8, 145.8]);
+ok(box && box.lats.length * box.lons.length <= 130,
+  '★点数が上限を超えない（レート #14）', box && { pts: box.lats.length * box.lons.length, step: box.step });
+ok(box && box.lats.every(v => Math.abs(v / box.step - Math.round(v / box.step)) < 1e-6) &&
+        box.lons.every(v => Math.abs(v / box.step - Math.round(v / box.step)) < 1e-6),
+  '★★升目は step の倍数に載っている（固定の格子）', box && { step: box.step, lats: box.lats.slice(0, 3) });
+ok(box && box.lats[0] <= 30.2 && box.lats[box.lats.length - 1] >= 45.8,
+  '★表示範囲を覆っている（内側に切らない）', box && { s: box.lats[0], n: box.lats[box.lats.length - 1] });
+
+/* 少し動かしても取り直さないこと／大きく動かせば取りに行くこと */
+const fetches = await page.evaluate(async () => {
+  pressureCache.clear(); pressureCooldownUntil = 0;
+  const real = window.fetch;
+  let n = 0;
+  window.fetch = async () => { n++; return { ok: true, status: 200,
+    json: async () => ({ hourly: { time: ['2026-01-01T00:00'], pressure_msl: [1010] } }) }; };
+  const mk = (s, w, no, e) => ({ getSouth: () => s, getWest: () => w, getNorth: () => no, getEast: () => e });
+  await loadPressureGrid(mk(30.2, 130.2, 45.8, 145.8));
+  const a = n;
+  await loadPressureGrid(mk(30.3, 130.3, 45.7, 145.7));   // 同じ升目に収まる小さな移動
+  const b = n;
+  await loadPressureGrid(mk(50.2, 130.2, 59.8, 145.8));   // 別の升目へ大きく移動
+  const c = n;
+  window.fetch = real;
+  return { a, b, c };
+});
+ok(fetches.a === 1, '★最初の1回は取りに行く', fetches);
+ok(fetches.b === 1, '★★★少し動かしても取り直さない（429 の原因を断つ）', fetches);
+ok(fetches.c === 2, '★別の升目へ移れば取りに行く', fetches);
+
+/* --- 場面10: 429 を受けたらしばらく取りに行かないこと ---
+   ⚠ 取り直しを続けても解けない。冷却期間を置き、**理由を言葉で出す**。 */
+const cooled = await page.evaluate(async () => {
+  pressureCache.clear(); pressureCooldownUntil = 0; pressureInflight = null;
+  const real = window.fetch;
+  let n = 0;
+  window.fetch = async () => { n++; return { ok: false, status: 429, json: async () => ({}) }; };
+  const mk = (s, w, no, e) => ({ getSouth: () => s, getWest: () => w, getNorth: () => no, getEast: () => e });
+  let first = '', second = '';
+  await loadPressureGrid(mk(30.2, 130.2, 45.8, 145.8)).catch(e => { first = e.message; });
+  const afterFirst = n;
+  await loadPressureGrid(mk(30.2, 130.2, 45.8, 145.8)).catch(e => { second = e.message; });
+  const afterSecond = n;
+  window.fetch = real; pressureCooldownUntil = 0;
+  return { first, second, afterFirst, afterSecond };
+});
+ok(cooled.afterFirst === 1 && cooled.afterSecond === 1,
+  '★★★429 のあとはしばらく取りに行かない（叩き続けない）', cooled);
+ok(/取りすぎ/.test(cooled.first), '★理由を言葉で出す（HTTP 429 とだけ出さない）', cooled.first);
+ok(/秒/.test(cooled.second), '★あと何秒待つかを出す', cooled.second);
+
+/* --- 場面11: 描くレイヤーの数（「おもたい」の正体） ---
+   ⚠ **等圧線は1本の高さでも数十の線分に割れる。** 線分ごとに L.polyline を作ると
+     画面に数百のSVG要素が並び、地図を動かすたびに作り直して目に見えて重くなる
+     （実機で「おもたい」と指摘を受けた 2026-08-20）。**高さごとに1レイヤー**にまとめる。 */
+const drawn = await page.evaluate(async () => {
+  const real = window.fetch;
+  /* (38,138) を中心に外へ向かって上がる場。
+     ⚠ **升目の刻みは表示範囲で決まるので、中心が格子点に乗るとは限らない。**
+       最初は直線的な傾きと窪みを重ねた場にしたが、格子点が窪みの底を外して
+       極値が1つも出なかった。**距離だけの単調な場**にすれば、
+       どの刻みでも「中心にいちばん近い格子点」が必ず唯一の極小になる。 */
+  window.fetch = async (u) => {
+    const p = new URLSearchParams(String(u).split('?')[1]);
+    const las = p.get('latitude').split(',').map(Number);
+    const los = p.get('longitude').split(',').map(Number);
+    const body = las.map((la, i) => {
+      const lo = los[i];
+      return { hourly: { time: ['2026-01-01T00:00'],
+        pressure_msl: [1000 + Math.hypot(la - 38, lo - 138) * 2] } };
+    });
+    return { ok: true, status: 200, json: async () => body };
+  };
+  openMap();
+  await new Promise(r => setTimeout(r, 800));
+  leafletMap.setView([38, 138], 5);
+  pressureCache.clear(); pressureCooldownUntil = 0; pressureInflight = null;
+  if (!isOverlayOn('pressure')) toggleOverlay('pressure');
+  await new Promise(r => setTimeout(r, 1200));
+  const layers = weatherMarkers.length;
+  const box = pressureBox(leafletMap.getBounds());
+  const g = pressureCache.values().next().value;
+  const levels = g ? isobarLevels(g).length : 0;
+  const marks = weatherMarkers.filter(m => m instanceof L.Marker).length;
+  const lines = weatherMarkers.filter(m => m instanceof L.Polyline).length;
+  window.fetch = real;
+  return { layers, levels, marks, lines, pts: box ? box.lats.length * box.lons.length : 0 };
+});
+ok(drawn.levels > 0, '等圧線の高さが出ている（前提）', drawn);
+ok(drawn.lines === drawn.levels,
+  '★★★等圧線は高さごとに1レイヤー（線分ごとに作らない）', drawn);
+ok(drawn.layers < 40, '★画面に置くレイヤーが数百にならない', drawn);
+// 外へ向かって上がる場なので、極小は中心の1点だけ。⚠ 縁の極大は数えない（縁は極値でない）
+ok(drawn.marks === 1, '★低気圧の印がちょうど1つ出る（縁を極値にしていない）', drawn);
 
 ok(errors.length === 0, 'ページ内で例外が出ていない', errors);
 await browser.close();
