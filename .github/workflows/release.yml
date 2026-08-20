@@ -16,6 +16,14 @@ name: タグを打つ
 # ⚠ **タグは消せる**（`git push --delete origin vX.Y.Z`）。
 #    `refs/pull/*` と違って後戻りできるので、打ち直しは可能。
 #    ただし**他人が取得したあとで打ち直すと食い違う**ので、打つ前に止める方を厚くしてある。
+#
+# 3つのジョブに分けてある。**書き込み権限を持つのは最後の1つだけ。**
+#
+#   check … 速い門番（数秒）。main か／版数が一致するか／タグが既に無いか
+#   smoke … スモークテスト。⚠ **test.yml を呼ぶ。手順を書き写さないこと。**
+#           最初ここに `npm install` だけ書き写して **Chromium の用意を落とし**、
+#           14件が落ちた（2026-08-20 に実際に踏んだ）
+#   tag   … タグを打つ。**contents: write を持つのはここだけ**
 on:
   workflow_dispatch:
     inputs:
@@ -24,13 +32,14 @@ on:
         required: true
         type: string
 
-# タグを送るために必要。**この1つだけ**にしてある
+# ⚠ **既定は read。** 書き込みは tag ジョブにだけ与える（下）
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  tag:
-    name: 版数を確かめてタグを打つ
+  # ---- 速い門番。ここで落とせるものはテストを回す前に落とす ----
+  check:
+    name: 打ってよいか確かめる
     runs-on: ubuntu-latest
     steps:
       # ⚠ タグの有無を見るので、履歴とタグを全部取る
@@ -72,18 +81,39 @@ jobs:
           fi
           echo "✓ $VERSION はまだ無い"
 
-      # ⚠ **テストを通っていない中身にタグを付けない。** タグの値打ちは
-      #    「あの時動いていた版を1ファイルで取り出せる」ことなので、
-      #    動いていたことを確かめずに打つと目印の意味が薄れる。
-      - name: スモークテスト
-        working-directory: tests
-        run: |
-          npm install
-          node run-all.js
+  # ---- スモークテスト ----
+  # ⚠ **テストを通っていない中身にタグを付けない。** タグの値打ちは
+  #    「あの時動いていた版を1ファイルで取り出せる」ことなので、
+  #    動いていたことを確かめずに打つと目印の意味が薄れる。
+  # ⚠ **手順を書き写さず test.yml を呼ぶ。** Chromium の用意を落として踏んだ。
+  smoke:
+    name: スモークテスト
+    needs: check
+    uses: ./.github/workflows/test.yml
 
-      # ⚠ ここで公開URLとの一致は見ない。マージ直後は Pages の配信が
-      #    間に合っておらず、**中身の問題でない赤**が出るため
-      #    （`公開URLの検証` の deliver ジョブが別途デプロイ後に見ている）。
+  # ---- ここだけが書き込み権限を持つ ----
+  tag:
+    name: タグを打つ
+    needs: [check, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ⚠ **書き込み権限を持つジョブは自分で確かめる。** check ジョブが通っていても、
+      #    ここで1秒かけて見直す方が、権限を持つ手順の前提を他人任せにするより安い。
+      - name: 版数をもう一度確かめる
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/checkVersion.mjs "$VERSION"
 
       - name: タグを打つ
         env:

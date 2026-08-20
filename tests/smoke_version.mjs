@@ -69,11 +69,13 @@ for (const bad of ['4.78.0', 'v4.78', 'v4.78.0.1', '', 'latest',
      シェルのソースになる。スクリプトは呼ばれる前に負ける。
    ⚠ 直し方は `env:` に受けて `"$VERSION"` と引用して使うこと。
      この検査は、あとから run: の中に書き戻す変更を止めるためにある。 */
-const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+const wfRaw = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+/* ⚠ **注記を落としてから見ること。** YAMLのコメントは構文解析で捨てられるので
+     効き目が無い。規則を説明した注記そのものを「違反」と読むと、
+     **注意書きを厚くするほどテストが落ちる**という逆立ちが起きる。 */
+const wf = wfRaw.split('\n').filter(line => !/^\s*#/.test(line)).join('\n');
 const inputRefs = wf.split('\n')
   .map((line, i) => ({ line, no: i + 1 }))
-  // YAMLのコメントは構文解析で捨てられるので展開されない（規則を書いた注記そのものを拾わない）
-  .filter(({ line }) => !/^\s*#/.test(line))
   .filter(({ line }) => /\$\{\{\s*(inputs|github\.event\.inputs)\./.test(line));
 ok(inputRefs.length > 0, 'ワークフローが入力を使っている（検査が空振りしていない）');
 // 許すのは env の代入行だけ（`  VERSION: ${{ inputs.version }}`）
@@ -81,13 +83,32 @@ const bare = inputRefs.filter(({ line }) => !/^\s*[A-Z_]+:\s*\$\{\{\s*inputs\.\w
 ok(bare.length === 0,
   '★★★入力を run: へ直に埋め込まない（env 経由で渡す）', bare);
 
-// 権限は tag を送るぶんだけ
-ok(/permissions:\s*\n\s*contents:\s*write\s*\n/.test(wf) && !/id-token|packages|pages/.test(wf),
-  '★権限は contents: write だけにする', (wf.match(/permissions:[\s\S]{0,80}/) || [])[0]);
+/* 権限は tag を送るぶんだけ。
+   ⚠ **ワークフロー全体に write を与えない。** タグを打つジョブだけに与える。
+     `contents: write` はタグだけでなく**ブランチにも書ける**ので、
+     門番やテストのジョブにまで配ると、必要のない手順が書き込み権限を持つ。 */
+ok(/^permissions:\n  contents: read\n/m.test(wf),
+  '★★ワークフロー既定の権限は read', (wf.match(/^permissions:[\s\S]{0,40}/m) || [])[0]);
+const writes = (wf.match(/contents:\s*write/g) || []);
+ok(writes.length === 1, '★★`contents: write` は1か所だけ', writes);
+ok(/^ {4}permissions:\n {6}contents: write\n/m.test(wf),
+  '★★`contents: write` はジョブに直付けする（ワークフロー全体ではなく）');
+ok(!/id-token|packages:|pages:/.test(wf), '★他の権限を足さない');
 
 // main 以外では打たない
 ok(/GITHUB_REF_NAME.*!=.*main|!=.*\"main\"/.test(wf),
   '★main 以外では打たない検査がある');
+
+/* --- 場面4c: テストの走らせ方を書き写していないこと ---
+   ⚠ **これで実際に落ちた（2026-08-20）。** release.yml に `npm install` だけ書き写して
+     **Chromium の用意（`playwright install` と `PW_CHROMIUM`）を落とし**、
+     19件中14件が「executable doesn't exist」で落ちた。
+     ⚠ 同じ手順が2か所にあると、片方だけ直して食い違う。**呼ぶこと。** */
+ok(/uses:\s*\.\/\.github\/workflows\/test\.yml/.test(wf),
+  '★★★テストは test.yml を呼ぶ（手順を書き写さない）');
+ok(!/playwright/i.test(wf),
+  '★★Chromium の用意を release.yml に書き写さない',
+  (wf.match(/.*playwright.*/i) || [])[0]);
 
 /* --- 場面5: 版数の置き場所が壊れていたら止める --- */
 const r5a = run('v4.78.0', { html: '<span id="version">v4.78.0</span>' });
