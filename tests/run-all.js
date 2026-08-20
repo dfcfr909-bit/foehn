@@ -23,6 +23,7 @@ const TESTS = [
   ['smoke_rain',   '雨の予告（毎時の見込み・ナウキャスト1画素読み・分きざみ）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
+  ['smoke_workflows', 'ワークフロー共通（Nodeの版の一本化・写し違いの禁止・権限の明示）'],
 ];
 
 let failed = 0;

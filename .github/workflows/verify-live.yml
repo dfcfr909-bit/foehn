@@ -53,13 +53,13 @@ jobs:
       # ⚠ **配信物と比べる相手は「デプロイされたコミット」でなければならない。**
       #    既定の checkout だと workflow_run の元コミットが取れず、
       #    「一致しない」と嘘の失敗を出す。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
 
       # Pages の配信が行き渡るまで少し待つ（デプロイ直後は古いものが返ることがある）
       - name: 反映を待つ
@@ -90,25 +90,23 @@ jobs:
     # ⚠ **ここを外して毎デプロイに戻さないこと。** 理由は先頭の注記のとおり。
     if: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
 
       - name: 依存を取得
         working-directory: tests
         run: npm install
 
+      # ⚠ **手順をここに書き写さないこと**（PW_CHROMIUM まで含めて共通アクションが持つ）
       - name: Chromium を用意
-        working-directory: tests
-        run: npx --yes playwright@1.49.0 install --with-deps chromium
+        uses: ./.github/actions/chromium
 
       - name: 実ブラウザで検証
         working-directory: tests
-        run: |
-          bin=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome | head -1)
-          PW_CHROMIUM="$bin" node verify-live.mjs "$LIVE_URL" --only=browser | tee result.txt
+        run: node verify-live.mjs "$LIVE_URL" --only=browser | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()

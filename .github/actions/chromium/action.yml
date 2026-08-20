@@ -1,0 +1,32 @@
+name: Chromium を用意する
+description: >
+  Playwright の Chromium をランナーに入れ、実体のパスを PW_CHROMIUM に入れる。
+  ⚠ **この手順をワークフローに書き写さないこと。**
+
+# なぜ切り出したか:
+#   手順が3つ（install / 実体を glob で探す / PW_CHROMIUM で渡す）あり、
+#   書き写すと必ずどれか落ちる。実際 release.yml へ写したとき install を落として、
+#   19件中14件が `executable doesn't exist at /opt/pw-browsers/chromium` で落ちた
+#   （2026-08-20）。`/opt/pw-browsers/chromium` は**開発環境の同梱パスで、
+#   ランナーには無い**。
+#
+# ⚠ `tests/smoke_workflows.mjs` が見張っている
+#   （ワークフロー側に `playwright` の語が出たら落ちる）。
+runs:
+  using: composite
+  steps:
+    - name: Chromium を取りに行く
+      shell: bash
+      run: npx --yes playwright@1.49.0 install --with-deps chromium
+
+    # playwright install が置いた実体。バージョンごとにディレクトリ名が変わるので glob で拾う
+    - name: 実体のパスを PW_CHROMIUM へ
+      shell: bash
+      run: |
+        bin=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome | head -1)
+        if [ -z "$bin" ]; then
+          echo "✗ Chromium の実体が見つからない"
+          exit 1
+        fi
+        echo "Chromium: $bin"
+        echo "PW_CHROMIUM=$bin" >> "$GITHUB_ENV"

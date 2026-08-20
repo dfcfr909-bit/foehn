@@ -106,9 +106,8 @@ ok(/GITHUB_REF_NAME.*!=.*main|!=.*\"main\"/.test(wf),
      ⚠ 同じ手順が2か所にあると、片方だけ直して食い違う。**呼ぶこと。** */
 ok(/uses:\s*\.\/\.github\/workflows\/test\.yml/.test(wf),
   '★★★テストは test.yml を呼ぶ（手順を書き写さない）');
-ok(!/playwright/i.test(wf),
-  '★★Chromium の用意を release.yml に書き写さない',
-  (wf.match(/.*playwright.*/i) || [])[0]);
+// ⚠ Chromium の用意を書き写していないことは `smoke_workflows` が全ワークフローで見る。
+//    ここで二重に書かない（検査を写すのも「同じことが2か所」に他ならない）。
 
 /* --- 場面5: 版数の置き場所が壊れていたら止める --- */
 const r5a = run('v4.78.0', { html: '<span id="version">v4.78.0</span>' });

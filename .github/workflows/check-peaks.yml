@@ -43,11 +43,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
 
       # 差が見つかると exit 1 で終わるので、結果を握ってサマリーに出す。
       # ⚠ 失敗扱いにしないこと。「要確認が見つかった」は正常な結果であって、
