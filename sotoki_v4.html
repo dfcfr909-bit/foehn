@@ -773,6 +773,14 @@ html, body {
 /* 同名峰の選び分けは標高がいちばん確実（五竜岳の1,585mと2,814m）。
    名前の右に控えめに添える。読み取り待ちの間は空のまま */
 .map-result-elev { font-size: 12px; font-weight: 400; color: var(--text3); margin-left: 6px; }
+/* 百名山の印。⚠ 色だけで区別しない——色覚や画面の明るさで消えるので文字も出す */
+.map-result-badge { font-size: 10px; font-weight: 700; color: #fff; background: var(--accent, #e2703a);
+  border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
+/* 並べ替え。⚠ 既定は「近い順」。標高が後から埋まるので、勝手に並べ替えない */
+.map-sort-row { display: flex; gap: 6px; padding: 6px 10px; }
+.map-sort-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: none;
+  background: var(--panel2, #2a2a2a); color: var(--text3); min-height: 28px; }
+.map-sort-chip.on { background: var(--accent, #e2703a); color: #fff; font-weight: 700; }
 .map-result-msg { padding: 12px 14px; font-size: 12px; color: var(--text3); text-align: center; }
 /* overflow:hidden が要る。レイヤーパネルは閉じているとき translateY(101%) で
    下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
@@ -6803,13 +6811,43 @@ function nameSearchVariants(q, max = SEARCH_VARIANT_MAX) {
   return out;
 }
 
+/* 漢字の揺れ。**照合と重複判定にだけ使う。検索語には足さない。**
+   ⚠ 地理院は竜／龍を自前で吸収して返すので、こちらで検索語の揺れを作る必要は無い
+     （作ると相手方を無駄に叩くだけ）。畳めていないと実際にどうなるかというと、
+     「五竜岳(OSM 2811m)」と「五龍岳(地理院 2811m)」が**同じ山なのに2行出る**。 */
+const KANJI_VARIANT_PAIRS = [['龍', '竜'], ['嶽', '岳'], ['峯', '峰'], ['嶋', '島'], ['澤', '沢']];
+
 // 同じ地点が情報源ごとに重複するのを畳むための正規化
 function normalizeSearchName(s) {
   let t = String(s).normalize('NFKC').trim().replace(/[\s・]/g, '');
   for (const group of NAME_VARIANT_GROUPS) {
     for (const ch of group.slice(1)) t = t.split(ch).join(group[0]);
   }
+  for (const [old, now] of KANJI_VARIANT_PAIRS) t = t.split(old).join(now);
   return t;
+}
+
+/* この候補が百名山か。areas.json と突き合わせる。
+   ⚠ **距離だけで判定しない。** 百名山どうしは近接する（北岳と間ノ岳は約3km）ので、
+     近いというだけでは隣の山の印を付けてしまう。名前の一致を必須にして、
+     距離は「同名の別の山を拾わない」ための保険として使う。 */
+const HYAKU_MATCH_KM = 5;
+function findHyakumeizan(name, lat, lon) {
+  if (!areasData) return null;
+  const want = normalizeSearchName(String(name).replace(/[（(].*$/, ''));
+  if (!want) return null;
+  for (const area of areasData.areas) {
+    for (const p of area.peaks) {
+      if (!p.hyakumeizan) continue;
+      const base = normalizeSearchName(String(p.name).replace(/[（(].*$/, ''));
+      if (base !== want) continue;
+      const dLat = (p.lat - lat) * 111;
+      const dLon = (p.lon - lon) * 111 * Math.cos(lat * Math.PI / 180);
+      if (Math.hypot(dLat, dLon) > HYAKU_MATCH_KM) continue;
+      return p;
+    }
+  }
+  return null;
 }
 
 /* 国土地理院の地名検索。**OSMは日本の山名の網羅性が低い。**
@@ -6836,6 +6874,72 @@ async function gsiPlaceSearch(term) {
   }).filter(Boolean);
 }
 
+/* 検索結果の並べ替え。⚠ **既定は「近い順」から動かさないこと。**
+   標高は後から埋まるので、標高順を既定にすると一覧が出るまで待つことになる。
+   利用者が「高い順」を押したときだけ並べ替える。 */
+let mapSearchItems = [];
+let mapSearchSort = 'near';        // 'near' | 'high'
+
+function setMapSearchSort(mode) {
+  if (mapSearchSort === mode) return;
+  mapSearchSort = mode;
+  renderMapResults();
+}
+
+function renderMapResults() {
+  const results = document.getElementById('map-results');
+  if (!results) return;
+  results.innerHTML = '';
+  if (!mapSearchItems.length) return;
+
+  // 並べ替えの札は候補が2つ以上あるときだけ出す（1つなら意味が無い）
+  if (mapSearchItems.length > 1) {
+    const row = document.createElement('div');
+    row.className = 'map-sort-row';
+    for (const [mode, label] of [['near', '近い順'], ['high', '高い順']]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'map-sort-chip' + (mapSearchSort === mode ? ' on' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => setMapSearchSort(mode));
+      row.appendChild(b);
+    }
+    results.appendChild(row);
+  }
+
+  /* 「高い順」は読めた標高だけで並べる。⚠ **まだ読めていないものを先頭に出さない**
+     （null を 0 とみなすと逆順の先頭に来てしまう）。読めなかったものは末尾。 */
+  const list = mapSearchItems.slice();
+  if (mapSearchSort === 'high') {
+    list.sort((a, b) => {
+      const ea = (typeof a._elev === 'number') ? a._elev : -Infinity;
+      const eb = (typeof b._elev === 'number') ? b._elev : -Infinity;
+      return eb - ea;
+    });
+  }
+
+  for (const item of list) {
+    const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
+    const full = item.display_name || '';
+    const name = full.split(',')[0].trim() || '';
+    const el = document.createElement('div');
+    el.className = 'map-result-item';
+    el.dataset.idx = item._idx;
+    const sub = item._src ? `${full}（${item._src}）` : full;
+    const elev = (typeof item._elev === 'number') ? `${Math.round(item._elev)}m` : '';
+    const hyaku = findHyakumeizan(name, lat, lon) ? '<span class="map-result-badge">百名山</span>' : '';
+    el.innerHTML =
+      `<div class="map-result-name">${name}` +
+      `<span class="map-result-elev">${elev}</span>${hyaku}</div>` +
+      `<div class="map-result-sub">${sub}</div>`;
+    /* ⚠ **第4引数（山頂標高）は渡さない。** ここで渡せるのはDEMの読みであって
+       公称の山頂標高ではない。`state.summitElev` は areas.json の値のための席で、
+       DEMは `state.demElevation` に入って自動で使われる（`docs/spec/judge.md`）。 */
+    el.addEventListener('click', () => pickMapPoint(lat, lon, name));
+    results.appendChild(el);
+  }
+}
+
 async function doMapSearch() {
   const input = document.getElementById('map-search-input');
   const q = input.value.trim();
@@ -6854,6 +6958,7 @@ async function doMapSearch() {
       const key = `${name}@${lat.toFixed(2)},${lon.toFixed(2)}`;
       if (seen.has(key)) return;
       seen.add(key);
+      item._idx = items.length;   // 並べ替えても標高の埋め先を見失わないための通し番号
       items.push(item);
     };
     const terms = nameSearchVariants(q);
@@ -6884,28 +6989,20 @@ async function doMapSearch() {
       };
       items.sort((a, b) => d2(a) - d2(b));
     }
-    results.innerHTML = '';
-    items.slice(0, 8).forEach(item => {
-      const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
-      const full = item.display_name || '';
-      const name = full.split(',')[0].trim() || q;
-      const el = document.createElement('div');
-      el.className = 'map-result-item';
-      const sub = item._src ? `${full}（${item._src}）` : full;
-      el.innerHTML =
-        `<div class="map-result-name">${name}<span class="map-result-elev"></span></div>` +
-        `<div class="map-result-sub">${sub}</div>`;
-      /* ⚠ **第4引数（山頂標高）は渡さない。** ここで渡せるのはDEMの読みであって
-         公称の山頂標高ではない。`state.summitElev` は areas.json の値のための席で、
-         DEMは `state.demElevation` に入って自動で使われる（`docs/spec/judge.md`）。 */
-      el.addEventListener('click', () => pickMapPoint(lat, lon, name));
-      results.appendChild(el);
-      /* 標高を添える。⚠ **読み取りを待って一覧を止めないこと。**
-         候補ぶんのタイルを引くので、先に一覧を出してから埋める。 */
-      readDemElevation(lat, lon).then(elev => {
-        if (typeof elev !== 'number' || !isFinite(elev)) return;
-        const sp = el.querySelector('.map-result-elev');
-        if (sp) sp.textContent = `${Math.round(elev)}m`;
+    mapSearchItems = items.slice(0, 8);
+    mapSearchSort = 'near';        // 検索し直したら既定に戻す
+    renderMapResults();
+
+    /* 標高と百名山の印を後から埋める。
+       ⚠ **待って一覧を止めないこと。** 候補ぶんのタイルを引くので先に出す。
+       ⚠ **埋まっても並べ替えないこと。** 押そうとした瞬間に行が入れ替わると
+          押し間違える。並べ替えるのは利用者がトグルを押したときだけ。 */
+    if (!areasData) loadAreas().then(renderMapResults).catch(() => {});
+    mapSearchItems.forEach(item => {
+      readDemElevation(parseFloat(item.lat), parseFloat(item.lon)).then(elev => {
+        item._elev = (typeof elev === 'number' && isFinite(elev)) ? elev : null;
+        const el = document.querySelector(`#map-results [data-idx="${item._idx}"] .map-result-elev`);
+        if (el && item._elev != null) el.textContent = `${Math.round(item._elev)}m`;
       });
     });
   } catch (e) {
