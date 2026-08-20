@@ -254,3 +254,23 @@
   （`tests/smoke_version.mjs`）。YAMLのコメントは構文解析で捨てられるので効き目が無い。
   規則を説明した注記そのものを「違反」と読むと、
   **注意書きを厚くするほどテストが落ちる**という逆立ちが起きる（2回踏んだ）。
+- **Node の版は `.nvmrc` 1か所に置く**（2026-08-20）。`node-version:` が6ワークフローに
+  直書きされ、**`release.yml` だけ 22、他は 20 に割れていた**。
+  ⚠ **手元は 22 なので、Node依存の不具合は「手元で通ってCIで落ちる」形になっていた。**
+  `node-version-file: .nvmrc` に統一。⚠ `.nvmrc` は**手元の Node に合わせる**
+  （予測が効くことが最優先。開発環境が上がったら一緒に上げる）。
+- **Chromium の用意は共通アクション `.github/actions/chromium` に置く**（2026-08-20）。
+  手順が3つ（`playwright install` / 実体を glob で探す / `PW_CHROMIUM` で渡す）あり、
+  書き写すと必ずどれか落ちる。**`test.yml` と `verify-live.yml` に同じものが2つあった。**
+  ⚠ `tests/smoke_workflows.mjs` が、ワークフロー側に `playwright` や `PW_CHROMIUM` の語が
+  出たら落とす。**共通アクションを置いただけで誰も呼んでいない**状態も落とす。
+- **`actions/checkout` と `setup-node` を v5 へ上げた**（Node 20 非推奨・2026-08-20）。
+  ⚠ **警告が言う Node と、テストが走る Node は別物。** 警告はアクション自身の実行環境
+  （`action.yml` の `runs.using: node20`）の話で、`node-version:` を変えても消えない。
+  ⚠ **警告ゼロは目標にしない。** `actions/configure-pages@v5` は最新メジャーでも node20 で、
+  上流が新しいメジャーを出すまでこちらでは消せない（`deploy-pages` / `upload-artifact` も同様）。
+  ⚠ `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true` は使わない。名前のとおり
+  **安全でない古いランタイムに戻すだけ**で、警告だけ消えて状況は悪化する。
+- **「同じことが2か所」は検査そのものにも当てはまる**（2026-08-20）。
+  `smoke_version` にも Chromium の写し違い検査を書いていたが、`smoke_workflows` が
+  全ワークフローで見るようになったので外した。**検査を写すのも重複に他ならない。**

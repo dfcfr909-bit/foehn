@@ -43,14 +43,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # ⚠ タグの有無を見るので、履歴とタグを全部取る
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       # ⚠ **作業ブランチでは打たない** → docs/workflow.md「タグ」
       - name: main であることを確かめる
@@ -99,14 +99,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       # ⚠ **書き込み権限を持つジョブは自分で確かめる。** check ジョブが通っていても、
       #    ここで1秒かけて見直す方が、権限を持つ手順の前提を他人任せにするより安い。

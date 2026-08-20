@@ -32,7 +32,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # enablement: true で、Pages が未有効ならこのワークフローが有効化する。
       # 設定画面から有効化できなかったので、ここに寄せている（pages: write が要る）
