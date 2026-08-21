@@ -661,9 +661,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const wxDefs = await page.evaluate(() => MAP_WEATHER.map(w => ({ id: w.id, kind: w.kind })));
   /* ⚠ **数だけを見ないこと。** 数を合わせるだけの検査は、入れ替わりを見逃す
        （1つ消して1つ足しても通ってしまう）。**顔ぶれで見る。** */
-  const WX_EXPECT = ['radar', 'satellite', 'thunder', 'amedas', 'windArrows', 'pressure'];
+  const WX_EXPECT = ['radar', 'satellite', 'thunder', 'amedas', 'windArrows'];
   ok(JSON.stringify(wxDefs.map(w => w.id)) === JSON.stringify(WX_EXPECT),
-    '気象レイヤーの顔ぶれ（6種）', wxDefs.map(w => w.id));
+    '気象レイヤーの顔ぶれ（5種）', wxDefs.map(w => w.id));
 
   // 降雨レーダー：targetTimes を引いてから basetime/validtime 入りのURLを組む
   await page.evaluate(() => toggleOverlay('radar'));
