@@ -1,0 +1,48 @@
+name: 外部の情報源を調べる
+
+# 手元から到達できない相手（気象庁・国土地理院など）が実際に使えるかを、
+# ランナーから叩いて確かめる。
+#
+# ⚠ **開発環境からは外部へ到達できない**（プロキシが403を返す）。
+#   「取れるはず」で実装を始めると、実機で初めて駄目だと分かる。ここで先に潰す。
+#
+# ⚠ **調べるだけ。コードは何も変えない。** 手動実行のみで、定期実行は足さないこと
+#   （相手方を無駄に叩かない）。
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '何を調べるか'
+        required: true
+        type: choice
+        options:
+          - jma-weather-map
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: 調べる
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: 気象庁の天気図
+        if: ${{ inputs.target == 'jma-weather-map' }}
+        run: node scripts/probeJma.mjs | tee result.txt
+
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## 調べた結果'
+            echo
+            echo '```'
+            cat result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
