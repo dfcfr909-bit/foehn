@@ -1475,6 +1475,78 @@ html, body {
   padding: 8px 12px 4px;
   flex-shrink: 0;
 }
+/* ------ 天気図オーバーレイ（気象庁の速報天気図・予想天気図） ------
+   ⚠ **地図には重ねない。** 天気図は円錐図法などで描かれた絵で、このアプリの地図
+   （Webメルカトル）と座標系が違う → docs/adr/0010-pressure-layer-removed.md
+   ⚠ **CSSフィルタで色を反転・減光しない。** このリポジトリはiOS特有のフィルタ不具合を
+   2回踏んでいる（`tests/smoke_mapui.js` の注記）。暗いテーマでも素のまま出す。 */
+#wxmap-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: var(--surface);
+  display: none;
+  flex-direction: column;
+}
+#wxmap-overlay.open { display: flex; }
+#wxmap-header {
+  display: flex; align-items: center;
+  padding: calc(12px + var(--sa-top)) 14px 12px;
+  border-bottom: 2px solid var(--border);
+  gap: 10px;
+  flex-shrink: 0;
+}
+#wxmap-header h2 { flex: 1; font-size: 16px; }
+#btn-wxmap-close {
+  font-size: 22px; border: none; background: none; cursor: pointer; color: var(--text);
+  padding: 4px 8px;
+}
+#wxmap-tabs, #wxmap-area-row { display: flex; gap: 8px; padding: 10px 12px 0; flex-shrink: 0; }
+#wxmap-area-row { padding-bottom: 8px; }
+.wxmap-tab, .wxmap-area {
+  flex: 1;
+  min-height: 40px;              /* グローブ操作前提のタップ領域 */
+  border: 2px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--text2);
+}
+.wxmap-area { min-height: 34px; font-size: 12px; }
+.wxmap-tab.active, .wxmap-area.active { background: var(--text); color: #fff; border-color: var(--text); }
+/* 画像は白背景の絵なので、暗いテーマでも下に白を敷いて浮かせる（反転はしない） */
+#wxmap-stage {
+  flex: 1; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 10px;
+  overflow: auto;
+  background: var(--bg2);
+}
+#wxmap-img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 6px;
+  display: none;
+  cursor: zoom-in;
+}
+/* ⚠ **縮めると読めない。** 天気図は 600px 幅の絵で、前線記号や気圧の数字が入っている。
+   390px の画面に収めると潰れるので、タップで原寸に切り替えて枠内をスクロールできる。 */
+#wxmap-img.zoom { max-width: none; max-height: none; cursor: zoom-out; }
+#wxmap-stage.zoomed { align-items: flex-start; justify-content: flex-start; }
+#wxmap-msg { font-size: 13px; color: var(--text2); text-align: center; padding: 0 20px; }
+#wxmap-foot {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 14px calc(8px + var(--sa-bottom));
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text2);
+  flex-shrink: 0;
+}
+#wxmap-credit { font-family: var(--font-mono); }
+
 .rank-tab {
   flex: 1;
   min-height: 40px;              /* グローブ操作前提のタップ領域 */
@@ -1817,6 +1889,9 @@ html, body {
     <button class="foot-btn" id="btn-rank" onclick="openRank()">
       <span class="icon">🏔️</span>ランキング
     </button>
+    <button class="foot-btn" id="btn-wxmap" onclick="openWxMap()">
+      <span class="icon">🌐</span>天気図
+    </button>
   </div>
 
   <!-- Map Overlay -->
@@ -1960,6 +2035,35 @@ html, body {
         近傍アメダスの実測降雪でモデルを補正している。左の帯＝信頼度（緑=高 / 橙=中 / 灰破線=低）。
       </div>
       <div id="snow-list"></div>
+    </div>
+  </div>
+
+  <!-- 天気図オーバーレイ（気象庁の速報天気図・予想天気図をそのまま1枚絵で出す） -->
+  <!-- ⚠ **地図には重ねない。** 天気図は円錐図法などで描かれた絵で、
+       このアプリの地図（Webメルカトル）と座標系が違う。重ねると H の位置が
+       数百kmずれる → docs/adr/0010-pressure-layer-removed.md -->
+  <div id="wxmap-overlay">
+    <div id="wxmap-header">
+      <h2>天気図</h2>
+      <button id="btn-wxmap-close" onclick="closeWxMap()">✕</button>
+    </div>
+    <div id="wxmap-tabs">
+      <button class="wxmap-tab active" data-when="now"  onclick="setWxMapWhen('now')">実況</button>
+      <button class="wxmap-tab" data-when="ft24" onclick="setWxMapWhen('ft24')">24時間後</button>
+      <button class="wxmap-tab" data-when="ft48" onclick="setWxMapWhen('ft48')">48時間後</button>
+    </div>
+    <div id="wxmap-area-row">
+      <button class="wxmap-area active" data-area="near" onclick="setWxMapArea('near')">日本周辺</button>
+      <button class="wxmap-area" data-area="asia" onclick="setWxMapArea('asia')">アジア広域</button>
+    </div>
+    <div id="wxmap-stage">
+      <img id="wxmap-img" alt="気象庁の天気図" onclick="toggleWxMapZoom()">
+      <div id="wxmap-msg">読み込み中…</div>
+    </div>
+    <div id="wxmap-foot">
+      <span id="wxmap-when"></span>
+      <span id="wxmap-hint">タップで拡大</span>
+      <span id="wxmap-credit">気象庁</span>
     </div>
   </div>
 
@@ -7617,6 +7721,148 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 /* ============================================================
    BOOT
    ============================================================ */
+/* ============================================================
+   天気図（気象庁の速報天気図・予想天気図）
+
+   ADR-0010 で「計算した気圧配置」を外した代わり。**格子点から自前で描かない。**
+   気象庁が引いた線をそのまま1枚絵で見せる。
+
+   ⚠ **地図には重ねない。** 天気図は円錐図法などで描かれた絵で、このアプリの地図
+     （Webメルカトル）と座標系が違う。重ねると **H の位置が数百kmずれる**。
+     行動判断に使う道具で位置のずれた気圧配置を出すのは、出さないより悪い。
+
+   ⚠ **前線が描いてあるのが最大の利点。** 気圧の場だけからは原理的に出せない。
+     冬型か南岸低気圧かの判断は前線を見るのが早い。
+
+   通信は **一覧1回＋画像1枚**だけ。⚠ **格子点APIのような点数の問題が無い**
+   （これが ADR-0010 の三すくみを解いている）。
+   ============================================================ */
+const WXMAP_LIST_URL = 'https://www.jma.go.jp/bosai/weather_map/data/list.json';
+const WXMAP_PNG_BASE = 'https://www.jma.go.jp/bosai/weather_map/data/png/';
+/* 一覧の形（2026-08-25 に実測。`scripts/probeJma.mjs`）
+     { near: {now:[...], ft24:[1], ft48:[1]}, near_monochrome: {...},
+       asia: {now:[13], ft24:[1], ft48:[1]}, asia_monochrome: {...} }
+   ⚠ **モノクロ版は使わない。** 暗いテーマでも白地の絵なので、色があった方が読みやすい。
+     CSSフィルタで反転・減光もしない（iOS特有の不具合を2回踏んでいる）。 */
+let wxMapList = null;
+let wxMapWhen = 'now';     // 'now' | 'ft24' | 'ft48'
+let wxMapArea = 'near';    // 'near' | 'asia'
+
+function isWxMapOpen() {
+  const el = document.getElementById('wxmap-overlay');
+  return !!el && el.classList.contains('open');
+}
+
+function openWxMap() {
+  document.getElementById('wxmap-overlay').classList.add('open');
+  renderWxMap();
+}
+function closeWxMap() {
+  document.getElementById('wxmap-overlay').classList.remove('open');
+}
+function setWxMapWhen(when) {
+  wxMapWhen = when;
+  document.querySelectorAll('.wxmap-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.when === when));
+  renderWxMap();
+}
+function setWxMapArea(area) {
+  wxMapArea = area;
+  document.querySelectorAll('.wxmap-area').forEach(b =>
+    b.classList.toggle('active', b.dataset.area === area));
+  renderWxMap();
+}
+
+/* 一覧を引く。⚠ CORS は通る（`access-control-allow-origin: *` を実測で確認）。 */
+async function loadWxMapList() {
+  if (wxMapList) return wxMapList;
+  const res = await fetch(WXMAP_LIST_URL);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  wxMapList = await res.json();
+  return wxMapList;
+}
+
+/* ファイル名から時刻を読む。
+     20260822141500_0_Z__C_010000_20260822120000_MET_CHT_JCIspas_...
+     ~~~~~~~~~~~~~~ 発表時刻              ~~~~~~~~~~~~~~ 基準時刻
+   ⚠ **どちらもUTC。** 名前の `Z` がそれを示しており、実況が6時間おき
+     （00/06/12/18Z＝日本時間の09/15/21/03時）に並ぶこととも合う。
+     **そのまま表示すると9時間ずれる。**
+   ⚠ 予想図（ft24/ft48）の2つ目の時刻は**基準時刻**であって対象時刻ではない。
+     対象は基準＋24h／＋48h。ここを取り違えると「1日前の予想」と表示してしまう。 */
+function wxMapParseName(name) {
+  const m = String(name).match(/^(\d{14})_\d+_.*?_(\d{14})_MET_CHT_/);
+  if (!m) return null;
+  const toDate = t => new Date(Date.UTC(
+    +t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6, 8),
+    +t.slice(8, 10), +t.slice(10, 12), +t.slice(12, 14)));
+  return { issued: toDate(m[1]), base: toDate(m[2]) };
+}
+
+// 日本時間で「M/D HH:MM」。⚠ 端末の時刻帯に関わらず日本時間で出す（山の話なので）
+function wxMapJst(d) {
+  const j = new Date(d.getTime() + 9 * 3600 * 1000);
+  const p = n => String(n).padStart(2, '0');
+  return `${j.getUTCMonth() + 1}/${j.getUTCDate()} ${p(j.getUTCHours())}:${p(j.getUTCMinutes())}`;
+}
+
+/* その範囲・その時のうち**いちばん新しい1枚**を選ぶ。
+   ⚠ **並び順を仮定しない。** 一覧が昇順で返ってくるように見えても、
+     名前から読んだ時刻で選ぶ（順序が変わったら黙って古い絵を出す、を避ける）。 */
+function wxMapPick(list, area, when) {
+  const arr = list && list[area] && list[area][when];
+  if (!Array.isArray(arr) || !arr.length) return null;
+  let best = null;
+  for (const name of arr) {
+    const t = wxMapParseName(name);
+    if (!t) continue;
+    if (!best || t.base > best.t.base) best = { name, t };
+  }
+  return best;
+}
+
+/* タップで原寸／画面に収める を切り替える。
+   ⚠ 拡大したまま別の図に切り替えると、いきなり隅が映って迷子になる。
+     図を描き直すたびに畳む。 */
+function toggleWxMapZoom() {
+  const img = document.getElementById('wxmap-img');
+  const stage = document.getElementById('wxmap-stage');
+  const on = !img.classList.contains('zoom');
+  img.classList.toggle('zoom', on);
+  stage.classList.toggle('zoomed', on);
+  document.getElementById('wxmap-hint').textContent = on ? 'タップで縮小' : 'タップで拡大';
+  if (on) { stage.scrollLeft = (img.naturalWidth - stage.clientWidth) / 2; }
+}
+
+function renderWxMap() {
+  const img = document.getElementById('wxmap-img');
+  const msg = document.getElementById('wxmap-msg');
+  const when = document.getElementById('wxmap-when');
+  const show = text => { img.style.display = 'none'; msg.style.display = ''; msg.textContent = text; };
+  // 図を切り替えたら拡大は畳む（隅が映ったまま別の図になるのを防ぐ）
+  if (img.classList.contains('zoom')) toggleWxMapZoom();
+  show('読み込み中…');
+  when.textContent = '';
+  loadWxMapList()
+    .then(list => {
+      if (!isWxMapOpen()) return;
+      const pick = wxMapPick(list, wxMapArea, wxMapWhen);
+      if (!pick) { show('この天気図は配信されていません'); return; }
+      /* 予想図は「基準時刻＋N時間」が対象。実況は基準時刻そのもの。 */
+      const addH = wxMapWhen === 'ft24' ? 24 : wxMapWhen === 'ft48' ? 48 : 0;
+      const valid = new Date(pick.t.base.getTime() + addH * 3600 * 1000);
+      const label = addH ? `${wxMapJst(valid)} の予想` : `実況 ${wxMapJst(valid)}`;
+      when.textContent = `${label}（日本時間）`;
+      /* ⚠ **失敗を黙って空にしない。** 画像が出ないときは理由を出す。 */
+      /* ⚠ **空文字に戻さないこと。** CSS 側で `display: none` を指定しているので、
+           インラインを空にすると CSS が効いて消えたままになる。明示的に指定する。 */
+      img.onload = () => { msg.style.display = 'none'; img.style.display = 'block'; };
+      img.onerror = () => show('天気図を取得できませんでした');
+      img.src = WXMAP_PNG_BASE + pick.name;
+    })
+    .catch(e => show(`天気図の一覧を取得できませんでした（${e.message}）`));
+}
+
 /* ============================================================
    AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）
    ============================================================ */
