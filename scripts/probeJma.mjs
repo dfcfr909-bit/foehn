@@ -71,14 +71,37 @@ if (list) {
   try { json = JSON.parse(list.body.toString('utf8')); }
   catch (e) { console.log(`   ✗ JSONとして読めない: ${e.message}`); }
   if (json) {
-    console.log(`   形: ${Array.isArray(json) ? `配列(${json.length})` : `オブジェクト(${Object.keys(json).slice(0, 8).join(', ')})`}`);
+    /* ⚠ **中身の形を推測しない。** 何が何本あるのかをそのまま出す。
+         ここを飛ばして実装に入ると、「予想天気図もあるのか」「何時間ぶんあるのか」を
+         知らないまま画面を設計することになる。 */
+    const walk = (o, path = '') => {
+      if (Array.isArray(o)) {
+        console.log(`   ${path || '(root)'} : 配列 ${o.length}件`);
+        if (o.length) {
+          console.log(`      最初 : ${JSON.stringify(o[0]).slice(0, 160)}`);
+          if (o.length > 1) console.log(`      最後 : ${JSON.stringify(o[o.length - 1]).slice(0, 160)}`);
+        }
+      } else if (o && typeof o === 'object') {
+        console.log(`   ${path || '(root)'} : オブジェクト {${Object.keys(o).join(', ')}}`);
+        for (const k of Object.keys(o)) walk(o[k], path ? `${path}.${k}` : k);
+      }
+    };
+    walk(json);
     // 中身に現れる「それらしい名前」を拾う（推測でURLを組み立てないため）
     const flat = JSON.stringify(json);
     const names = [...new Set(flat.match(/[0-9]{12,14}[-_A-Za-z0-9]*\.(png|jpg|gif)/g) || [])];
-    console.log(`   画像らしい名前: ${names.slice(0, 5).join(', ') || '(見つからない)'}`);
+    console.log(`\n   画像らしい名前: 全${names.length}件`);
     if (names.length) {
       const base = 'https://www.jma.go.jp/bosai/weather_map/data/png/';
-      await probe('画像そのもの', base + names[0]);
+      const r = await probe('画像そのもの（1枚目）', base + names[0]);
+      /* PNG の IHDR から縦横を読む（別パネルの大きさを決めるのに要る）。
+         ⚠ 画素を読むわけではないので CORS は関係ない。 */
+      if (r && r.ok && r.body && r.body.length > 24) {
+        const w = r.body.readUInt32BE(16), h = r.body.readUInt32BE(20);
+        console.log(`   画像の寸法: ${w} x ${h}`);
+      }
+      // 最後の1枚も取ってみる（一覧の末尾が予想図なのか実況なのかを見る）
+      if (names.length > 1) await probe('画像そのもの（最後）', base + names[names.length - 1]);
     }
   }
 }
