@@ -24,7 +24,6 @@ const TESTS = [
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
   ['smoke_workflows', 'ワークフロー共通（Nodeの版の一本化・写し違いの禁止・権限の明示）'],
-  ['smoke_pressure', '気圧配置（H/Lの極値・縁を中心と呼ばない・等圧線4hPa・鞍部）'],
 ];
 
 let failed = 0;

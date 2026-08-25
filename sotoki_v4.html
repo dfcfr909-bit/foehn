@@ -1154,21 +1154,6 @@ html, body {
 /* 15m/s超は赤（吹き飛び・ウインドスラブの目安。チャート側と同じしきい値） */
 .wind-box.strong { border-color: var(--c-col); }
 .wind-box.strong b, .wind-box.strong .wind-a { color: var(--c-col); }
-/* 気圧配置の H/L（#26）。
-   ⚠ **色だけで区別しない。** H/L の文字と hPa を必ず出す
-   （色覚や画面の明るさで色は消える。百名山の印と同じ方針 → docs/decisions.md） */
-.press-box {
-  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
-  display: inline-flex; align-items: baseline; gap: 2px;
-  padding: 0 4px;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.82);
-  white-space: nowrap;
-}
-.press-box .press-hl { font-size: 17px; font-weight: 700; line-height: 1.1; }
-.press-box b { font-size: 10px; font-family: var(--font-mono); }
-.press-box.high .press-hl, .press-box.high b { color: #1552b8; }
-.press-box.low  .press-hl, .press-box.low  b { color: #c0281e; }
 .layer-ov-op { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .layer-ov-op input[type=range] { width: 92px; height: 44px; }
 .layer-ov-op input[type=range]:disabled { opacity: 0.35; }
@@ -4859,9 +4844,6 @@ const MAP_WEATHER = [
   // 風。Open-Meteoの値を格子状に矢印で置く（leaflet-velocity禁止のためアニメーションはしない）
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
     attribution: 'Open-Meteo', note: '選択時刻の風。地図を拡大すると表示' },
-  // 気圧配置。⚠ 風とは逆で**広い範囲で見るもの**（拡大すると画面内が一様になる）
-  { id: 'pressure', name: '気圧配置', kind: 'pressure', opacity: 0.95,
-    attribution: 'Open-Meteo', note: '高気圧(H・青)/低気圧(L・赤)と等圧線。広域で表示' },
 ];
 
 function findBase(id) { return MAP_BASES.find(b => b.id === id) || null; }
@@ -4979,7 +4961,7 @@ function applyOverlays() {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
     } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
       addTimedTileLayer(def, item.opacity);
-    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'pressure' || def.kind === 'areas') {
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'areas') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
       const layer = L.tileLayer(def.url,
@@ -5598,344 +5580,6 @@ function drawWindArrows(bounds, opacity) {
     .catch(e => setLayerStatus('windArrows', `取得できません（${e.message}）`));
 }
 
-/* ------ 気圧配置（高気圧=青 / 低気圧=赤・等圧線） ------ #26
-   風の矢印と同じく「画面を格子に割って Open-Meteo でまとめ取り」する方式。
-   **新しい情報源は増やさない**（既存の Open-Meteo だけで完結する）。
-
-   ⚠ **表示だけの機能。ABC評価には一切関与させない。**
-     `judgePoint` / `abcScore` / `THRESH` をこの節から参照しないこと
-     （`tests/smoke_pressure.mjs` が見張っている）。
-
-   ⚠ **風より粗いズームでこそ意味がある。** 総観規模（高低気圧の配置）を見るものなので、
-     拡大しすぎると画面内の気圧がほぼ一様になり、等圧線が1本も出ない。
-     だから風（`WIND_MIN_ZOOM = 7`）とは逆に、**上限**を設けてある。 */
-const PRESS_INTERVAL_HPA = 4;    // 天気図の慣習（4hPaごと）
-const PRESS_BOLD_EVERY = 20;     // 1000/1020 のような節目を太くする
-
-/* ⚠⚠ **格子は「画面の四隅」ではなく固定の升目に載せること。** ここを最初に間違えた。
-     画面から格子を作ると、**少し動かすたびに点の緯度経度が変わってキャッシュが
-     一度も効かず**、地図を動かすたびに数十点を取りに行く。
-     実機で `HTTP 429`（取りすぎ）を出した（2026-08-20）。
-     固定の升目に載せておけば、**少しの移動では同じ点を見に行くのでキャッシュが効く**。
-     地図タイルが固定の升目に切られているのと同じ考え方。 */
-const PRESS_STEPS_DEG = [0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8];   // 升目の候補（粗い方へ落ちる）
-const PRESS_MAX_POINTS = 130;    // 1回に取る点数の上限（レートは #14）
-/* ⚠ **気圧配置は総観規模で見るもの。** 画面が狭くてもこの広さぶんは計算する
-     （山を見る縮尺で等圧線が1本も画面に入らない、を防ぐ）。 */
-const PRESS_MIN_SPAN_DEG = 24;
-/* 描画用に格子を細かくする倍率。⚠ **通信は増えない**（持っている点の間を埋めるだけ）。
-   ⚠ 見た目が滑らかになるだけで**精度は上がらない**。H/L は元の格子から採る。 */
-const PRESS_REFINE = 4;
-/* ⚠ 429 を受けたら**しばらく取りに行かない**。取り直しを続けると解けない。 */
-const PRESS_COOLDOWN_MS = 90000;
-const PRESS_CACHE_MAX = 8;       // 行き来しても取り直さないための控え
-
-const pressureCache = new Map();   // key -> grid（挿入順でLRU）
-let pressureInflight = null;       // { key, promise } 同じものを二重に取りに行かない
-let pressureCooldownUntil = 0;     // 429 を受けた時刻 + PRESS_COOLDOWN_MS
-/* ⚠ **起伏の小さい凹凸を極値と呼ばないこと。** モデルの数値には細かな揺れがあり、
-     「隣より少しでも高い」で拾うと H と L が画面中に乱立して読めなくなる。
-     周囲との差がこれ以上あるものだけを採る（#13 の山頂探しと同じ考え方）。 */
-const PRESS_PROMINENCE_HPA = 0.8;
-
-/* 表示範囲を覆う「固定の升目」を返す。
-   ⚠ 画面の四隅ではなく、**step の倍数**に切り上げ／切り下げた枠を使う。
-     これで少しの移動では同じ枠になり、取り直しが起きない。
-   ⚠ 点数が PRESS_MAX_POINTS を超えないところまで升目を粗くする。 */
-function pressureBox(bounds) {
-  const s0 = bounds.getSouth(), w0 = bounds.getWest();
-  const n0 = bounds.getNorth(), e0 = bounds.getEast();
-  /* ⚠ **気圧配置は必ず総観規模の広さで計算する。** 画面の範囲だけで作ると、
-       山を見る縮尺では等圧線が1本も画面に入らず「何も出ない」ことになる
-       （実機で「大まかな気圧配置が把握しにくい」と指摘を受けた 2026-08-20）。
-       画面が狭いときは中心を保ったまま PRESS_MIN_SPAN_DEG まで広げる。
-       画面の外へはみ出した線は地図が勝手に切ってくれるので、無駄にはならない。 */
-  const cLat = (s0 + n0) / 2, cLon = (w0 + e0) / 2;
-  const halfLat = Math.max((n0 - s0) / 2, PRESS_MIN_SPAN_DEG / 2);
-  const halfLon = Math.max((e0 - w0) / 2, PRESS_MIN_SPAN_DEG / 2);
-  const s2 = cLat - halfLat, n2 = cLat + halfLat;
-  const w2 = cLon - halfLon, e2 = cLon + halfLon;
-  for (const step of PRESS_STEPS_DEG) {
-    /* ⚠ **升目1つぶんの余白を足して取る。** 縁の点は極値と判定しないので、
-         画面いっぱいに取ると**画面端の高気圧・低気圧が永久に出ない**。
-         余白があれば、画面の端にある極値もちゃんと8近傍がそろって判定できる。 */
-    const s1 = Math.floor(s2 / step) * step - step, n1 = Math.ceil(n2 / step) * step + step;
-    const w1 = Math.floor(w2 / step) * step - step, e1 = Math.ceil(e2 / step) * step + step;
-    const ny = Math.round((n1 - s1) / step) + 1, nx = Math.round((e1 - w1) / step) + 1;
-    if (ny * nx > PRESS_MAX_POINTS) continue;
-    const lats = [], lons = [];
-    for (let i = 0; i < ny; i++) lats.push(+(s1 + i * step).toFixed(4));
-    for (let j = 0; j < nx; j++) lons.push(+(w1 + j * step).toFixed(4));
-    return { step, lats, lons };
-  }
-  // いちばん粗い升目でも収まらない（極端に広い表示）
-  return null;
-}
-
-/* 描画用に格子を細かくする（Catmull-Rom）。
-   ⚠⚠ **これは見た目を滑らかにするだけで、精度は上がらない。**
-     持っている情報は粗い格子のままで、間を埋めているだけ。
-     **だから H/L の位置はこの細かい格子から採らない**（元の格子の実測点から採る）。
-     滑らかな線に釣られて「細かく分かっている」と思わせないための線引き。
-   なぜ要るか: 等圧線は格子点の間を直線で結ぶので、点が少ないと**多角形に見える**
-     （実機で「輪郭がやたらと角張っている」と指摘を受けた 2026-08-20）。
-     気圧の場はもともと滑らかなので、間を滑らかに埋めるのは筋が通る。
-   ⚠ 単純な線形補間では滑らかにならない。marching squares 自体が辺の上で
-     線形補間しているので、**同じ形の折れ線が細かくなるだけ**。3次で埋める必要がある。 */
-function refineGrid(g, factor) {
-  const at = (i, j) => pressAt(g, Math.min(Math.max(i, 0), g.n - 1), Math.min(Math.max(j, 0), g.nx - 1));
-  // Catmull-Rom（4点から t の位置を3次で埋める）
-  const cr = (p0, p1, p2, p3, t) => {
-    const t2 = t * t, t3 = t2 * t;
-    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-                  (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-  };
-  const ny = (g.n - 1) * factor + 1, nx = (g.nx - 1) * factor + 1;
-  const lats = [], lons = [], vals = new Array(ny * nx).fill(null);
-  const dLat = (g.lats[g.n - 1] - g.lats[0]) / (ny - 1);
-  const dLon = (g.lons[g.nx - 1] - g.lons[0]) / (nx - 1);
-  for (let i = 0; i < ny; i++) lats.push(g.lats[0] + i * dLat);
-  for (let j = 0; j < nx; j++) lons.push(g.lons[0] + j * dLon);
-  for (let i = 0; i < ny; i++) {
-    const fi = i / factor, i1 = Math.min(Math.floor(fi), g.n - 2), ti = fi - i1;
-    for (let j = 0; j < nx; j++) {
-      const fj = j / factor, j1 = Math.min(Math.floor(fj), g.nx - 2), tj = fj - j1;
-      const rows = [];
-      let missing = false;
-      for (let di = -1; di <= 2 && !missing; di++) {
-        const a = at(i1 + di, j1 - 1), b = at(i1 + di, j1), c = at(i1 + di, j1 + 1), d = at(i1 + di, j1 + 2);
-        // ⚠ 欠測が混じる所は埋めない（推測で埋めると、無い所に線が出る）
-        if (a == null || b == null || c == null || d == null) { missing = true; break; }
-        rows.push(cr(a, b, c, d, tj));
-      }
-      if (missing) continue;
-      vals[i * nx + j] = cr(rows[0], rows[1], rows[2], rows[3], ti);
-    }
-  }
-  return { key: g.key + ':r' + factor, n: ny, nx, step: dLat, lats, lons, vals };
-}
-
-/* 選択時刻の海面気圧を固定の升目で取る。
-   ⚠ **キャッシュの鍵に画面の座標を入れないこと。** 升目と時刻だけで決まるようにする
-     （画面の座標を混ぜると、同じ升目なのに鍵が変わって取り直しになる）。 */
-async function loadPressureGrid(bounds) {
-  const box = pressureBox(bounds);
-  if (!box) throw new Error('範囲が広すぎます');
-  const key = [box.step, box.lats[0], box.lats[box.lats.length - 1],
-    box.lons[0], box.lons[box.lons.length - 1], state.sliderIndex].join(',');
-  if (pressureCache.has(key)) {
-    const g = pressureCache.get(key);
-    pressureCache.delete(key); pressureCache.set(key, g);   // 使ったものを新しい側へ
-    return g;
-  }
-  // 同じものを取りに行っている最中なら相乗りする（連続した移動で二重に飛ばさない）
-  if (pressureInflight && pressureInflight.key === key) return pressureInflight.promise;
-  if (Date.now() < pressureCooldownUntil) {
-    const sec = Math.ceil((pressureCooldownUntil - Date.now()) / 1000);
-    throw new Error(`取りすぎたので${sec}秒待ちます`);
-  }
-
-  const qLat = [], qLon = [];
-  for (const la of box.lats) for (const lo of box.lons) { qLat.push(la); qLon.push(lo); }
-  const sel = state.allData && state.allData[state.sliderIndex];
-  const q = new URLSearchParams({
-    latitude: qLat.map(v => v.toFixed(4)).join(','),
-    longitude: qLon.map(v => v.toFixed(4)).join(','),
-    hourly: 'pressure_msl',
-    models: 'jma_seamless',
-    timezone: 'Asia/Tokyo',
-    forecast_days: '2',
-  });
-  const promise = fetch(`https://api.open-meteo.com/v1/forecast?${q}`)
-    .then(r => {
-      /* ⚠ **429 は「取りすぎ」。取り直しを続けても解けない。** 冷却期間を置く。 */
-      if (r.status === 429) {
-        pressureCooldownUntil = Date.now() + PRESS_COOLDOWN_MS;
-        throw new Error('取りすぎました。しばらく待ってください');
-      }
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(json => {
-      const arr = Array.isArray(json) ? json : [json];
-      const at = sel ? sel.time : new Date();
-      const pad = n => String(n).padStart(2, '0');
-      const wantKey = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:00`;
-      const vals = new Array(box.lats.length * box.lons.length).fill(null);
-      arr.forEach((r, idx) => {
-        const h = r && r.hourly;
-        if (!h || !h.time || !h.pressure_msl) return;
-        let k = h.time.indexOf(wantKey);
-        if (k < 0) { for (let j = 0; j < h.time.length; j++) if (h.time[j] <= wantKey) k = j; }
-        if (k < 0) k = 0;
-        const v = h.pressure_msl[k];
-        if (v != null && isFinite(v)) vals[idx] = v;
-      });
-      const g = { key, n: box.lats.length, nx: box.lons.length, step: box.step,
-        lats: box.lats, lons: box.lons, vals };
-      pressureCache.set(key, g);
-      while (pressureCache.size > PRESS_CACHE_MAX) pressureCache.delete(pressureCache.keys().next().value);
-      return g;
-    })
-    .finally(() => { if (pressureInflight && pressureInflight.key === key) pressureInflight = null; });
-  pressureInflight = { key, promise };
-  return promise;
-}
-
-/* 格子の添字 → 値。欠測は null。
-   ⚠ **行数(n)と列数(nx)は違う。** 升目は表示範囲に合わせて長方形になるので、
-     どちらか一方で添字を計算すると**行と列を取り違えて場所がずれる**
-     （画面が横長のときだけ H の位置が飛ぶ、という気づきにくい壊れ方をする）。 */
-function pressAt(g, i, j) {
-  if (i < 0 || j < 0 || i >= g.n || j >= g.nx) return null;
-  const v = g.vals[i * g.nx + j];
-  return (v == null || !isFinite(v)) ? null : v;
-}
-
-/* 高気圧・低気圧の中心を拾う。
-   ⚠ **周りの8点より高い（低い）だけでは足りない。** 2つの条件を課す。
-     ① 8近傍すべてより高い（低い）＝局所極値であること
-     ② 8近傍との差が PRESS_PROMINENCE_HPA 以上＝ただの揺れでないこと
-   ⚠ **格子の縁は極値と呼ばない。** 画面の端は「そこで見るのをやめた場所」であって
-     高気圧の中心ではない。#13 で「探索範囲の最高点」を山頂と取り違えかけたのと同じ罠。
-     通すと**地図を動かすたびに H が縁を滑る**という嘘の絵になる。
-   ⚠ 縁の除外は**二重に効かせてある**（ループの範囲を1つ内側にする／近傍が8点そろわない
-     点は判定しない）。わざとの重複なので、片方を消して「テストが通るから要らない」と
-     判断しないこと（実際 `smoke_pressure` は片方だけ外しても落ちない）。 */
-function pressureExtremes(g) {
-  const out = [];
-  for (let i = 1; i < g.n - 1; i++) {
-    for (let j = 1; j < g.nx - 1; j++) {
-      const v = pressAt(g, i, j);
-      if (v == null) continue;
-      let hi = true, lo = true, maxAround = -Infinity, minAround = Infinity, seen = 0;
-      for (let di = -1; di <= 1; di++) {
-        for (let dj = -1; dj <= 1; dj++) {
-          if (!di && !dj) continue;
-          const w = pressAt(g, i + di, j + dj);
-          if (w == null) continue;
-          seen++;
-          if (w >= v) hi = false;
-          if (w <= v) lo = false;
-          if (w > maxAround) maxAround = w;
-          if (w < minAround) minAround = w;
-        }
-      }
-      if (seen < 8) continue;          // 欠測が混じる点は判定しない
-      if (hi && v - maxAround >= PRESS_PROMINENCE_HPA) {
-        out.push({ type: 'H', lat: g.lats[i], lon: g.lons[j], hPa: v });
-      } else if (lo && minAround - v >= PRESS_PROMINENCE_HPA) {
-        out.push({ type: 'L', lat: g.lats[i], lon: g.lons[j], hPa: v });
-      }
-    }
-  }
-  return out;
-}
-
-/* 等圧線を marching squares で引く。返すのは線分の配列。
-   ⚠ **鞍部（対角だけが高い形）で線を交差させないこと。** ケース5と10は2通りに
-     引けてしまう。4隅の平均で向きを決める（決めずに固定すると、
-     等圧線が×印に交差した図になり天気図として読めなくなる）。 */
-function isobarSegments(g, level) {
-  const segs = [];
-  const at = (i, j) => pressAt(g, i, j);
-  // 辺上の交点を線形補間で求める
-  const ip = (v1, v2, a, b) => a + (b - a) * ((level - v1) / (v2 - v1));
-  for (let i = 0; i < g.n - 1; i++) {
-    for (let j = 0; j < g.nx - 1; j++) {
-      const bl = at(i, j), br = at(i, j + 1), tr = at(i + 1, j + 1), tl = at(i + 1, j);
-      if (bl == null || br == null || tr == null || tl == null) continue;   // 欠測の升は飛ばす
-      const y0 = g.lats[i], y1 = g.lats[i + 1], x0 = g.lons[j], x1 = g.lons[j + 1];
-      let idx = 0;
-      if (bl >= level) idx |= 1;
-      if (br >= level) idx |= 2;
-      if (tr >= level) idx |= 4;
-      if (tl >= level) idx |= 8;
-      if (idx === 0 || idx === 15) continue;
-      // 各辺の交点（下・右・上・左）
-      const B = () => [y0, ip(bl, br, x0, x1)];
-      const R = () => [ip(br, tr, y0, y1), x1];
-      const T = () => [y1, ip(tl, tr, x0, x1)];
-      const Lf = () => [ip(bl, tl, y0, y1), x0];
-      const push = (p, q) => segs.push([p, q]);
-      switch (idx) {
-        case 1: case 14: push(Lf(), B()); break;
-        case 2: case 13: push(B(), R()); break;
-        case 3: case 12: push(Lf(), R()); break;
-        case 4: case 11: push(R(), T()); break;
-        case 5: case 10: {
-          // 鞍部。4隅の平均が level 以上なら「高い側がつながっている」と見る
-          const c = (bl + br + tr + tl) / 4;
-          const joinHigh = c >= level;
-          if ((idx === 5) === joinHigh) { push(Lf(), T()); push(B(), R()); }
-          else { push(Lf(), B()); push(R(), T()); }
-          break;
-        }
-        case 6: case 9: push(B(), T()); break;
-        case 7: case 8: push(Lf(), T()); break;
-      }
-    }
-  }
-  return segs;
-}
-
-/* 画面内の気圧の幅から、引くべき等圧線の値を並べる（4hPaごと） */
-function isobarLevels(g) {
-  const vs = g.vals.filter(v => v != null && isFinite(v));
-  if (vs.length < 4) return [];
-  const lo = Math.min(...vs), hi = Math.max(...vs);
-  const start = Math.ceil(lo / PRESS_INTERVAL_HPA) * PRESS_INTERVAL_HPA;
-  const out = [];
-  for (let v = start; v <= hi; v += PRESS_INTERVAL_HPA) out.push(v);
-  return out;
-}
-
-/* ⚠ **ズームで打ち切らない。** 以前は z8 を超えると「広い範囲で見るものです」と出して
-     何も描かなかったが、**山を見る縮尺で気圧配置が消えるのは使い勝手として逆**だった
-     （実機で指摘を受けた 2026-08-20）。いまは `pressureBox` が画面が狭くても
-     総観規模の広さで計算するので、どの縮尺でも「そこを通る等圧線」が出る。 */
-function drawPressure(bounds, opacity) {
-  loadPressureGrid(bounds)
-    .then(g => {
-      if (!isOverlayOn('pressure')) return;
-      /* 線は細かい格子から、H/L は**元の格子から**。
-         ⚠ 補間は見た目を滑らかにするだけで精度は上がらないので、
-           **極値の位置まで補間から採ると、無い精度があるように見せてしまう。** */
-      const fine = refineGrid(g, PRESS_REFINE);
-      const levels = isobarLevels(g);
-      /* ⚠ **線分ごとにレイヤーを作らないこと。** 等圧線は1本の高さでも数十の線分に
-           割れるので、線分ごとに `L.polyline` を作ると画面に数百のSVG要素が並び、
-           地図を動かすたびに作り直して**目に見えて重くなる**（実機で指摘を受けた）。
-           Leaflet は「線分の配列」を1つのレイヤーとして描けるので、**高さごとに1つ**にする。 */
-      levels.forEach(level => {
-        const segs = isobarSegments(fine, level);
-        if (!segs.length) return;
-        const bold = level % PRESS_BOLD_EVERY === 0;
-        const line = L.polyline(segs, {
-          pane: 'mapWeather', interactive: false, opacity,
-          color: '#3b4252', weight: bold ? 2.2 : 1.1,
-        }).addTo(leafletMap);
-        weatherMarkers.push(line);
-      });
-      pressureExtremes(g).forEach(e => {
-        // ⚠ 色だけで区別しない。H/L の文字と hPa を必ず添える（色覚・画面の明るさで色は消える）
-        const m = L.marker([e.lat, e.lon], {
-          pane: 'mapWeather', opacity, interactive: false,
-          icon: L.divIcon({
-            className: 'press-mark',
-            html: `<div class="press-box ${e.type === 'H' ? 'high' : 'low'}">` +
-                  `<span class="press-hl">${e.type}</span><b>${e.hPa.toFixed(0)}</b></div>`,
-            iconSize: null,
-          }),
-        }).addTo(leafletMap);
-        weatherMarkers.push(m);
-      });
-      if (!levels.length) setLayerStatus('pressure', 'この範囲は気圧がほぼ一様です');
-      else setLayerStatus('pressure', `等圧線 ${PRESS_INTERVAL_HPA}hPaごと（${g.step}度間隔の計算値）`);
-    })
-    .catch(e => setLayerStatus('pressure', `取得できません（${e.message}）`));
-}
-
 /* ------ 山域・百名山レイヤー（areas.json から描く） ------
    タイルではなく手持ちのデータなので通信ゼロ。ランキングの評価単位そのものを
    描くので、地図と一覧が必ず一致する（一般的な山脈図を重ねるとズレて混乱する）。
@@ -6068,7 +5712,6 @@ function refreshWeatherPoints() {
   updateMapWhen();
   if (isOverlayOn('amedas')) drawAmedas(bounds, overlayOpacity('amedas'));
   if (isOverlayOn('windArrows')) drawWindArrows(bounds, overlayOpacity('windArrows'));
-  if (isOverlayOn('pressure')) drawPressure(bounds, overlayOpacity('pressure'));
   updateThunderIcons();
   weatherPointsDirty = false;
 }
@@ -6244,7 +5887,7 @@ function setOverlayOpacity(id, value) {
     layer.setOpacity(item.opacity);
   }
   const def = findOverlay(id);
-  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'pressure')) refreshWeatherPoints();
+  if (def && (def.kind === 'amedas' || def.kind === 'windArrows')) refreshWeatherPoints();
   const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
   if (label) label.textContent = Math.round(item.opacity * 100) + '%';
 }
