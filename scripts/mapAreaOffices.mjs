@@ -51,21 +51,36 @@ async function getJson(url, label) {
 const area = await getJson(AREA_JSON, 'area.json');
 console.log(`予報区の一覧を取得: offices=${Object.keys(area.offices).length} / class20s=${Object.keys(area.class20s).length}`);
 
-/* class20s（市区町村）から office まで親をたどる。
-   ⚠ **鍵は JISコード5桁 + "00"。** 名前で引かないので同名の市があっても間違えない。 */
+/* class20s（市区町村）から office まで親をたどる。⚠ **名前で引かない**（同名の市があるため）。
+
+   ⚠⚠ **鍵は「JISコード5桁 + 00」とは限らない。** 最初そう決めつけて、
+     松本市(2020200)・静岡市(2210100)・仙丈ヶ岳のある伊那市(2020900)などで
+     `class20s に … が無い` を大量に出した。**気象庁は大きな市町村を
+     細分している**（2020201, 2020202 … のように枝番が付く）。
+   だから **5桁で始まる鍵をすべて拾い**、行き着く office が1つに揃うことを確かめる。
+   ⚠ 揃わなければ（市が複数の予報区にまたがる）**そのまま返して人に見せる**。 */
 function officeOfMuni(muniCd) {
-  const key = String(muniCd).padStart(5, '0') + '00';
-  const c20 = area.class20s[key];
-  if (!c20) return { err: `class20s に ${key} が無い` };
-  const c15 = area.class15s[c20.parent];
-  if (!c15) return { err: `class15s に ${c20.parent} が無い` };
-  const c10 = area.class10s[c15.parent];
-  if (!c10) return { err: `class10s に ${c15.parent} が無い` };
-  const off = area.offices[c10.parent];
-  if (!off) return { err: `offices に ${c10.parent} が無い` };
-  const center = area.centers[off.parent];
-  return { muni: c20.name, class10: c10.name, code: c10.parent, name: off.name,
-    center: center ? center.name : '?' };
+  const pref = String(muniCd).padStart(5, '0');
+  const keys = Object.keys(area.class20s).filter(k => k.slice(0, 5) === pref);
+  if (!keys.length) return { err: `class20s に ${pref} で始まる鍵が無い` };
+  const resolved = [];
+  for (const key of keys) {
+    const c20 = area.class20s[key];
+    const c15 = c20 && area.class15s[c20.parent];
+    const c10 = c15 && area.class10s[c15.parent];
+    const off = c10 && area.offices[c10.parent];
+    if (!off) continue;
+    resolved.push({ muni: c20.name, class10: c10.name, code: c10.parent, name: off.name });
+  }
+  if (!resolved.length) return { err: `${pref} から予報区までたどれない` };
+  const codes = [...new Set(resolved.map(r => r.code))];
+  if (codes.length > 1) {
+    return { err: `市町村が複数の予報区にまたがる: ${codes.map(c =>
+      `${area.offices[c] ? area.offices[c].name : c}(${c})`).join(' / ')}` };
+  }
+  const r = resolved[0];
+  const center = area.centers[area.offices[r.code].parent];
+  return { ...r, center: center ? center.name : '?' };
 }
 
 const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'areas.json'), 'utf8'));
