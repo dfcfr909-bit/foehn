@@ -72,24 +72,51 @@ const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'areas.json'), 'utf8'));
 let done = 0, firstRaw = true;
 const results = [];
 
+async function muniAt(lat, lon, label) {
+  const j = await getJson(`${REVGEO}?lat=${lat}&lon=${lon}`, label);
+  /* ⚠ **1件目だけ生の応答を出す。** 形が想像と違ったらここで分かる
+       （推測した形のまま110件回して全部無駄、を避ける）。 */
+  if (firstRaw) { console.log(`   生の応答の例: ${JSON.stringify(j).slice(0, 200)}`); firstRaw = false; }
+  return (j && j.results && j.results.muniCd) || null;
+}
+
+/* ⚠ **山頂は「境界未定地域」であることが多い。** 富士山頂・蔵王・月山・南アルプスの稜線は
+     どの市町村にも属しておらず、逆ジオコーダが市区町村コードを返さない。
+     そこで**周囲4点（約1km）でも引いてみる**。
+   ⚠ ただし**ずらして引いたことは必ず出す**。黙って埋めると、
+     「山頂ではなく1km離れた場所の県」を使っていることが分からなくなる。 */
+const OFFSET_DEG = 0.01;   // 約1km
+async function resolvePeak(p) {
+  try {
+    const cd = await muniAt(p.lat, p.lon, p.name);
+    if (cd) return { peak: p.name, muniCd: cd, ...officeOfMuni(cd) };
+  } catch (e) { return { peak: p.name, err: e.message }; }
+  // 山頂で引けなかった：周囲をずらす
+  const around = [];
+  for (const [dLat, dLon] of [[OFFSET_DEG, 0], [-OFFSET_DEG, 0], [0, OFFSET_DEG], [0, -OFFSET_DEG]]) {
+    await sleep(GAP_MS);
+    try {
+      const cd = await muniAt(p.lat + dLat, p.lon + dLon, p.name);
+      if (cd) around.push(officeOfMuni(cd));
+    } catch (e) { /* 1点くらい引けなくても続ける */ }
+  }
+  const codes = [...new Set(around.filter(r => r.code).map(r => r.code))];
+  if (!codes.length) return { peak: p.name, err: '境界未定で、周囲1kmでも引けなかった' };
+  if (codes.length > 1) {
+    return { peak: p.name, offset: true, ambiguous: codes,
+      err: `境界未定。周囲1kmが ${codes.map(c => `${area.offices[c] ? area.offices[c].name : c}(${c})`).join(' / ')} に割れた` };
+  }
+  const one = around.find(r => r.code === codes[0]);
+  return { peak: p.name, offset: true, ...one };
+}
+
 for (const a of data.areas) {
   const perPeak = [];
   for (const p of a.peaks) {
-    const url = `${REVGEO}?lat=${p.lat}&lon=${p.lon}`;
-    let muniCd = null, err = null;
-    try {
-      const j = await getJson(url, p.name);
-      /* ⚠ **1件目だけ生の応答を出す。** 形が想像と違ったらここで分かる
-           （推測した形のまま110件回して全部無駄、を避ける）。 */
-      if (firstRaw) { console.log(`   生の応答の例: ${JSON.stringify(j).slice(0, 200)}`); firstRaw = false; }
-      muniCd = j && j.results && j.results.muniCd;
-      if (!muniCd) err = '市区町村コードが返らない';
-    } catch (e) { err = e.message; }
-    perPeak.push({ peak: p.name, muniCd, ...(muniCd ? officeOfMuni(muniCd) : {}), err });
+    perPeak.push(await resolvePeak(p));
     if (++done % 10 === 0) console.log(`   … ${done}/110`);
     await sleep(GAP_MS);
   }
-  // 山域の中で office がばらけていないかを見る
   const codes = perPeak.filter(r => r.code).map(r => r.code);
   const uniq = [...new Set(codes)];
   results.push({ id: a.id, name: a.name, region: a.region, perPeak, uniq });
@@ -106,7 +133,10 @@ for (const r of results) {
     straddle.push(r);
     console.log(`⚠ ${head} **またがる**: ${names}`);
   } else {
-    console.log(`  ${head} ${r.perPeak[0].name}(${r.uniq[0]}) [${r.region}] ${names}`);
+    /* ⚠ **名前はコードから引く。** 先頭の峰から取ると、その峰が引けなかったときに
+         `undefined` が出る（実際に富士周辺と南アルプス南部で出した）。 */
+    const off = area.offices[r.uniq[0]];
+    console.log(`  ${head} ${off ? off.name : '?'}(${r.uniq[0]}) [${r.region}] ${names}`);
   }
 }
 
@@ -119,9 +149,21 @@ if (straddle.length) {
     console.log(`  ${r.name}: ${Object.entries(tally).map(([k, v]) => `${k}×${v}`).join(' / ')}`);
   }
 }
-if (failed.length) {
-  console.log('\n✗ 引けなかった山域:');
-  for (const r of failed) for (const p of r.perPeak) if (p.err) console.log(`  ${r.name} ${p.peak}: ${p.err}`);
+/* ⚠ **山域が解けていても、峰ごとの失敗を握りつぶさない。**
+     最初の版はここを山域単位でしか出さず、富士山が引けていないのに
+     「富士周辺＝山梨県」とだけ出ていた（三ツ峠山だけで決まっていた）。 */
+const peakErrs = [], offsets = [];
+for (const r of results) for (const p of r.perPeak) {
+  if (p.err) peakErrs.push(`${r.name} ${p.peak}: ${p.err}`);
+  else if (p.offset) offsets.push(`${r.name} ${p.peak} → ${p.name}/${p.class10}`);
+}
+if (offsets.length) {
+  console.log(`\n⚠ 山頂が境界未定で、周囲1kmの点で引いたもの ${offsets.length}件:`);
+  for (const o of offsets) console.log(`  ${o}`);
+}
+if (peakErrs.length) {
+  console.log(`\n✗ 引けなかった峰 ${peakErrs.length}件:`);
+  for (const e of peakErrs) console.log(`  ${e}`);
 }
 
 if (WRITE) {
@@ -132,7 +174,7 @@ if (WRITE) {
     if (r.uniq.length !== 1) continue;
     const a = data.areas.find(x => x.id === r.id);
     a.office = r.uniq[0];
-    a.officeName = r.perPeak[0].name;
+    a.officeName = area.offices[r.uniq[0]] ? area.offices[r.uniq[0]].name : '';
     wrote++;
   }
   fs.writeFileSync(path.join(ROOT, 'areas.json'), JSON.stringify(data, null, 2) + '\n');
