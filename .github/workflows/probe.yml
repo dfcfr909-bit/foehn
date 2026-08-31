@@ -17,6 +17,7 @@ on:
         type: choice
         options:
           - jma-weather-map
+          - jma-weekly-reliability
 
 permissions:
   contents: read
@@ -35,6 +36,10 @@ jobs:
       - name: 気象庁の天気図
         if: ${{ inputs.target == 'jma-weather-map' }}
         run: node scripts/probeJma.mjs | tee result.txt
+
+      - name: 気象庁の週間予報の信頼度
+        if: ${{ inputs.target == 'jma-weekly-reliability' }}
+        run: node scripts/probeJmaReliability.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
