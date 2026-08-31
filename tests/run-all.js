@@ -25,6 +25,7 @@ const TESTS = [
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
   ['smoke_workflows', 'ワークフロー共通（Nodeの版の一本化・写し違いの禁止・権限の明示）'],
   ['smoke_wxmap',  '天気図（UTC→日本時間・予想は基準+24h・並び順を仮定しない）'],
+  ['smoke_lead',   '予報の確からしさの目安（近い予報には出さない・目安と明記）'],
 ];
 
 let failed = 0;

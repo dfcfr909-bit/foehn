@@ -550,6 +550,20 @@ html, body {
   margin-bottom: 4px;
   white-space: nowrap;
 }
+/* 予報の確からしさの目安（だいぶ先の予報にだけ出る）。
+   ⚠ **小さく、しかし読める大きさで。** 判断を左右する注記なので、
+   出ているのに気づかれない大きさにはしない。空のときは場所も取らない。 */
+.pop-lead {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: -2px 0 4px;
+  white-space: nowrap;
+}
+.pop-lead:empty, .rank-lead:empty { display: none; }
+.pop-lead.mid, .rank-lead.mid { color: var(--b-col); }
+.pop-lead.low, .rank-lead.low { color: var(--c-col); }
+.rank-lead { font-weight: 700; }
 .pop-row {
   display: flex;
   align-items: baseline;
@@ -1846,6 +1860,7 @@ html, body {
     <!-- 選択情報ポップアップ（指の右上に追従。既定は選択線付近の上部） -->
     <div id="scrub-popup">
       <div id="pop-time">--/-- (-) --:--</div>
+      <div id="pop-lead" class="pop-lead"></div>
       <div id="pop-rows">
         <div class="pop-row"><span class="pop-ico" id="pop-wx">☀️</span><span class="pop-grade" id="pop-grade">A</span></div>
         <div class="pop-row"><span class="pop-k">気温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
@@ -2017,7 +2032,7 @@ html, body {
         <input type="date" id="rank-date-input" onchange="setRankDate('custom')" title="任意の日付を選択">
       </div>
       <div id="rank-note">
-        <span id="rank-window-label">6〜18時</span>の最悪値で判定（日帰り基準） /
+        <span id="rank-window-label">6〜18時</span>の最悪値で判定（日帰り基準）<span id="rank-lead" class="rank-lead"></span> /
         山域＝代表峰の最良値、括弧は平均 / 風:最大m/s 雨:合計mm 雪:合計cm 温:最低℃
       </div>
       <div id="rank-list"></div>
@@ -2805,6 +2820,34 @@ function windWord(ms) {
   if (ms < 15) return 'ビュービュー';
   return 'ゴウゴウ';
 }
+/* ------ 予報の確からしさの目安（リードタイム） ------
+   「週末など、だいぶ先の予報は精度が怪しいと分かるようにしたい」という要望から。
+
+   ⚠⚠ **これは実測した的中率ではない。** 「何日先か」から引いた一般的な目安で、
+     画面にもそう書く。**数値の的中率を騙らないこと**（85%のような数字を根拠なく出すと、
+     目安より悪い——判断を誤らせる）。
+   ⚠ 本物の信頼度は気象庁が週間予報に A/B/C で出している。将来それを使うなら、
+     ここの目安は置き換える（`docs/decisions.md`）。
+   ⚠ **ABC評価には一切関与させない。** 表示だけ。 */
+const LEAD_SHOW_H = 48;    // これより近い予報には出さない（近い予報にまで出すと狼少年になる）
+const LEAD_LOW_H = 120;    // 5日先を超えたら「低」
+function forecastLead(t, now = new Date()) {
+  const hours = (t - now) / 3600000;
+  // ⚠ 実績（過去）と直近には出さない
+  if (!(hours >= LEAD_SHOW_H)) return null;
+  return {
+    hours,
+    days: Math.round(hours / 24),
+    level: hours >= LEAD_LOW_H ? 'low' : 'mid',
+  };
+}
+function forecastLeadText(lead) {
+  if (!lead) return '';
+  return `${lead.days}日先・確度${lead.level === 'low' ? '低' : '中'}`;
+}
+// 目安であることを必ず添える（画面の文字が短いぶん、説明はここに持たせる）
+const LEAD_TITLE = '先の長さから引いた目安です。実測した的中率ではありません';
+
 // 選択情報ポップアップの中身を更新（時刻→天気→ABC→気温→降水+強さ→風速→気圧）
 function updatePopup() {
   const d = state.allData[state.sliderIndex];
@@ -2813,6 +2856,13 @@ function updatePopup() {
   const hh = String(t.getHours()).padStart(2, '0');
   document.getElementById('pop-time').textContent =
     `${t.getMonth() + 1}/${t.getDate()} (${DOW_JP[t.getDay()]}) ${hh}:00`;
+
+  /* だいぶ先の予報には確からしさの目安を添える（近い予報には出さない） */
+  const lead = forecastLead(t);
+  const leadEl = document.getElementById('pop-lead');
+  leadEl.textContent = forecastLeadText(lead);
+  leadEl.title = lead ? LEAD_TITLE : '';
+  leadEl.className = lead ? `pop-lead ${lead.level}` : 'pop-lead';
 
   const isNight = t.getHours() < 5 || t.getHours() >= 19;
   document.getElementById('pop-wx').textContent = weatherEmoji(d.wcode, isNight);
@@ -7465,6 +7515,16 @@ async function refreshRanking() {
   const isToday = rankDates[0] === fmtDateISO(new Date());
   document.getElementById('rank-window-label').textContent =
     `${ws}〜${we}時` + (isToday ? '（今から先）' : '');
+  /* 週末や先の日付を選んでいるときは、確からしさの目安を添える。
+     ⚠ 対象日の**行動時間帯の頭**を基準にする（日付の0時にすると1日ぶん近く見える）。 */
+  const leadEl = document.getElementById('rank-lead');
+  if (leadEl) {
+    const at = new Date(`${rankDates[0]}T${String(ws).padStart(2, '0')}:00:00`);
+    const lead = forecastLead(at);
+    leadEl.textContent = lead ? ` / ${forecastLeadText(lead)}` : '';
+    leadEl.title = lead ? LEAD_TITLE : '';
+    leadEl.className = lead ? `rank-lead ${lead.level}` : 'rank-lead';
+  }
   list.innerHTML = '<div class="rank-msg">全国の気象データ取得中…</div>';
   try {
     const rows = await buildRanking(rankDates);
