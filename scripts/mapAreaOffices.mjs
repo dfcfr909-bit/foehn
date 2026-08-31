@@ -60,9 +60,24 @@ console.log(`予報区の一覧を取得: offices=${Object.keys(area.offices).le
    だから **5桁で始まる鍵をすべて拾い**、行き着く office が1つに揃うことを確かめる。
    ⚠ 揃わなければ（市が複数の予報区にまたがる）**そのまま返して人に見せる**。 */
 function officeOfMuni(muniCd) {
-  const pref = String(muniCd).padStart(5, '0');
-  const keys = Object.keys(area.class20s).filter(k => k.slice(0, 5) === pref);
-  if (!keys.length) return { err: `class20s に ${pref} で始まる鍵が無い` };
+  const pref0 = String(muniCd).padStart(5, '0');
+  let pref = pref0, viaCity = false;
+  let keys = Object.keys(area.class20s).filter(k => k.slice(0, 5) === pref);
+  /* ⚠ **政令指定都市の「区」で引けない。** 逆ジオコーダは区のコードを返すが
+       （静岡市葵区=22101）、気象庁は**市の単位**で持っている（静岡市=22100）。
+       末尾が 0 でなければ、末尾を 0 にした市のコードで引き直す。
+     ⚠ **引き直したことは返り値に残す**（黙って別のコードで引くと、
+       あとから「なぜこの県になったか」が追えなくなる）。 */
+  if (!keys.length && pref0[4] !== '0') {
+    pref = pref0.slice(0, 4) + '0';
+    keys = Object.keys(area.class20s).filter(k => k.slice(0, 5) === pref);
+    if (keys.length) viaCity = true;
+  }
+  if (!keys.length) {
+    /* 次に困らないよう、近いコードを添えて出す */
+    const near = Object.keys(area.class20s).filter(k => k.slice(0, 2) === pref0.slice(0, 2)).slice(0, 6);
+    return { err: `class20s に ${pref0} で始まる鍵が無い（同じ都道府県の例: ${near.join(', ') || 'なし'}）` };
+  }
   const resolved = [];
   for (const key of keys) {
     const c20 = area.class20s[key];
@@ -80,7 +95,7 @@ function officeOfMuni(muniCd) {
   }
   const r = resolved[0];
   const center = area.centers[area.offices[r.code].parent];
-  return { ...r, center: center ? center.name : '?' };
+  return { ...r, center: center ? center.name : '?', ...(viaCity ? { viaCity: `${pref0}→${pref}` } : {}) };
 }
 
 const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'areas.json'), 'utf8'));
@@ -167,10 +182,17 @@ if (straddle.length) {
 /* ⚠ **山域が解けていても、峰ごとの失敗を握りつぶさない。**
      最初の版はここを山域単位でしか出さず、富士山が引けていないのに
      「富士周辺＝山梨県」とだけ出ていた（三ツ峠山だけで決まっていた）。 */
-const peakErrs = [], offsets = [];
+const peakErrs = [], offsets = [], viaCities = [];
 for (const r of results) for (const p of r.perPeak) {
   if (p.err) peakErrs.push(`${r.name} ${p.peak}: ${p.err}`);
-  else if (p.offset) offsets.push(`${r.name} ${p.peak} → ${p.name}/${p.class10}`);
+  else {
+    if (p.offset) offsets.push(`${r.name} ${p.peak} → ${p.name}/${p.class10}`);
+    if (p.viaCity) viaCities.push(`${r.name} ${p.peak}: ${p.viaCity} → ${p.name}/${p.class10}`);
+  }
+}
+if (viaCities.length) {
+  console.log(`\n⚠ 政令市の区から市へ引き直したもの ${viaCities.length}件:`);
+  for (const v of viaCities) console.log(`  ${v}`);
 }
 if (offsets.length) {
   console.log(`\n⚠ 山頂が境界未定で、周囲1kmの点で引いたもの ${offsets.length}件:`);
