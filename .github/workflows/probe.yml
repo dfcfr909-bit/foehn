@@ -18,6 +18,7 @@ on:
         options:
           - jma-weather-map
           - jma-weekly-reliability
+          - map-area-offices
 
 permissions:
   contents: read
@@ -40,6 +41,10 @@ jobs:
       - name: 気象庁の週間予報の信頼度
         if: ${{ inputs.target == 'jma-weekly-reliability' }}
         run: node scripts/probeJmaReliability.mjs | tee result.txt
+
+      - name: 山域を府県予報区に対応づける
+        if: ${{ inputs.target == 'map-area-offices' }}
+        run: node scripts/mapAreaOffices.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
