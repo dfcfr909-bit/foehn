@@ -98,6 +98,20 @@ function officeOfMuni(muniCd) {
   return { ...r, center: center ? center.name : '?', ...(viaCity ? { viaCity: `${pref0}→${pref}` } : {}) };
 }
 
+/* ⚠ **機械で決まらなかった2峰。人が決めた（2026-08-31）。**
+     ここに書いておくのは、**再実行しても失われないようにする**ため。
+     コメントに理由を残さないと、半年後に「なぜこの県？」が分からなくなる。
+
+   - 蔵王 熊野岳 … 山頂が境界未定で、周囲1kmが山形県/宮城県に割れた。
+     刈田岳は宮城県に解けるが、BCの入山は蔵王温泉（山形）側が主なので**山形県**とした
+   - 富士山 … **山頂一帯が丸ごと境界未定で、そもそも県境が無い。**
+     ⚠ **片方を選ぶ根拠が無い**ので、山梨県と静岡県の**両方**を持たせる。
+     表示側で両方出す（割れたら「山梨 B / 静岡 C」のように） */
+const MANUAL = {
+  '熊野岳': { codes: ['060000'], why: '境界未定。山形/宮城に割れるが、入山は蔵王温泉(山形)側が主' },
+  '富士山': { codes: ['190000', '220000'], why: '山頂一帯が境界未定で県境が無い。両方を持たせる' },
+};
+
 const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'areas.json'), 'utf8'));
 let done = 0, firstRaw = true;
 const results = [];
@@ -143,6 +157,15 @@ async function resolvePeak(p) {
 for (const a of data.areas) {
   const perPeak = [];
   for (const p of a.peaks) {
+    /* ⚠ 人が決めた峰は問い合わせない（相手方を無駄に叩かない・結果を上書きしない） */
+    if (MANUAL[p.name]) {
+      const m = MANUAL[p.name];
+      const first = area.offices[m.codes[0]];
+      perPeak.push({ peak: p.name, manual: true, codes: m.codes, why: m.why,
+        code: m.codes[0], name: first ? first.name : '?',
+        class10: m.codes.map(c => area.offices[c] ? area.offices[c].name : c).join('・') });
+      continue;
+    }
     perPeak.push(await resolvePeak(p));
     if (++done % 10 === 0) console.log(`   … ${done}/110`);
     await sleep(GAP_MS);
@@ -190,6 +213,14 @@ for (const r of results) for (const p of r.perPeak) {
     if (p.viaCity) viaCities.push(`${r.name} ${p.peak}: ${p.viaCity} → ${p.name}/${p.class10}`);
   }
 }
+const manuals = [];
+for (const r of results) for (const p of r.perPeak) if (p.manual) {
+  manuals.push(`${r.name} ${p.peak} → ${p.class10}（${p.why}）`);
+}
+if (manuals.length) {
+  console.log(`\n⚠ 人が決めたもの ${manuals.length}件:`);
+  for (const m of manuals) console.log(`  ${m}`);
+}
 if (viaCities.length) {
   console.log(`\n⚠ 政令市の区から市へ引き直したもの ${viaCities.length}件:`);
   for (const v of viaCities) console.log(`  ${v}`);
@@ -202,6 +233,20 @@ if (peakErrs.length) {
   console.log(`\n✗ 引けなかった峰 ${peakErrs.length}件:`);
   for (const e of peakErrs) console.log(`  ${e}`);
 }
+
+/* ⚠ **手元へ持ち帰るための機械可読な出力。**
+     このスクリプトはランナーの上で動くので、書き込んでも手元には残らない。
+     一覧を貼り付けて手で写すと必ず間違えるので、**そのまま使える形**で出す。 */
+console.log('\n===PEAK_OFFICES_BEGIN===');
+const table = {};
+for (const r of results) for (const p of r.perPeak) {
+  table[`${r.id}/${p.peak}`] = p.codes ? p.codes : (p.code ? [p.code] : null);
+}
+console.log(JSON.stringify(table));
+console.log('===PEAK_OFFICES_END===');
+const missing = Object.entries(table).filter(([, v]) => !v);
+console.log(missing.length ? `⚠ 未決定 ${missing.length}件: ${missing.map(([k]) => k).join(', ')}`
+                           : `✅ 全${Object.keys(table).length}峰に予報区が決まった`);
 
 if (WRITE) {
   /* ⚠ **またがる山域と引けなかった山域は書かない。** 人が決めるまで空けておく
