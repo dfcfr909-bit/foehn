@@ -131,6 +131,24 @@
 
 描画は `clearWeatherMarkers` / `loadAmedas` / `drawAmedas` / `refreshWeatherPoints`。
 
+### 地点のピン（`leafletMarker` / `.pick-pin`）
+
+⚠⚠ **ピンはタップを一切受けない**（`interactive: false` ＋ `pointer-events: none`）。
+
+Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると「画像として」
+共有／"写真"に保存のメニューが出る**（実機で指摘を受けた 2026-08-31）。
+地図のピンとしてはタップを受ける必要が無く、**触ったら下の地図に抜ける**のが正しい。
+
+- `-webkit-touch-callout: none` … iOSの長押しメニューを止める。
+  ⚠ **Chromium には無いプロパティ**なので、テストは原文で確認するしかない
+- `-webkit-user-drag: none` / `user-select: none` … 画像としてつまめないようにする
+- 影（`.leaflet-marker-shadow`）も既定のピンだけが持つ `<img>` なので一緒に止める
+
+⚠ **他のマーカーまで一括で止めないこと。** 百名山の△（`.peak-tri`）は
+**タップで地点を選ぶ**ので、一括指定すると黙って死ぬ（`tests/smoke_pin.mjs` が見張る）。
+
+⚠ **iOS の長押しメニューが本当に出なくなるかは実機でしか確かめられない。**
+
 ### 時刻つきタイルの貼り替え
 
 `addTimedTileLayer(def, opacity, replace)` が担う。
