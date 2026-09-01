@@ -389,3 +389,12 @@
   ⚠ **本物の信頼度は気象庁が週間予報に A/B/C で出している**（`bosai` 配下）。
   bosai は CORS が通ることを実測済み（#42）なので、**次はそれを引いて置き換えるのが筋**。
   そのときこの目安は消す（2つ並べると、どちらを信じるか分からなくなる）。
+- **地図のピンはタップを一切受けない**（2026-08-31）→ `docs/spec/map.md`。
+  Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると「画像として」
+  共有／"写真"に保存のメニューが出る**（実機で指摘）。
+  `interactive: false` ＋ `pointer-events: none` で**触ったら下の地図に抜ける**ようにし、
+  `-webkit-touch-callout` / `-webkit-user-drag` / `user-select` も止めた。
+  ⚠ **他のマーカーまで一括で止めないこと。** 百名山の△はタップで地点を選ぶので、
+  `.leaflet-marker-icon` に一括指定すると**黙って死ぬ**（`smoke_pin` が見張る）。
+  ⚠ `-webkit-touch-callout` は **Chromium に無い**ので `getComputedStyle` では確かめられない。
+  テストは原文で見る。**実際に長押しメニューが出なくなるかは iOS 実機でしか分からない。**
