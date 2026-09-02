@@ -12,13 +12,19 @@
           "lat": 40.6589,
           "lon": 140.8772,
           "elev": 1585,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "020000"
+          ]
         },
         {
           "name": "高田大岳",
           "lat": 40.6527,
           "lon": 140.9084,
-          "elev": 1559
+          "elev": 1559,
+          "office": [
+            "020000"
+          ]
         }
       ]
     },
@@ -32,13 +38,19 @@
           "lat": 39.0994,
           "lon": 140.0489,
           "elev": 2236,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "060000"
+          ]
         },
         {
           "name": "笙ヶ岳",
           "lat": 39.0927,
           "lon": 140.002,
-          "elev": 1635
+          "elev": 1635,
+          "office": [
+            "060000"
+          ]
         }
       ]
     },
@@ -52,13 +64,19 @@
           "lat": 38.1438,
           "lon": 140.4399,
           "elev": 1841,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "060000"
+          ]
         },
         {
           "name": "刈田岳",
           "lat": 38.1277,
           "lon": 140.4481,
-          "elev": 1758
+          "elev": 1758,
+          "office": [
+            "040000"
+          ]
         }
       ]
     },
@@ -72,13 +90,19 @@
           "lat": 37.8548,
           "lon": 139.7071,
           "elev": 2105,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "070000"
+          ]
         },
         {
           "name": "大日岳",
           "lat": 37.8331,
           "lon": 139.6606,
-          "elev": 2128
+          "elev": 2128,
+          "office": [
+            "150000"
+          ]
         }
       ]
     },
@@ -92,21 +116,30 @@
           "lat": 36.9551,
           "lon": 139.2853,
           "elev": 2356,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "070000"
+          ]
         },
         {
           "name": "至仏山",
           "lat": 36.9034,
           "lon": 139.1732,
           "elev": 2228,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         },
         {
           "name": "会津駒ヶ岳",
           "lat": 37.0476,
           "lon": 139.3537,
           "elev": 2133,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "070000"
+          ]
         }
       ]
     },
@@ -120,13 +153,19 @@
           "lat": 37.1247,
           "lon": 139.9631,
           "elev": 1915,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "090000"
+          ]
         },
         {
           "name": "三本槍岳",
           "lat": 37.1502,
           "lon": 139.9614,
-          "elev": 1917
+          "elev": 1917,
+          "office": [
+            "090000"
+          ]
         }
       ]
     },
@@ -140,21 +179,30 @@
           "lat": 36.7986,
           "lon": 139.3759,
           "elev": 2578,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         },
         {
           "name": "男体山",
           "lat": 36.7651,
           "lon": 139.4909,
           "elev": 2486,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "090000"
+          ]
         },
         {
           "name": "皇海山",
           "lat": 36.6899,
           "lon": 139.337,
           "elev": 2144,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         }
       ]
     },
@@ -168,27 +216,39 @@
           "lat": 36.8459,
           "lon": 138.6903,
           "elev": 2145,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "150000"
+          ]
         },
         {
           "name": "平標山",
           "lat": 36.8178,
           "lon": 138.8219,
-          "elev": 1984
+          "elev": 1984,
+          "office": [
+            "150000"
+          ]
         },
         {
           "name": "谷川岳",
           "lat": 36.8371,
           "lon": 138.9301,
           "elev": 1977,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         },
         {
           "name": "巻機山",
           "lat": 36.9785,
           "lon": 138.9645,
           "elev": 1967,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "150000"
+          ]
         }
       ]
     },
@@ -202,14 +262,20 @@
           "lat": 36.9227,
           "lon": 138.0681,
           "elev": 2462,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "150000"
+          ]
         },
         {
           "name": "妙高山",
           "lat": 36.8913,
           "lon": 138.1135,
           "elev": 2454,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "150000"
+          ]
         }
       ]
     },
@@ -223,42 +289,60 @@
           "lat": 36.5759,
           "lon": 137.6198,
           "elev": 3003,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "160000"
+          ]
         },
         {
           "name": "剱岳",
           "lat": 36.6233,
           "lon": 137.617,
           "elev": 2999,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "160000"
+          ]
         },
         {
           "name": "白馬岳",
           "lat": 36.7586,
           "lon": 137.7586,
           "elev": 2932,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "薬師岳",
           "lat": 36.4688,
           "lon": 137.5448,
           "elev": 2926,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "160000"
+          ]
         },
         {
           "name": "鹿島槍ヶ岳",
           "lat": 36.6245,
           "lon": 137.747,
           "elev": 2889,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "五竜岳",
           "lat": 36.6584,
           "lon": 137.7526,
           "elev": 2814,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "160000"
+          ]
         }
       ]
     },
@@ -272,41 +356,59 @@
           "lat": 36.2892,
           "lon": 137.648,
           "elev": 3190,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "槍ヶ岳",
           "lat": 36.342,
           "lon": 137.6477,
           "elev": 3180,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "笠ヶ岳",
           "lat": 36.3155,
           "lon": 137.5504,
           "elev": 2898,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "210000"
+          ]
         },
         {
           "name": "常念岳",
           "lat": 36.3255,
           "lon": 137.7277,
           "elev": 2857,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "燕岳",
           "lat": 36.4067,
           "lon": 137.7128,
-          "elev": 2763
+          "elev": 2763,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "焼岳",
           "lat": 36.2268,
           "lon": 137.5874,
           "elev": 2455,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -320,14 +422,20 @@
           "lat": 36.1065,
           "lon": 137.5536,
           "elev": 3026,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "210000"
+          ]
         },
         {
           "name": "御嶽山",
           "lat": 35.893,
           "lon": 137.4805,
           "elev": 3067,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -341,13 +449,19 @@
           "lat": 35.9708,
           "lon": 138.3703,
           "elev": 2899,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "天狗岳",
           "lat": 36.0191,
           "lon": 138.3554,
-          "elev": 2646
+          "elev": 2646,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -361,14 +475,20 @@
           "lat": 35.7897,
           "lon": 137.8047,
           "elev": 2956,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "空木岳",
           "lat": 35.719,
           "lon": 137.8171,
           "elev": 2864,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -382,35 +502,50 @@
           "lat": 35.6746,
           "lon": 138.2389,
           "elev": 3193,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         },
         {
           "name": "間ノ岳",
           "lat": 35.646,
           "lon": 138.2282,
           "elev": 3190,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         },
         {
           "name": "仙丈ヶ岳",
           "lat": 35.72,
           "lon": 138.1836,
           "elev": 3033,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "甲斐駒ヶ岳",
           "lat": 35.7581,
           "lon": 138.2367,
           "elev": 2967,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         },
         {
           "name": "鳳凰山",
           "lat": 35.7018,
           "lon": 138.3047,
           "elev": 2841,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         }
       ]
     },
@@ -424,13 +559,19 @@
           "lat": 36.155,
           "lon": 136.7715,
           "elev": 2702,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "170000"
+          ]
         },
         {
           "name": "別山",
           "lat": 36.1055,
           "lon": 136.7658,
-          "elev": 2399
+          "elev": 2399,
+          "office": [
+            "210000"
+          ]
         }
       ]
     },
@@ -444,13 +585,20 @@
           "lat": 35.3606,
           "lon": 138.7274,
           "elev": 3776,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000",
+            "220000"
+          ]
         },
         {
           "name": "三ツ峠山",
           "lat": 35.5493,
           "lon": 138.8092,
-          "elev": 1785
+          "elev": 1785,
+          "office": [
+            "190000"
+          ]
         }
       ]
     },
@@ -464,14 +612,20 @@
           "lat": 34.1736,
           "lon": 135.9075,
           "elev": 1915,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "290000"
+          ]
         },
         {
           "name": "日出ヶ岳",
           "lat": 34.1852,
           "lon": 136.1092,
           "elev": 1695,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "240000"
+          ]
         }
       ]
     },
@@ -485,14 +639,20 @@
           "lat": 33.767,
           "lon": 133.1158,
           "elev": 1982,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "380000"
+          ]
         },
         {
           "name": "剣山",
           "lat": 33.8536,
           "lon": 134.0944,
           "elev": 1955,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "360000"
+          ]
         }
       ]
     },
@@ -506,14 +666,20 @@
           "lat": 33.086,
           "lon": 131.249,
           "elev": 1787,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "440000"
+          ]
         },
         {
           "name": "祖母山",
           "lat": 32.8281,
           "lon": 131.347,
           "elev": 1756,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "440000"
+          ]
         }
       ]
     },
@@ -527,7 +693,10 @@
           "lat": 45.1785,
           "lon": 141.242,
           "elev": 1721,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "011000"
+          ]
         }
       ]
     },
@@ -541,14 +710,20 @@
           "lat": 44.0758,
           "lon": 145.1222,
           "elev": 1661,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "013000"
+          ]
         },
         {
           "name": "斜里岳",
           "lat": 43.7657,
           "lon": 144.7178,
           "elev": 1547,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "013000"
+          ]
         }
       ]
     },
@@ -562,7 +737,10 @@
           "lat": 43.3864,
           "lon": 144.0086,
           "elev": 1499,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "014100"
+          ]
         }
       ]
     },
@@ -576,21 +754,30 @@
           "lat": 43.6636,
           "lon": 142.8541,
           "elev": 2291,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "012000"
+          ]
         },
         {
           "name": "トムラウシ山",
           "lat": 43.5271,
           "lon": 142.8487,
           "elev": 2141,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "012000"
+          ]
         },
         {
           "name": "十勝岳",
           "lat": 43.4178,
           "lon": 142.6863,
           "elev": 2077,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "014030"
+          ]
         }
       ]
     },
@@ -604,7 +791,10 @@
           "lat": 42.7194,
           "lon": 142.6828,
           "elev": 2052,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "015000"
+          ]
         }
       ]
     },
@@ -618,7 +808,10 @@
           "lat": 42.8266,
           "lon": 140.8115,
           "elev": 1898,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "016000"
+          ]
         }
       ]
     },
@@ -632,7 +825,10 @@
           "lat": 40.6559,
           "lon": 140.3031,
           "elev": 1625,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "020000"
+          ]
         }
       ]
     },
@@ -646,14 +842,20 @@
           "lat": 39.956,
           "lon": 140.855,
           "elev": 1613,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "030000"
+          ]
         },
         {
           "name": "岩手山",
           "lat": 39.8526,
           "lon": 141.001,
           "elev": 2038,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "030000"
+          ]
         }
       ]
     },
@@ -667,7 +869,10 @@
           "lat": 39.5584,
           "lon": 141.489,
           "elev": 1917,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "030000"
+          ]
         }
       ]
     },
@@ -681,7 +886,10 @@
           "lat": 38.5491,
           "lon": 140.0269,
           "elev": 1984,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "060000"
+          ]
         }
       ]
     },
@@ -695,7 +903,10 @@
           "lat": 38.2605,
           "lon": 139.9223,
           "elev": 1871,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "060000"
+          ]
         }
       ]
     },
@@ -709,21 +920,30 @@
           "lat": 37.7381,
           "lon": 140.1408,
           "elev": 2035,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "070000"
+          ]
         },
         {
           "name": "安達太良山",
           "lat": 37.6211,
           "lon": 140.2878,
           "elev": 1700,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "070000"
+          ]
         },
         {
           "name": "磐梯山",
           "lat": 37.6011,
           "lon": 140.0722,
           "elev": 1816,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "070000"
+          ]
         }
       ]
     },
@@ -737,14 +957,20 @@
           "lat": 36.8052,
           "lon": 139.1326,
           "elev": 2158,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         },
         {
           "name": "黒檜山",
           "lat": 36.5604,
           "lon": 139.1933,
           "elev": 1828,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         }
       ]
     },
@@ -758,7 +984,10 @@
           "lat": 36.2253,
           "lon": 140.1069,
           "elev": 877,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "080000"
+          ]
         }
       ]
     },
@@ -772,21 +1001,30 @@
           "lat": 36.6439,
           "lon": 138.5277,
           "elev": 2160,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         },
         {
           "name": "四阿山",
           "lat": 36.5417,
           "lon": 138.4129,
           "elev": 2354,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         },
         {
           "name": "浅間山",
           "lat": 36.4065,
           "lon": 138.523,
           "elev": 2568,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "100000"
+          ]
         }
       ]
     },
@@ -800,42 +1038,60 @@
           "lat": 36.0234,
           "lon": 138.8412,
           "elev": 1723,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "110000"
+          ]
         },
         {
           "name": "瑞牆山",
           "lat": 35.8935,
           "lon": 138.592,
           "elev": 2230,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         },
         {
           "name": "金峰山",
           "lat": 35.8716,
           "lon": 138.6254,
           "elev": 2599,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         },
         {
           "name": "甲武信ヶ岳",
           "lat": 35.909,
           "lon": 138.729,
           "elev": 2475,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         },
         {
           "name": "雲取山",
           "lat": 35.8556,
           "lon": 138.9439,
           "elev": 2017,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "130000"
+          ]
         },
         {
           "name": "大菩薩嶺",
           "lat": 35.7487,
           "lon": 138.8455,
           "elev": 2057,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "190000"
+          ]
         }
       ]
     },
@@ -849,7 +1105,10 @@
           "lat": 35.4743,
           "lon": 139.1627,
           "elev": 1567,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "140000"
+          ]
         }
       ]
     },
@@ -863,7 +1122,10 @@
           "lat": 34.8628,
           "lon": 139.0017,
           "elev": 1406,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "220000"
+          ]
         }
       ]
     },
@@ -877,14 +1139,20 @@
           "lat": 37.1236,
           "lon": 139.0753,
           "elev": 2003,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "150000"
+          ]
         },
         {
           "name": "平ヶ岳",
           "lat": 37.0021,
           "lon": 139.1708,
           "elev": 2141,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "150000"
+          ]
         }
       ]
     },
@@ -898,14 +1166,20 @@
           "lat": 36.902,
           "lon": 137.9627,
           "elev": 1963,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "高妻山",
           "lat": 36.8,
           "lon": 138.0519,
           "elev": 2353,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -919,21 +1193,30 @@
           "lat": 36.3926,
           "lon": 137.5399,
           "elev": 2840,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "210000"
+          ]
         },
         {
           "name": "鷲羽岳",
           "lat": 36.4029,
           "lon": 137.6053,
           "elev": 2924,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "160000"
+          ]
         },
         {
           "name": "水晶岳",
           "lat": 36.4263,
           "lon": 137.6028,
           "elev": 2986,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "160000"
+          ]
         }
       ]
     },
@@ -947,35 +1230,50 @@
           "lat": 35.5738,
           "lon": 138.1832,
           "elev": 3052,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "悪沢岳",
           "lat": 35.5008,
           "lon": 138.1824,
           "elev": 3141,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "220000"
+          ]
         },
         {
           "name": "赤石岳",
           "lat": 35.4611,
           "lon": 138.1573,
           "elev": 3121,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "220000"
+          ]
         },
         {
           "name": "聖岳",
           "lat": 35.4225,
           "lon": 138.1396,
           "elev": 3013,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "光岳",
           "lat": 35.3382,
           "lon": 138.0839,
           "elev": 2592,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -989,21 +1287,30 @@
           "lat": 36.2259,
           "lon": 138.1075,
           "elev": 2034,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "霧ヶ峰",
           "lat": 36.1029,
           "lon": 138.1966,
           "elev": 1925,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         },
         {
           "name": "蓼科山",
           "lat": 36.1037,
           "lon": 138.2951,
           "elev": 2531,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -1017,7 +1324,10 @@
           "lat": 35.4432,
           "lon": 137.5978,
           "elev": 2191,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "200000"
+          ]
         }
       ]
     },
@@ -1031,7 +1341,10 @@
           "lat": 35.9343,
           "lon": 136.6013,
           "elev": 1523,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "180000"
+          ]
         }
       ]
     },
@@ -1045,7 +1358,10 @@
           "lat": 35.4178,
           "lon": 136.4063,
           "elev": 1377,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "250000"
+          ]
         }
       ]
     },
@@ -1059,7 +1375,10 @@
           "lat": 35.3712,
           "lon": 133.5463,
           "elev": 1729,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "310000"
+          ]
         }
       ]
     },
@@ -1073,7 +1392,10 @@
           "lat": 32.8843,
           "lon": 131.1039,
           "elev": 1592,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "430000"
+          ]
         }
       ]
     },
@@ -1087,7 +1409,10 @@
           "lat": 31.9341,
           "lon": 130.8615,
           "elev": 1700,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "450000"
+          ]
         }
       ]
     },
@@ -1101,7 +1426,10 @@
           "lat": 31.1799,
           "lon": 130.5284,
           "elev": 924,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "460100"
+          ]
         }
       ]
     },
@@ -1115,7 +1443,10 @@
           "lat": 30.336,
           "lon": 130.5043,
           "elev": 1936,
-          "hyakumeizan": true
+          "hyakumeizan": true,
+          "office": [
+            "460100"
+          ]
         }
       ]
     }
