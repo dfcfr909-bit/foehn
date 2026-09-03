@@ -561,6 +561,7 @@ html, body {
   white-space: nowrap;
 }
 .pop-lead:empty, .rank-lead:empty { display: none; }
+.pop-lead.ok, .rank-lead.ok { color: var(--a-col); }
 .pop-lead.mid, .rank-lead.mid { color: var(--b-col); }
 .pop-lead.low, .rank-lead.low { color: var(--c-col); }
 .rank-lead { font-weight: 700; }
@@ -2863,6 +2864,111 @@ function forecastLeadText(lead) {
 // 目安であることを必ず添える（画面の文字が短いぶん、説明はここに持たせる）
 const LEAD_TITLE = '先の長さから引いた目安です。実測した的中率ではありません';
 
+/* ------ 気象庁の週間予報「信頼度」------ #26 の続き
+   `forecastLead`（先の長さから引いた目安）を、**峰と分かっている地点では本物に置き換える**。
+
+   ⚠⚠ **これは「降水確率と気温」の信頼度であって、風の信頼度ではない。**
+     このアプリは**風で判定する**ので、そこを書かないと意味が反転して伝わる。
+     短い表示に収まらないので `title` に必ず添える。
+
+   ⚠⚠ **A/B/C という字面がアプリの判定と衝突する。** アプリのA/B/Cは「登山適性」、
+     気象庁のA/B/Cは「予報の信頼度」。同じ色・同じ字で出すと**判定Cと読まれる**。
+     だから画面には **高/中/低** で出し、元の記号は `title` に回す。
+
+   ⚠ 信頼度は**府県予報区（office）単位**でしか出ない。地点ごとには出ないので、
+     `areas.json` の峰に持たせた `office` を使う（`docs/spec/judge.md`）。
+   ⚠ 1〜2日目は空（短期予報の領分）。3〜7日目にだけ入る。 */
+const JMA_FORECAST_BASE = 'https://www.jma.go.jp/bosai/forecast/data/forecast/';
+const RELIABILITY_TTL_MS = 3 * 3600 * 1000;   // 週間予報は1日2回。3時間で引き直せば十分
+const RELIABILITY_LABEL = { A: '高', B: '中', C: '低' };
+const reliabilityCache = new Map();           // office -> { map, office, at }
+let reliabilitySeq = 0;                       // 追い越し防止（スクラバーを速く動かしたとき）
+
+/* 選択中の地点が `areas.json` の峰かどうか。
+   ⚠ **緯度経度で照合する。** 選び方（ランキング・△・検索・お気に入り・前回の復元）に
+     依らず効かせたいので、選択経路に印を持たせる方式は採らない。
+   ⚠ 近い峰を誤って掴まないよう、範囲は狭く（約500m）。北岳と間ノ岳は約3km離れている。 */
+const PEAK_MATCH_DEG = 0.005;
+function peakAt(lat, lon) {
+  if (!areasData) return null;
+  for (const area of areasData.areas) {
+    for (const peak of area.peaks) {
+      if (Math.abs(peak.lat - lat) < PEAK_MATCH_DEG &&
+          Math.abs(peak.lon - lon) < PEAK_MATCH_DEG) return { area, peak };
+    }
+  }
+  return null;
+}
+
+/* 府県予報区の信頼度を引く。日付(YYYY-MM-DD) -> 'A'|'B'|'C'。
+   ⚠ **配列の何番目かを決め打たない。** `reliabilities` を持つ timeSeries を探す
+     （週間予報が [1] に入るのは実測した1例にすぎない）。 */
+async function loadReliability(office) {
+  const hit = reliabilityCache.get(office);
+  if (hit && Date.now() - hit.at < RELIABILITY_TTL_MS) return hit;
+  const res = await fetch(`${JMA_FORECAST_BASE}${office}.json`);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  const parts = Array.isArray(json) ? json : [json];
+  const map = {};
+  let officeName = '';
+  for (const part of parts) {
+    for (const ts of (part && part.timeSeries) || []) {
+      const a = ts.areas && ts.areas[0];
+      if (!a || !Array.isArray(a.reliabilities)) continue;
+      officeName = part.publishingOffice || '';
+      (ts.timeDefines || []).forEach((t, i) => {
+        const v = a.reliabilities[i];
+        // ⚠ 空文字（1〜2日目）は入れない。「無い」と「読めなかった」を混ぜない
+        if (v) map[String(t).slice(0, 10)] = v;
+      });
+    }
+  }
+  const entry = { map, office: officeName, at: Date.now() };
+  reliabilityCache.set(office, entry);
+  return entry;
+}
+
+/* 選択時刻の信頼度をポップアップへ入れる（取れたら目安を置き換える）。
+   ⚠ **取れなければ何もしない。** 目安（`forecastLead`）がそのまま残る。 */
+function fillReliability(t) {
+  const el = document.getElementById('pop-lead');
+  if (!el) return;
+  /* ⚠ **近い予報には出さない。** 信頼度は3〜7日目にしか入っていないので、
+       それより手前で引きに行くのは無駄（目安の線引きと同じところで切る）。 */
+  if (!forecastLead(t)) return;
+  /* ⚠ **areas.json は地図やランキングを開くまで読まれない。**
+       ここで遅延して読む。読めなければ目安のまま（黙って壊れない）。 */
+  if (!areasData) {
+    loadAreas().then(() => { if (areasData) fillReliability(t); }).catch(() => {});
+    return;
+  }
+  const known = peakAt(state.lat, state.lon);
+  const offices = known && Array.isArray(known.peak.office) ? known.peak.office : null;
+  if (!offices || !offices.length) return;
+  const ds = fmtDateISO(t);
+  const seq = ++reliabilitySeq;
+  Promise.all(offices.map(o =>
+    loadReliability(o).then(e => ({ code: o, v: e.map[ds], name: e.office })).catch(() => null)))
+    .then(list => {
+      // ⚠ 速くスクラブすると古い応答が後から届く。新しい選択が来ていたら捨てる
+      if (seq !== reliabilitySeq) return;
+      const got = list.filter(r => r && r.v);
+      if (!got.length) return;                     // 1〜2日先など。目安のまま
+      const levels = [...new Set(got.map(r => RELIABILITY_LABEL[r.v] || r.v))];
+      el.textContent = `気象庁の確度 ${levels.join('・')}`;
+      /* ⚠ **「風の信頼度ではない」を必ず添える。** このアプリは風で判定するので、
+           ここを省くと意味が反転して伝わる。 */
+      el.title = `気象庁の週間予報の信頼度 ${got.map(r => r.v).join('/')}` +
+        `（降水確率と気温についての信頼度で、風の信頼度ではありません）` +
+        (got[0].name ? ` ／ ${got.map(r => r.name).filter(Boolean).join('・')}` : '');
+      // 低い方に合わせて色を付ける（安全側）
+      const worst = got.map(r => r.v).sort().pop();
+      el.className = 'pop-lead ' + (worst === 'C' ? 'low' : worst === 'B' ? 'mid' : 'ok');
+    })
+    .catch(() => { /* 引けなければ目安のまま */ });
+}
+
 // 選択情報ポップアップの中身を更新（時刻→天気→ABC→気温→降水+強さ→風速→気圧）
 function updatePopup() {
   const d = state.allData[state.sliderIndex];
@@ -2878,6 +2984,9 @@ function updatePopup() {
   leadEl.textContent = forecastLeadText(lead);
   leadEl.title = lead ? LEAD_TITLE : '';
   leadEl.className = lead ? `pop-lead ${lead.level}` : 'pop-lead';
+  /* 峰と分かっている地点なら、気象庁の信頼度で置き換える（取れたときだけ）。
+     ⚠ **目安と本物を同時に出さない。** どちらを信じるか分からなくなる。 */
+  fillReliability(t);
 
   const isNight = t.getHours() < 5 || t.getHours() >= 19;
   document.getElementById('pop-wx').textContent = weatherEmoji(d.wcode, isNight);

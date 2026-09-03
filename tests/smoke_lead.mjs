@@ -46,6 +46,8 @@ await page.route('**/*', route => {
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
   if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
   if (url.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
+  if (url.includes('areas.json')) return route.fulfill({ contentType: 'application/json',
+    body: fs.readFileSync(path.join(ROOT, 'areas.json'), 'utf8') });
   return route.abort();
 });
 await page.goto('https://sotoki.test/');
@@ -108,6 +110,74 @@ ok(dom.emptyHidden, '★空のときは場所を取らない', dom);
 ok(dom.shown, '中身があれば出る', dom);
 ok(dom.size >= 9, '★小さすぎない（判断を左右する注記なので読める大きさ）', dom.size);
 ok(dom.color !== 'rgb(0, 0, 0)', '確度に応じた色が付く', dom.color);
+
+/* --- 場面7: 気象庁の信頼度で目安を置き換えること ---
+   ⚠⚠ **A/B/C という字面がアプリの判定と衝突する。** アプリのA/B/Cは「登山適性」、
+     気象庁のA/B/Cは「予報の信頼度」。**そのまま出すと判定Cと読まれる。**
+     画面には高/中/低で出し、元の記号は title に回す。
+   ⚠⚠ **「風の信頼度ではない」を必ず添える。** このアプリは風で判定するので、
+     省くと意味が反転して伝わる。 */
+/* ⚠ **日付は「いま」から作る。** `forecastLead` は実際の現在時刻を基準にするので、
+     固定の日付を書くと過去になり、そこで打ち切られて検査にならない（実際に踏んだ）。 */
+const rel = await page.evaluate(async () => {
+  const pad = n => String(n).padStart(2, '0');
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const dayFrom = n => new Date(Date.now() + n * 86400000);
+  const body = {
+    publishingOffice: '長野地方気象台',
+    timeSeries: [{
+      timeDefines: [1, 2, 3, 4, 5, 6, 7].map(n => `${iso(dayFrom(n))}T00:00:00+09:00`),
+      areas: [{ area: { name: '長野県' }, reliabilities: ['', '', 'A', 'C', 'B', 'B', 'B'] }],
+    }],
+  };
+  const real = window.fetch;
+  let asked = [];
+  window.fetch = async (u) => {
+    const s2 = String(u);
+    if (s2.includes('areas.json')) return real(u);
+    if (s2.includes('/forecast/data/forecast/')) {
+      asked.push(s2);
+      return { ok: true, status: 200, json: async () => [{}, body] };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  await loadAreas();
+  // 赤岳（八ヶ岳）を選んだことにする。office は ["200000"]（長野県）
+  const yatsu = areasData.areas.find(a => a.id === 'yatsu');
+  const akadake = yatsu.peaks.find(p => p.name === '赤岳');
+  state.lat = akadake.lat; state.lon = akadake.lon;
+  const el = document.getElementById('pop-lead');
+
+  // 2日先（信頼度が空）→ 目安のまま
+  el.textContent = '2日先・確度中'; el.className = 'pop-lead mid';
+  fillReliability(dayFrom(2));
+  await new Promise(r => setTimeout(r, 400));
+  const near = { text: el.textContent, cls: el.className };
+
+  // 4日先（timeDefines の4番目＝'C'）→ 置き換わる
+  fillReliability(dayFrom(4));
+  await new Promise(r => setTimeout(r, 500));
+  const far = { text: el.textContent, title: el.title, cls: el.className };
+
+  const officeCodes = akadake.office;
+  window.fetch = real;
+  return { near, far, asked, office: officeCodes };
+});
+
+ok(rel.office && rel.office[0] === '200000', '赤岳の予報区が長野県（前提）', rel.office);
+ok(rel.asked.some(u => u.includes('200000.json')), '★峰の予報区を引きに行く', rel.asked);
+ok(!/気象庁/.test(rel.near.text),
+  '★★1〜2日先では信頼度を出さない（空なので目安のまま）', rel.near);
+ok(/気象庁/.test(rel.far.text) && /低/.test(rel.far.text),
+  '★★★取れたら目安を気象庁の値で置き換える', rel.far);
+ok(!/\bC\b/.test(rel.far.text),
+  '★★★画面に A/B/C の字を出さない（アプリの判定と読み違える）', rel.far.text);
+ok(/信頼度 C/.test(rel.far.title), '★元の記号は title に残す', rel.far.title);
+ok(/風の信頼度ではありません/.test(rel.far.title) && !/\*\*/.test(rel.far.title),
+  '★★★「風の信頼度ではない」を必ず添える（title は素のテキストなので ** を書かない）', rel.far.title);
+ok(/降水確率と気温/.test(rel.far.title), '★何についての信頼度かを書く', rel.far.title);
+ok(/長野地方気象台/.test(rel.far.title), 'どの気象台の値かを出す', rel.far.title);
+ok(/low/.test(rel.far.cls), '確度が低いことが色でも分かる', rel.far.cls);
 
 ok(errors.length === 0, 'ページ内で例外が出ていない', errors);
 await browser.close();
