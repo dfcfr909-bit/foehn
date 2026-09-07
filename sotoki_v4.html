@@ -2131,13 +2131,13 @@ const PAST_HOURS = 72;   // 「実績+予報」表示時に遡る時間数
    平滑化されて潰れるため、山頂の風が出ない。皇海山(2,144m)ではモデル地形が1,405mで、
    10m風 2.7m/s に対し山頂高度(800hPa)の風は 21.0m/s だった（実測）。
    モデル地形より高く突き出た山ほど判定が甘くなる＝危険側にズレる。
-   標高を渡しても直らない（elevation は気温にしか効かない）→ docs/adr/0006-summit-wind.md */
+   標高を渡しても直らない（elevation は気温にしか効かない）→ docs/adr/0006-summit-wind.md
+   ⚠ **どの層を使うかを応答の elevation で決めないこと**（ADR-0011）。
+   その数字の意味は Open-Meteo 側で変わり、110峰中109峰が黙って地上10m風へ
+   落ちていた。至仏山で発覚 → docs/adr/0011-wind-level-no-model-elevation.md */
 const WIND_LEVELS = [   // [hPa, 標準大気での高度m]。日本の山（約600〜3,800m）を覆う
   [925, 760], [900, 990], [850, 1460], [800, 1950], [700, 3010], [600, 4200],
 ];
-// 山頂がモデル地形よりこれだけ高いときに気圧面の風へ切り替える（地中の外挿値を拾わないため）
-const WIND_LEVEL_MIN_RISE = 100;
-
 // 山頂高度に最も近い気圧面。範囲外なら端の層に寄せる
 function windLevelFor(elevM) {
   let best = WIND_LEVELS[0];
@@ -2147,26 +2147,24 @@ function windLevelFor(elevM) {
   return best;
 }
 
-/* どの高度の風で判定するかを決める。
-   ⚠ **山頂がモデル地形より高くないときは地上10m風のまま。**
-   気圧面が地中になり、無意味な外挿値を拾うため。
+/* どの高度の風で判定するかを決める。**見るのは山頂の標高だけ**（ADR-0011）。
+   ⚠ **応答の `elevation`（モデル格子の標高）で判断しないこと。**
+   ADR-0006 では「山頂がモデル地形より100m以上高いときだけ気圧面へ」という
+   安全弁を置いていた。だが Open-Meteo が返す `elevation` の意味が変わり、
+   標高の数字だけが山頂に寄って**風は地上10m風のまま**という状態になった。
+   その結果 **110峰中109峰が黙って地上10m風へ落ちていた**（至仏山で発覚）。
+   同じ数字にまた寄りかからないよう、引数から外してある。
    戻り値の kind は 'level'（山頂高度の気圧面）/ 'ground'（地上10m）。 */
-function pickWindSource(summitM, modelM) {
+function pickWindSource(summitM) {
   if (typeof summitM !== 'number' || !isFinite(summitM)) {
     return { kind: 'ground', reason: 'noElev' };
   }
-  if (typeof modelM === 'number' && isFinite(modelM)) {
-    // モデル地形が分かる（メテオグラム）: 山頂が十分高いときだけ気圧面へ
-    if (summitM <= modelM + WIND_LEVEL_MIN_RISE) {
-      return { kind: 'ground', reason: 'flat', summitM, modelM };
-    }
-  } else if (summitM < WIND_LEVELS[0][1]) {
-    // モデル地形が分からない（ランキングは山頂標高を指定して取るので返らない）:
-    // いちばん低い気圧面より下なら気圧面を使う意味が無い
+  if (summitM < WIND_LEVELS[0][1]) {
+    // いちばん低い気圧面より下。気圧面を使う意味が無い（地中の外挿値を拾わない）
     return { kind: 'ground', reason: 'low', summitM };
   }
   const [hPa, alt] = windLevelFor(summitM);
-  return { kind: 'level', hPa, alt, summitM, modelM };
+  return { kind: 'level', hPa, alt, summitM };
 }
 
 /* 判定に使っている風がどこの風か、一言で言う（画面に出す用）。
@@ -2178,7 +2176,7 @@ function windSourceLabel(src) {
     return src.fellBack ? '地上10m（山頂の風が取れず）' : `${Math.round(src.summitM)}m`;
   }
   if (src.reason === 'noElev') return '地上10m（標高不明）';
-  // ⚠ 落ちた理由が「山頂がモデル地形より高くない」ときは**読んだ標高を出す**。
+  // ⚠ 落ちた理由が「読んだ標高が低い」ときは**その標高を出す**。
   // 座標が山頂からずれていると DEM が斜面を読んで静かにここへ落ちる。
   // 数字が出ていないと、実機で「なぜ地上風なのか」を切り分けられない（実際に踏んだ）
   if (typeof src.summitM === 'number') return `地上10m（山頂${Math.round(src.summitM)}m）`;
@@ -2221,10 +2219,13 @@ async function fetchWeather(lat, lon) {
     state.demElevation = (typeof dem === 'number' && isFinite(dem)) ? dem : null;
     // どの高度の風で判定するかを先に決める（processData がその層を読む）
     // ⚠ displayElevation() ではなく demElevation を渡す。DEMが取れなかったときに
-    // モデル標高で埋めると「山頂＝モデル地形」と誤認して黙って地上風に落ちる
+    // モデル標高で埋めると、モデル地形の高さを山頂と誤認する
     // ⚠ 峰と分かっているならその標高を優先する。DEMは座標が少しずれるだけで
     // 斜面を読み、静かに地上風へ落ちる（皇海山で踏んだ）
-    state.windSource = pickWindSource(state.summitElev ?? state.demElevation, state.elevation);
+    // ⚠ **state.elevation（モデル格子の標高）は渡さない**（ADR-0011）。
+    // ランキングと同じ決め方にそろえてある。渡していた頃は、同じ日の同じ山が
+    // ランキングでC・詳細画面でAという食い違いを起こしていた
+    state.windSource = pickWindSource(state.summitElev ?? state.demElevation);
     state.fullData = processData(json, state.windSource);   // dpressは全期間の文脈で算出済み
     state.lat = lat;
     state.lon = lon;
@@ -7429,7 +7430,7 @@ async function fetchRankData(dates) {
   // 判定に使う気圧面（ADR-0006）。峰ごとに必要な層だけを要求する
   // （110地点ぶんの変数が増えるとレートに効くため。全6層でなく実際に使う5層で足りる）
   const levels = [...new Set(peaks.map(p => {
-    const s = pickWindSource(p.elev, null);
+    const s = pickWindSource(p.elev);
     return s.kind === 'level' ? s.hPa : null;
   }).filter(Boolean))];
   const key = `${dates.join('_')}_v${areas.version}_${peaks.length}_${levels.join('-')}`;
@@ -7501,7 +7502,7 @@ async function buildRanking(dates) {
         // 山頂標高で判定する（ADR-0006）。ランキングは areas.json の elev があるので
         // DEMを引く必要がない。標高はAPIに渡してあるのでモデル地形は返らない
         const hourData = raw && raw.hourly
-          ? processData(raw, pickWindSource(peak.elev, null)) : null;
+          ? processData(raw, pickWindSource(peak.elev)) : null;
         days = dates.map(ds => hourData ? judgePeakDay(hourData, ds) : null);
       } catch {
         days = dates.map(() => null);   // 失敗地点は判定不能でフォールバック
