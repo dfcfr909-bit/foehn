@@ -1,4 +1,4 @@
-/* 判定に使う風の高度（ADR-0006）。
+/* 判定に使う風の高度（ADR-0006 → 安全弁は ADR-0011 で置き換え）。
    実機で踏んだ皇海山の数字をそのまま固定する。
 
    2026-08-11 17時の皇海山（2,144m）で、
@@ -53,6 +53,12 @@ const WIND700 = 28.86;              // 実測（3,010m）
 
 let demMode = 'summit';   // 'summit' | 'low'
 let levelMode = 'ok';     // 'ok' | 'missing'（層が返ってこない場合）
+/* 応答が返す elevation（モデル格子の標高）。
+   ⚠ **ADR-0011 の本命。** 2026-08 の実測は 1,405m だったが、2026-09 に同じ地点を
+   引き直すと 2,127m を返すようになっていた（山頂 2,144m との差 17m）。
+   標高の数字だけが山頂に寄り、風は地上10m風のまま。ADR-0006 の安全弁が
+   ここに引っ掛かって、110峰中109峰が黙って地上風に落ちていた。 */
+let modelElev = MODEL_ELEV;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function fakeWeather() {
@@ -92,7 +98,7 @@ function fakeWeather() {
     const ds = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
     daily.time.push(ds); daily.sunrise.push(`${ds}T04:40`); daily.sunset.push(`${ds}T19:00`);
   }
-  return { hourly: h, daily, elevation: MODEL_ELEV };
+  return { hourly: h, daily, elevation: modelElev };
 }
 
 (async () => {
@@ -162,7 +168,9 @@ function fakeWeather() {
   ok(/wind_speed_unit=ms/.test(mainUrl), '気圧面の風にも ms 指定が要る（ADR-0005）');
   await page.close();
 
-  /* ============ 2. 安全弁：山頂がモデル地形より低ければ地上風 ============ */
+  /* ============ 2. 安全弁：最下層より低い地点は地上風 ============
+     ⚠ ADR-0011 で残っている安全弁はこれ**だけ**。いちばん低い気圧面（925hPa=760m）
+     より下の地点で気圧面を読むと地中の外挿値になるので、地上10m風のまま使う。 */
   demMode = 'low';
   const page2 = await newPage();
   const low = await page2.evaluate(() => {
@@ -171,12 +179,51 @@ function fakeWeather() {
              popupSrc: document.getElementById('pop-windsrc').textContent };
   });
   ok(low.src && low.src.kind === 'ground',
-    '★山頂がモデル地形(1,405m)より低ければ地上10m風のまま（地中の外挿値を拾わない）', low.src);
+    '★570mの地点は地上10m風のまま（最下層760mより下。地中の外挿値を拾わない）', low.src);
+  /* ⚠ **理由まで見る。** kind だけ見ていると、撤回したはずのモデル地形の安全弁
+     （reason:'flat'）で落ちていても気づけない。ここは 'low' でなければならない */
+  ok(low.src && low.src.reason === 'low',
+    '★★落ちた理由が「標高が低い」であること（モデル地形との比較ではない）', low.src);
   ok(Math.abs(low.wind - WIND10) < 0.01, '地上風が判定に渡る', low.wind);
   ok(low.grade === 'A', 'その場合の判定はA（風が弱いので正しい）', low.grade);
   ok(low.popupSrc.includes('地上'), '地上風であることを画面に出す', low.popupSrc);
   await page2.close();
   demMode = 'summit';
+
+  /* ============ 2.5 モデル格子の標高が山頂に近くても気圧面を読む ============
+     ★★★ADR-0011 の本命。実機で踏んだ至仏山の失敗そのもの。
+     2026-09-06 の至仏山（2,228m / モデル 2,133m・差95m）で、
+       判定に使った風  4.55 m/s → 終日A
+       同じ時刻の800hPa 22.78 m/s → C
+     旧ADR-0006の安全弁（山頂がモデル地形より100m以上高いときだけ気圧面）に
+     引っ掛かっていた。⚠ **Open-Meteo が返す elevation の意味が変わっただけで
+     風は地上風のまま**なので、この数字で判断してはいけない。 */
+  modelElev = 2127;   // 2026-09 に皇海山で実測した値（山頂2,144mとの差17m）
+  const page25 = await newPage();
+  const near = await page25.evaluate(() => {
+    const d = state.allData[state.sliderIndex];
+    return { src: state.windSource, modelElev: state.elevation,
+             wind: d.wind, grade: judgePoint(d).grade,
+             popupSrc: document.getElementById('pop-windsrc').textContent,
+             // ランキングの経路が同じ標高で選ぶもの（食い違いの検査に使う）
+             rank: pickWindSource(2144) };
+  });
+  ok(near.modelElev === 2127, 'モデル格子の標高が山頂の17m下（前提の再現）', near.modelElev);
+  ok(near.src && near.src.kind === 'level' && near.src.hPa === 800,
+    '★★★モデル地形が山頂に近くても気圧面を読む（安全弁に落ちない）', near.src);
+  ok(Math.abs(near.wind - WIND800) < 0.01,
+    '★★判定に山頂高度の風が渡る（21.02 m/s）', near.wind);
+  ok(near.grade === 'C', '★★★判定がAではなくCになる（至仏山の失敗が再発しない）', near.grade);
+  ok(near.popupSrc.includes('2144'), '高度の表示も山頂', near.popupSrc);
+  /* ⚠ 旧実装では詳細画面だけがモデル標高を渡していたため、**同じ日の同じ山が
+     ランキングでC・詳細画面でA**になりえた。ここが食い違わないことまで見る。
+     ⚠ この検査は**モデル標高が山頂に近い場面でしか効かない**（離れていれば
+     旧実装でも一致してしまう）ので、必ずこの場面の中で見ること。 */
+  ok(near.src.kind === near.rank.kind && near.src.hPa === near.rank.hPa,
+    '★★★詳細画面とランキングが同じ層を選ぶ（画面によって判定が割れない）',
+    { detail: near.src, rank: near.rank });
+  await page25.close();
+  modelElev = MODEL_ELEV;
 
   /* ============ 3. 層が返ってこないとき：黙って甘い判定に戻らない ============ */
   levelMode = 'missing';
@@ -241,10 +288,13 @@ function fakeWeather() {
       koukai: windLevelFor(2144)[0],          // 皇海山 → 800hPa
       fuji: windLevelFor(3776)[0],            // 富士山 → 600hPa(4,200m)の方が近い
       tsukuba: windLevelFor(877)[0],          // 筑波山 → 900hPa
-      // モデル地形が分からない（ランキング）ときの安全弁
-      lowNoModel: pickWindSource(500, null).kind,
-      highNoModel: pickWindSource(2144, null).hPa,
-      noElev: pickWindSource(null, 1405).kind,
+      // 残っている安全弁は「最下層より低いか」だけ（ADR-0011）
+      low: pickWindSource(500).kind,
+      high: pickWindSource(2144).hPa,
+      noElev: pickWindSource(null).kind,
+      /* ⚠ **余計な引数を無視しないこと。** 呼び出し側がうっかりモデル標高を
+         渡し直しても、結果が変わらない＝黙って昔の挙動に戻らない、を見る */
+      ignoresExtra: pickWindSource(2144, 2127).hPa,
     }));
     await p.close();
     return r;
@@ -252,10 +302,11 @@ function fakeWeather() {
   ok(pick.koukai === 800, '皇海山2,144m → 800hPa', pick.koukai);
   ok(pick.fuji === 600, '富士山3,776m → 600hPa（700hPaより近い）', pick.fuji);
   ok(pick.tsukuba === 900, '筑波山877m → 900hPa', pick.tsukuba);
-  ok(pick.lowNoModel === 'ground',
-    'モデル地形不明かつ最下層より低ければ地上風（ランキングの安全弁）', pick.lowNoModel);
-  ok(pick.highNoModel === 800, 'モデル地形不明でも高ければ気圧面を使う（ランキング）', pick.highNoModel);
+  ok(pick.low === 'ground', '最下層(760m)より低ければ地上風', pick.low);
+  ok(pick.high === 800, '高ければ気圧面を使う', pick.high);
   ok(pick.noElev === 'ground', '標高が分からなければ地上風', pick.noElev);
+  ok(pick.ignoresExtra === 800,
+    '★モデル標高を渡しても結果が変わらない（黙って昔の挙動に戻らない）', pick.ignoresExtra);
 
   await browser.close();
   if (errors.length) fails.push('ページエラー: ' + errors.join(' / '));
@@ -265,6 +316,6 @@ function fakeWeather() {
     console.log('WIND SMOKE FAILED');
     process.exit(1);
   }
-  console.log(JSON.stringify({ summit, low, miss, known, diag, pick }, null, 2));
+  console.log(JSON.stringify({ summit, low, near, miss, known, diag, pick }, null, 2));
   console.log('WIND SMOKE PASSED');
 })();

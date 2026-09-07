@@ -19,6 +19,18 @@ on:
           - jma-weather-map
           - jma-weekly-reliability
           - map-area-offices
+          - wind-vs-report
+          - wind-elev-gap
+      peak:
+        description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
+        required: false
+        default: '至仏山'
+        type: string
+      date:
+        description: '（wind-vs-report のとき）対象日 YYYY-MM-DD（JST）。空なら前日'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -45,6 +57,20 @@ jobs:
       - name: 山域を府県予報区に対応づける
         if: ${{ inputs.target == 'map-area-offices' }}
         run: node scripts/mapAreaOffices.mjs | tee result.txt
+
+      # ⚠ 入力は必ず env で受けて "$PEAK" と引用する。
+      #   run: の中へ ${{ inputs.* }} と書くと、式が先に展開されてシェルのソースになる
+      #   （スクリプト側の検査は呼ばれる前に負ける）。release.yml と同じ決まり
+      - name: 風の予報と報告を突き合わせる
+        if: ${{ inputs.target == 'wind-vs-report' }}
+        env:
+          PEAK: ${{ inputs.peak }}
+          DATE: ${{ inputs.date }}
+        run: node scripts/probeWind.mjs | tee result.txt
+
+      - name: 安全弁に掛かっている峰を数える
+        if: ${{ inputs.target == 'wind-elev-gap' }}
+        run: node scripts/probeWindGap.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()

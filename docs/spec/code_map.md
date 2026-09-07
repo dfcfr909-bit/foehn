@@ -99,7 +99,7 @@
 | `THRESH` | **ABC判定の閾値。調整するのはここだけ** | 約 1930 |
 | `WIND_LEVELS` | 判定に使う気圧面と高度（ADR-0006） | 約 1913 |
 | `windLevelFor(elevM)` | 山頂高度に最も近い気圧面 | 約 1920 |
-| `pickWindSource(summitM, modelM)` | **気圧面と地上10mのどちらで判定するか** | 約 1932 |
+| `pickWindSource(summitM)` | **気圧面と地上10mのどちらで判定するか**（ADR-0011。モデル標高は見ない） | 約 1932 |
 | `windSourceLabel(src)` | どこの風か画面に出す文言 | 約 1950 |
 
 ## 気象データ取得
