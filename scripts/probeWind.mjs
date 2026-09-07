@@ -75,15 +75,23 @@ async function get(url) {
 }
 
 const base = `https://api.open-meteo.com/v1/forecast?latitude=${peak.lat}&longitude=${peak.lon}`
-  + `&hourly=windspeed_10m,winddirection_10m,windgusts_10m,${lvVars}`
-  + `&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=${Math.max(days, 1)}&forecast_days=1`;
+  + `&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=${Math.max(days, 1)}&forecast_days=1&hourly=`;
+const MAIN = `windspeed_10m,winddirection_10m,${lvVars}`;
 
 console.log(`風の突き合わせ: ${PEAK}（${areaName}）${peak.elev}m  ${peak.lat}, ${peak.lon}`);
 console.log(`対象日: ${DATE}（JST）`);
 console.log(`本体から読んだ決まり: 層=${LEVELS.map(l => l[0]).join('/')}hPa`
   + ` / 気圧面へ切り替える高さの差=${MIN_RISE}m / 風のABC閾値=${WIND_A}・${WIND_B} m/s`);
 
-const j = await get(`${base}&models=jma_seamless`);
+const j = await get(`${base}${MAIN}&models=jma_seamless`);
+// ⚠ 突風は JMAモデルが返さない。本体も models を指定しない別リクエストで取っている
+// （fetchSupplemental）。ここで models 付きのまま取ると、アプリが実際に出している
+// 突風とは違うもの（全部 --）を見て「突風も出ていない」と誤読する
+const jg = await get(`${base}wind_gusts_10m`);
+const gust = new Map();
+for (let i = 0; i < jg.hourly.time.length; i++) {
+  if (jg.hourly.wind_gusts_10m[i] != null) gust.set(jg.hourly.time[i], jg.hourly.wind_gusts_10m[i]);
+}
 const modelElev = j.elevation;
 console.log(`\nモデル地形の標高: ${modelElev}m（山頂との差 ${Math.round(peak.elev - modelElev)}m）`);
 
@@ -103,19 +111,39 @@ let maxJudge = -Infinity, maxGust = -Infinity;
 for (const i of idx) {
   const j10 = h.windspeed_10m[i];
   const lv = useLevel ? h[`wind_speed_${hPa}hPa`][i] : j10;
-  const g = h.windgusts_10m[i];
+  const g = gust.get(h.time[i]);
   if (lv != null) maxJudge = Math.max(maxJudge, lv);
   if (g != null) maxGust = Math.max(maxGust, g);
   console.log(`${h.time[i].slice(11, 16)} ${pad(lv, 6)}   ${lv == null ? '-' : abcWind(lv)}  `
     + `${pad(j10, 5)} ${pad(g, 5)}  `
     + LEVELS.map(([p]) => pad(h[`wind_speed_${p}hPa`][i], 7)).join(''));
 }
-console.log(`\n${DATE} の最大: 判定に使う風 ${maxJudge} m/s（${abcWind(maxJudge)}）／ 突風 ${maxGust} m/s`);
-console.log(`突風比（突風÷判定風の最大同士）: ${(maxGust / maxJudge).toFixed(2)}倍`);
+console.log(`\n${DATE} の最大: 判定に使う風 ${maxJudge} m/s（${abcWind(maxJudge)}）`
+  + (isFinite(maxGust) ? `／ 突風 ${maxGust} m/s（${(maxGust / maxJudge).toFixed(2)}倍）` : '／ 突風は取れなかった'));
+
+/* ⚠ 判定に使わなかった層も最大を並べる。
+   「地上10m風に落ちた日に、上の層がどうだったか」がこの調べものの肝。
+   落ちたこと自体は画面に出ているが、**いくら見落としたか**は出ていない */
+console.log('\n各層の最大（判定に使っていない層も含む）:');
+for (const [p, alt] of LEVELS) {
+  const vals = idx.map(i => h[`wind_speed_${p}hPa`][i]).filter(v => v != null);
+  if (!vals.length) continue;
+  const mx = Math.max(...vals);
+  const mark = (useLevel && p === hPa) ? ' ← 判定に使用' : '';
+  console.log(`  ${String(p).padStart(4)}hPa（約${String(alt).padStart(4)}m）: ${String(mx).padStart(6)} m/s（${abcWind(mx)}）${mark}`);
+}
+const near = windLevelFor(peak.elev);
+if (!useLevel) {
+  const vals = idx.map(i => h[`wind_speed_${near[0]}hPa`][i]).filter(v => v != null);
+  const mx = vals.length ? Math.max(...vals) : null;
+  console.log(`\n⚠ 地上10m風に落ちている。山頂高度に最も近い層は ${near[0]}hPa（約${near[1]}m）で、`
+    + `その日の最大は ${mx} m/s（${mx == null ? '-' : abcWind(mx)}）。`);
+  console.log(`  判定に使った ${maxJudge} m/s（${abcWind(maxJudge)}）との差は ${(mx - maxJudge).toFixed(2)} m/s。`);
+}
 
 /* ---- ADR-0006 の「elevation は風に効かない」を毎回確かめ直す ---- */
 console.log('\n── elevation を渡すと風が変わるか（ADR-0006で「効かない」と結論した点）');
-const j2 = await get(`${base}&models=jma_seamless&elevation=${peak.elev}`);
+const j2 = await get(`${base}${MAIN}&models=jma_seamless&elevation=${peak.elev}`);
 const same = idx.every(i => h.windspeed_10m[i] === j2.hourly.windspeed_10m[i])
   && idx.every(i => !useLevel || h[`wind_speed_${hPa}hPa`][i] === j2.hourly[`wind_speed_${hPa}hPa`][i]);
 console.log(`  応答の elevation: ${j.elevation} → ${j2.hourly ? j2.elevation : '?'}`);

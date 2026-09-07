@@ -20,6 +20,7 @@ on:
           - jma-weekly-reliability
           - map-area-offices
           - wind-vs-report
+          - wind-elev-gap
       peak:
         description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
         required: false
@@ -66,6 +67,10 @@ jobs:
           PEAK: ${{ inputs.peak }}
           DATE: ${{ inputs.date }}
         run: node scripts/probeWind.mjs | tee result.txt
+
+      - name: 安全弁に掛かっている峰を数える
+        if: ${{ inputs.target == 'wind-elev-gap' }}
+        run: node scripts/probeWindGap.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
