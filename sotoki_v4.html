@@ -1794,7 +1794,9 @@ html, body {
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  /* ⚠ 項目の中（ドット↔値）は、項目どうしの隙間（#legend の gap）より**狭く**保つ。
+     同じなら、どの数字がどの色のものか読み取れない */
+  gap: 3px;
   font-size: 9px;
   color: var(--text2);
   font-weight: 700;
@@ -1814,7 +1816,11 @@ html, body {
 .legend-v {
   display: inline-block;
   min-width: 26px;
-  text-align: right;
+  /* ⚠ **右寄せにしない。** 幅を固定して右寄せにすると、桁が短いときに数字が
+     自分の色ドットから離れ、**左隣の項目にくっついて見える**（実機で指摘された）。
+     左寄せにすれば数字は必ずドットの隣に来て、余った幅は右＝次の項目との
+     隙間になる。項目の左端は min-width で固定されたままなので揺れない。 */
+  text-align: left;
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 700;
