@@ -1978,7 +1978,7 @@ html, body {
     <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
     <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
     <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
-    <span id="app-version">v4.82.0</span>
+    <span id="app-version">v4.83.0</span>
   </div>
 
   <!-- Footer -->
@@ -4162,8 +4162,15 @@ function drawCloudPrecip(u) {
     // 凡例と同じ色をベタで置き、明るい縁をつける（夜の暗い空でも沈まないように）
     ctx.fillStyle = (data[i].snow > 0) ? '#3c78dc' : '#1abebe';
     ctx.fillRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = pr;
+    /* 判定に効いている時間だけ、縁を判定の色にする。
+       **なぜCなのかが窓を開かなくてもグラフの上で分かる**ようにするため。
+       ⚠ **塗りの色は変えない。** 青＝雪／teal＝雨の区別が消える。縁だけ替える。
+       ⚠ **判定を自前で計算しない。** `judgeBreakdown` の結果を読むだけ
+         （ABC評価ロジックは変更禁止）。
+       ⚠ 風のバーは**既に閾値で塗り分けている**ので、そちらには足さない（二重の印にしない）。 */
+    const lv = judgeBreakdown(data[i]).precip;
+    ctx.strokeStyle = lv === 2 ? GRADE_COL.C : lv === 1 ? GRADE_COL.B : 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = (lv >= 1 ? 2 : 1) * pr;
     ctx.strokeRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
   }
 
@@ -4280,37 +4287,6 @@ function drawTempOverlay(u) {
       ctx.fillText(Math.round(data[i].temp) + '°', x, y + dy * pr);
     });
   });
-  // Y軸ラベルは固定ガター（drawAxisGutter）で表示
-  drawTimeLabels(u, pr);
-  ctx.restore();
-}
-
-/* ------ PRECIP hook: 降水・降雪バー + 軸 ------ */
-function drawPrecipBars(u) {
-  const ctx = u.ctx;
-  const pr = canvasRatio(u);
-  const data = state.allData;
-  const bottom = u.bbox.top + u.bbox.height;
-  ctx.save();
-  for (let i = 0; i < data.length; i++) {
-    const d = data[i];
-    if (!(d.precip > 0) && !(d.snow > 0)) continue;
-    const x0 = u.valToPos(i - 0.5, 'x', true) + pr * 0.3;
-    const x1 = u.valToPos(i + 0.5, 'x', true) - pr * 0.3;
-    const barW = x1 - x0;
-    if (d.precip > 0) {
-      const y = u.valToPos(d.precip, 'y', true);
-      ctx.fillStyle = '#3a7fc1';
-      ctx.fillRect(x0, y, barW, bottom - y);
-    }
-    if (d.snow > 0) {
-      const y = u.valToPos(d.snow, 'y', true);
-      ctx.fillStyle = '#7bb8e8';
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(x0, y, barW, bottom - y);
-      ctx.globalAlpha = 1;
-    }
-  }
   // Y軸ラベルは固定ガター（drawAxisGutter）で表示
   drawTimeLabels(u, pr);
   ctx.restore();
