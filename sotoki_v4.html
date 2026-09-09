@@ -554,11 +554,11 @@ html, body {
   transition: opacity 0.12s;
 }
 #pop-time {
+  margin-bottom: 4px;
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.3px;
-  margin-bottom: 4px;
   white-space: nowrap;
 }
 /* 予報の確からしさの目安（だいぶ先の予報にだけ出る）。
@@ -1928,6 +1928,9 @@ html, body {
     <!-- 現在へ戻る（浮動ボタン） -->
     <!-- 選択情報ポップアップ（指の右上に追従。既定は選択線付近の上部） -->
     <div id="scrub-popup">
+      <!-- ⚠ 時刻と「天気＋判定」を1行にまとめない。試したが**幅が 133→189px に太った**
+           （時刻＋絵文字＋判定の札で1行が長くなる）。高さは31px縮むが面積では負ける。
+           窓が覆うグラフの量で見ると、分けたままの方が小さい -->
       <div id="pop-time">--/-- (-) --:--</div>
       <div id="pop-lead" class="pop-lead"></div>
       <div id="pop-rows">
