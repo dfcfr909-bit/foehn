@@ -98,7 +98,34 @@ async function countMarks(pattern) {
       else if (hit(r, g, b, 26, 190, 190)) rain++;  // 雨の塗り #1abebe
       else if (hit(r, g, b, 60, 120, 220)) snow++;  // 雪の塗り #3c78dc
     }
-    return { B, C, rain, snow, grades: state.allData.slice(0, 6).map(d => judgeBreakdown(d).precip) };
+    /* ⚠ **下の辺が引かれていないこと**を見る。バーの足元には地表帯があり、
+       そこに横線が乗ると印ではなく「地面の一部」に見える（実機で指摘された）。
+       印の色の画素を行ごとに数え、**いちばん下の行が横一列に埋まっていないか**を確かめる。
+       閉じた四角なら下の行はバーの幅ぶん埋まる。コの字なら縦線2本ぶんしか無い。 */
+    let bottomRun = 0, sideRun = 0;
+    const rowCount = y => {
+      let n = 0;
+      for (let x = 0; x < cv.width; x++) {
+        const i = (y * cv.width + x) * 4;
+        if (img[i + 3] > 200 &&
+            (hit(img[i], img[i + 1], img[i + 2], 208, 48, 48) ||
+             hit(img[i], img[i + 1], img[i + 2], 232, 160, 32))) n++;
+      }
+      return n;
+    };
+    /* ⚠ **同じバーの集合を横切る行どうしで比べる。**
+       最初「最下行 vs 真ん中の行」で比べたが、真ん中の行は**背の高いバーしか
+       横切らない**ので数が減るのは当たり前で、検査になっていなかった。
+       最下行と、その 8px 上（どのバーもまだ立っている高さ）を比べる。 */
+    const rows = [];
+    for (let y = 0; y < cv.height; y++) { const n = rowCount(y); if (n > 0) rows.push({ y, n }); }
+    if (rows.length) {
+      const yb = rows[rows.length - 1].y;
+      bottomRun = rowCount(yb);
+      sideRun = rowCount(yb - 8);
+    }
+    return { B, C, rain, snow, bottomRun, sideRun,
+      grades: state.allData.slice(0, 6).map(d => judgeBreakdown(d).precip) };
   });
   await page.close();
   return r;
@@ -111,6 +138,12 @@ ok(mixed.grades.includes(0) && mixed.grades.includes(1) && mixed.grades.includes
 ok(mixed.B > 100, '★★Bの時間に橙の縁が付く', mixed);
 ok(mixed.C > 100, '★★Cの時間に赤の縁が付く', mixed);
 ok(mixed.rain > 500, '★塗りは雨の青のまま（縁で上書きしていない）', mixed);
+/* ⚠ **コの字であること。** 閉じた四角だと最下行がバーの幅ぶん埋まり、
+   真ん中の行（縦線2本だけ）より桁違いに多くなる。 */
+ok(mixed.sideRun > 0, '前提: 縦線が引かれている', mixed);
+ok(mixed.bottomRun <= mixed.sideRun * 1.3,
+  '★★★下の辺を引かない（地表帯の上に横線が乗ると地面の一部に見える）',
+  { 最下行: mixed.bottomRun, '8px上': mixed.sideRun });
 
 /* ============ 2. ⚠ Aだけの日には印が付かない ============
    **ここが本丸。** どの時間にも出ると狼少年になり、印そのものが効かなくなる。 */
