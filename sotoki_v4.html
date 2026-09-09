@@ -1739,8 +1739,8 @@ html, body {
 #legend {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 3px 12px;
+  gap: 8px;
+  padding: 3px 10px;
   flex-shrink: 0;
   flex-wrap: wrap;
   /* 凡例は左寄せ、バージョンは margin-left:auto で右端。行の幅いっぱいを使う */
@@ -1753,9 +1753,9 @@ html, body {
    カーブを変えたら両方直すこと。 */
 #cloud-legend {
   display: inline-block;
-  width: 44px;
+  width: 26px;
   height: 8px;
-  margin: 0 3px;
+  margin: 0 0 0 3px;
   vertical-align: middle;
   border: 1px solid rgba(0,0,0,0.15);
   background: linear-gradient(to right,
@@ -1773,6 +1773,29 @@ html, body {
   width: 10px; height: 10px;
   border-radius: 2px;
   flex-shrink: 0;
+}
+/* 選択時刻の値。**なぞっている間、指で隠れないところに数字を置く**のが目的。
+   ポップアップは指の近くに出るので、なぞるほど読みたいパネルを覆ってしまう。
+   ⚠ **縦の空間を新設しない。** 行を足すとそのぶんグラフが狭くなる。
+   ⚠ **単位も名前も書かない。** どちらも各パネルの軸が持っている（降水mm/h・風m/s）。
+     実測で幅が 515px 必要に対し 366px しか無かったので、1文字も置けない。
+   ⚠ **幅を固定して右寄せする。** 桁数が変わるたびに項目の位置がずれると、
+     なぞっている間じゅう凡例が横に踊って読めなくなる（tests/smoke_legend が見張る）。 */
+.legend-v {
+  display: inline-block;
+  min-width: 26px;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+/* ⚠ 狭い端末では雲量の目盛りから畳む。**折り返させない**のがここの目的で、
+   2行になるとそのぶんグラフが縦に潰れる（値を出した意味が減る）。
+   畳む順番は「目盛り → 値」。値の方が用がある */
+@media (max-width: 360px) {
+  #legend-cloud { display: none; }
 }
 /* 選択中の日付＋時刻（ヘッダー左上。画面で一番目立つ位置） */
 #date-badge {
@@ -1897,12 +1920,17 @@ html, body {
   </div>
 
   <div id="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#e05020"></div>気温</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#1abebe"></div>降水</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3c78dc"></div>降雪</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#6c5ce7"></div>風速</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#1f9d8f"></div>突風</div>
-    <div class="legend-item">雲量<span id="cloud-legend"></span>100%</div>
+    <!-- ⚠ 名前は文字で書かず title に入れてある。実測で幅が 515px 必要に対し
+         366px しか無かった（390px端末）。各系列の名前は**各パネルの軸が持っている**
+         （気温°C・降水mm/h・風m/s・突風m/s）ので、ここは色と値に徹する。
+         tests/smoke_legend.mjs が折り返さないことを見張る -->
+    <div class="legend-item" title="気温"><div class="legend-dot" style="background:#e05020"></div><span class="legend-v" id="lg-temp">--</span></div>
+    <div class="legend-item" title="降水"><div class="legend-dot" style="background:#1abebe"></div><span class="legend-v" id="lg-prec">--</span></div>
+    <div class="legend-item" title="降雪"><div class="legend-dot" style="background:#3c78dc"></div><span class="legend-v" id="lg-snow">--</span></div>
+    <div class="legend-item" title="風速"><div class="legend-dot" style="background:#6c5ce7"></div><span class="legend-v" id="lg-wind">--</span></div>
+    <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
+    <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
+    <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
     <span id="app-version">v4.80.0</span>
   </div>
 
@@ -2971,8 +2999,32 @@ function fillReliability(t) {
 }
 
 // 選択情報ポップアップの中身を更新（時刻→天気→ABC→気温→降水+強さ→風速→気圧）
+/* 凡例に選択時刻の値を出す。
+   ⚠ **窓と同じものを二重に出すのが狙いではない。** 指で隠れない場所に
+   「いまなぞっている時刻の値」を置くのが狙いなので、増やしすぎないこと。
+   体感温度・風向・気圧の変化量・確からしさは窓の仕事のまま。
+   ⚠ 数字の書式はポップアップと合わせる（同じ時刻で違う丸め方をしない）。 */
+function updateLegendValues(d) {
+  const put = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  if (!d) {
+    // ⚠ データが無いときも必ず消す。前の地点の値が残ると、
+    // 読み込み中の別の山の数字を見ていることになる
+    for (const id of ['lg-temp', 'lg-prec', 'lg-snow', 'lg-wind', 'lg-gust']) put(id, '--');
+    return;
+  }
+  const amount = v => (v === 0 ? '0' : (v < 10 ? v.toFixed(1) : String(Math.round(v))));
+  put('lg-temp', d.temp != null ? Math.round(d.temp) + '°' : '--');
+  put('lg-prec', amount(d.precip || 0));
+  put('lg-snow', amount(d.snow || 0));
+  put('lg-wind', d.wind != null ? String(Math.round(d.wind)) : '--');
+  put('lg-gust', d.gust != null ? String(Math.round(d.gust)) : '--');
+}
+
 function updatePopup() {
   const d = state.allData[state.sliderIndex];
+  // ⚠ **`if (!d) return;` より前に呼ぶ。** 後ろに置くと、データが無いときに
+  // 前の地点の値が凡例に残る（窓は消えるのに凡例だけ古い数字を出し続ける）
+  updateLegendValues(d);
   if (!d) return;
   const t = d.time;
   const hh = String(t.getHours()).padStart(2, '0');
