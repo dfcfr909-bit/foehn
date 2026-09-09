@@ -1978,7 +1978,7 @@ html, body {
     <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
     <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
     <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
-    <span id="app-version">v4.83.0</span>
+    <span id="app-version">v4.84.0</span>
   </div>
 
   <!-- Footer -->
@@ -4169,9 +4169,24 @@ function drawCloudPrecip(u) {
          （ABC評価ロジックは変更禁止）。
        ⚠ 風のバーは**既に閾値で塗り分けている**ので、そちらには足さない（二重の印にしない）。 */
     const lv = judgeBreakdown(data[i]).precip;
-    ctx.strokeStyle = lv === 2 ? GRADE_COL.C : lv === 1 ? GRADE_COL.B : 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = (lv >= 1 ? 2 : 1) * pr;
-    ctx.strokeRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
+    if (lv >= 1) {
+      /* ⚠ **下の辺は引かない。** バーの足元には地表帯があり、そこに横線が乗ると
+         印ではなく「地面の一部」に見える（実機で指摘された）。
+         左・上・右の3辺だけの「コの字」にする。 */
+      const bx0 = xa + 0.5, bx1 = xb - 0.5, byTop = bottom - bh;
+      ctx.strokeStyle = lv === 2 ? GRADE_COL.C : GRADE_COL.B;
+      ctx.lineWidth = 2 * pr;
+      ctx.beginPath();
+      ctx.moveTo(bx0, bottom);
+      ctx.lineTo(bx0, byTop);
+      ctx.lineTo(bx1, byTop);
+      ctx.lineTo(bx1, bottom);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = pr;
+      ctx.strokeRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
+    }
   }
 
   // 日付区切り（0時）
