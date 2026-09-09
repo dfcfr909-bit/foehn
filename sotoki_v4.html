@@ -449,6 +449,17 @@ html, body {
   background: #ffffff;
   overflow: hidden;
 }
+/* ⚠ **iOSの虫眼鏡（テキスト選択のルーペ）を出さない。**
+   なぞって時刻を選ぶこの領域では、指を置くたびにルーペが被さって邪魔になる
+   （利用者からの指摘）。ここには選択して嬉しいものが何も無いので選択自体を切る。
+   ⚠ **一括で全画面に指定しないこと。** 地図の緯度経度（`#map-latlon`）は
+     逆に「タップでコピーさせたい」ので `user-select: all` にしてある（#13）。
+     指を置いてなぞる場所だけに絞る。 */
+#charts-outer, #scrubber {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 /* 時間移動は下部スライダーのみ。指スワイプでの横スクロールは無効
    （overflow:hiddenでもJSからのscrollLeft制御は有効） */
 #charts-wrapper {
@@ -584,7 +595,26 @@ html, body {
 .pop-grade.g-A { background: var(--a-col); color: #06351f; }
 .pop-grade.g-B { background: var(--b-col); color: #4a2e05; }
 .pop-grade.g-C { background: var(--c-col); color: #fff; }
-.pop-k { font-size: 10px; color: rgba(255,255,255,0.65); width: 26px; }
+/* 見出しは1文字（温・雨・風・圧）。⚠ **絵文字にしない。** 上の行に天気の絵文字が
+   出ているので、見出しまで絵文字にすると「どちらが天気か」が一瞬わからなくなる。
+   幅も1文字ぶんで足りる */
+.pop-k {
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  width: 13px;
+  flex-shrink: 0;
+  text-align: center;
+}
+/* 突風は風の行に畳む（行を1つ減らす）。取れなかったときは丸ごと消える */
+.pop-gust b { font-weight: 700; font-family: var(--font-display); font-size: 13px; }
+/* 判定に使った風の高度。値ではなく但し書きなので最下段に小さく置く */
+#pop-windsrc {
+  font-size: 10px;
+  color: rgba(255,255,255,0.55);
+  margin-top: 3px;
+  white-space: nowrap;
+}
+#pop-windsrc:empty { display: none; }
 .pop-v { font-size: 15px; font-weight: 700; font-family: var(--font-display); }
 .pop-sub { font-size: 10px; color: rgba(255,255,255,0.7); }
 #pop-rain { font-weight: 700; color: #8fd0ff; }
@@ -1902,12 +1932,20 @@ html, body {
       <div id="pop-lead" class="pop-lead"></div>
       <div id="pop-rows">
         <div class="pop-row"><span class="pop-ico" id="pop-wx">☀️</span><span class="pop-grade" id="pop-grade">A</span></div>
-        <div class="pop-row"><span class="pop-k">気温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
-        <div class="pop-row"><span class="pop-k">降水</span><span class="pop-v" id="pop-prec">--</span><span class="pop-sub" id="pop-rain">—</span></div>
-        <div class="pop-row"><span class="pop-k">風速</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windsrc"></span><span class="pop-sub" id="pop-windw">—</span></div>
-        <div class="pop-row" id="pop-gust-row"><span class="pop-k">突風</span><span class="pop-v" id="pop-gust">--</span><span class="pop-sub">m/s</span></div>
-        <div class="pop-row"><span class="pop-k">気圧</span><span class="pop-v" id="pop-dp">--</span><span class="pop-sub">hPa/6h</span></div>
+        <!-- ⚠ **見出しは1文字。** 「気温」「降水」「風速」と書いていた頃は窓が広く、
+             なぞる指の近くに出るせいで**読みたいグラフを覆っていた**（利用者からの指摘）。
+             数字そのものは下の凡例が出すので、ここは**言葉（ゴーゴー/ソヨソヨ）と、
+             凡例に載らないもの**（体感・風向・気圧の変化）を持つ。
+             ⚠ 突風は行を分けず風の行に畳む。行数がそのまま高さになる -->
+        <div class="pop-row"><span class="pop-k">温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
+        <div class="pop-row"><span class="pop-k">雨</span><span class="pop-v" id="pop-prec">--</span><span class="pop-sub" id="pop-rain">—</span></div>
+        <div class="pop-row"><span class="pop-k">風</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windw">—</span><span class="pop-sub pop-gust" id="pop-gust-row">突<b id="pop-gust">--</b></span></div>
+        <div class="pop-row"><span class="pop-k">圧</span><span class="pop-v" id="pop-dp">--</span><span class="pop-sub">hPa/6h</span></div>
       </div>
+      <!-- ⚠ **判定にどこの風を使ったかは消さない**（ADR-0006 / ADR-0011）。
+           黙って地上風に戻るのがこの件でいちばん危ない失敗の仕方。
+           ただし値ではなく但し書きなので、行の中ではなく最下段に小さく置く -->
+      <div id="pop-windsrc"></div>
     </div>
   </div>
 
@@ -3078,11 +3116,11 @@ function updatePopup() {
   // どこの高度の風かを添える（ADR-0006）。地上10m風に落ちているときも黙らない
   const wsEl = document.getElementById('pop-windsrc');
   if (wsEl) wsEl.textContent = `@${windSourceLabel(state.windSource)}`;
-  // 突風は取得できたときのみ行を表示
+  // 突風は取得できたときのみ出す。⚠ 行ではなく風の行の中に畳んである
   const gustRow = document.getElementById('pop-gust-row');
   if (d.gust != null) {
     document.getElementById('pop-gust').textContent = Math.round(d.gust);
-    gustRow.style.display = '';
+    gustRow.style.display = 'inline';
   } else {
     gustRow.style.display = 'none';
   }
