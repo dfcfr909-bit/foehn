@@ -151,6 +151,37 @@ ok(moved.length === 0,
   '★★★桁数が変わっても項目の位置が動かない（なぞる間ずっと凡例が踊らない）',
   moved.slice(0, 3).map(s => ({ i: s.i, text: s.text, lefts: s.lefts })));
 
+/* ============ 2b. 数字が自分の色ドットの隣にある ============
+   ⚠⚠ **実機で指摘された失敗。** 幅を固定して右寄せにすると、桁が短いときに
+     数字がドットから離れ、**左隣の項目にくっついて見える**（`■ 24°  ■ 0  ■ 0`）。
+     揺れを止めることだけ考えて、離れることを見ていなかった。
+   ⚠ 文字の実際の位置で見る。箱（min-width）ではなく**字の左端**が要点なので、
+     Range で文字そのものの矩形を測る。 */
+const near = await page.evaluate(() => {
+  const items = [...document.querySelectorAll('#legend .legend-item')].filter(el => el.offsetWidth > 0);
+  const worst = [];
+  for (let i = 0; i < HOURS; i += 7) {          // 全時刻を7つおきに（桁数はひと通り通る）
+    setSelectedIndex(i);
+    for (let k = 0; k < items.length; k++) {
+      const dot = items[k].querySelector('.legend-dot');
+      const v = items[k].querySelector('.legend-v');
+      if (!dot || !v || !v.firstChild) continue;
+      const r = document.createRange();
+      r.selectNodeContents(v);
+      const text = r.getBoundingClientRect();       // 字そのものの矩形
+      const d = dot.getBoundingClientRect();
+      const nextDot = items[k + 1] && items[k + 1].querySelector('.legend-dot');
+      const own = text.left - d.right;              // 自分のドットから字までの距離
+      const nextGap = nextDot ? nextDot.getBoundingClientRect().left - text.right : Infinity;
+      if (!(own < nextGap)) worst.push({ i, k, t: v.textContent, own: Math.round(own), nextGap: Math.round(nextGap) });
+    }
+  }
+  return worst;
+});
+ok(near.length === 0,
+  '★★★数字は隣の項目より自分の色ドットに近い（どの色の値か読み取れる）',
+  near.slice(0, 3));
+
 /* ============ 3. 折り返さない（1行に収まる） ============ */
 const wrapped = seen.filter(s => !s.oneRow);
 ok(wrapped.length === 0, '★★390pxで折り返さない',
