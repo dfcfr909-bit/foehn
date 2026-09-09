@@ -3261,6 +3261,13 @@ function computeChartHeights(outerH) {
 // 雲の高度可視化の設定
 const ALT_TOP = 12000;   // 高度軸の上限(m)
 const ALT_TICKS = [1500, 3500, 6000, 9000];   // 右軸に出す高度目盛り(m)
+/* 高度 → 雲パネル内の位置の割合（0＝上端＝ALT_TOP、1＝下端＝0m）。
+   ⚠ **この式はここだけに置く。** 同じ目盛りを「チャート本体・左ガター・右ガター」の
+   3か所で使うので、写し違えると**標高の破線と高度の目盛りが静かにずれる**。 */
+function altFrac(alt) {
+  const a = Math.max(0, Math.min(ALT_TOP, alt));
+  return (ALT_TOP - a) / ALT_TOP;
+}
 // データ配列から見やすいY軸レンジを算出（変化を強調。padで余白、minSpanで過剰ズーム防止）
 function niceRange(vals, pad, minSpan, padFrac) {
   const v = vals.filter(x => x != null);
@@ -3739,13 +3746,40 @@ function drawAxisGutter() {
   ctx.fillText('降水', W - 4, cTop + 11);
   ctx.font = 'bold 8.5px monospace';
   ctx.fillText('mm/h', W - 4, cTop + 21);
+  /* 地点の標高。⚠ **破線の端＝ここに出す。**
+     以前はチャート本体の左端に描いていたが、チャートは全時間ぶんの幅（数千px）を持ち
+     transform で流れるので、**範囲の先頭までスクロールしないと画面に入らなかった**
+     （実測：全幅3301pxに対しラベルはx=36、通常のスクロール量は800px超）。
+     ガターは固定なので、どこを見ていても標高が読める。 */
+  const elevM = displayElevation();
+  const elevY = (elevM != null && elevM > 0)
+    ? cPlotTop + altFrac(elevM) * (cPlotBottom - cPlotTop) : null;
+
   ctx.font = 'bold 11.5px monospace';
   [0.5, 1].forEach(f => {                          // 中間値と最大値
     const y = cPlotBottom - cZone * f;
+    // ⚠ 標高の札と重なる目盛りは出さない（重ねるとどちらも読めなくなる）
+    if (elevY != null && Math.abs(y - elevY) < 9) return;
     if (y > cTop + 30) ctx.fillText((si.precipMax * f).toFixed(si.precipMax < 10 ? 1 : 0), W - 4, y + 3);
   });
   ctx.fillStyle = 'rgba(18,163,173,0.65)';
-  ctx.fillText('0', W - 4, cPlotBottom);
+  if (!(elevY != null && Math.abs(cPlotBottom - elevY) < 9)) ctx.fillText('0', W - 4, cPlotBottom);
+
+  if (elevY != null) {
+    /* 破線と同じ色の札。⚠ **白抜きにする**のは、降水の目盛りと隣り合っても
+       「これは降水の数字ではない」と一目で分かるようにするため。
+       ⚠ **▲は付けない。** 実測で `▲3776m` は札の全幅 39.9px になり、
+       ガター（36px、使えるのは33px）に入らない。破線と同じ色であることが目印になる。
+       ⚠ **単位の m は落とさない。** 右軸が km なので、数字だけだと桁を読み違える。 */
+    const label = `${Math.round(elevM)}m`;
+    ctx.font = "bold 8.5px 'Noto Sans JP', sans-serif";
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = '#8a5a2b';
+    ctx.fillRect(W - 3 - (tw + 4), elevY - 6, tw + 4, 12);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'right';
+    ctx.fillText(label, W - 5, elevY + 3);
+  }
 
   // 風速（windパネル）
   const wTop = CHART_H_SKY + CHART_H_CLOUD;
@@ -3802,7 +3836,7 @@ function drawAxisGutterRight() {
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0.5, cTop); ctx.lineTo(0.5, cTop + CHART_H_CLOUD); ctx.stroke();
 
-  const cyAlt = a => cPlotTop + (ALT_TOP - a) / ALT_TOP * (cPlotBottom - cPlotTop);
+  const cyAlt = a => cPlotTop + altFrac(a) * (cPlotBottom - cPlotTop);
   ctx.fillStyle = '#5a6270';
   ctx.textAlign = 'left';
   ctx.font = "bold 8.5px 'Noto Sans JP', sans-serif";
@@ -4059,7 +4093,7 @@ function cloudPlotBox(u) {
   const H = u.ctx.canvas.height;
   const top = 4 * pr, bottom = H - TIME_AXIS_H * pr;
   return { pr, top, bottom, plotH: bottom - top,
-    yAlt: alt => top + (ALT_TOP - Math.max(0, Math.min(ALT_TOP, alt))) / ALT_TOP * (bottom - top) };
+    yAlt: alt => top + altFrac(alt) * (bottom - top) };
 }
 function drawCloudPrecip(u) {
   const ctx = u.ctx;
@@ -4161,16 +4195,10 @@ function drawCloudOverlay(u) {
     ctx.setLineDash([5 * pr, 3 * pr]);
     ctx.beginPath(); ctx.moveTo(PADDING_L * pr, y); ctx.lineTo(W - PADDING_R * pr, y); ctx.stroke();
     ctx.setLineDash([]);
-    // ラベル「▲ 標高m」
-    const label = `▲${Math.round(elevForLine)}m`;
-    ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = '#8a5a2b';
-    ctx.fillRect(PADDING_L * pr + 2 * pr, y - 13 * pr, tw + 8 * pr, 12 * pr);
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(label, PADDING_L * pr + 6 * pr, y - 3.5 * pr);
+    /* ⚠ **ここにラベルを描かない。** チャートは全時間ぶんの幅を持ち transform で
+       流れるので、キャンバスの左端に描いた札は**範囲の先頭までスクロールしないと
+       画面に入らない**（実測：全幅3301pxに対しx=36、通常のスクロール量は800px超）。
+       標高の札は固定の左ガター（drawAxisGutter）に出す。 */
     ctx.restore();
   }
   drawTimeLabels(u, pr);
