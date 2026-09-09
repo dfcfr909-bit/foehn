@@ -153,6 +153,19 @@ ok(allA.B + allA.C === 0,
   '★★★Aしかない日には縁が1画素も付かない（狼少年にしない）', allA);
 ok(allA.rain > 500, '前提: 降水のバー自体は描かれている（空振りでない）', allA);
 
+/* ============ 3. ⚠ 赤が橙に負けない ============
+   隣り合う棒の縁は重なる。1周で描くと**時刻が後ろの棒が勝つ**ので、
+   Cの隣がBだと**赤の上に橙が乗る**（実機で指摘された）。
+   ⚠ 画素を狙い撃ちせず、**赤の総量が減らないこと**で見る。
+     Cの本数は同じで、隣がA（印なし）かB（橙）かだけが違う2つを比べる。 */
+const cAlone = await countMarks([5, 0.2]);   // Cの隣はA（印が無い）
+const cNextB = await countMarks([5, 2]);     // Cの隣はB（橙）
+ok(cAlone.C > 100 && cNextB.C > 100, '前提: どちらもCの縁が出ている', { cAlone, cNextB });
+ok(cNextB.B > 100, '前提: 隣にBの縁も出ている', cNextB);
+ok(cNextB.C >= cAlone.C * 0.95,
+  '★★★隣が橙でも赤が削られない（重なったところは赤が勝つ）',
+  { 隣がA: cAlone.C, 隣がB: cNextB.C });
+
 await browser.close();
 if (errors.length) fails.push('ページエラー: ' + errors.join(' / '));
 if (fails.length) {
@@ -161,5 +174,5 @@ if (fails.length) {
   console.log('MARK SMOKE FAILED');
   process.exit(1);
 }
-console.log(JSON.stringify({ mixed, allA }, null, 2));
+console.log(JSON.stringify({ mixed, allA, cAlone, cNextB }, null, 2));
 console.log('MARK SMOKE PASSED');

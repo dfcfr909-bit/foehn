@@ -1978,7 +1978,7 @@ html, body {
     <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
     <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
     <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
-    <span id="app-version">v4.84.0</span>
+    <span id="app-version">v4.85.0</span>
   </div>
 
   <!-- Footer -->
@@ -4153,39 +4153,53 @@ function drawCloudPrecip(u) {
   ctx.fillRect(PADDING_L * pr, bottom - 5 * pr, W - (PADDING_L + PADDING_R) * pr, 5 * pr);
   const pmax = scaleInfo ? Math.max(4, scaleInfo.precipMax) : 8;
   const zone = plotH * 0.62;   // 降水バーの最大高さ（左軸のフルスケール）
-  for (let i = 0; i < data.length; i++) {
+  // 棒の位置と高さ。⚠ **式はここだけ。** 塗りと縁で別々に書くとずれる
+  const barBox = i => {
     const p = data[i].precip || 0;
-    if (p <= 0) continue;
-    const xa = u.valToPos(i - 0.5, 'x', true);
-    const xb = u.valToPos(i + 0.5, 'x', true);
-    const bh = Math.min(1, p / pmax) * zone;
+    if (p <= 0) return null;
+    return {
+      xa: u.valToPos(i - 0.5, 'x', true),
+      xb: u.valToPos(i + 0.5, 'x', true),
+      bh: Math.min(1, p / pmax) * zone,
+    };
+  };
+  // 1周目: 塗りと、判定に掛かっていない棒の白い縁
+  for (let i = 0; i < data.length; i++) {
+    const b = barBox(i);
+    if (!b) continue;
     // 凡例と同じ色をベタで置き、明るい縁をつける（夜の暗い空でも沈まないように）
     ctx.fillStyle = (data[i].snow > 0) ? '#3c78dc' : '#1abebe';
-    ctx.fillRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
-    /* 判定に効いている時間だけ、縁を判定の色にする。
-       **なぜCなのかが窓を開かなくてもグラフの上で分かる**ようにするため。
-       ⚠ **塗りの色は変えない。** 青＝雪／teal＝雨の区別が消える。縁だけ替える。
-       ⚠ **判定を自前で計算しない。** `judgeBreakdown` の結果を読むだけ
-         （ABC評価ロジックは変更禁止）。
-       ⚠ 風のバーは**既に閾値で塗り分けている**ので、そちらには足さない（二重の印にしない）。 */
-    const lv = judgeBreakdown(data[i]).precip;
-    if (lv >= 1) {
-      /* ⚠ **下の辺は引かない。** バーの足元には地表帯があり、そこに横線が乗ると
-         印ではなく「地面の一部」に見える（実機で指摘された）。
-         左・上・右の3辺だけの「コの字」にする。 */
-      const bx0 = xa + 0.5, bx1 = xb - 0.5, byTop = bottom - bh;
-      ctx.strokeStyle = lv === 2 ? GRADE_COL.C : GRADE_COL.B;
-      ctx.lineWidth = 2 * pr;
+    ctx.fillRect(b.xa + 0.5, bottom - b.bh, b.xb - b.xa - 1, b.bh);
+    if (judgeBreakdown(data[i]).precip === 0) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = pr;
+      ctx.strokeRect(b.xa + 0.5, bottom - b.bh, b.xb - b.xa - 1, b.bh);
+    }
+  }
+  /* 2〜3周目: 判定に効いている時間の縁。
+     **なぜCなのかが窓を開かなくてもグラフの上で分かる**ようにするため。
+     ⚠ **塗りの色は変えない。** 青＝雪／teal＝雨の区別が消える。縁だけ替える。
+     ⚠ **判定を自前で計算しない。** `judgeBreakdown` の結果を読むだけ
+       （ABC評価ロジックは変更禁止）。
+     ⚠ 風のバーは**既に閾値で塗り分けている**ので、そちらには足さない（二重の印にしない）。
+     ⚠⚠ **B（橙）を先、C（赤）を後に描く。** 隣り合う棒の縁は重なるので、
+       1周で描くと**時刻が後ろの棒が勝つ**——Cの隣がBだと、赤の上に橙が乗ってしまう
+       （実機で指摘された）。**重なったところは必ず赤**にする。
+     ⚠ **下の辺は引かない。** 棒の足元には地表帯があり、そこに横線が乗ると
+       印ではなく「地面の一部」に見える。左・上・右の3辺だけの「コの字」。 */
+  for (const want of [1, 2]) {
+    ctx.strokeStyle = want === 2 ? GRADE_COL.C : GRADE_COL.B;
+    ctx.lineWidth = 2 * pr;
+    for (let i = 0; i < data.length; i++) {
+      const b = barBox(i);
+      if (!b || judgeBreakdown(data[i]).precip !== want) continue;
+      const bx0 = b.xa + 0.5, bx1 = b.xb - 0.5, byTop = bottom - b.bh;
       ctx.beginPath();
       ctx.moveTo(bx0, bottom);
       ctx.lineTo(bx0, byTop);
       ctx.lineTo(bx1, byTop);
       ctx.lineTo(bx1, bottom);
       ctx.stroke();
-    } else {
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = pr;
-      ctx.strokeRect(xa + 0.5, bottom - bh, xb - xa - 1, bh);
     }
   }
 
