@@ -10,7 +10,11 @@
  *   ② **目盛りを日ごとに伸縮させる**こと。穏やかな日の帯まで真っ赤・真っ青になり、
  *      危なさを誤って伝える。どの日に開いても「この色ならこのくらい」が同じであること。
  *
- * ⚠ 帯の色の暑い端（38℃ 付近）は GRADE_COL.C とほぼ同じ赤になる。
+ * ⚠⚠ ③ **ふつうの夏日を色で脅かす**こと。体感26〜31℃で帯が橙になり判定はA、という
+ *   食い違いを実機の画で出した。**判定に暑い側の閾値が無い**のが根なので、
+ *   熱中症警戒アラート（WBGT 33・環境省）のあたりまでは無彩色にしてある。
+ *
+ * ⚠ 帯の色の暑い端（50℃ 付近）は GRADE_COL.C とほぼ同じ赤になる。
  *   枠の画素を数える検査では**暑い日を使わない**（塗りと枠が見分けられなくなる）。
  */
 import fs from 'node:fs';
@@ -138,6 +142,8 @@ async function probe(apparents) {
       mean: n ? [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)] : null,
       satMax, B, C, runsSeen,
       grades: state.allData.slice(0, 8).map(d => judgeBreakdown(d).apparent),
+      stops: FEEL_STOPS.map(v => v[0]),
+      thresh: [THRESH.apparentA, THRESH.apparentB],
     };
   });
   await page.close();
@@ -155,30 +161,53 @@ ok(mild.bandBot - mild.bandTop >= 8 * mild.pr,
 
 /* ============ 2. ⚠ 目盛りは固定（日ごとに伸縮させない） ============
    8〜16℃ の穏やかな日。伸縮させると同じ日が青から赤まで振り切れる（彩度 150超）。
-   固定なら 10℃ 前後の淡い色に収まる（実測 71）。 */
+   固定なら無彩の淡色に収まる。 */
 ok(mild.grades.every(g => g === 0), '前提: 穏やかな日は全部A', mild.grades);
-ok(mild.satMax < 100,
-  '★★★穏やかな日の帯は淡いまま（目盛りを日ごとに伸縮させない）',
+ok(mild.satMax < 30,
+  '★★★穏やかな日の帯は淡い無彩色のまま（目盛りを日ごとに伸縮させない）',
   { 彩度の最大: mild.satMax, 平均色: mild.mean });
 
 /* ============ 3. ⚠ Aだけの日には枠が1画素も付かない ============
    **本丸。** どの時間にも出れば狼少年になり、印そのものが効かなくなる。 */
 ok(mild.B + mild.C === 0, '★★★Aしかない日には枠が1画素も付かない（狼少年にしない）', mild);
 
-/* ============ 4. 寒い／暑いで色が変わる ============ */
-const cold = await probe([-20]);
-const warm = await probe([26]);
-ok(cold.mean[2] > cold.mean[0] + 30, '★寒い日は青寄り', cold.mean);
-ok(warm.mean[0] > warm.mean[2] + 30, '★暑い日は赤寄り', warm.mean);
+/* ============ 4. ⚠ いまの季節のふつうの日を色で脅かさない ============
+   **利用者の指摘そのもの。** 体感26〜31℃（気温23〜26℃の夏日）で帯が終日
+   べったり橙になり、判定はAのままだった——`GRADE_COL.B` と紛らわしく
+   「Aなのに警告色」に見えた。⚠ **判定に暑い側の閾値が無い**のが根なので、
+   色だけ先に走らせない。熱中症警戒アラート（WBGT 33）のあたりまでは無彩色。 */
+const summer = await probe([26, 28, 30, 31, 30, 28]);
+ok(summer.grades.every(g => g === 0), '前提: 夏日は全部A', summer.grades);
+ok(summer.satMax < 30,
+  '★★★ふつうの夏日の帯は無彩色のまま（Aなのに警告色にしない）',
+  { 彩度の最大: summer.satMax, 平均色: summer.mean });
+ok(summer.B + summer.C === 0, '★夏日に枠は付かない', summer);
 
-/* ============ 5. B と C の時間に枠が付く ============ */
+/* ============ 5. 寒い／本当に暑いで色が変わる ============
+   ⚠ 濃さは寒い側に寄せてある。暑い側は熱中症の危険域（体感45℃前後）でようやく濃くなる。 */
+const cold = await probe([-20]);
+const hot = await probe([48]);
+ok(cold.mean[2] > cold.mean[0] + 60, '★★寒い日ははっきり青（濃さは寒い側に寄せる）', cold.mean);
+ok(hot.mean[0] > hot.mean[2] + 60, '★危険域まで暑いとはっきり赤', hot.mean);
+ok(cold.satMax > summer.satMax * 3,
+  '★★★寒い日の方がふつうの夏日よりずっと濃い',
+  { 寒い日: cold.satMax, 夏日: summer.satMax });
+
+/* ============ 6. ⚠ 色の変化点は判定の閾値と同じ ============
+   気圧で起きている食い違い（|ΔP|≧3 から色が付くが判定のBは6）を繰り返さない。
+   ⚠ THRESH を書き換えたら FEEL_STOPS も直すこと——ここが知らせる。 */
+ok(mild.stops.includes(mild.thresh[0]) && mild.stops.includes(mild.thresh[1]),
+  '★★★寒い側の色の変化点が判定の閾値と一致している（THRESHを変えたら色も直す）',
+  { 色の変化点: mild.stops, 判定の閾値: mild.thresh });
+
+/* ============ 7. B と C の時間に枠が付く ============ */
 const mixed = await probe([5, -8, -20]);
 ok(mixed.grades.includes(0) && mixed.grades.includes(1) && mixed.grades.includes(2),
   '前提: A・B・Cがそろっている', mixed.grades);
 ok(mixed.B > 40, '★★Bの時間に橙の枠', mixed);
 ok(mixed.C > 40, '★★Cの時間に赤の枠', mixed);
 
-/* ============ 6. ⚠ 連続した時間はひとまとめに囲む ============
+/* ============ 8. ⚠ 連続した時間はひとまとめに囲む ============
    6時間つづけてC → 枠は左右2本。1時間ごとに囲むと12本になる。 */
 const run6 = await probe([-20, -20, -20, -20, -20, -20, 5, 5, 5, 5, 5, 5]);
 ok(run6.C > 40, '前提: Cの枠が出ている', run6);
@@ -188,7 +217,7 @@ ok(run6.runsSeen * 2 < per1.runsSeen,
   '★★★連続した時間はひとまとめに囲む（櫛の歯にしない）',
   { '6時間つづけて': run6.runsSeen, '1時間おき': per1.runsSeen });
 
-/* ============ 7. ⚠ 赤が橙に負けない ============
+/* ============ 9. ⚠ 赤が橙に負けない ============
    隣り合う区間の縦線は**同じ位置に重なる**。1周で描くと後の時刻が勝つので、
    Cの隣がBだと赤の上に橙が乗る（降水のバーで実機から指摘された）。
    画素を狙い撃ちせず、**赤の総量が減らないこと**で見る。 */
@@ -208,5 +237,5 @@ if (fails.length) {
   console.log('FEEL SMOKE FAILED');
   process.exit(1);
 }
-console.log(JSON.stringify({ mild, cold: cold.mean, warm: warm.mean, mixed, run6: run6.runsSeen, per1: per1.runsSeen }, null, 2));
+console.log(JSON.stringify({ mild, summer: { sat: summer.satMax, mean: summer.mean }, cold: cold.mean, hot: hot.mean, mixed, run6: run6.runsSeen, per1: per1.runsSeen }, null, 2));
 console.log('FEEL SMOKE PASSED');
