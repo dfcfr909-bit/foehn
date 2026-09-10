@@ -4307,8 +4307,10 @@ function drawFeelBand(u, pr) {
     ctx.lineWidth = 2 * pr;
     for (const r of runs) {
       if (r.lv !== want) continue;
-      const x0 = u.valToPos(r.start - 0.5, 'x', true) + pr;
-      const x1 = u.valToPos(r.end + 0.5, 'x', true) - pr;
+      /* ⚠ 横は内側へ寄せない。B と C が隣り合うと縦線が**同じ位置に重なる**——
+         そこで後から描く赤が勝つ（内側へ寄せると重ならず、順序が意味を失う）。 */
+      const x0 = u.valToPos(r.start - 0.5, 'x', true);
+      const x1 = u.valToPos(r.end + 0.5, 'x', true);
       ctx.strokeRect(x0, top + pr, x1 - x0, bh - 2 * pr);
     }
   }
