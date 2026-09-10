@@ -149,6 +149,53 @@ const tws = (ABOUT.match(/<div class="tw">/g) || []).length;
 ok(tables > 0 && tws === tables,
   '★★表はすべて横スクロールの箱に入っている（本文を横に流さない）', { tables, tws });
 
+/* ============ 7. ⚠ フッターが2行にならない ============
+   ⚠ **原文だけ見ても分からない。** 6つ目に文字を入れると、狭い端末で
+   **全ボタンが2行になりフッターが 47px → 61px に伸びる**（実測）。
+   実際に描いて高さを測る。 */
+{
+  const { chromium } = await import('playwright-core');
+  const UPLOT_JS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/uplot/dist/uPlot.iife.min.js'), 'utf8');
+  const UPLOT_CSS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/uplot/dist/uPlot.min.css'), 'utf8');
+  const browser = await chromium.launch({
+    executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
+  const seen = [];
+  for (const w of [390, 360]) {
+    const page = await browser.newPage({ viewport: { width: w, height: 780 } });
+    await page.route('**/*', route => {
+      const u = route.request().url();
+      if (u === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: APP });
+      if (u.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
+      if (u.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
+      if (u.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: '{}' });
+      return route.abort();
+    });
+    await page.addInitScript(() => localStorage.setItem('sotoki_last',
+      JSON.stringify({ lat: 36.0, lon: 138.0, name: 'テスト地点' })));
+    await page.goto('https://sotoki.test/');
+    await page.waitForTimeout(700);
+    const r = await page.evaluate(() => {
+      const f = document.getElementById('footer');
+      const btns = [...f.querySelectorAll('.foot-btn')];
+      const ab = document.getElementById('btn-about-foot');
+      return {
+        footerH: Math.round(f.getBoundingClientRect().height),
+        count: btns.length,
+        aboutW: ab ? Math.round(ab.getBoundingClientRect().width) : null,
+        otherW: Math.round(btns.filter(b => b.id !== 'btn-about-foot')[0].getBoundingClientRect().width),
+      };
+    });
+    seen.push({ w, ...r });
+    await page.close();
+  }
+  await browser.close();
+  ok(seen.every(x => x.count === 6), '前提: フッターに6つ並んでいる（検査が空振りしていない）', seen);
+  ok(seen.every(x => x.footerH <= 50),
+    '★★★狭い端末でもフッターが2行にならない（ℹ️に文字を入れない）', seen);
+  ok(seen.every(x => x.aboutW !== null && x.aboutW < x.otherW),
+    '★★ℹ️は伸縮させない（均等割りだと他の5つが細って文字が2行になる）', seen);
+}
+
 if (fails.length) {
   console.log(`FAILED ${fails.length}件:`);
   for (const f of fails) console.log('  ✗ ' + f);
