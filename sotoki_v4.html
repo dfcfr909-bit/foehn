@@ -124,8 +124,15 @@ html, body {
   flex-shrink: 0;
 }
 /* バージョンは下段（凡例行）の右端に置く */
-#app-version {
+#about-link {
+  /* ⚠ **右端へ寄せる `margin-left:auto` はここに要る。** 凡例は flex で、
+     並ぶのはこのリンク（版数の span はその中身）。span 側に付けても効かず、
+     版数が行の途中に取り残される（smoke_favpicker が拾った）。 */
   margin-left: auto;
+  color: inherit; text-decoration: none;
+  border-bottom: 1px dotted var(--text3);   /* ⚠ 幅を変えない下線（text-decoration だと詰まる端末がある） */
+}
+#app-version {
   font-size: 11px;
   font-weight: 700;
   font-family: var(--font-mono);
@@ -1978,7 +1985,10 @@ html, body {
     <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
     <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
     <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
-    <span id="app-version">v4.87.0</span>
+    <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
+         文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
+         span のまま残すこと（release.yml と smoke_version が読む）。 -->
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.87.0</span></a>
   </div>
 
   <!-- Footer -->
