@@ -36,20 +36,34 @@ if (m) {
 
 if (T) {
   const d = T.day;
-  const want = [
-    // 風速（日帰り）
-    `${d.windA} m/s 未満`, `${d.windA} 〜 ${d.windB} m/s`, `${d.windB} m/s 以上`,
-    // 体感温度（低いほど悪い）
-    `${T.apparentA}℃ より上`, `${T.apparentB} 〜 ${T.apparentA}℃`, `${T.apparentB}℃ 以下`,
-    // 降雪
-    `${T.snowA} cm/h 未満`, `${T.snowA} 〜 ${T.snowB} cm/h`, `${T.snowB} cm/h 以上`,
-    // 降水
-    `${T.rainA} mm/h 未満`, `${T.rainA} 〜 ${T.rainB} mm/h`, `${T.rainB} mm/h 以上`,
-    // 6時間の気圧変化
-    `${T.dpressA} hPa 未満`, `${T.dpressA} 〜 ${T.dpressB} hPa`, `${T.dpressB} hPa 以上`,
+  /* ⚠ **行ごとに突き合わせる。** 最初は本文全体に対する includes で見ていたが、
+     単位を項目名の側へ出して値が短くなったため、たとえば「5 未満」が
+     **降雪の「0.5 未満」に含まれてしまい**、風速の行が間違っていても素通りする。
+     表を行に分け、**その行の A/B/C セルが期待どおりか**を見る。 */
+  const tbl = (ABOUT.match(/<table class="judge">[\s\S]*?<\/table>/) || [''])[0];
+  ok(tbl.length > 0, '★前提: 判定表が見つかる（検査が空振りしていない）');
+  const rows = [...tbl.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(r => r[1]);
+  const cellsOf = name => {
+    const row = rows.find(r => r.includes(`>${name} `) || r.includes(`>${name}<`));
+    if (!row) return null;
+    return [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(c => c[1].trim());
+  };
+  const expect = [
+    ['風速',       [`${d.windA} 未満`,    `${d.windA} 〜 ${d.windB}`,       `${d.windB} 以上`]],
+    ['体感温度',   [`${T.apparentA} より上`, `${T.apparentB} 〜 ${T.apparentA}`, `${T.apparentB} 以下`]],
+    ['降雪',       [`${T.snowA} 未満`,   `${T.snowA} 〜 ${T.snowB}`,       `${T.snowB} 以上`]],
+    ['降水',       [`${T.rainA} 未満`,   `${T.rainA} 〜 ${T.rainB}`,       `${T.rainB} 以上`]],
+    ['気圧の変化', [`${T.dpressA} 未満`, `${T.dpressA} 〜 ${T.dpressB}`,   `${T.dpressB} 以上`]],
   ];
-  for (const w of want) {
-    ok(ABOUT.includes(w), `★★★説明ページの閾値が本体と一致（「${w}」が載っている）`);
+  for (const [name, want] of expect) {
+    const got = cellsOf(name);
+    ok(got !== null, `★前提: 「${name}」の行がある`);
+    ok(got && JSON.stringify(got) === JSON.stringify(want),
+      `★★★説明ページの閾値が本体と一致（${name}）`, { 期待: want, ページ: got });
+  }
+  /* 単位も本体と揃っていること（値だけ合っていても、単位が違えば読み手は間違える） */
+  for (const u of ['m/s', '℃', 'cm/h', 'mm/h', 'hPa']) {
+    ok(tbl.includes(`<small>${u}</small>`), `★単位が載っている（${u}）`);
   }
 }
 
