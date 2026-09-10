@@ -691,6 +691,9 @@ html, body {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* ⚠ ここだけ伸縮させない。均等割りにすると他の5つが細って文字が2行になる。 */
+#btn-about-foot { flex: 0 0 auto; padding-left: 9px; padding-right: 9px; }
+#btn-about-foot .icon { margin: 0; }
 .foot-btn {
   flex: 1;
   padding: 4px 0;
@@ -2008,6 +2011,12 @@ html, body {
     <button class="foot-btn" id="btn-wxmap" onclick="openWxMap()">
       <span class="icon">🌐</span>天気図
     </button>
+    <!-- このアプリについて（判定の基準・データの参照元・妥協点）。
+         ⚠ **文字は入れない。** 6つ目に「説明」と入れると 360px 幅で全ボタンが2行になり、
+         フッターが 47px → 61px に伸びる（実測）。アイコンだけなら 360px でも崩れない。 -->
+    <button class="foot-btn" id="btn-about-foot" onclick="location.href='about.html'"
+            title="このアプリについて（判定の基準・データの参照元・妥協点）"
+            aria-label="このアプリについて"><span class="icon">ℹ️</span></button>
   </div>
 
   <!-- Map Overlay -->

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>ナギナビとは — 判定の基準・データの出どころ・作りの経緯</title>
-<meta name="description" content="山の天気予報アプリ「ナギナビ（Foehn）」の A/B/C 判定の基準、気象データの取得先、いまの作りに至った経緯のまとめ。">
+<title>このアプリについて — ナギナビ</title>
+<meta name="description" content="ナギナビが何をどこから引き、どう解釈して A/B/C を出しているか。判定の基準・データの参照元・妥協点のまとめ。">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#f5f4f0">
@@ -128,31 +128,57 @@ footer {
 
 <header>
   <p class="eyebrow">ナギナビ / Foehn</p>
-  <h1>山に行く日を決めるための<br>天気予報アプリです</h1>
+  <h1>このアプリについて</h1>
   <p class="lede">
-    1時間ごとの予報を、実績3日ぶんと合わせて指でなぞって見ます。
-    その時刻が <span class="grade g-a">A</span><span class="grade g-b">B</span><span class="grade g-c">C</span>
-    のどれかを出しますが、<strong>「なぜそうなのか」がグラフの上で読める</strong>ように作ってあります。
+    <strong>何をどこから引いていて、それをどう解釈して A / B / C になっているか。</strong>
+    判定の基準・データの参照元・そして<strong>どこで妥協しているか</strong>をまとめてあります。
   </p>
-  <p>
-    <a class="cta" href="sotoki_v4.html">アプリを開く</a>
-    <a class="cta sub" href="https://github.com/dfcfr909-bit/foehn">ソースを見る</a>
-  </p>
+  <p><a class="cta" href="sotoki_v4.html">アプリに戻る</a></p>
 </header>
 
 <div class="note warn">
-  <h3>⚠ 先に読んでほしいこと</h3>
-  <ul>
-    <li><strong>これは予報であって、保証ではありません。</strong>気象庁のモデルの計算結果をそのまま表示しています。</li>
-    <li><strong>A / B / C はあくまで目安です。</strong>数値をいくつかの閾値と比べているだけで、
-      現地の地形・積雪・体力・装備・同行者は一切見ていません。</li>
-    <li><strong>山の天気は急変します。</strong>とくに稜線の風は、麓の予報からは想像がつきません。</li>
-    <li><strong>最終的な判断は必ずご自身で。</strong>このアプリが A を出していても、
-      引き返す理由はいくらでもあります。</li>
-  </ul>
+  <p style="margin-bottom:0">
+    <strong>これは予報であって、保証ではありません。</strong>
+    A / B / C は気象庁のモデルが出した数値をいくつかの閾値と比べているだけで、
+    現地の地形・積雪・体力・装備は見ていません。⚠ <strong>山の天気は急変します。</strong>
+    最終的な判断はご自身で。どこまで信用してよいかは「<a href="#limits">4. どこで妥協しているか</a>」に書きました。
+  </p>
 </div>
 
-<h2>1. A / B / C はどう決まるか</h2>
+<h2 id="s1">1. データはどこから来ているか</h2>
+
+<p>すべて公開されている情報源です。独自の観測や独自の予報計算はしていません。</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>何を</th><th>どこから</th></tr></thead>
+  <tbody>
+    <tr><td><strong>気象データ全般</strong><br><span style="color:var(--text3);font-size:12px">気温・体感・降水・降雪・風・気圧・雲量</span></td>
+        <td><a href="https://open-meteo.com/">Open-Meteo</a> Forecast API<br>
+            モデルは <strong>気象庁（JMA）</strong>の <code>jma_seamless</code>。1時間ごと、実績3日＋予報9日</td></tr>
+    <tr><td>突風・気圧面ごとの雲量</td>
+        <td>同 Open-Meteo（JMAが返さない項目なので、モデル指定なしの補助リクエスト）</td></tr>
+    <tr><td><strong>山頂の標高</strong></td>
+        <td><a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> 標高タイル（判定の入力に使います）</td></tr>
+    <tr><td>地図</td>
+        <td>国土地理院（標準・淡色・写真・陰影起伏・傾斜量・CS立体図ほか） /
+            OpenStreetMap / Esri / エコリス地図タイル</td></tr>
+    <tr><td>雨雲・ひまわり・アメダス・天気図</td>
+        <td><a href="https://www.jma.go.jp/">気象庁</a></td></tr>
+    <tr><td>地名の検索</td>
+        <td>国土地理院 地名検索 / Nominatim（OpenStreetMap）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  風速は <strong>m/s</strong> を明示して取得しています。Open-Meteo の既定は km/h で、
+  かつて取り違えたまま判定に流し、<strong>表示が約3.6倍・判定が約3.6倍厳しく</strong>なる事故を出しました。
+  そのとき「判定が厳しすぎる」と誤診して閾値を緩める対症療法まで踏んでおり、
+  いまは単位の指定が抜けていないかをテストで見張っています。
+</p>
+
+<h2 id="s2">2. A / B / C はどう決まるか</h2>
 
 <p>
   5つの項目をそれぞれ A・B・C で採点し、<strong>いちばん悪かった項目がその時刻の判定</strong>になります。
@@ -204,7 +230,7 @@ footer {
   </p>
 </div>
 
-<h2>2. 風だけ、少し特別なことをしています</h2>
+<h2 id="s3">3. 風だけ、少し特別なことをしている</h2>
 
 <p>
   ふつうの天気予報が出す風速は<strong>地上10mの風</strong>です。これを山の判定に使うと、実際とかなりずれます。
@@ -241,42 +267,69 @@ footer {
   <strong>見るのは山頂の標高だけ</strong>にしてあります。
 </p>
 
-<h2>3. データはどこから来ているか</h2>
-
-<p>すべて公開されている情報源です。独自の観測や独自の予報計算はしていません。</p>
-
-<div class="tw">
-<table>
-  <thead><tr><th>何を</th><th>どこから</th></tr></thead>
-  <tbody>
-    <tr><td><strong>気象データ全般</strong><br><span style="color:var(--text3);font-size:12px">気温・体感・降水・降雪・風・気圧・雲量</span></td>
-        <td><a href="https://open-meteo.com/">Open-Meteo</a> Forecast API<br>
-            モデルは <strong>気象庁（JMA）</strong>の <code>jma_seamless</code>。1時間ごと、実績3日＋予報9日</td></tr>
-    <tr><td>突風・気圧面ごとの雲量</td>
-        <td>同 Open-Meteo（JMAが返さない項目なので、モデル指定なしの補助リクエスト）</td></tr>
-    <tr><td><strong>山頂の標高</strong></td>
-        <td><a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> 標高タイル（判定の入力に使います）</td></tr>
-    <tr><td>地図</td>
-        <td>国土地理院（標準・淡色・写真・陰影起伏・傾斜量・CS立体図ほか） /
-            OpenStreetMap / Esri / エコリス地図タイル</td></tr>
-    <tr><td>雨雲・ひまわり・アメダス・天気図</td>
-        <td><a href="https://www.jma.go.jp/">気象庁</a></td></tr>
-    <tr><td>地名の検索</td>
-        <td>国土地理院 地名検索 / Nominatim（OpenStreetMap）</td></tr>
-  </tbody>
-</table>
-</div>
+<h2 id="limits">4. どこで妥協しているか</h2>
 
 <p>
-  風速は <strong>m/s</strong> を明示して取得しています。Open-Meteo の既定は km/h で、
-  かつて取り違えたまま判定に流し、<strong>表示が約3.6倍・判定が約3.6倍厳しく</strong>なる事故を出しました。
-  そのとき「判定が厳しすぎる」と誤診して閾値を緩める対症療法まで踏んでおり、
-  いまは単位の指定が抜けていないかをテストで見張っています。
+  <strong>ここがいちばん大事です。</strong>判定は単純な仕組みなので、
+  分かったうえで使わないと読み違えます。
 </p>
 
-<h2>4. どういう経緯でこの作りになったか</h2>
+<h3>判定のしかた</h3>
+<ul>
+  <li><strong>5項目の最悪値がその時刻の判定。</strong>平均も加重もしません。
+    「B が3つ」より「C が1つ」が悪い、という考え方です</li>
+  <li>⚠ <strong>継続時間を見ていません。</strong>1時間だけの C も、6時間続く C も同じ C です</li>
+  <li>降水・降雪は<strong>降っているときだけ</strong>採点に入ります。0 のときは判定に影響しません</li>
+  <li>気圧は<strong>変化の大きさだけ</strong>を見ます。上昇も下降も同じ扱いです</li>
+  <li>閾値は<strong>日帰りの基準</strong>です（幕営向けの切替は撤去しました）</li>
+</ul>
 
-<p>大きな判断は記録として残してあります（<a href="https://github.com/dfcfr909-bit/foehn/tree/main/docs/adr">ADR</a>）。かいつまむと次のとおりです。</p>
+<h3>風</h3>
+<ul>
+  <li>使うのは山頂の高さに近い<strong>気圧面の風</strong>ですが、層は6つしかありません
+    （925 / 900 / 850 / 800 / 700 / 600 hPa ≒ 760 / 990 / 1,460 / 1,950 / 3,010 / 4,200 m）。
+    ⚠ <strong>いちばん近い層に丸めます。</strong>たとえば 1,700m の山は 1,460m か 1,950m の値になります</li>
+  <li>⚠⚠ <strong>モデル格子の値なので、稜線やコルでの増速は入っていません。</strong>
+    実際の稜線はこれより強いことがあります</li>
+  <li>気象庁モデルの格子は細かいほうでも<strong>約5km</strong>。
+    孤立峰や細い尾根は<strong>平滑化されて潰れます</strong></li>
+  <li>突風は表示だけで、<strong>判定には使っていません</strong></li>
+</ul>
+
+<h3>体感温度</h3>
+<ul>
+  <li>⚠⚠ <strong>判定は寒い側だけ。</strong>暑い側の閾値が無く、
+    <strong>熱中症の警告は出していません</strong></li>
+  <li>帯の暑い側の色は暫定です。<code>apparent_temperature</code> は
+    熱中症の基準である暑さ指数（WBGT）とは別物で、公式の換算がありません</li>
+</ul>
+
+<h3>気圧</h3>
+<ul>
+  <li>⚠⚠ <strong>画面の色と判定の閾値が食い違っています。</strong>
+    6時間で 3 hPa 動くと警告色が付きはじめますが、判定が B になるのは 6、C は 10 です。
+    <strong>色が付いていても判定は A</strong> ということが起きます（分かっていて直していません）</li>
+</ul>
+
+<h3>標高</h3>
+<ul>
+  <li>山頂の標高は座標から国土地理院の標高データを引きます。
+    ⚠ <strong>座標が山頂からずれていると斜面の標高を読み</strong>、
+    判定に使う風の層もそのぶんずれます</li>
+</ul>
+
+<h3>予報そのもの</h3>
+<ul>
+  <li>2日より先には「◯日先・確度中／低」と出しますが、
+    ⚠ <strong>これは実測した的中率ではありません。</strong>
+    「何日先か」から引いた一般的な目安です（5日より先が「低」）</li>
+  <li>実績3日＋予報9日を要求していますが、
+    <strong>実際に何日先まで返るかはモデル次第</strong>です</li>
+</ul>
+
+<h2 id="s5">5. どういう経緯でこの作りになったか</h2>
+
+<p>大きな判断は記録として残してあります。かいつまむと次のとおりです。</p>
 
 <div class="tw">
 <table>
@@ -309,39 +362,14 @@ footer {
   通り続けるテストは、直したことの証拠にならないためです。
 </p>
 
-<h2>5. まだ終わっていないこと</h2>
+<h2 id="s6">6. まだ足りていないこと</h2>
 
-<p>
-  未確認・未着手の項目は GitHub の Issue に置いてあります。
-  友人として知っておくと役に立ちそうなものだけ抜き出すと、こんなところです。
-</p>
-
-<h3>実機で確かめきれていないこと</h3>
-<div class="issue"><span class="n">#16</span><span>山頂の高さの風による判定が、実際の予報と合っているか</span></div>
-<div class="issue"><span class="n">#14</span><span>ランキングが110地点に増えて、Open-Meteo の利用制限に収まるか</span></div>
-<div class="issue"><span class="n">#5</span><span>気象庁モデルが実際に何日先まで返してくるか</span></div>
-<div class="issue"><span class="n">#3, #7</span><span>雨雲やアメダスをブラウザから直接読めるか（配信元の設定しだい）</span></div>
-
-<h3>機能として足りていないこと</h3>
-<div class="issue"><span class="n">#26</span><span>地図に気圧配置と等圧線を出す（一度作って外した。方式から練り直し）</span></div>
-<div class="issue"><span class="n">#9</span><span>AI による全国概況が非表示のまま（APIキー未登録）</span></div>
-<div class="issue"><span class="n">#8</span><span>新雪ランキングの地点データが未生成</span></div>
-<div class="issue"><span class="n">#10</span><span>CS立体図が一部の県をカバーしていない</span></div>
-<div class="issue"><span class="n">—</span><span><strong>暑い側の判定（熱中症の警告）が無い。</strong>いまの判定は寒い側しか見ていない</span></div>
-
-<h3>そのほか</h3>
-<div class="issue"><span class="n">#12</span><span>ライセンス未設定。<strong>再利用・再配布の条件は決まっていません</strong></span></div>
-
-<p style="margin-top:14px">
-  <a href="https://github.com/dfcfr909-bit/foehn/issues">Issue の一覧を見る（最新はこちら）</a>
-</p>
-
-<h2>6. リンク</h2>
 <ul>
-  <li><a href="sotoki_v4.html">アプリ本体</a> — ホーム画面に追加すると全画面で開きます</li>
-  <li><a href="https://github.com/dfcfr909-bit/foehn">リポジトリ</a> — ソースと記録のすべて</li>
-  <li><a href="https://github.com/dfcfr909-bit/foehn/tree/main/docs/adr">ADR</a> — 設計判断と、却下した案の記録</li>
-  <li><a href="https://github.com/dfcfr909-bit/foehn/issues">Issues</a> — 未完了の項目</li>
+  <li><strong>暑い側の判定（熱中症の警告）が無い。</strong>いまの判定は寒い側しか見ていません</li>
+  <li><strong>気圧の色と判定の食い違い</strong>（上記）を直していません</li>
+  <li><strong>山頂高度の風による判定が、実際の予報と合うか</strong>を実機で確かめきれていません</li>
+  <li>地図の<strong>気圧配置と等圧線</strong>は、一度作って外しました（方式から練り直しが要ります）</li>
+  <li><strong>再利用・再配布の条件（ライセンス）は決まっていません</strong></li>
 </ul>
 
 <footer>
