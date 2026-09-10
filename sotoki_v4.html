@@ -3281,6 +3281,14 @@ function niceRange(vals, pad, minSpan, padFrac) {
 const PADDING_L     = 36;   // 左軸の幅。単位を2段組みにしたぶん詰めてある
 const PADDING_R     = 32;   // 右軸（高度km等）の目盛りを読める幅を確保
 const SKY_TOP_PAD   = 46;   // 気温パネル上部。日付ラベル＋天気アイコンを重ねずに置く高さ
+/* 気温パネルの下端に置く「体感温度の帯」の高さ。
+   ⚠ **判定に効いているのは気温ではなく体感温度**なのに、体感は画面のどこにも
+   描かれていなかった。帯を消す（＝グラフだけで判定の理由が読める）ための最後の1つ。
+   ⚠ **背景を塗らない。** 背景は昼夜シェーディングが全パネル共通で使っており、
+   奪い合うと両方濁る。下端を少し借りて、そこだけに敷く。
+   ⚠ この高さは**気温プロットの下余白と対**。片方だけ変えると線と帯が重なる
+   （使うのは uPlot の padding と drawAxisGutter の2か所だけ）。 */
+const FEEL_BAND_H   = 11;
 const FORECAST_HOURS = 168; // 現在時刻から先の表示時間数（7日）
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
@@ -3363,7 +3371,8 @@ function buildCharts() {
   skyChart = new uPlot({
     ...common,
     height: CHART_H_SKY,
-    padding: [SKY_TOP_PAD, PADDING_R, TIME_AXIS_H, PADDING_L],
+    // ⚠ 下は時刻ラベル帯＋体感温度の帯のぶんだけ空ける（drawAxisGutter と対）
+    padding: [SKY_TOP_PAD, PADDING_R, TIME_AXIS_H + FEEL_BAND_H, PADDING_L],
     scales: {
       x: xScale,
       y: { range: tempRange },
@@ -3720,7 +3729,8 @@ function drawAxisGutter() {
   const si = scaleInfo;
 
   // 気温（skyパネル: 上SKY_TOP_PAD / 下TIME_AXIS_H）
-  const skyTop = SKY_TOP_PAD, skyBottom = CHART_H_SKY - TIME_AXIS_H;
+  // ⚠ 下端は体感温度の帯に貸してある（uPlot の padding と対）
+  const skyTop = SKY_TOP_PAD, skyBottom = CHART_H_SKY - TIME_AXIS_H - FEEL_BAND_H;
   const ty = t => skyTop + (si.tempMax - t) / (si.tempMax - si.tempMin) * (skyBottom - skyTop);
   // 名前と単位も数値と同じ右寄せに揃える（左寄せだと数値と横でぶつかる）
   ctx.fillStyle = '#e05020';
@@ -4241,11 +4251,76 @@ function drawCloudOverlay(u) {
 }
 
 /* ------ TEMP hook: 日付ヘッダー・天気アイコン・最高最低注記・軸 ------ */
+/* 体感温度 → 色。赤＝暑い / 青＝寒い。
+   ⚠⚠ **目盛りは固定。** その日の最低・最高で伸縮させると、穏やかな日の帯まで
+   真っ赤・真っ青になり、**危なさを誤って伝える**。どの日に開いても
+   「この色ならこのくらい」が同じであることの方が大事。
+   ⚠ 中間（10℃前後）は淡くする。濃い色は端だけに使いたい。 */
+const FEEL_STOPS = [
+  [-20, [ 44,  72, 150]], [-10, [ 78, 132, 196]], [0, [154, 190, 218]],
+  [ 10, [228, 226, 214]], [ 20, [236, 190, 128]], [30, [224, 122,  68]],
+  [ 38, [198,  52,  40]],
+];
+function feelColor(t) {
+  if (t == null || !isFinite(t)) return 'rgba(0,0,0,0.06)';
+  const s = FEEL_STOPS;
+  if (t <= s[0][0]) return `rgb(${s[0][1].join(',')})`;
+  if (t >= s[s.length - 1][0]) return `rgb(${s[s.length - 1][1].join(',')})`;
+  let k = 1;
+  while (k < s.length - 1 && t > s[k][0]) k++;
+  const [t0, c0] = s[k - 1], [t1, c1] = s[k];
+  const f = (t - t0) / (t1 - t0);
+  return `rgb(${c0.map((v, j) => Math.round(v + (c1[j] - v) * f)).join(',')})`;
+}
+
+/* 体感温度の帯（気温パネルの下端）と、判定に効いている時間の枠。
+   ⚠ **判定を自前で計算しない。** `judgeBreakdown` の結果を読むだけ
+     （ABC評価ロジックは変更禁止）。
+   ⚠ **連続した時間はひとまとめに囲む。** 帯は途切れない1本なので、
+     1時間ごとに囲むと櫛の歯になって、どこからどこまでが危ないのか読めない。
+   ⚠ **B（橙）を先、C（赤）を後。** 隣り合う枠は重なるので、赤を最後に描く
+     （降水のバーと同じ決まり）。 */
+function drawFeelBand(u, pr) {
+  const ctx = u.ctx;
+  const data = state.allData;
+  const H = ctx.canvas.height;
+  const top = H - (TIME_AXIS_H + FEEL_BAND_H) * pr;
+  const bh = FEEL_BAND_H * pr;
+  ctx.save();
+  for (let i = 0; i < data.length; i++) {
+    const xa = u.valToPos(i - 0.5, 'x', true);
+    const xb = u.valToPos(i + 0.5, 'x', true);
+    ctx.fillStyle = feelColor(data[i].apparent);
+    ctx.fillRect(xa, top, xb - xa + 1, bh);   // +1 で隣とのすき間を殺す
+  }
+  // 連続した判定の区間を拾う
+  const runs = [];
+  for (let i = 0; i < data.length; i++) {
+    const lv = judgeBreakdown(data[i]).apparent;
+    if (lv === 0) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.lv === lv && last.end === i - 1) last.end = i;
+    else runs.push({ lv, start: i, end: i });
+  }
+  for (const want of [1, 2]) {
+    ctx.strokeStyle = want === 2 ? GRADE_COL.C : GRADE_COL.B;
+    ctx.lineWidth = 2 * pr;
+    for (const r of runs) {
+      if (r.lv !== want) continue;
+      const x0 = u.valToPos(r.start - 0.5, 'x', true) + pr;
+      const x1 = u.valToPos(r.end + 0.5, 'x', true) - pr;
+      ctx.strokeRect(x0, top + pr, x1 - x0, bh - 2 * pr);
+    }
+  }
+  ctx.restore();
+}
+
 function drawTempOverlay(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
   const data = state.allData;
   const H = ctx.canvas.height;
+  drawFeelBand(u, pr);
   ctx.save();
   // 日付ヘッダー（正午位置に配置）
   ctx.textAlign = 'center';
