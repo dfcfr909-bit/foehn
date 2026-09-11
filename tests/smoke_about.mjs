@@ -130,6 +130,27 @@ for (const href of [...ABOUT.matchAll(/(?:href|src)="(?!https?:|#|mailto:)([^"]+
   ok(fs.existsSync(path.join(ROOT, href)), `★相対リンクの先が実在する（${href}）`);
 }
 
+/* ============ 4b. ⚠ 圏外でも説明ページが開ける ============
+   ⚠ **`PRECACHE` に無いと、圏外で開いたときアプリ本体が返る。**
+   sw.js の HTML フォールバックが `'./sotoki_v4.html'` 固定だから。
+   山では圏外がふつうで、そこで `ℹ️` を叩くとまさにこの状況になる。
+   ⚠ CACHE_VERSION は上げなくてよい（sw.js が変われば install が走り、
+     同じキャッシュに追加される。上げると既存のアプリシェルを無駄に捨てる）。 */
+const SW = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+const precache = (SW.match(/const PRECACHE = \[([\s\S]*?)\];/) || ['', ''])[1];
+ok(precache.length > 0, '★前提: sw.js の PRECACHE を読み出せる（検査が空振りしていない）');
+ok(/'\.\/about\.html'/.test(precache),
+  '★★★圏外でも説明ページが開ける（PRECACHE に入っている）', precache.trim().slice(0, 200));
+/* ついでに、PRECACHE に並んだ同梱ファイルが実在すること（打ち間違いを拾う）。
+   ⚠ `data/spots.json` は **`scripts/buildSpots.mjs` がまだ実行されていない**ので不在
+     （Issue #8）。無くても `cache.add` は握りつぶすので害は無い。
+     ⚠ 生成したらこの除外を消すこと。 */
+const PRECACHE_ALLOW_MISSING = ['data/spots.json'];
+for (const u of [...precache.matchAll(/'\.\/([^']+)'/g)].map(x => x[1])) {
+  if (PRECACHE_ALLOW_MISSING.includes(u)) continue;
+  ok(fs.existsSync(path.join(ROOT, u)), `★PRECACHE のファイルが実在する（${u}）`);
+}
+
 /* ============ 5. ⚠ 公開してはいけない語が無い ============
    このリポジトリは public。実際に施設名を書いて公開し、作り直した（ADR-0009）。
    ⚠ `git push --force` では消えない（refs/pull/* が残る）。 */
