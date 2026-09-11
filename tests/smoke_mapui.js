@@ -967,11 +967,25 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   // 風の矢印（leaflet-velocityは使わない＝アニメーションなし）
   await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('windArrows'); });
   await page.waitForTimeout(1200);
+  /* ⚠⚠ **画面上の向きで見ること。** 要素自身の transform だけを見ると、
+     祖先（回転した #map と、文字を立てるため逆回転する .wind-box）を勘定できず、
+     **ヘディングアップで矢印が地図と一緒に回っていなくても素通りする**。
+     祖先の transform をすべて掛け合わせて、実際に画面上で何度を向いているかを測る。 */
+  await page.evaluate(() => {
+    window.__screenDeg = el => {
+      let m = new DOMMatrix();
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+        const t = getComputedStyle(n).transform;
+        if (t && t !== 'none') m = new DOMMatrix(t).multiply(m);
+      }
+      return ((Math.atan2(m.b, m.a) * 180 / Math.PI) % 360 + 360) % 360;
+    };
+  });
   const wind = await page.evaluate(() => {
     const boxes = [...document.querySelectorAll('.wind-box')];
     return {
       count: boxes.length,
-      rotated: boxes.filter(b => /rotate/.test(b.querySelector('.wind-a').style.transform)).length,
+      rotated: boxes.filter(b => __screenDeg(b.querySelector('.wind-a')) > 0.5).length,
       usesVelocity: typeof L.velocityLayer !== 'undefined',
     };
   });
@@ -1387,6 +1401,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       arrow: !!a, dot: document.querySelectorAll('.me-dot').length,
       known: headingKnown,
       rot: a ? a.style.transform : '',
+      画面上の向き: a ? +__screenDeg(a).toFixed(1) : null,
+      headingDeg, mapRotationDeg,
       w: a ? Math.round(a.getBoundingClientRect().width) : 0,
       // 矢尻の重心が現在地に来るよう、marginで持ち上げてある
       shifted: a ? getComputedStyle(a).marginTop : '',
@@ -1394,8 +1410,39 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   });
   ok(arrowUp.arrow && arrowUp.dot === 0 && arrowUp.known,
     '★方位が取れたら現在地は矢尻になる（丸は出さない）', arrowUp);
-  ok(/rotate\(0(\.0)?deg\)/.test(arrowUp.rot),
-    '★ヘディングアップでは矢尻は常に上を向く（方位＋地図の回転＝0）', arrowUp.rot);
+  /* ⚠⚠ **要素自身の transform を見ないこと。** 矢尻は Leaflet のマーカー＝
+     回転した `#map` の中にあるので、**自分の transform が 0deg でも画面では回っている**。
+     以前この検査は `a.style.transform` が `rotate(0deg)` であることだけを見ており、
+     ヘディングアップで**矢尻が真後ろを向く不具合を通していた**（実機で指摘）。
+     必ず祖先ぶんを掛け合わせた**画面上の向き**で見る。 */
+  const near = (a, b, tol) => Math.abs(((a - b + 540) % 360) - 180) <= tol;
+  ok(near(arrowUp.画面上の向き, 0, 1),
+    '★★★ヘディングアップでは矢尻は画面で常に上を向く', arrowUp);
+
+  /* ⚠⚠ **風向の矢印は地図と一緒に回ること。**
+     風向は地理的な向きなので、ヘディングアップで地図が回ったら矢印も回らなければ
+     指す方角が変わってしまう。⚠ 箱（.wind-box）は文字を立てるため逆回転しており、
+     中の矢印は**放っておくと地図の回転を失う**（実際にそうなっていた）。
+     ⚠ 「回っているか」だけを見る検査では拾えない。**指定した風向と一致するか**を見る。 */
+  await page.evaluate(() => {
+    if (!document.querySelector('.wind-a')) toggleOverlay('windArrows');
+  });
+  await page.waitForTimeout(1000);
+  const windRot = await page.evaluate(() => {
+    const arrows = [...document.querySelectorAll('.wind-a')];
+    return {
+      count: arrows.length, mapRotationDeg,
+      ずれ: arrows.slice(0, 8).map(a => {
+        const want = parseFloat(a.style.getPropertyValue('--wind-deg')) + mapRotationDeg;
+        const got = __screenDeg(a);
+        return +(((got - want + 540) % 360) - 180).toFixed(1);
+      }),
+    };
+  });
+  ok(windRot.count > 0, '前提: 風の矢印が出ている（検査が空振りしていない）', windRot);
+  ok(windRot.mapRotationDeg !== 0, '前提: 地図が回っている（空振りでない）', windRot);
+  ok(windRot.ずれ.every(d => Math.abs(d) <= 1),
+    '★★★風向の矢印が地図と一緒に回る（ヘディングアップでも方角が合う）', windRot);
   ok(arrowUp.w >= 24, '矢尻は指で見て分かる大きさ', arrowUp.w);
   ok(parseFloat(arrowUp.shifted) < 0, '重心を現在地に合わせて持ち上げている', arrowUp.shifted);
 

@@ -1206,6 +1206,16 @@ html, body {
 }
 .wind-box b { font-size: 10px; font-family: var(--font-mono); color: #2a3a8a; }
 .wind-box .wind-a { display: inline-block; font-size: 14px; line-height: 1; color: #2a3a8a; }
+/* ⚠⚠ **風向の矢印は地図の回転を足し戻す。**
+   箱（.wind-box / .amedas-box）は文字を立てるために `--map-rot`（= -地図の回転）で
+   逆回転しており、その中の矢印は**地図の回転を失う**。風向は地理的な向きなので、
+   ヘディングアップでは地図と一緒に回らなければならない
+   （実機で「ヘディングアップが効いていない」と指摘されて見つけた）。
+   ⚠ 角度を JS で焼き込まず CSS 変数で持つこと。**地図は方位が変わるたびに回る**ので、
+     焼き込むと次に描き直すまでずれたままになる。 */
+.wind-box .wind-a, .amedas-box .amedas-arrow {
+  transform: rotate(calc(var(--wind-deg, 0deg) - var(--map-rot, 0deg)));
+}
 /* 15m/s超は赤（吹き飛び・ウインドスラブの目安。チャート側と同じしきい値） */
 .wind-box.strong { border-color: var(--c-col); }
 .wind-box.strong b, .wind-box.strong .wind-a { color: var(--c-col); }
@@ -1991,7 +2001,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.89.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.90.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6011,7 +6021,7 @@ function drawAmedas(bounds, opacity) {
     // 風のときは向きも矢印で添える（風向は「吹いてくる方角」なので矢印は+180°）
     const deg = amedasDirDeg(s.vals.windDirection);
     const arrow = (el.id === 'wind' && deg != null)
-      ? `<i class="amedas-arrow" style="transform:rotate(${(deg + 180) % 360}deg)">↑</i>` : '';
+      ? `<i class="amedas-arrow" style="--wind-deg:${(deg + 180) % 360}deg">↑</i>` : '';
     const m = L.marker([s.lat, s.lon], {
       pane: 'mapWeather',
       opacity,
@@ -6097,7 +6107,7 @@ function drawWindArrows(bounds, opacity) {
           icon: L.divIcon({
             className: 'wind-arrow',
             html: `<div class="wind-box${strong ? ' strong' : ''}">` +
-                  `<span class="wind-a" style="transform:rotate(${to}deg)">↑</span>` +
+                  `<span class="wind-a" style="--wind-deg:${to}deg">↑</span>` +
                   `<b>${p.speed.toFixed(0)}</b></div>`,
             iconSize: null,
           }),
@@ -6933,8 +6943,15 @@ function drawMe() {
   } else {
     meCircle.setLatLng(ll).setRadius(myPos.accuracy || 0);
   }
-  // 矢尻は「方位 ＋ 地図の回転」ぶん回す。ヘディングアップでは差し引き0になり常に上を向く
-  const dir = headingDeg + mapRotationDeg;
+  /* 矢尻は**方位のぶんだけ**回す。
+     ⚠⚠ **地図の回転を足さないこと。** この矢尻は Leaflet のマーカー＝ `#map` の中にあり、
+     `#map` には既に `rotate(mapRotationDeg)` が掛かっている。ここで足すと**二重に効く**。
+     画面上の向き = mapRotationDeg + dir なので、dir = headingDeg で
+       ノースアップ    … 0 + 方位      = 方位（正しい）
+       ヘディングアップ … -方位 + 方位 = 0（常に上。正しい）
+     ⚠ 以前は `headingDeg + mapRotationDeg` としており、ヘディングアップで
+       **画面上 -方位**、つまり南を向くと矢尻が真下を指していた（実機で指摘）。 */
+  const dir = headingDeg;
   const html = headingKnown
     ? `<svg class="me-arrow" viewBox="0 0 40 40" style="transform:rotate(${dir.toFixed(1)}deg)">` +
       `<path d="M20 4 L32 33 L20 25.5 L8 33 Z"/></svg>`
