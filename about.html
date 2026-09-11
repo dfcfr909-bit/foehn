@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>このアプリについて — ナギナビ</title>
+<meta name="description" content="ナギナビが何をどこから引き、どう解釈して A/B/C を出しているか。判定の基準・データの参照元・妥協点のまとめ。">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#f5f4f0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ⚠ アプリ本体（sotoki_v4.html）と同じ配色・同じ書体にしてある。
+   別物に見えると「これは何のページ？」から説明が要る。 */
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --border: #d4d0c8;
+  --text: #1a1a1a;
+  --text2: #555;
+  --text3: #8b8b8b;
+  --a-col: #2a7d4f;
+  --b-col: #e8a020;
+  --c-col: #d03030;
+  --accent: #e05020;
+  --warn-bg: #fdf3ef;
+  --sa-l: env(safe-area-inset-left, 0px);
+  --sa-r: env(safe-area-inset-right, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --surface: #1c1f24; --border: #333840;
+    --text: #e8eaed; --text2: #b0b6be; --text3: #7c848e;
+    --warn-bg: #2a1f1a;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding: 0 max(16px, var(--sa-l)) 64px max(16px, var(--sa-r));
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.85;
+  overflow-wrap: break-word;
+}
+.wrap { max-width: 720px; margin: 0 auto; }
+
+header { padding-block: 40px 8px; }
+.eyebrow { font-size: 12px; letter-spacing: .12em; color: var(--text3); margin: 0 0 6px; }
+h1 { font-size: 26px; line-height: 1.4; margin: 0 0 10px; font-weight: 700; }
+.lede { font-size: 15px; color: var(--text2); margin: 0 0 4px; }
+
+h2 {
+  font-size: 19px; font-weight: 700; margin: 44px 0 12px;
+  padding-bottom: 8px; border-bottom: 2px solid var(--border);
+}
+h3 { font-size: 15px; font-weight: 700; margin: 26px 0 6px; }
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 12px; padding-left: 1.3em; }
+li { margin-bottom: 4px; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .88em; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+strong { font-weight: 700; }
+
+/* ⚠ 表は狭い画面ではみ出す。横スクロールの箱に必ず入れる（本文は横に流さない） */
+.tw { overflow-x: auto; margin: 0 0 14px; -webkit-overflow-scrolling: touch; }
+/* ⚠ **`min-width` で押し広げない。** 380px 級の端末で判定表の C 列が画面外へ出て、
+   いちばん大事な列が見えなかった（箱は横に流れるが、流せると気づかれない）。
+   狭いときは折り返して収める。`.tw` は長い表のための保険として残す。 */
+table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--surface); }
+th, td { border: 1px solid var(--border); padding: 7px 8px; text-align: left; vertical-align: top; }
+th { background: rgba(128,128,128,.09); font-weight: 700; }
+td.num { font-variant-numeric: tabular-nums; }
+/* 判定表だけは列を均して、A/B/C が同じ幅で並ぶようにする。
+   ⚠ 単位は項目名の側へ出した。セルに「0.5 cm/h 未満」と入れると
+   狭い端末で「未」と「満」の間で折り返す（日本語はどこでも切れる）。 */
+table.judge { table-layout: fixed; }
+table.judge th:first-child, table.judge td:first-child { width: 31%; }
+table.judge td { white-space: nowrap; }
+table.judge small { color: var(--text3); font-size: 11px; font-weight: 400; }
+table.judge th[scope="row"] { background: none; white-space: normal; }
+
+.note {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: 6px;
+  padding: 14px 16px; margin: 0 0 16px;
+}
+.note.warn { background: var(--warn-bg); border-left-color: var(--c-col); }
+.note p:last-child, .note ul:last-child { margin-bottom: 0; }
+.note h3 { margin-top: 0; }
+
+.grade {
+  display: inline-block; width: 1.5em; height: 1.5em; line-height: 1.5em;
+  text-align: center; border-radius: 5px; color: #fff; font-weight: 700;
+  font-size: 12px; vertical-align: middle; margin-right: 2px;
+}
+.g-a { background: var(--a-col); }
+.g-b { background: var(--b-col); }
+.g-c { background: var(--c-col); }
+
+.cta {
+  display: inline-block; background: var(--accent); color: #fff;
+  text-decoration: none; font-weight: 700; border-radius: 8px;
+  padding: 11px 22px; margin: 6px 8px 6px 0;
+}
+.cta.sub { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+
+.issue { display: flex; gap: 10px; align-items: baseline; margin-bottom: 7px; }
+.issue .n { flex: 0 0 auto; font-variant-numeric: tabular-nums; color: var(--text3); font-size: 13px; }
+
+footer {
+  margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text3); line-height: 1.75;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">ナギナビ / Foehn</p>
+  <h1>このアプリについて</h1>
+  <p class="lede">
+    <strong>何をどこから引いていて、それをどう解釈して A / B / C になっているか。</strong>
+    判定の基準・データの参照元・そして<strong>どこで妥協しているか</strong>をまとめてあります。
+  </p>
+  <p><a class="cta" href="sotoki_v4.html">アプリに戻る</a></p>
+</header>
+
+<div class="note warn">
+  <p style="margin-bottom:0">
+    <strong>これは予報であって、保証ではありません。</strong>
+    A / B / C は気象庁のモデルが出した数値をいくつかの閾値と比べているだけで、
+    現地の地形・積雪・体力・装備は見ていません。⚠ <strong>山の天気は急変します。</strong>
+    最終的な判断はご自身で。どこまで信用してよいかは「<a href="#limits">4. どこで妥協しているか</a>」に書きました。
+  </p>
+</div>
+
+<h2 id="s1">1. データはどこから来ているか</h2>
+
+<p>すべて公開されている情報源です。独自の観測や独自の予報計算はしていません。</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>何を</th><th>どこから</th></tr></thead>
+  <tbody>
+    <tr><td><strong>気象データ全般</strong><br><span style="color:var(--text3);font-size:12px">気温・体感・降水・降雪・風・気圧・雲量</span></td>
+        <td><a href="https://open-meteo.com/">Open-Meteo</a> Forecast API<br>
+            モデルは <strong>気象庁（JMA）</strong>の <code>jma_seamless</code>。1時間ごと、実績3日＋予報9日</td></tr>
+    <tr><td>突風・気圧面ごとの雲量</td>
+        <td>同 Open-Meteo（JMAが返さない項目なので、モデル指定なしの補助リクエスト）</td></tr>
+    <tr><td><strong>山頂の標高</strong></td>
+        <td><a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> 標高タイル（判定の入力に使います）</td></tr>
+    <tr><td>地図</td>
+        <td>国土地理院（標準・淡色・写真・陰影起伏・傾斜量・CS立体図ほか） /
+            OpenStreetMap / Esri / エコリス地図タイル</td></tr>
+    <tr><td>雨雲・ひまわり・アメダス・天気図</td>
+        <td><a href="https://www.jma.go.jp/">気象庁</a></td></tr>
+    <tr><td>地名の検索</td>
+        <td>国土地理院 地名検索 / Nominatim（OpenStreetMap）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  風速は <strong>m/s</strong> を明示して取得しています。Open-Meteo の既定は km/h で、
+  かつて取り違えたまま判定に流し、<strong>表示が約3.6倍・判定が約3.6倍厳しく</strong>なる事故を出しました。
+  そのとき「判定が厳しすぎる」と誤診して閾値を緩める対症療法まで踏んでおり、
+  いまは単位の指定が抜けていないかをテストで見張っています。
+</p>
+
+<h2 id="s2">2. A / B / C はどう決まるか</h2>
+
+<p>
+  5つの項目をそれぞれ A・B・C で採点し、<strong>いちばん悪かった項目がその時刻の判定</strong>になります。
+  平均は取りません。ひとつでも C があれば C です。
+</p>
+
+<div class="tw">
+<table class="judge">
+  <thead>
+    <tr><th>項目</th><th><span class="grade g-a">A</span></th><th><span class="grade g-b">B</span></th><th><span class="grade g-c">C</span></th></tr>
+  </thead>
+  <tbody>
+    <tr><th scope="row">風速 <small>m/s</small><br><small>山頂の高さの風</small></th>
+        <td class="num">5 未満</td><td class="num">5 〜 10</td><td class="num">10 以上</td></tr>
+    <tr><th scope="row">体感温度 <small>℃</small></th>
+        <td class="num">-3 より上</td><td class="num">-15 〜 -3</td><td class="num">-15 以下</td></tr>
+    <tr><th scope="row">降雪 <small>cm/h</small></th>
+        <td class="num">0.5 未満</td><td class="num">0.5 〜 2</td><td class="num">2 以上</td></tr>
+    <tr><th scope="row">降水 <small>mm/h</small></th>
+        <td class="num">1 未満</td><td class="num">1 〜 3</td><td class="num">3 以上</td></tr>
+    <tr><th scope="row">気圧の変化 <small>hPa</small><br><small>6時間での増減</small></th>
+        <td class="num">6 未満</td><td class="num">6 〜 10</td><td class="num">10 以上</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  降雪と降水は、<strong>降っているときだけ</strong>採点に入ります（0 のときは判定に影響しません）。
+  気圧は上がる側も下がる側も、変化の大きさだけを見ます。
+</p>
+
+<h3>グラフの上で判定の理由が読めます</h3>
+<ul>
+  <li><strong>風</strong> — バーの色が閾値で変わります</li>
+  <li><strong>降水・降雪</strong> — バーの縁が
+    <span style="color:var(--b-col);font-weight:700">橙</span>（B）
+    <span style="color:var(--c-col);font-weight:700">赤</span>（C）になります</li>
+  <li><strong>体感温度</strong> — 気温グラフの下端の細い帯。
+    寒いほど濃い青になり、B・C の時間は枠で囲みます</li>
+</ul>
+
+<div class="note">
+  <p style="margin-bottom:6px"><strong>体感温度の帯は、寒い側だけ濃くしてあります。</strong></p>
+  <p style="margin-bottom:0">
+    暑い側にも同じだけ色を振ったところ、ふつうの夏日（体感26〜31℃）で帯が終日オレンジになり、
+    判定は A のまま——という状態になりました。<strong>判定に暑い側の基準が無い</strong>のが理由です。
+    いまは熱中症警戒アラート（暑さ指数 WBGT 33）のあたりまで無彩色にしてあります。
+    <strong>暑さの警告そのものは、まだ作っていません。</strong>
+  </p>
+</div>
+
+<h2 id="s3">3. 風だけ、少し特別なことをしている</h2>
+
+<p>
+  ふつうの天気予報が出す風速は<strong>地上10mの風</strong>です。これを山の判定に使うと、実際とかなりずれます。
+</p>
+
+<p>
+  きっかけは利用者からの報告でした。ある日の皇海山（2,144m）を、他のサービスは C、
+  こちらは終日 A と判定していたのです。実際に数値を引き直すと、原因ははっきりしていました。
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>どの高さの風か</th><th>その時刻の値</th></tr></thead>
+  <tbody>
+    <tr><td>地上10m（<strong>当時、判定に使っていた値</strong>）</td><td class="num">2.73 m/s</td></tr>
+    <tr><td>850hPa（約1,460m）</td><td class="num">4.47 m/s</td></tr>
+    <tr><td><strong>800hPa（約1,950m・山頂に近い）</strong></td><td class="num"><strong>21.02 m/s</strong></td></tr>
+    <tr><td>700hPa（約3,010m）</td><td class="num">28.86 m/s</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  そこで<strong>山頂の標高にいちばん近い気圧面の風</strong>を判定に使うようにしました。
+  山頂の標高は国土地理院の標高データから読みます。窓の下に
+  <code>@1950m</code> のように、どの高さの風で判定したかが出ます。
+</p>
+
+<p>
+  この仕組みには続きがあります。当初は「山頂がモデルの地形より十分高いときだけ気圧面を使う」という
+  安全弁を付けていたのですが、データ提供側の仕様が変わり、
+  <strong>110峰のうち109峰がその弁に引っかかって、黙って地上10mの風に落ちていました。</strong>
+  ランキングでは C なのに詳細画面では A、という食い違いも起きていました。いまは安全弁を外し、
+  <strong>見るのは山頂の標高だけ</strong>にしてあります。
+</p>
+
+<h2 id="limits">4. どこで妥協しているか</h2>
+
+<p>
+  <strong>ここがいちばん大事です。</strong>判定は単純な仕組みなので、
+  分かったうえで使わないと読み違えます。
+</p>
+
+<h3>判定のしかた</h3>
+<ul>
+  <li><strong>5項目の最悪値がその時刻の判定。</strong>平均も加重もしません。
+    「B が3つ」より「C が1つ」が悪い、という考え方です</li>
+  <li>⚠ <strong>継続時間を見ていません。</strong>1時間だけの C も、6時間続く C も同じ C です</li>
+  <li>降水・降雪は<strong>降っているときだけ</strong>採点に入ります。0 のときは判定に影響しません</li>
+  <li>気圧は<strong>変化の大きさだけ</strong>を見ます。上昇も下降も同じ扱いです</li>
+  <li>閾値は<strong>日帰りの基準</strong>です（幕営向けの切替は撤去しました）</li>
+</ul>
+
+<h3>風</h3>
+<ul>
+  <li>使うのは山頂の高さに近い<strong>気圧面の風</strong>ですが、層は6つしかありません
+    （925 / 900 / 850 / 800 / 700 / 600 hPa ≒ 760 / 990 / 1,460 / 1,950 / 3,010 / 4,200 m）。
+    ⚠ <strong>いちばん近い層に丸めます。</strong>たとえば 1,700m の山は 1,460m か 1,950m の値になります</li>
+  <li>⚠⚠ <strong>モデル格子の値なので、稜線やコルでの増速は入っていません。</strong>
+    実際の稜線はこれより強いことがあります</li>
+  <li>気象庁モデルの格子は細かいほうでも<strong>約5km</strong>。
+    孤立峰や細い尾根は<strong>平滑化されて潰れます</strong></li>
+  <li>突風は表示だけで、<strong>判定には使っていません</strong></li>
+</ul>
+
+<h3>体感温度</h3>
+<ul>
+  <li>⚠⚠ <strong>判定は寒い側だけ。</strong>暑い側の閾値が無く、
+    <strong>熱中症の警告は出していません</strong></li>
+  <li>帯の暑い側の色は暫定です。<code>apparent_temperature</code> は
+    熱中症の基準である暑さ指数（WBGT）とは別物で、公式の換算がありません</li>
+</ul>
+
+<h3>気圧</h3>
+<ul>
+  <li>⚠⚠ <strong>画面の色と判定の閾値が食い違っています。</strong>
+    6時間で 3 hPa 動くと警告色が付きはじめますが、判定が B になるのは 6、C は 10 です。
+    <strong>色が付いていても判定は A</strong> ということが起きます（分かっていて直していません）</li>
+</ul>
+
+<h3>標高</h3>
+<ul>
+  <li>山頂の標高は座標から国土地理院の標高データを引きます。
+    ⚠ <strong>座標が山頂からずれていると斜面の標高を読み</strong>、
+    判定に使う風の層もそのぶんずれます</li>
+</ul>
+
+<h3>予報そのもの</h3>
+<ul>
+  <li>2日より先には「◯日先・確度中／低」と出しますが、
+    ⚠ <strong>これは実測した的中率ではありません。</strong>
+    「何日先か」から引いた一般的な目安です（5日より先が「低」）</li>
+  <li>実績3日＋予報9日を要求していますが、
+    <strong>実際に何日先まで返るかはモデル次第</strong>です</li>
+</ul>
+
+<h2 id="s5">5. どういう経緯でこの作りになったか</h2>
+
+<p>大きな判断は記録として残してあります。かいつまむと次のとおりです。</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>決めたこと</th><th>なぜ</th></tr></thead>
+  <tbody>
+    <tr><td><strong>HTML 1ファイルで作る</strong><br><span style="color:var(--text3);font-size:12px">ビルド工程なし</span></td>
+        <td>置いたファイルがそのまま本番になるので、「手元では動くのに公開すると壊れる」層が存在しない。
+            実機（iPhone）で踏む不具合が多い作りなので、ソースと配信物が1対1であることの価値が大きい</td></tr>
+    <tr><td><strong>グラフは uPlot</strong><br><span style="color:var(--text3);font-size:12px">同梱して使う</span></td>
+        <td>241時間ぶん×4枚を指の動きに追従させたい。軸と座標変換だけ借りて、
+            昼夜の陰影・雲・天気記号は自前で描いている。CDN は落ちた実績があるのでファイルを同梱</td></tr>
+    <tr><td><strong>天気記号は自前で描く</strong></td>
+        <td>絵文字は端末ごとに絵が変わる。判断に使う記号が端末で違うのは困る</td></tr>
+    <tr><td><strong>公開は GitHub Pages</strong></td>
+        <td>もとは Netlify だったが、無料枠が切れて配信が止まった。
+            静的ファイルしか無いので、費用も止まる理由も無い方へ移した</td></tr>
+    <tr><td><strong>判定の風は山頂の高さ</strong></td>
+        <td>上の「2.」のとおり。地上10mの風では山の風を表せない</td></tr>
+    <tr><td><strong>気圧配置レイヤーは外した</strong></td>
+        <td>高低気圧と等圧線を地図に描いたが、格子点APIから作る方式では
+            日本列島全体を見渡せるほど縮小すると重すぎ、軽くすると粗すぎた。
+            「実用に耐えない」と判断して撤去した（作ったものを消した記録として残してある）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  ふだんの開発では、<strong>新しい検査を書くたびに、わざとコードを壊して
+  その検査がちゃんと落ちることを確かめる</strong>ようにしています。
+  通り続けるテストは、直したことの証拠にならないためです。
+</p>
+
+<h2 id="s6">6. まだ足りていないこと</h2>
+
+<ul>
+  <li><strong>暑い側の判定（熱中症の警告）が無い。</strong>いまの判定は寒い側しか見ていません</li>
+  <li><strong>気圧の色と判定の食い違い</strong>（上記）を直していません</li>
+  <li><strong>山頂高度の風による判定が、実際の予報と合うか</strong>を実機で確かめきれていません</li>
+  <li>地図の<strong>気圧配置と等圧線</strong>は、一度作って外しました（方式から練り直しが要ります）</li>
+  <li><strong>再利用・再配布の条件（ライセンス）は決まっていません</strong></li>
+</ul>
+
+<footer>
+  <p>
+    気象データ: Open-Meteo（気象庁 JMAモデル） /
+    気象庁（雨雲ナウキャスト・ひまわり・アメダス・天気図） /
+    国土地理院（地図タイル・標高タイル・地名検索） /
+    © OpenStreetMap contributors / Esri, Maxar, Earthstar Geographics /
+    エコリス地図タイル（CS立体図）
+  </p>
+  <p>
+    個人が趣味で作っているアプリです。表示内容の正確性は保証しません。
+    山行の判断は、公式の気象情報とご自身の観察をあわせて行ってください。
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

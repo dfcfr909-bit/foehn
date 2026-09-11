@@ -20,6 +20,9 @@ const PRECACHE = [
   './',
   './index.html',
   './sotoki_v4.html',
+  // 説明ページ。⚠ ここに無いと、圏外で開いたとき下の HTML フォールバックが
+  //   './sotoki_v4.html' 固定なので**アプリ本体が返る**（山では圏外がふつう）
+  './about.html',
   './manifest.webmanifest',
   './areas.json',
   './snowRanking.js',

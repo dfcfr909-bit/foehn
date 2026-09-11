@@ -124,8 +124,15 @@ html, body {
   flex-shrink: 0;
 }
 /* バージョンは下段（凡例行）の右端に置く */
-#app-version {
+#about-link {
+  /* ⚠ **右端へ寄せる `margin-left:auto` はここに要る。** 凡例は flex で、
+     並ぶのはこのリンク（版数の span はその中身）。span 側に付けても効かず、
+     版数が行の途中に取り残される（smoke_favpicker が拾った）。 */
   margin-left: auto;
+  color: inherit; text-decoration: none;
+  border-bottom: 1px dotted var(--text3);   /* ⚠ 幅を変えない下線（text-decoration だと詰まる端末がある） */
+}
+#app-version {
   font-size: 11px;
   font-weight: 700;
   font-family: var(--font-mono);
@@ -684,6 +691,9 @@ html, body {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* ⚠ ここだけ伸縮させない。均等割りにすると他の5つが細って文字が2行になる。 */
+#btn-about-foot { flex: 0 0 auto; padding-left: 9px; padding-right: 9px; }
+#btn-about-foot .icon { margin: 0; }
 .foot-btn {
   flex: 1;
   padding: 4px 0;
@@ -1978,7 +1988,10 @@ html, body {
     <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
     <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
     <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
-    <span id="app-version">v4.85.0</span>
+    <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
+         文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
+         span のまま残すこと（release.yml と smoke_version が読む）。 -->
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.89.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -1998,6 +2011,12 @@ html, body {
     <button class="foot-btn" id="btn-wxmap" onclick="openWxMap()">
       <span class="icon">🌐</span>天気図
     </button>
+    <!-- このアプリについて（判定の基準・データの参照元・妥協点）。
+         ⚠ **文字は入れない。** 6つ目に「説明」と入れると 360px 幅で全ボタンが2行になり、
+         フッターが 47px → 61px に伸びる（実測）。アイコンだけなら 360px でも崩れない。 -->
+    <button class="foot-btn" id="btn-about-foot" onclick="location.href='about.html'"
+            title="このアプリについて（判定の基準・データの参照元・妥協点）"
+            aria-label="このアプリについて"><span class="icon">ℹ️</span></button>
   </div>
 
   <!-- Map Overlay -->
@@ -3281,6 +3300,14 @@ function niceRange(vals, pad, minSpan, padFrac) {
 const PADDING_L     = 36;   // 左軸の幅。単位を2段組みにしたぶん詰めてある
 const PADDING_R     = 32;   // 右軸（高度km等）の目盛りを読める幅を確保
 const SKY_TOP_PAD   = 46;   // 気温パネル上部。日付ラベル＋天気アイコンを重ねずに置く高さ
+/* 気温パネルの下端に置く「体感温度の帯」の高さ。
+   ⚠ **判定に効いているのは気温ではなく体感温度**なのに、体感は画面のどこにも
+   描かれていなかった。帯を消す（＝グラフだけで判定の理由が読める）ための最後の1つ。
+   ⚠ **背景を塗らない。** 背景は昼夜シェーディングが全パネル共通で使っており、
+   奪い合うと両方濁る。下端を少し借りて、そこだけに敷く。
+   ⚠ この高さは**気温プロットの下余白と対**。片方だけ変えると線と帯が重なる
+   （使うのは uPlot の padding と drawAxisGutter の2か所だけ）。 */
+const FEEL_BAND_H   = 11;
 const FORECAST_HOURS = 168; // 現在時刻から先の表示時間数（7日）
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
@@ -3363,7 +3390,8 @@ function buildCharts() {
   skyChart = new uPlot({
     ...common,
     height: CHART_H_SKY,
-    padding: [SKY_TOP_PAD, PADDING_R, TIME_AXIS_H, PADDING_L],
+    // ⚠ 下は時刻ラベル帯＋体感温度の帯のぶんだけ空ける（drawAxisGutter と対）
+    padding: [SKY_TOP_PAD, PADDING_R, TIME_AXIS_H + FEEL_BAND_H, PADDING_L],
     scales: {
       x: xScale,
       y: { range: tempRange },
@@ -3720,7 +3748,8 @@ function drawAxisGutter() {
   const si = scaleInfo;
 
   // 気温（skyパネル: 上SKY_TOP_PAD / 下TIME_AXIS_H）
-  const skyTop = SKY_TOP_PAD, skyBottom = CHART_H_SKY - TIME_AXIS_H;
+  // ⚠ 下端は体感温度の帯に貸してある（uPlot の padding と対）
+  const skyTop = SKY_TOP_PAD, skyBottom = CHART_H_SKY - TIME_AXIS_H - FEEL_BAND_H;
   const ty = t => skyTop + (si.tempMax - t) / (si.tempMax - si.tempMin) * (skyBottom - skyTop);
   // 名前と単位も数値と同じ右寄せに揃える（左寄せだと数値と横でぶつかる）
   ctx.fillStyle = '#e05020';
@@ -4241,11 +4270,99 @@ function drawCloudOverlay(u) {
 }
 
 /* ------ TEMP hook: 日付ヘッダー・天気アイコン・最高最低注記・軸 ------ */
+/* 体感温度 → 色。青＝寒い / 赤＝暑い。
+   ⚠⚠ **目盛りは固定。** その日の最低・最高で伸縮させると、穏やかな日の帯まで
+   真っ赤・真っ青になり、**危なさを誤って伝える**。どの日に開いても
+   「この色ならこのくらい」が同じであることの方が大事。
+
+   ⚠⚠ **濃さは寒い側に寄せてある。** 最初は 10℃ を中立にして上下へ均等に濃くしたが、
+   体感26〜31℃（＝いまの季節のふつうの日）で**帯が終日べったり橙**になり、
+   判定はAのまま——`GRADE_COL.B` と紛らわしく「Aなのに警告色」に見えた（実機の画で確認）。
+   ⚠ 根っこは、**判定に暑い側の閾値が無い**こと。濃い暖色に見合う危なさが判定側に無い。
+   そこで **8〜33℃ は淡い無彩色**にし、濃さの大半を寒い側へ配った。
+
+   ⚠ **寒い側の変化点は判定の閾値と同じ数値**（`apparentA` = -3 / `apparentB` = -15）。
+   色が変わるところと判定が変わるところをずらさない（気圧で起きている食い違いを繰り返さない）。
+   THRESH を書き換えたらここも直すこと（`tests/smoke_feel.mjs` が突き合わせる）。
+
+   ⚠ **暑い側の数値は暫定。** 帯が塗るのは WBGT（暑さ指数）ではなく Open-Meteo の
+   `apparent_temperature` で、両者に公式の換算は無い。目安として湿度60%のとき
+   気温31℃ ≒ WBGT 28（厳重警戒）・気温35℃ ≒ WBGT 32（危険）、
+   熱中症警戒アラートは WBGT 33・特別警戒は 35（環境省）。暑さ指数の式で当てると
+   厳重警戒が体感35℃前後、危険が体感45℃前後になる——その線で置いた。
+   ⚠ 実測で詰めるなら Actions の probe から引くこと（手元からは外へ出られない）。 */
+const FEEL_STOPS = [
+  [-25, [ 28,  54, 116]],   // これ以上は濃くしない
+  [-15, [ 56, 104, 178]],   // = apparentB（判定C の始まり）
+  [ -3, [136, 176, 212]],   // = apparentA（判定B の始まり）
+  [  8, [226, 226, 222]],   // ここから上は無彩の淡色
+  [ 33, [226, 226, 222]],   // ⚠ 熱中症警戒アラートのあたりまで色を付けない
+  [ 38, [238, 208, 152]],   // うっすら（厳重警戒〜危険のあたり）
+  [ 45, [226, 138,  74]],   // 危険
+  [ 50, [196,  60,  48]],   // ⚠ GRADE_COL.C と近い色。枠と塗りが紛らわしくなる境目
+];
+function feelColor(t) {
+  if (t == null || !isFinite(t)) return 'rgba(0,0,0,0.06)';
+  const s = FEEL_STOPS;
+  if (t <= s[0][0]) return `rgb(${s[0][1].join(',')})`;
+  if (t >= s[s.length - 1][0]) return `rgb(${s[s.length - 1][1].join(',')})`;
+  let k = 1;
+  while (k < s.length - 1 && t > s[k][0]) k++;
+  const [t0, c0] = s[k - 1], [t1, c1] = s[k];
+  const f = (t - t0) / (t1 - t0);
+  return `rgb(${c0.map((v, j) => Math.round(v + (c1[j] - v) * f)).join(',')})`;
+}
+
+/* 体感温度の帯（気温パネルの下端）と、判定に効いている時間の枠。
+   ⚠ **判定を自前で計算しない。** `judgeBreakdown` の結果を読むだけ
+     （ABC評価ロジックは変更禁止）。
+   ⚠ **連続した時間はひとまとめに囲む。** 帯は途切れない1本なので、
+     1時間ごとに囲むと櫛の歯になって、どこからどこまでが危ないのか読めない。
+   ⚠ **B（橙）を先、C（赤）を後。** 隣り合う枠は重なるので、赤を最後に描く
+     （降水のバーと同じ決まり）。 */
+function drawFeelBand(u, pr) {
+  const ctx = u.ctx;
+  const data = state.allData;
+  const H = ctx.canvas.height;
+  const top = H - (TIME_AXIS_H + FEEL_BAND_H) * pr;
+  const bh = FEEL_BAND_H * pr;
+  ctx.save();
+  for (let i = 0; i < data.length; i++) {
+    const xa = u.valToPos(i - 0.5, 'x', true);
+    const xb = u.valToPos(i + 0.5, 'x', true);
+    ctx.fillStyle = feelColor(data[i].apparent);
+    ctx.fillRect(xa, top, xb - xa + 1, bh);   // +1 で隣とのすき間を殺す
+  }
+  // 連続した判定の区間を拾う
+  const runs = [];
+  for (let i = 0; i < data.length; i++) {
+    const lv = judgeBreakdown(data[i]).apparent;
+    if (lv === 0) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.lv === lv && last.end === i - 1) last.end = i;
+    else runs.push({ lv, start: i, end: i });
+  }
+  for (const want of [1, 2]) {
+    ctx.strokeStyle = want === 2 ? GRADE_COL.C : GRADE_COL.B;
+    ctx.lineWidth = 2 * pr;
+    for (const r of runs) {
+      if (r.lv !== want) continue;
+      /* ⚠ 横は内側へ寄せない。B と C が隣り合うと縦線が**同じ位置に重なる**——
+         そこで後から描く赤が勝つ（内側へ寄せると重ならず、順序が意味を失う）。 */
+      const x0 = u.valToPos(r.start - 0.5, 'x', true);
+      const x1 = u.valToPos(r.end + 0.5, 'x', true);
+      ctx.strokeRect(x0, top + pr, x1 - x0, bh - 2 * pr);
+    }
+  }
+  ctx.restore();
+}
+
 function drawTempOverlay(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
   const data = state.allData;
   const H = ctx.canvas.height;
+  drawFeelBand(u, pr);
   ctx.save();
   // 日付ヘッダー（正午位置に配置）
   ctx.textAlign = 'center';
