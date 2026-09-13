@@ -2381,14 +2381,30 @@ function wxStore(mode) {
 // 座標のキー。小数3桁（約100m）に丸める。GPSの揺れで件数が無限に増えないように
 function wxKey(lat, lon) { return `${lat.toFixed(3)},${lon.toFixed(3)}`; }
 
+/* 1件を読んで、同じトランザクションの中で書き戻す。
+   ⚠⚠ **読みと書きの間に await を挟まないこと。** IndexedDBのトランザクションは
+     await で閉じるので、素直に書くと読みと書きが別トランザクションに分かれる。
+     本体の保存と補助データの後付けが同時に走ると、補助のほうが**保存前の古い `at` を
+     書き戻し**、その直後の整理で期限切れとして消えた（`smoke_offline` で踏んだ）。 */
+function wxUpdate(key, mutate) {
+  return wxStore('readwrite').then(st => new Promise((resolve, reject) => {
+    const g = st.get(key);
+    g.onerror = () => reject(g.error);
+    g.onsuccess = () => {
+      const next = mutate(g.result || null);
+      if (!next) return resolve(null);       // 書くものが無い
+      const p = st.put(next);
+      p.onerror = () => reject(p.error);
+      p.onsuccess = () => resolve(next);
+    };
+  }));
+}
+
 /* 本体の応答を控える。失敗しても本体の動作には影響させない（任意の機能） */
 async function saveWxCache(lat, lon, json, dem) {
   try {
-    const st = await wxStore('readwrite');
     const key = wxKey(lat, lon);
-    const prev = await wxReq(st.get(key));
-    const st2 = await wxStore('readwrite');
-    await wxReq(st2.put({
+    await wxUpdate(key, prev => ({
       key, lat, lon,
       name: state.locationName || '',
       at: Date.now(),
@@ -2404,16 +2420,12 @@ async function saveWxCache(lat, lon, json, dem) {
   } catch (e) { /* 控えられなくても本体は動く */ }
 }
 
-/* 補助データを、控えてある本体の記録へ後付けする */
+/* 補助データを、控えてある本体の記録へ後付けする。
+   ⚠ `at`（本体を取った時刻）は**触らない**。古さの根拠は本体の取得時刻だけ。 */
 async function saveWxSupplemental(lat, lon, h) {
   try {
-    const st = await wxStore('readwrite');
-    const rec = await wxReq(st.get(wxKey(lat, lon)));
-    if (!rec) return;                    // 本体が控えられていないなら置き場所が無い
-    rec.sup = h;
-    rec.supAt = Date.now();
-    const st2 = await wxStore('readwrite');
-    await wxReq(st2.put(rec));
+    await wxUpdate(wxKey(lat, lon), prev =>
+      prev ? Object.assign(prev, { sup: h, supAt: Date.now() }) : null);   // 本体が無ければ置き場所も無い
   } catch (e) { /* 任意データなので握りつぶす */ }
 }
 
@@ -2516,7 +2528,10 @@ async function fetchWeather(lat, lon) {
     const json = await res.json();
     setWxSource(null);                           // 通信で取れた＝帯は消す
     applyWeatherJson(json, dem, lat, lon);
-    saveWxCache(lat, lon, json, dem);            // 圏外で出せるように控える（失敗しても無視）
+    // 圏外で出せるように控える（失敗しても無視）。
+    // ⚠ **補助データの取得より先に済ませる。** 補助は本体の記録に後付けするので、
+    //   本体がまだ無いと置き場所が無く、せっかく取った突風・雲量を捨てることになる
+    await saveWxCache(lat, lon, json, dem);
     // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
     fetchSupplemental(lat, lon);
   } catch (e) {
