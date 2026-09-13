@@ -105,6 +105,24 @@ for (const [f, s] of Object.entries(wf)) {
     `★★安全でないNodeへ戻さない（${f}）`);
 }
 
+/* --- 場面6: workflow_run が実在するワークフローを指していること ---
+   ⚠ **ここは名前の文字列で繋がっている。** `name:` を変えても
+     GitHub は何も言わず、**繋がりが黙って切れる**だけ（起動しなくなる）。
+     `release.yml` はこれで「Pages へデプロイ」を待っている。切れると
+     タグが自動で打たれなくなり、また版数とタグが食い違っていく。 */
+const names = Object.fromEntries(Object.entries(wf).map(([f, s]) =>
+  [f, ((s.match(/^name:\s*(.+)$/m) || [])[1] || '').trim().replace(/^['"]|['"]$/g, '')]));
+for (const [f, s] of Object.entries(wf)) {
+  const m = s.match(/workflow_run:\s*\n\s*workflows:\s*(\[[^\]]*\]|\n(?:\s*-\s*.+\n)+)/);
+  if (!m) continue;
+  const want = [...m[1].matchAll(/['"]([^'"]+)['"]/g)].map(x => x[1]);
+  ok(want.length > 0, `★workflow_run の相手が読み取れる（${f}）`, m[1]);
+  for (const w of want) {
+    ok(Object.values(names).includes(w),
+      `★★★workflow_run が指す「${w}」というワークフローが無い（${f}）`, names);
+  }
+}
+
 if (fails.length) {
   console.log(`FAILED ${fails.length}件:`);
   for (const f of fails) console.log('  ✗ ' + f);

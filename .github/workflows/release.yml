@@ -42,7 +42,7 @@ on:
   # ⚠ workflow_run は**既定ブランチにあるワークフロー定義**で走る。
   #    だから作業ブランチで直しても、main に入るまで自動経路は変わらない。
   workflow_run:
-    workflows: ['Pages へデプロイ']
+    workflows: ["Pages へデプロイ"]
     types: [completed]
   workflow_dispatch:
     inputs:
