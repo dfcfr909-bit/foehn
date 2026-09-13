@@ -40,3 +40,30 @@ jobs:
       - name: 全件実行
         working-directory: tests
         run: node run-all.js
+
+  # ---- 版数の上げ忘れを見つける ----
+  # ⚠ **タグ打ちを自動にしたぶんの穴をここで塞ぐ。**
+  #   これまでは「版数を手で打って HTML と突き合わせる」二重入力が
+  #   打ち間違いと**上げ忘れ**の両方を止めていた。人が打たなくなると
+  #   打ち間違いは消えるが、上げ忘れは残る。残る方をここで見る。
+  # ⚠ PR のときだけ走らせる。main への push や release.yml から呼ばれたときは
+  #   比較先が自分自身になり、意味がない。
+  bump:
+    name: 版数が上がっているか
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      # ⚠ 既定の checkout は浅いので、比較先の中身が手元に無い。
+      #   1コミットだけ取れば `git show` で読める。
+      - name: 比較先を取る
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: git fetch --depth=1 origin "$BASE"
+
+      - run: node scripts/checkVersionBump.mjs FETCH_HEAD

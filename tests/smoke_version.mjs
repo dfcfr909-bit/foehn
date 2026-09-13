@@ -73,7 +73,8 @@ const wfRaw = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.y
 /* ⚠ **注記を落としてから見ること。** YAMLのコメントは構文解析で捨てられるので
      効き目が無い。規則を説明した注記そのものを「違反」と読むと、
      **注意書きを厚くするほどテストが落ちる**という逆立ちが起きる。 */
-const wf = wfRaw.split('\n').filter(line => !/^\s*#/.test(line)).join('\n');
+const strip = s => s.split('\n').filter(line => !/^\s*#/.test(line)).join('\n');
+const wf = strip(wfRaw);
 const inputRefs = wf.split('\n')
   .map((line, i) => ({ line, no: i + 1 }))
   .filter(({ line }) => /\$\{\{\s*(inputs|github\.event\.inputs)\./.test(line));
@@ -130,6 +131,118 @@ ok(/⚠/.test(r6.out) && /status\.md/.test(r6.out), '止めないが警告は出
 // status.md に版数が無くても落ちない
 const r6b = run('v4.78.0', { status: '# 現状' });
 ok(r6b.code === 0, 'status.md に版数が無くても止めない', r6b);
+
+/* ===========================================================================
+   版数の上げ忘れ（scripts/checkVersionBump.mjs）
+   ---------------------------------------------------------------------------
+   ⚠ **タグ打ちを自動にしたぶんの穴。** 手で版数を打たせていたのは、
+     「打ち間違い」と「HTMLの上げ忘れ」の2つを止めるためだった。
+     人が打たなくなれば打ち間違いは消えるが、**上げ忘れは残る**。
+     残る方をここで止める。**この検査を外すと、版数が据え置かれたまま中身だけ進む。**
+     （実際に利用者が「4.98.0」と言い、配信物は v4.90.0 だった）
+   =========================================================================== */
+const BUMP = path.join(ROOT, 'scripts', 'checkVersionBump.mjs');
+
+/* 作り物の git リポジトリを作り、base に1つ commit してから手元を書き換える。
+   ⚠ **本物のリポジトリは触らない。** */
+function runBump(baseHtml, headHtml, { baseRef = 'base' } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bump-'));
+  const file = path.join(dir, 'sotoki_v4.html');
+  const git = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'pipe' });
+  git('init', '-q', '-b', 'base');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 't');
+  fs.writeFileSync(file, baseHtml);
+  git('add', '-A');
+  git('commit', '-qm', 'base');
+  fs.writeFileSync(file, headHtml);
+  const env = { ...process.env, CHECK_BUMP_ROOT: dir };
+  let r;
+  try {
+    r = { code: 0, out: execFileSync('node', [BUMP, baseRef], { encoding: 'utf8', env }) };
+  } catch (e) {
+    r = { code: e.status, out: (e.stdout || '') + (e.stderr || '') };
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+const V = (v, body = '') => `<span id="app-version">${v}</span>${body}`;
+
+/* --- 場面7: 中身が変わったのに版数が据え置き（本丸） --- */
+const b1 = runBump(V('v4.90.0'), V('v4.90.0', '<p>足した</p>'));
+ok(b1.code !== 0, '★★★中身が変わったのに版数が上がっていなければ止める', b1);
+ok(/app-version/.test(b1.out), '直し方（版数を上げる）を出す', b1.out);
+
+/* --- 場面8: 上げてあれば通す --- */
+const b2 = runBump(V('v4.90.0'), V('v4.91.0', '<p>足した</p>'));
+ok(b2.code === 0, '★版数を上げてあれば通す', b2);
+
+/* --- 場面9: 中身が同じなら版数を上げなくてよい ---
+   ⚠ ドキュメントだけの変更で毎回版数を上げさせると、**版数が意味を失う**。 */
+const b3 = runBump(V('v4.90.0'), V('v4.90.0'));
+ok(b3.code === 0, '★中身が同じなら止めない（docsだけの変更）', b3);
+
+/* --- 場面10: 辞書順で比べていないこと ---
+   ⚠ **`'v4.9.0' < 'v4.10.0'` は文字列では偽。** 10番台に入った瞬間、
+     上げ忘れをそのまま通すようになる。 */
+const b4 = runBump(V('v4.9.0'), V('v4.10.0', '<p>足した</p>'));
+ok(b4.code === 0, '★★数として比べる（v4.9.0 → v4.10.0 は上がっている）', b4);
+const b5 = runBump(V('v4.10.0'), V('v4.9.0', '<p>足した</p>'));
+ok(b5.code !== 0, '★★版数が下がっていたら止める', b5);
+
+/* --- 場面11: 比較先が取れなければ通す ---
+   ⚠ **ここは門番ではない。** 浅いクローンなどで比較先が読めないときに
+     リリースを止めると、直す手立てのない赤が出る。 */
+const b6 = runBump(V('v4.90.0'), V('v4.90.0', '<p>足した</p>'), { baseRef: 'no-such-ref' });
+ok(b6.code === 0, '★比較先が取れないときは止めない', b6);
+
+/* --- 場面12: PR で実際に呼ばれていること ---
+   ⚠ スクリプトが正しくても、呼ばれていなければ何も守らない。 */
+const testWf = strip(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'test.yml'), 'utf8'));
+ok(/checkVersionBump\.mjs/.test(testWf),
+  '★★★上げ忘れの検査が test.yml から呼ばれている');
+ok(/if:\s*github\.event_name == 'pull_request'/.test(testWf),
+  '★PR のときだけ走らせる（main への push では比較先が自分になる）', testWf.slice(0, 0));
+
+/* ===========================================================================
+   タグを自動で打つ経路（release.yml の workflow_run）
+   =========================================================================== */
+
+/* ⚠ **失敗したデプロイにタグを付けない。** workflow_run は成否によらず届く。 */
+ok(/workflow_run:/.test(wf), '★★自動経路（workflow_run）がある');
+ok(/github\.event\.workflow_run\.conclusion == 'success'/.test(wf),
+  '★★★成功したデプロイのときだけ走らせる', (wf.match(/.*conclusion.*/) || [])[0]);
+
+/* ⚠ **デプロイされた中身にタグを打つ。** 既定ブランチの先端を見ると、
+     デプロイ後に進んだ別のコミットへタグが付きうる。 */
+const refPins = (wf.match(/ref:\s*\$\{\{[^}]*workflow_run\.head_sha[^}]*\}\}/g) || []);
+ok(refPins.length === 2,
+  '★★★確かめる側と打つ側の両方で、デプロイされたコミットを指す', refPins);
+
+/* ⚠ **既定ブランチではなく、デプロイした枝を見る。** workflow_run の
+     `GITHUB_REF_NAME` は既定ブランチになるので、それで main 判定をすると素通りする。 */
+ok(/workflow_run\.head_branch/.test(wf),
+  '★★main 判定にはデプロイした枝を使う');
+
+/* ⚠ **既にあるタグで落とさない**（自動は毎デプロイ走るので、赤が常態化して
+     本物の失敗が埋もれる）。代わりに `should_tag` で先を止める。 */
+ok(/should_tag=false/.test(wf) && /should_tag=true/.test(wf),
+  '★★タグの有無を出力に落とす（落とさずに止める）');
+const gates = (wf.match(/if:\s*needs\.check\.outputs\.should_tag == 'true'/g) || []);
+ok(gates.length === 2,
+  '★★★タグが既にあるならテストも書き込みも走らせない', gates);
+
+/* ⚠ **HTML を `grep` で読まない。** 同じ式が2か所に増えて片方だけ変わる。 */
+ok(/checkVersion\.mjs --print/.test(wf),
+  '★★版数はスクリプト経由で読む（ワークフローに正規表現を書かない）');
+ok(!/app-version/.test(wf),
+  '★★★ワークフローが <span id="app-version"> を直に読んでいない',
+  (wf.match(/.*app-version.*/) || [])[0]);
+
+/* ⚠ 手で打ったときは、既にあるタグなら**落とす**。
+     自動と同じく黙って何もしないと、打ったつもりが打てていないことに気づけない。 */
+ok(/MANUAL/.test(wf) && /github\.event_name == 'workflow_dispatch'/.test(wf),
+  '★手動のときだけ「既にある」で落とす');
 
 fs.rmSync(tmp, { recursive: true, force: true });
 

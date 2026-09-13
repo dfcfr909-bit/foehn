@@ -17,28 +17,37 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readAppVersion, isVersion } from './lib/appVersion.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.CHECK_VERSION_HTML || path.join(ROOT, 'sotoki_v4.html');
 const STATUS = process.env.CHECK_VERSION_STATUS || path.join(ROOT, 'docs', 'status.md');
 
-const want = (process.argv[2] || '').trim();
+const arg = (process.argv[2] || '').trim();
 const fail = msg => { console.error(`✗ ${msg}`); process.exit(1); };
 
-/* ⚠ **書式を先に見る。** ここを緩めると、あとで文字列としてシェルに渡る値の
+const html = fs.readFileSync(HTML, 'utf8');
+/* ⚠ 読み取りは `lib/appVersion.mjs` に一本化してある（同じ式を2か所に置かない）。
+     複数見つかったときもそこで失敗になる——版数の表記が2か所に増えると、
+     どちらが正か分からないまま片方だけ直す事故が起きる。 */
+const read = readAppVersion(html);
+if (read.error) fail(`${path.basename(HTML)}: ${read.error}`);
+
+const have = read.version;
+
+/* `--print` … HTML の版数を出すだけ。
+   ⚠ **読み取りの式をここ以外に置かないため。** タグを自動で打つとき版数が要るが、
+     ワークフロー側で `grep` を書くと**同じ正規表現が2か所**になり、片方だけ変わる。
+     「2か所あったら落とす」の判定ごと、ここを通させる。 */
+if (arg === '--print') { console.log(have); process.exit(0); }
+
+/* ⚠ **書式を見る。** ここを緩めると、あとで文字列としてシェルに渡る値の
      素性が分からなくなる。`v` + 数字3つ以外は受け取らない。 */
-if (!/^v\d+\.\d+\.\d+$/.test(want)) {
+const want = arg;
+if (!isVersion(want)) {
   fail(`版数の書式が違う（受け取った値: ${JSON.stringify(want)}）。例: v4.78.0`);
 }
 
-const html = fs.readFileSync(HTML, 'utf8');
-/* ⚠ **複数見つかったら落とす。** 版数の表記が2か所に増えると、
-     どちらが正か分からないまま片方だけ直す事故が起きる。 */
-const hits = [...html.matchAll(/<span id="app-version">([^<]*)<\/span>/g)].map(m => m[1].trim());
-if (hits.length === 0) fail(`${path.basename(HTML)} に <span id="app-version"> が無い`);
-if (hits.length > 1) fail(`<span id="app-version"> が${hits.length}か所ある: ${JSON.stringify(hits)}`);
-
-const have = hits[0];
 if (have !== want) {
   console.error(`✗ 版数が一致しない`);
   console.error(`    打とうとしている版数 : ${want}`);
