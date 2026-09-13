@@ -2001,7 +2001,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.90.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.91.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2297,6 +2297,139 @@ const THRESH = {
 };
 
 /* ============================================================
+   OFFLINE WEATHER CACHE（圏外で、直近に取れた予報を出す）
+
+   なぜ要るか:
+     山では圏外がふつう。`sw.js` は**気象APIを意図的にキャッシュしない**方針なので
+     （古い数字が黙って出るのを避けるため）、圏外で開くと画面は立ち上がるのに
+     データが空だった。その穴だけをここで埋める。
+
+   ⚠⚠ **黙って古い数字を出さないこと。** この仕組みでいちばん危ない失敗の仕方で、
+     ADR-0011（`elevation` の意味が変わり、判定が黙って甘くなった件）と同じ形になる。
+     だから **`sw.js` ではなくアプリ側**に置いた——古さと取得地点を画面に出せる場所が要る。
+   ⚠ **24時間より古いものは使わない**（数字を出さず「古すぎる」とだけ言う）。
+     利用者判断（2026-09-13）。緩めるなら画面の出し方ごと考え直すこと。
+   ⚠ 控えるのは **API応答そのもの**で、整形後（`fullData`）ではない。
+     復元も通信時と同じ `processData` を通す（`applyWeatherJson` に一本化してある）。
+     整形後を保存すると、判定の直し忘れが片側にだけ残る。
+
+   ⚠ バックグラウンドでの定期取得はしていない。iOS は Background Sync / Periodic
+     Background Sync のいずれも未対応で、アプリを閉じると JS ごと止まる。
+     ここが埋めるのは「**開いている間に取れたものを、圏外でも出す**」ところまで。
+   ============================================================ */
+const WX_DB_NAME     = 'sotoki-wx';
+const WX_STORE       = 'points';
+const WX_MAX_AGE_MS  = 24 * 3600 * 1000;   // これより古い保存データは使わない
+const WX_MAX_ENTRIES = 40;                 // 上限。超えたら取得が古いものから消す
+/* 完全一致が無いとき、この距離までなら流用する。
+   ⚠ **0にはできない。** GPSは毎回わずかに違う座標を返すので、現在地は完全一致しない。
+   ⚠ そのかわり**離れている距離を必ず画面に出す**（黙って隣の山の予報を出さないため）。 */
+const WX_NEAR_KM     = 20;
+
+let wxDbPromise = null;
+function wxDb() {
+  if (wxDbPromise) return wxDbPromise;
+  wxDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(WX_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(WX_STORE)) db.createObjectStore(WX_STORE, { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return wxDbPromise;
+}
+function wxReq(r) {
+  return new Promise((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+/* ⚠ 呼ぶたびに開き直す。IndexedDBのトランザクションは await をまたぐと閉じるので、
+   使い回すと2つ目の操作が InvalidStateError で落ちる（sw.js のタイルキャッシュと同じ作り）。 */
+function wxStore(mode) {
+  return wxDb().then(db => db.transaction(WX_STORE, mode).objectStore(WX_STORE));
+}
+// 座標のキー。小数3桁（約100m）に丸める。GPSの揺れで件数が無限に増えないように
+function wxKey(lat, lon) { return `${lat.toFixed(3)},${lon.toFixed(3)}`; }
+
+/* 本体の応答を控える。失敗しても本体の動作には影響させない（任意の機能） */
+async function saveWxCache(lat, lon, json, dem) {
+  try {
+    const st = await wxStore('readwrite');
+    const key = wxKey(lat, lon);
+    const prev = await wxReq(st.get(key));
+    const st2 = await wxStore('readwrite');
+    await wxReq(st2.put({
+      key, lat, lon,
+      name: state.locationName || '',
+      at: Date.now(),
+      json,
+      dem: (typeof dem === 'number' && isFinite(dem)) ? dem : null,
+      // ⚠ 補助データ（突風・気圧面の雲量）は本体より遅れて届く。
+      //   ここで消すと、補助が失敗した回のあとに圏外で開いたとき突風が丸ごと欠ける。
+      //   時刻キーで突き合わせて混ぜる作りなので、少し古くても実害は小さい
+      sup: prev ? prev.sup : null,
+      supAt: prev ? prev.supAt : null,
+    }));
+    await trimWxCache();
+  } catch (e) { /* 控えられなくても本体は動く */ }
+}
+
+/* 補助データを、控えてある本体の記録へ後付けする */
+async function saveWxSupplemental(lat, lon, h) {
+  try {
+    const st = await wxStore('readwrite');
+    const rec = await wxReq(st.get(wxKey(lat, lon)));
+    if (!rec) return;                    // 本体が控えられていないなら置き場所が無い
+    rec.sup = h;
+    rec.supAt = Date.now();
+    const st2 = await wxStore('readwrite');
+    await wxReq(st2.put(rec));
+  } catch (e) { /* 任意データなので握りつぶす */ }
+}
+
+/* 控えてあるものを1件返す。完全一致 → 無ければ WX_NEAR_KM 以内で最も近いもの。
+   ⚠ **古くても返す。** 「古すぎる」と画面で言うために、あること自体は知る必要がある。
+     使ってよいかは呼び手が `ageMs` で決める。 */
+async function loadWxCache(lat, lon) {
+  try {
+    const st = await wxStore('readonly');
+    const all = await wxReq(st.getAll());
+    if (!all || !all.length) return null;
+    const key = wxKey(lat, lon);
+    let best = null, bestKm = Infinity;
+    for (const r of all) {
+      const km = (r.key === key) ? 0 : haversineKm(lat, lon, r.lat, r.lon);
+      if (km > WX_NEAR_KM) continue;
+      // ほぼ同じ距離なら新しい方を採る
+      if (km < bestKm - 0.05 || (best && Math.abs(km - bestKm) <= 0.05 && r.at > best.at)) {
+        best = r; bestKm = km;
+      }
+    }
+    if (!best) return null;
+    return { rec: best, km: bestKm, ageMs: Date.now() - best.at };
+  } catch (e) { return null; }
+}
+
+/* 期限切れと、上限を超えたぶん（取得が古い順）を消す */
+async function trimWxCache() {
+  try {
+    const st = await wxStore('readonly');
+    const all = await wxReq(st.getAll());
+    if (!all || !all.length) return;
+    const now = Date.now();
+    const fresh = all.filter(r => now - r.at <= WX_MAX_AGE_MS).sort((a, b) => b.at - a.at);
+    const victims = all.filter(r => now - r.at > WX_MAX_AGE_MS).concat(fresh.slice(WX_MAX_ENTRIES));
+    for (const v of victims) {
+      const s = await wxStore('readwrite');
+      await wxReq(s.delete(v.key));
+    }
+  } catch (e) { /* 整理できなくても実害は無い */ }
+}
+
+/* ============================================================
    DATA FETCH
    ============================================================ */
 async function fetchWeather(lat, lon) {
@@ -2318,34 +2451,43 @@ async function fetchWeather(lat, lon) {
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
-    state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
-    state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // モデル格子の標高(m)
-    state.demElevation = (typeof dem === 'number' && isFinite(dem)) ? dem : null;
-    // どの高度の風で判定するかを先に決める（processData がその層を読む）
-    // ⚠ displayElevation() ではなく demElevation を渡す。DEMが取れなかったときに
-    // モデル標高で埋めると、モデル地形の高さを山頂と誤認する
-    // ⚠ 峰と分かっているならその標高を優先する。DEMは座標が少しずれるだけで
-    // 斜面を読み、静かに地上風へ落ちる（皇海山で踏んだ）
-    // ⚠ **state.elevation（モデル格子の標高）は渡さない**（ADR-0011）。
-    // ランキングと同じ決め方にそろえてある。渡していた頃は、同じ日の同じ山が
-    // ランキングでC・詳細画面でAという食い違いを起こしていた
-    state.windSource = pickWindSource(state.summitElev ?? state.demElevation);
-    state.fullData = processData(json, state.windSource);   // dpressは全期間の文脈で算出済み
-    state.lat = lat;
-    state.lon = lon;
-    applyRange();                                // 表示範囲を切り出し
-    saveLast(lat, lon, state.locationName);
-    updateRainOutlook();                         // 雨の予告（地図を開いていれば見える）
-    // DOM反映後に描画
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => render());
-    });
+    applyWeatherJson(json, dem, lat, lon);
+    saveWxCache(lat, lon, json, dem);            // 圏外で出せるように控える（失敗しても無視）
     // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
     fetchSupplemental(lat, lon);
   } catch (e) {
     hideLoading();
     alert('データ取得失敗: ' + e.message);
   }
+}
+
+/* 応答を状態へ入れて描画まで持っていく。
+   ⚠⚠ **通信で取れたときも、控えてあるものを出すときも、必ずここを通す。**
+     別々に書くと片方だけ直したときに判定が食い違う。
+     同じ日の同じ山がランキングでC・詳細画面でAになった前例がある（ADR-0011）。 */
+function applyWeatherJson(json, dem, lat, lon) {
+  state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
+  state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // モデル格子の標高(m)
+  state.demElevation = (typeof dem === 'number' && isFinite(dem)) ? dem : null;
+  // どの高度の風で判定するかを先に決める（processData がその層を読む）
+  // ⚠ displayElevation() ではなく demElevation を渡す。DEMが取れなかったときに
+  // モデル標高で埋めると、モデル地形の高さを山頂と誤認する
+  // ⚠ 峰と分かっているならその標高を優先する。DEMは座標が少しずれるだけで
+  // 斜面を読み、静かに地上風へ落ちる（皇海山で踏んだ）
+  // ⚠ **state.elevation（モデル格子の標高）は渡さない**（ADR-0011）。
+  // ランキングと同じ決め方にそろえてある。渡していた頃は、同じ日の同じ山が
+  // ランキングでC・詳細画面でAという食い違いを起こしていた
+  state.windSource = pickWindSource(state.summitElev ?? state.demElevation);
+  state.fullData = processData(json, state.windSource);   // dpressは全期間の文脈で算出済み
+  state.lat = lat;
+  state.lon = lon;
+  applyRange();                                // 表示範囲を切り出し
+  saveLast(lat, lon, state.locationName);
+  updateRainOutlook();                         // 雨の予告（地図を開いていれば見える）
+  // DOM反映後に描画
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => render());
+  });
 }
 
 /* ------ 気圧面ごとの雲量（高度方向の細かい表示用。任意・失敗許容） ------
@@ -2373,7 +2515,16 @@ async function fetchSupplemental(lat, lon) {
   try { h = await get(`${cloudVars},wind_gusts_10m`); } catch (e) { h = null; }
   if (!h) { try { h = await get('wind_gusts_10m'); } catch (e) { h = null; } }   // 突風だけでも取得
   if (!h) return;
+  applySupplemental(h, true);
+  saveWxSupplemental(lat, lon, h);   // 圏外でも突風・気圧面の雲量が出るように控える
+}
 
+/* 補助データを状態へ混ぜる。
+   ⚠ 通信で取れたときも、控えてあるものを出すときも、必ずここを通す（本体と同じ理由）。
+   ⚠ `redraw=false` は**まだ最初の描画が来ていないとき**用。圏外の復元では
+     `applyWeatherJson` が rAF で描画を予約したあと、それが走る前に混ぜる。
+     描画のあとに混ぜると、突風の目盛りと右軸だけが一拍遅れて動く。 */
+function applySupplemental(h, redraw) {
   // 突風：時刻→値の索引を作り、メインデータへ突き合わせる
   if (h.wind_gusts_10m) {
     const gmap = new Map();
@@ -2401,7 +2552,7 @@ async function fetchSupplemental(lat, lon) {
   if (map.size) state.cloudProfiles = map;
 
   // 取得できた分を反映（チャート再構築で突風スケール・右軸も更新）
-  if (state.allData) {
+  if (redraw && state.allData) {
     try { buildCharts(); positionScrubLine(); updatePopup(); } catch (e) { /* 描画前なら無視 */ }
   }
 }
