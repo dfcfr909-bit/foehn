@@ -8,10 +8,22 @@ name: タグを打つ
 #   タグは止まったままになった。ここを塞ぐ。
 #
 # ⚠ **版数の正は `sotoki_v4.html` の `<span id="app-version">`。** タグはその目印。
-#    だから版数を**手で打たせて HTML と突き合わせる**（二重入力）。
-#    片方だけでは事故を止められない——
+#
+# 入口は2つある。
+#
+#   自動 … `Pages へデプロイ` が成功したら、HTML の版数を読んでタグが無ければ打つ。
+#          **ふだんはこちら。** 人は何もしない。既にあるタグなら黙って何もしない
+#          （デプロイのたびに走るので、ここで落とすと毎回赤くなる）
+#   手動 … 版数を打ち込んで起動する。打ち直しや、自動が取りこぼしたときの手段。
+#          **既にあるタグなら落とす**（手で打った以上、何もしないのは事故に見える）
+#
+# ⚠ **二重入力をやめたぶんの穴は `test.yml` の `bump` ジョブで塞いである。**
+#    手で打たせていたのは、次の2つを止めるためだった——
 #      HTMLから読むだけ  → 「HTMLの上げ忘れ」をそのまま通す
 #      入力を信じるだけ  → 「打ち間違い」をそのまま通す
+#    人が打たなくなれば打ち間違いは消える。残る「上げ忘れ」は、
+#    PR の時点で `scripts/checkVersionBump.mjs` が見る
+#    （中身が変わったのに版数が据え置きなら落とす）。**こちらを外すと穴が開く。**
 #
 # ⚠ **タグは消せる**（`git push --delete origin vX.Y.Z`）。
 #    `refs/pull/*` と違って後戻りできるので、打ち直しは可能。
@@ -25,6 +37,13 @@ name: タグを打つ
 #           14件が落ちた（2026-08-20 に実際に踏んだ）
 #   tag   … タグを打つ。**contents: write を持つのはここだけ**
 on:
+  # ⚠ **名前で繋がっている。** `pages.yml` の `name:` を変えるとここも直すこと
+  #    （`tests/smoke_workflows.mjs` が突き合わせて落とす）。
+  # ⚠ workflow_run は**既定ブランチにあるワークフロー定義**で走る。
+  #    だから作業ブランチで直しても、main に入るまで自動経路は変わらない。
+  workflow_run:
+    workflows: ['Pages へデプロイ']
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -40,13 +59,21 @@ jobs:
   # ---- 速い門番。ここで落とせるものはテストを回す前に落とす ----
   check:
     name: 打ってよいか確かめる
+    # ⚠ **失敗したデプロイにタグを付けない。** workflow_run は成否によらず届く。
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      should_tag: ${{ steps.exists.outputs.should_tag }}
     steps:
       # ⚠ タグの有無を見るので、履歴とタグを全部取る
+      # ⚠ **デプロイされた中身そのものを見る。** workflow_run のときの既定は
+      #    既定ブランチの先端で、デプロイ後にさらに進んでいることがある。
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v5
         with:
@@ -54,9 +81,13 @@ jobs:
 
       # ⚠ **作業ブランチでは打たない** → docs/workflow.md「タグ」
       - name: main であることを確かめる
+        env:
+          # workflow_run のときの `GITHUB_REF_NAME` は**起動したワークフローの枝ではなく
+          # 既定ブランチ**になる。デプロイした枝そのものを見る。
+          BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
         run: |
-          if [ "$GITHUB_REF_NAME" != "main" ]; then
-            echo "✗ タグは main にマージされたあとに打つ（いま: $GITHUB_REF_NAME）"
+          if [ "$BRANCH" != "main" ]; then
+            echo "✗ タグは main にマージされたあとに打つ（いま: $BRANCH）"
             exit 1
           fi
           echo "✓ main"
@@ -65,20 +96,52 @@ jobs:
       #    シェルに展開されるので、入力がそのままコマンドとして解釈されうる。
       #    env 経由で渡し、`"$VERSION"` として引用して使う。
       #    （書式は checkVersion.mjs 側でも `^v\d+\.\d+\.\d+$` に絞ってある）
+      # ⚠ **HTML を `grep` で読まないこと。** 同じ式が2か所に増える。
+      #    読み取りは `scripts/lib/appVersion.mjs` に一本化してあり、
+      #    `--print` はそこを通る（表記が2か所あれば落ちる判定ごと通せる）。
+      - name: 打つ版数を決める
+        id: pick
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+            echo "手で打たれた版数: $VERSION"
+          else
+            VERSION="$(node scripts/checkVersion.mjs --print)"
+            echo "配信物から読んだ版数: $VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # 手動のときは二重入力の照合になる。自動のときは同じ値どうしの照合だが、
+      # **書式の検査**と「表記が2か所ないか」がここで効く。
       - name: 版数が配信物と一致するか
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.pick.outputs.version }}
         run: node scripts/checkVersion.mjs "$VERSION"
 
+      # ⚠ **自動経路では、既にあるタグで落とさない。** デプロイのたびに走るので、
+      #    「版数を上げていないマージ」のたびに赤い印が付いてしまい、
+      #    本物の失敗が埋もれる。何もせず正常終了させる。
+      #    手動経路は逆に**落とす**——人が打った以上、黙って何もしない方が事故に見える。
       - name: そのタグが既に無いか
+        id: exists
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.pick.outputs.version }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
-            echo "✗ タグ $VERSION は既にある（$(git rev-parse --short "refs/tags/$VERSION")）"
-            echo "  打ち直すなら先に消すこと: git push --delete origin $VERSION"
-            exit 1
+            AT="$(git rev-parse --short "refs/tags/$VERSION")"
+            if [ "$MANUAL" = 'true' ]; then
+              echo "✗ タグ $VERSION は既にある（$AT）"
+              echo "  打ち直すなら先に消すこと: git push --delete origin $VERSION"
+              exit 1
+            fi
+            echo "should_tag=false" >> "$GITHUB_OUTPUT"
+            echo "・タグ $VERSION は既にある（$AT）ので何もしない" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          echo "should_tag=true" >> "$GITHUB_OUTPUT"
           echo "✓ $VERSION はまだ無い"
 
   # ---- スモークテスト ----
@@ -89,20 +152,24 @@ jobs:
   smoke:
     name: スモークテスト
     needs: check
+    if: needs.check.outputs.should_tag == 'true'
     uses: ./.github/workflows/test.yml
 
   # ---- ここだけが書き込み権限を持つ ----
   tag:
     name: タグを打つ
     needs: [check, smoke]
+    if: needs.check.outputs.should_tag == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # ⚠ **check と同じ中身を取る。** ここがずれると、確かめた版と違う中身にタグが付く。
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v5
         with:
@@ -112,12 +179,12 @@ jobs:
       #    ここで1秒かけて見直す方が、権限を持つ手順の前提を他人任せにするより安い。
       - name: 版数をもう一度確かめる
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: node scripts/checkVersion.mjs "$VERSION"
 
       - name: タグを打つ
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
           git config user.name  'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
@@ -128,7 +195,7 @@ jobs:
       - name: 結果をサマリーへ
         if: always()
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
           {
             echo '## タグ'
