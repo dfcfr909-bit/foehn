@@ -56,6 +56,7 @@
 | 行 | ブロック | 仕様 |
 |---|---|---|
 | 1888 | [状態と閾値](#状態と閾値) | `overview.md` / `judge.md` |
+| 2320 | [圏外の控え（オフラインキャッシュ）](#圏外の控えオフラインキャッシュ) | `data.md` |
 | 1920 | [気象データ取得](#気象データ取得) | `data.md` |
 | 2119 | [GPS・地点名](#gps地点名) | `data.md` |
 | 2156 | [レンダリング統括](#レンダリング統括) | `overview.md` |
@@ -102,12 +103,37 @@
 | `pickWindSource(summitM)` | **気圧面と地上10mのどちらで判定するか**（ADR-0011。モデル標高は見ない） | 約 1932 |
 | `windSourceLabel(src)` | どこの風か画面に出す文言 | 約 1950 |
 
+## 圏外の控え（オフラインキャッシュ）
+
+圏外で、直近に取れた予報を出す仕組み。**`sw.js` ではなくアプリ側**に置いてある
+（古さと取得地点を画面に出せる場所が要るため）。仕様は `data.md`。
+
+⚠⚠ **黙って古い数字を出さないこと。** ここでいちばん危ない失敗の仕方で、
+ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め。
+
+| 名前 | 役割 | 行 |
+|---|---|---|
+| `WX_MAX_AGE_MS` | **これより古い控えは使わない**（24時間） | 2349 |
+| `WX_MAX_ENTRIES` | 控える地点数の上限（40件・古い順に消す） | 2350 |
+| `WX_NEAR_KM` | 完全一致が無いとき流用してよい距離（20km） | 2354 |
+| `wxDb()` / `wxReq(r)` / `wxStore(mode)` | IndexedDB（`sotoki-wx` / `points`）の包み | 2357 |
+| `wxKey(lat, lon)` | 座標のキー（小数3桁に丸める） | 2382 |
+| `wxUpdate(key, mutate)` | **1つのトランザクションの中で読んで書き戻す**（同時実行で古い `at` が戻る事故の対策） | 2389 |
+| `saveWxCache(lat, lon, json, dem)` | 本体の応答を控える | 2404 |
+| `saveWxSupplemental(lat, lon, h)` | 補助データを後付けする（`at` は触らない） | 2425 |
+| `loadWxCache(lat, lon)` | 完全一致 → 無ければ最寄り。**古くても返す**（古さの判断は呼び手） | 2435 |
+| `trimWxCache()` | 期限切れと上限超過を消す | 2456 |
+| `wxAgeText(ms)` / `wxStampText(at)` | 経過時間・取得時刻の言い方 | 2472 |
+| `setWxSource(info)` | **帯（`#offline-note`）の出し分け。** 通信で取れたら `null` で必ず消す | 2490 |
+
 ## 気象データ取得
 
 | 関数 | 役割 | 目安行 |
 |---|---|---|
-| `fetchWeather(lat, lon)` | Open-Meteo（`jma_seamless`）本体。**`wind_speed_unit=ms` 必須** | 約 1923 |
-| `fetchSupplemental(lat, lon)` | 突風・気圧面ごとの雲量（models未指定の補助リクエスト） | 約 1964 |
+| `fetchWeather(lat, lon)` | Open-Meteo（`jma_seamless`）本体。**`wind_speed_unit=ms` 必須** | 2510 |
+| `applyWeatherJson(json, dem, lat, lon)` | **応答を状態へ入れて描画まで。通信でも控えでも必ずここを通す** | 2561 |
+| `fetchSupplemental(lat, lon)` | 突風・気圧面ごとの雲量（models未指定の補助リクエスト） | 2595 |
+| `applySupplemental(h, redraw)` | 補助データを状態へ混ぜる（通信・控えで共通） | 2620 |
 | `CLOUD_LEVELS` | 気圧面14層の定義 | 約 1957 |
 | `cloudProfileAt(d)` | 時刻→高度別の雲量プロファイル | 約 2017 |
 | `cloudSlopes(prof)` | 高度方向の単調3次補間（Fritsch–Carlson）の傾き | 約 2031 |
