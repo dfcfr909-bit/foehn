@@ -1886,6 +1886,29 @@ html, body {
   white-space: nowrap;
 }
 #date-holiday:empty { display: none; }
+
+/* ------ 控えてあるものを表示中であることを出す帯（圏外） ------
+   ⚠⚠ **黙って古い数字を出さないための帯。** 消してよいのは「通信で取れたとき」だけ。
+     判定の色は出ているのに中身は半日前、というのがこの仕組みで最悪の見え方。
+   ⚠ 高さを持つので #app の flex 列に素直に入れる（そのぶんチャートが縮むのは正しい）。 */
+#offline-note {
+  display: none;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #6a4a00;
+  background: #fff3d0;
+  border-bottom: 2px solid var(--b-col);
+}
+#offline-note.on { display: block; }
+/* 古すぎて数字を更新していないときは赤。ここが区別できないと帯を出す意味が無い */
+#offline-note.expired {
+  color: #7a1414;
+  background: #ffe0e0;
+  border-bottom-color: var(--c-col);
+}
 </style>
 </head>
 <body>
@@ -1919,6 +1942,10 @@ html, body {
     <!-- ★が抜けた右端へ「現在」を置く。選択が現在から離れたときだけ出る -->
     <button id="btn-now" onclick="jumpToNow()">⏱現在</button>
   </div>
+
+  <!-- 圏外で「控えてあるもの」を出しているときだけ現れる帯。
+       ⚠ 中身は setWxSource が書く。**黙って古い数字を出さない**ための唯一の印 -->
+  <div id="offline-note"></div>
 
   <!-- 上部の日付/HUD/ABCは撤去し、選択情報は指追従ポップアップに集約 -->
 
@@ -2429,6 +2456,42 @@ async function trimWxCache() {
   } catch (e) { /* 整理できなくても実害は無い */ }
 }
 
+/* 経過時間の言い方。分 → 時間 → 日 */
+function wxAgeText(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return `${m}分前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}時間${m % 60}分前` : `${h}時間前`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}日${h % 24}時間前` : `${d}日前`;
+}
+function wxStampText(at) {
+  const d = new Date(at);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/* いま画面に出ているのが「いつ・どこで取れたもの」かを帯に出す。
+   ⚠⚠ **引数 null で必ず消すこと。** 出しっぱなしにすると印の意味が薄れ、
+     次に本当に古いものを出したときに気づけない。
+   ⚠ **距離を必ず添える。** 完全一致でない地点のものを黙って出すのがいちばん危ない
+     （GPSは毎回わずかに違う座標を返すので、現在地はまず完全一致しない）。 */
+function setWxSource(info) {
+  const el = document.getElementById('offline-note');
+  if (!el) return;
+  if (!info) { el.className = ''; el.textContent = ''; return; }
+  const { rec, km, ageMs } = info;
+  const where = rec.name || `${rec.lat.toFixed(3)}, ${rec.lon.toFixed(3)}`;
+  if (ageMs > WX_MAX_AGE_MS) {
+    el.className = 'on expired';
+    el.textContent = `⚠ 通信できません。控えてあるのは ${wxStampText(rec.at)} 取得（${wxAgeText(ageMs)}）で`
+      + '古すぎるため、画面の数字は更新していません';
+    return;
+  }
+  el.className = 'on';
+  el.textContent = `📴 保存データを表示中　${wxStampText(rec.at)}取得（${wxAgeText(ageMs)}）／${where}`
+    + (km >= 0.2 ? `（${km.toFixed(1)}km先）` : '');
+}
+
 /* ============================================================
    DATA FETCH
    ============================================================ */
@@ -2451,13 +2514,28 @@ async function fetchWeather(lat, lon) {
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
+    setWxSource(null);                           // 通信で取れた＝帯は消す
     applyWeatherJson(json, dem, lat, lon);
     saveWxCache(lat, lon, json, dem);            // 圏外で出せるように控える（失敗しても無視）
     // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
     fetchSupplemental(lat, lon);
   } catch (e) {
+    // 通信できない／APIが不調。控えてあるものがあれば出す（無ければ従来どおり諦める）
+    const hit = await loadWxCache(lat, lon);
+    if (hit && hit.ageMs <= WX_MAX_AGE_MS) {
+      // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
+      //   あとから出すと帯のぶんの高さがチャートに入らず、下端が隠れる
+      setWxSource(hit);
+      applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon);
+      // ⚠ 補助データも**描画が走る前に**混ぜる。あとから混ぜると
+      //   突風の目盛りと右軸だけが一拍遅れて動く
+      if (hit.rec.sup) { try { applySupplemental(hit.rec.sup, false); } catch (e2) { /* 任意 */ } }
+      return;
+    }
     hideLoading();
-    alert('データ取得失敗: ' + e.message);
+    // 控えてはあるが古すぎる場合は、そう言うだけにする（数字は更新しない）
+    setWxSource(hit || null);
+    if (!hit) alert('データ取得失敗: ' + e.message);
   }
 }
 
