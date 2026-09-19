@@ -174,7 +174,7 @@ ADR-0011（`elevation` の意味が変わり判定が黙って甘くなった件
 - 全部届いているときは何も出さない
 - **`watchTileStatus()` は全部のタイルレイヤーに付ける。** 新しいタイルレイヤーを
   足したら必ず通す
-- 表示は `setLayerStatus(id, text)`
+- 表示は `setLayerError(id, text)` / `setLayerNote(id, text)`
 
 ## 雨の予告（`updateRainOutlook`）
 

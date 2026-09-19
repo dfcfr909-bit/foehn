@@ -2112,7 +2112,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.96.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.96.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -5815,7 +5815,7 @@ function applyBaseLayer() {
   if (!leafletMap) return;
   if (baseTileLayer) { leafletMap.removeLayer(baseTileLayer); baseTileLayer = null; }
   const def = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT);
-  setLayerStatus(def.id, '');            // 貼り直したら前の失敗は持ち越さない
+  clearLayerStatus(def.id);              // 貼り直したら前の失敗は持ち越さない
   baseTileLayer = L.tileLayer(def.url, tileOpts(def)).addTo(leafletMap);
   /* ⚠ **下地こそ見張る。** これまで watchTileStatus が付いておらず、地図そのものが
      取れていなくても誰も気づかなかった。帯や筋が出る原因として最初に疑う所（2026-09-19） */
@@ -6052,7 +6052,7 @@ async function addTimedTileLayer(def, opacity, replace) {
   } catch (e) {
     const cur = replace ? overlayTileLayers[def.id] : null;
     if (cur) { leafletMap.removeLayer(cur); staleWxLayers.delete(cur); delete overlayTileLayers[def.id]; }
-    setLayerStatus(def.id, `取得できません（${e.message}）`);
+    setLayerError(def.id, `取得できません（${e.message}）`);
   }
 }
 
@@ -6272,14 +6272,13 @@ function watchTileStatus(layer, def, hooks) {
     if (!errors || total < WX_FAIL_MIN_TILES) return;
     if (loaded === 0) {
       // ⚠ 雷などは「そもそも無い」ことがある。これは失敗ではないので警告に混ぜない
-      setLayerStatus(def.id, def.mayBeEmpty
-        ? `この範囲に表示なし（z${badZ}のタイルが無い）`
-        : `取得できません（z${badZ}のタイルが無い）`, !def.mayBeEmpty);
+      if (def.mayBeEmpty) setLayerNote(def.id, `この範囲に表示なし（z${badZ}のタイルが無い）`);
+      else setLayerError(def.id, `取得できません（z${badZ}のタイルが無い）`);
       return;
     }
-    if (errors / total < WX_FAIL_RATIO) { setLayerStatus(def.id, ''); return; }
+    if (errors / total < WX_FAIL_RATIO) { clearLayerStatus(def.id); return; }
     const pct = Math.round(errors / total * 100);
-    setLayerStatus(def.id, `一部しか取得できません（${pct}%が取得不可・z${badZ}）`);
+    setLayerError(def.id, `一部しか取得できません（${pct}%が取得不可・z${badZ}）`);
   };
   const later = () => { if (!timer) timer = setTimeout(judge, WX_FAIL_SETTLE_MS); };
   layer.on('tileerror', e => {
@@ -6291,7 +6290,7 @@ function watchTileStatus(layer, def, hooks) {
   });
   layer.on('tileload', () => {
     loaded++;
-    if (!errors) setLayerStatus(def.id, '');
+    if (!errors) clearLayerStatus(def.id);
     if (hooks && hooks.onLoad) hooks.onLoad();
     later();
   });
@@ -6301,11 +6300,21 @@ function watchTileStatus(layer, def, hooks) {
 // レイヤーごとの状態表示（取得できない等）
 const layerStatus = {};
 const layerFailed = {};      // id -> 本当の失敗か（「表示なし」と区別する）
-/* ⚠ **`isError` を分けて持つ。** 雷の「この範囲に表示なし」は失敗ではないので、
-   地図の上の警告に混ぜない。混ぜると狼少年になり、本物の失敗を見なくなる。
-   既定は「文言があれば失敗」。従来の空文字での消去はそのまま効く。 */
-function setLayerStatus(id, text, isError) {
-  const err = (isError === undefined) ? !!text : !!isError;
+/* ⚠⚠ **「失敗か否か」は真偽値の引数で渡さない。関数を分ける。**
+   v4.95.0 では第3引数 isError で区別し、既定を「文言があれば失敗」にした。
+   タイルの経路には旗を付けたが、**点で描くレイヤーの「この範囲に山域がありません」
+   「もう少し拡大すると表示されます」「取得中…」に付け忘れ**、実機で地図の上に
+   赤帯『⚠ 地図が取れていません　山域・百名山：この範囲に山域がありません』が
+   出た（2026-09-19 の報告）。狼少年をやめるための仕掛けが、そのまま狼少年に
+   なっていた。検査も**旗を自分で渡して**いたので、仕掛けだけを見て呼び出し側を
+   見ておらず素通りした。
+   → 旗を消し、setLayerError / setLayerNote / clearLayerStatus に分ける。
+     どれを呼ぶか選ばないと書けないので、付け忘れようがない。 */
+function setLayerError(id, text)  { applyLayerStatus(id, text, true); }
+function setLayerNote(id, text)   { applyLayerStatus(id, text, false); }
+function clearLayerStatus(id)     { applyLayerStatus(id, '', false); }
+function applyLayerStatus(id, text, isError) {
+  const err = !!text && !!isError;
   if (layerStatus[id] === text && layerFailed[id] === err) return;
   layerStatus[id] = text;
   layerFailed[id] = err;
@@ -6383,15 +6392,15 @@ async function loadAmedas() {
 }
 
 function drawAmedas(bounds, opacity) {
-  if (leafletMap.getZoom() < AMEDAS_MIN_ZOOM) { setLayerStatus('amedas', 'もう少し拡大すると表示されます'); return; }
+  if (leafletMap.getZoom() < AMEDAS_MIN_ZOOM) { setLayerNote('amedas', 'もう少し拡大すると表示されます'); return; }
   if (!amedasData) {
     loadAmedas()
-      .then(() => { setLayerStatus('amedas', ''); refreshWeatherPoints(); })
-      .catch(e => setLayerStatus('amedas', `取得できません（${e.message}）`));
-    setLayerStatus('amedas', '取得中…');
+      .then(() => { clearLayerStatus('amedas'); refreshWeatherPoints(); })
+      .catch(e => setLayerError('amedas', `取得できません（${e.message}）`));
+    setLayerNote('amedas', '取得中…');
     return;
   }
-  setLayerStatus('amedas', '');
+  clearLayerStatus('amedas');
   const el = amedasElementDef(mapPrefs.amedasElement);
   let n = 0, shown = 0;
   for (const s of amedasData.stations) {
@@ -6424,7 +6433,7 @@ function drawAmedas(bounds, opacity) {
     m.bindTooltip(`${escapeHtml(s.name)}（${s.alt ?? '?'}m）<br>${rows.join(' / ')}`);
     weatherMarkers.push(m);
   }
-  if (shown === 0) setLayerStatus('amedas', `この範囲に${el.name}の観測点がありません`);
+  if (shown === 0) setLayerNote('amedas', `この範囲に${el.name}の観測点がありません`);
 }
 
 /* 風の矢印。leaflet-velocity（禁止）を使わないので、Open-Meteoの値を
@@ -6475,11 +6484,11 @@ async function loadWindGrid(bounds) {
 }
 
 function drawWindArrows(bounds, opacity) {
-  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerStatus('windArrows', 'もう少し拡大すると表示されます'); return; }
+  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerNote('windArrows', 'もう少し拡大すると表示されます'); return; }
   loadWindGrid(bounds)
     .then(g => {
       if (!isOverlayOn('windArrows')) return;
-      setLayerStatus('windArrows', '');
+      clearLayerStatus('windArrows');
       g.points.forEach(p => {
         if (p.speed == null) return;
         // 風向は「吹いてくる方角」なので、矢印は+180°側へ進む
@@ -6498,7 +6507,7 @@ function drawWindArrows(bounds, opacity) {
         weatherMarkers.push(m);
       });
     })
-    .catch(e => setLayerStatus('windArrows', `取得できません（${e.message}）`));
+    .catch(e => setLayerError('windArrows', `取得できません（${e.message}）`));
 }
 
 /* ------ 山域・百名山レイヤー（areas.json から描く） ------
@@ -6558,12 +6567,12 @@ function updateMapWhen() {
 function drawAreas(bounds, opacity) {
   if (!areasData) {
     loadAreas()
-      .then(() => { setLayerStatus('areas', ''); refreshWeatherPoints(); })
-      .catch(e => setLayerStatus('areas', `取得できません（${e.message}）`));
-    setLayerStatus('areas', '取得中…');
+      .then(() => { clearLayerStatus('areas'); refreshWeatherPoints(); })
+      .catch(e => setLayerError('areas', `取得できません（${e.message}）`));
+    setLayerNote('areas', '取得中…');
     return;
   }
-  setLayerStatus('areas', '');
+  clearLayerStatus('areas');
   const z = leafletMap.getZoom();
   let shown = 0;
 
@@ -6621,8 +6630,8 @@ function drawAreas(bounds, opacity) {
     }
   }
 
-  if (!shown) setLayerStatus('areas', 'この範囲に山域がありません');
-  else if (!areaGradeById) setLayerStatus('areas', 'ランキングを開くと判定の色になります');
+  if (!shown) setLayerNote('areas', 'この範囲に山域がありません');
+  else if (!areaGradeById) setLayerNote('areas', 'ランキングを開くと判定の色になります');
 }
 
 function refreshWeatherPoints() {

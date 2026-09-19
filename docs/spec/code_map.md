@@ -374,7 +374,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | 関数 | 役割 | 目安行 |
 |---|---|---|
 | `watchTileStatus(layer, def, hooks)` | **全タイルレイヤーに必ず付ける。** 割合で「ほとんどダメ」も言う | 約 5193 |
-| `setLayerStatus(id, text)` | パネルへの表示 | 約 5228 |
+| `setLayerError/Note(id, text)` | パネルへの表示 | 約 5228 |
 
 ## 点で描く気象レイヤー・雷マーク
 
@@ -416,7 +416,10 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 
 | 名前 | 役割 |
 |---|---|
-| `setLayerStatus(id, text, isError)` | ⚠ **第3引数で「本当の失敗か」を分ける**（「表示なし」を混ぜない） |
+| `setLayerError(id, text)` | 本当の失敗。地図の上の赤帯に出る |
+| `setLayerNote(id, text)` | 失敗ではない知らせ（表示なし・要拡大・取得中）。赤帯に出さない |
+| `clearLayerStatus(id)` | 消す |
+| ⚠ `setLayerStatus(id,text,isError)` | **廃止**。旗の付け忘れで狼少年になった（v4.96.1） |
 | `layerFailed` | id → 本当の失敗か |
 | `paintTileTrouble()` | `#map-trouble` の帯。⚠ パネルの中だけに閉じ込めない |
 
