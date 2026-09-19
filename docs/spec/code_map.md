@@ -119,7 +119,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `wxDb()` / `wxReq(r)` / `wxStore(mode)` | IndexedDB（`sotoki-wx` / `points`）の包み | 2357 |
 | `wxKey(lat, lon)` | 座標のキー（小数3桁に丸める） | 2382 |
 | `wxUpdate(key, mutate)` | **1つのトランザクションの中で読んで書き戻す**（同時実行で古い `at` が戻る事故の対策） | 2389 |
-| `saveWxCache(lat, lon, json, dem)` | 本体の応答を控える | 2404 |
+| `saveWxCache(lat, lon, json, dem, name)` | 本体の応答を控える。⚠ **名前は引数**（`state.locationName` を読むと取得中の地点移動で入れ替わる） | 2404 |
 | `saveWxSupplemental(lat, lon, h)` | 補助データを後付けする（`at` は触らない） | 2425 |
 | `loadWxCache(lat, lon)` | 完全一致 → 無ければ最寄り。**古くても返す**（古さの判断は呼び手） | 2435 |
 | `trimWxCache()` | 期限切れと上限超過を消す | 2456 |

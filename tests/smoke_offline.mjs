@@ -78,8 +78,9 @@ page.on('pageerror', e => errors.push(e.message));
 page.on('dialog', d => { dialogs.push(d.message); d.dismiss().catch(() => {}); });
 
 let online = true;          // false にすると気象APIだけ落ちる（＝圏外）
+let slowMs = 0;             // >0 にすると気象APIの応答を遅らせる（取得中の割り込みを作る）
 let apiHits = 0;
-await page.route('**/*', route => {
+await page.route('**/*', async route => {
   const url = route.request().url();
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
   if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
@@ -87,6 +88,7 @@ await page.route('**/*', route => {
   if (url.includes('api.open-meteo.com')) {
     apiHits++;
     if (!online) return route.abort();
+    if (slowMs) await new Promise(r => setTimeout(r, slowMs));
     const body = url.includes('models=jma_seamless') ? fakeWeather() : fakeSupplemental();
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   }
@@ -227,6 +229,42 @@ await openAt(P1);
   const c = await cached();
   ok(c.some(x => x.key === `${P1.lat.toFixed(3)},${P1.lon.toFixed(3)}` && Date.now() - x.at < 60000),
     '★取り直したら控えも新しくなる', c);
+}
+
+/* ============ F2. 取得中に別の地点へ移っても、控えの名前が入れ替わらない ============
+   ⚠⚠ 緯度経度は引数で固定されるのに名前だけグローバルから読んでいたため、
+     通信とIndexedDBの往復のあいだに別地点を選ぶと**後の名前が先の控えに焼き付いた**。
+     座標は正しいまま名前だけ別の山になるので、帯が実在しない組み合わせを出す
+     （実機で「女峰山（19.2km先）」が吾妻の座標に出た）。 */
+{
+  online = true;
+  slowMs = 600;                                   // 取得中に横から書き換える隙を作る
+  const P9 = { lat: 35.360, lon: 138.727, name: '正しい名前' };
+  await page.evaluate(v => localStorage.setItem('sotoki_last', JSON.stringify(v)), P9);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(250);                 // まだ取得中
+  const swapped = await page.evaluate(() => {
+    if (typeof state === 'undefined') return false;
+    state.locationName = 'すり替えた名前';        // 別地点を選んだのと同じ状態にする
+    return true;
+  });
+  ok(swapped, '★前提: 取得中に名前を書き換えられた（この検査が空振りしていない）');
+  await page.waitForTimeout(2000);
+  slowMs = 0;
+
+  const c = await cached();
+  const rec = c.find(x => x.key === `${P9.lat.toFixed(3)},${P9.lon.toFixed(3)}`);
+  ok(!!rec, '★前提: その地点の控えができている', c);
+  ok(rec && rec.name === P9.name,
+    '★★★取得中に別の地点へ移っても、控えの名前が入れ替わらない', rec);
+
+  // 帯にもその名前が出る（圏外で開き直す）
+  online = false;
+  await openAt(P9);
+  const n = await note();
+  ok(n.text.includes(P9.name) && !n.text.includes('すり替えた名前'),
+    '★★★帯に出る地点名も入れ替わらない', n.text);
+  online = true;
 }
 
 /* ============ G. 気象APIは Service Worker で焼き付けない ============

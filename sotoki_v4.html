@@ -2028,7 +2028,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.91.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.92.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2401,12 +2401,17 @@ function wxUpdate(key, mutate) {
 }
 
 /* 本体の応答を控える。失敗しても本体の動作には影響させない（任意の機能） */
-async function saveWxCache(lat, lon, json, dem) {
+/* ⚠⚠ **地点名は引数で受け取る。`state.locationName` をここで読まないこと。**
+   緯度経度は `fetchWeather` の引数で固定されるのに、名前だけグローバルから読むと、
+   通信とIndexedDBの往復のあいだに別の地点が選ばれた場合に**後から選んだ名前が
+   先の地点の控えに焼き付く**。座標は正しいまま名前だけ別の山になるので、
+   帯が「女峰山（19.2km先）」のように**実在しない組み合わせ**を出す（実機で踏んだ）。 */
+async function saveWxCache(lat, lon, json, dem, name) {
   try {
     const key = wxKey(lat, lon);
     await wxUpdate(key, prev => ({
       key, lat, lon,
-      name: state.locationName || '',
+      name: name || '',
       at: Date.now(),
       json,
       dem: (typeof dem === 'number' && isFinite(dem)) ? dem : null,
@@ -2509,6 +2514,10 @@ function setWxSource(info) {
    ============================================================ */
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
+  /* ⚠ **この要求の地点名を、awaitを挟む前に写し取る。**
+     呼び出し側はどれも fetchWeather の前に `state.locationName` を入れている。
+     あとから読むと、取得中に別の地点へ移ったときの名前を拾う（上の注記） */
+  const reqName = state.locationName;
   // past_days=3で過去3日分（解析値）も、forecast_days=9で先7日ぶんに余裕を持たせて取得。
   // 表示範囲は applyRange で切り出す。jma_seamlessが実際に何日先まで返すかはモデル依存
   // （GSMの予報期間まで）なので、足りない分はprocessDataが末尾のnullを切り落とす
@@ -2531,7 +2540,7 @@ async function fetchWeather(lat, lon) {
     // 圏外で出せるように控える（失敗しても無視）。
     // ⚠ **補助データの取得より先に済ませる。** 補助は本体の記録に後付けするので、
     //   本体がまだ無いと置き場所が無く、せっかく取った突風・雲量を捨てることになる
-    await saveWxCache(lat, lon, json, dem);
+    await saveWxCache(lat, lon, json, dem, reqName);
     // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
     fetchSupplemental(lat, lon);
   } catch (e) {
