@@ -25,6 +25,7 @@ const TESTS = [
   ['smoke_tiletrouble', 'タイルの取得失敗を地図の上に出す（下地も見張る・表示なしと区別）'],
   ['smoke_hourshift', '積算値を先の1時間に揃える（雨・雪・突風／補助リクエストも同じ分）'],
   ['smoke_rain',   '雨の予告（毎時の見込み・ナウキャスト1画素読み・分きざみ）'],
+  ['smoke_radarcheck', 'レーダー実況との突き合わせ（食い違いを言う・範囲外を断言しない・読めないと言う）'],
   ['smoke_offline', '圏外の予報（控えを出す・古さと距離を出す・24時間で切る）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
