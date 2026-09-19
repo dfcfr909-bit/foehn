@@ -106,8 +106,17 @@ function fakeWeather() {
       if (spotsMissing) return route.fulfill({ status: 404, body: 'not found' });
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(SPOTS) });
     }
+    /* ナウキャストの時刻表。⚠ 新雪ランキングとは無関係なので**数えない**
+       （v4.98.0 でレーダー実況の突き合わせが入り、同じ jma.go.jp を叩くようになった）。
+       中身は空にして、この検査では実況を使わせない。 */
+    if (url.includes('targetTimes')) {
+      return route.fulfill({ contentType: 'application/json', body: '[]' });
+    }
     if (url.includes('jma.go.jp')) {
-      snowReqs++;
+      /* ⚠⚠ **数えるのは新雪ランキングが叩くアメダスだけ。**
+         以前は jma.go.jp を**全部**数えていたので、無関係な通信が1本増えただけで
+         落ちた。ホストではなく**用途**で数える。 */
+      if (url.includes('amedas') || url.includes('latest_time')) snowReqs++;
       if (url.includes('latest_time.txt')) {
         const d = new Date();
         return route.fulfill({ contentType: 'text/plain',

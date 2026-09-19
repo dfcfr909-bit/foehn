@@ -52,6 +52,17 @@ https://api.open-meteo.com/v1/forecast
     変わるのは「どの時間の雨がどの行に入るか」だけ
   - ⚠ `snowRanking.js` は**独立**（自前で `hourly` を取り、窓ごとに合計する）。
     ここはずらしていない → `docs/decisions.md` 2026-09-19
+- ⚠ **レーダー実況との突き合わせ（v4.98.0）。** グラフはモデルの**予報**なので外れる。
+  気象庁ナウキャストの**実況**を地点の1画素で読み（`readNowcastSeries`）、
+  `state.radar` に持って突き合わせる。
+  - `radarWetAt(t)` は **true / false / null**。**null＝ナウキャストの範囲外**で、
+    「降っていない」ではない。範囲外を塗らない／断言しないための要
+  - 帯（`#radar-note`）は**食い違ったときだけ**出す。常時出すと読まなくなる
+  - 失敗は `kind` で分ける。`'device'`（画素を読めない＝待っても直らない）は**言う**、
+    `'network'`（通信で取れない）は**黙る**（圏外の帯と二重になるため）
+  - `readNowcastSeries` は**60秒だけ結果を使い回す**。読み手が「雨の予告」と
+    「突き合わせ」の2人いるので、素直に書くとタイルを13枚×2取りに行く
+  - 圏外（`navigator.onLine === false`）では取りに行かない
 - `dpress`（6時間の気圧変化量）は全期間の文脈で `processData` が算出する
 - 表示範囲の切り出しは `applyRange()`（`PAST_HOURS`=72 ＋ 現在 ＋ `FORECAST_HOURS`=168）
 - 現在時刻の index は `indexOfNow(data)`、時刻キーは `isoHour(t)`

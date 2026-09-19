@@ -182,6 +182,12 @@ function fakeWeather(rainAt) {
     await page.addInitScript(ll => {
       localStorage.setItem('sotoki_last', JSON.stringify({ lat: ll[0], lon: ll[1], name: '立山・黒部' }));
     }, [LAT, LON]);
+    // 圏外の再現。navigator.onLine を false に固定する
+    if (o.offline) {
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true });
+      });
+    }
     await page.goto('https://sotoki.test/');
     await page.waitForTimeout(1200);
     const boot = await page.evaluate(() => ({
@@ -316,13 +322,30 @@ function fakeWeather(rainAt) {
     '地点以外の塗りでは分きざみを出さない', off);
   await p5.close();
 
-  /* ================= 7. 地図を閉じている間は取りに行かない ================= */
+  /* ================= 7. 地図を閉じていても、読むのは1回ぶんだけ =================
+     ⚠⚠ **この検査は v4.98.0 で意味が変わった。**
+       以前は「地図を閉じている間はナウキャストを取りに行かない（0枚）」だった。
+       レーダー実況をグラフに重ねるようになり、**地図を閉じていても実況が要る**
+       （突き合わせの帯と、グラフの実況ストリップ）。0枚には戻せない。
+     ⚠ ただし元の狙い——**同じ並びを何度も取りに行かない**——は残す。
+       読み手は「雨の予告」と「突き合わせ」の2人いるので、素直に書くと
+       13枚×2＝26枚になる。1回ぶん（13枚以下）に収まることを見る。
+     ⚠ 地図の文言は、地図を開くまで出さない（ここは元のまま）。 */
   const p6 = await newPage({ wetFrom: 30 });
   const closedHits = p6.nowcastHits.length;
   const closedText = await p6.evaluate(() => document.getElementById('map-rain').textContent);
-  ok(closedHits === 0, '地図を閉じている間はナウキャストを取りに行かない', closedHits);
+  ok(closedHits <= 13, '地図を閉じていても読みは1回ぶん（2人で分け合う）', closedHits);
   ok(closedText === '', '地図を閉じている間は文言を持たない', closedText);
   await p6.close();
+
+  /* ================= 8. 圏外では取りに行かない =================
+     ⚠ 13枚叩いて全部落ちるだけ。しかも「読めない」ではなく「通信が無い」ので、
+       端末の性質として帯に出すのも間違い。 */
+  {
+    const p7 = await newPage({ wetFrom: 30, offline: true });
+    ok(p7.nowcastHits.length === 0, '圏外ではナウキャストを取りに行かない', p7.nowcastHits.length);
+    await p7.close();
+  }
 
   await browser.close();
   if (errors.length) fails.push('ページエラー: ' + errors.join(' / '));
