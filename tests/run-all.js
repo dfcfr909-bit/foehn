@@ -21,6 +21,7 @@ const TESTS = [
   ['smoke_mapui',  '地図選択（ベース5種・オーバーレイ・赤色立体図風・標高タイル・永続化）'],
   ['smoke_tilecache', '地図タイルキャッシュ（対象ホスト・cache-first・LRU・削除）'],
   ['smoke_rain',   '雨の予告（毎時の見込み・ナウキャスト1画素読み・分きざみ）'],
+  ['smoke_offline', '圏外の予報（控えを出す・古さと距離を出す・24時間で切る）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
   ['smoke_workflows', 'ワークフロー共通（Nodeの版の一本化・写し違いの禁止・権限の明示）'],
