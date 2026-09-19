@@ -412,6 +412,16 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |
 
+## 地図 — 取得失敗の知らせ
+
+| 名前 | 役割 |
+|---|---|
+| `setLayerStatus(id, text, isError)` | ⚠ **第3引数で「本当の失敗か」を分ける**（「表示なし」を混ぜない） |
+| `layerFailed` | id → 本当の失敗か |
+| `paintTileTrouble()` | `#map-trouble` の帯。⚠ パネルの中だけに閉じ込めない |
+
+⚠ `applyBaseLayer` で下地にも `watchTileStatus` を付ける（付いていなかった）。
+
 ## 地図 — 画面を消さない
 
 ⚠⚠ 「充電中だけ」は作れない（Battery Status API を WebKit が実装していない）。
