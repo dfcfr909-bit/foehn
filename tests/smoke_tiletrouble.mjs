@@ -143,28 +143,63 @@ const band = () => page.evaluate(() => {
   ok(!b.shown, '★★★取れるようになったら警告を消す（出しっぱなしにしない）', b);
 }
 
-/* ============ 5. ⚠⚠ 「この範囲に表示なし」は警告に混ぜない ============
-   雷は元から無いことがある。失敗と同じ顔で出すと、本物の失敗を見なくなる。 */
+/* ============ 5. ⚠⚠ 「表示なし」を警告に混ぜない — **本物の呼び出し経路で見る** ============
+   v4.95.0 の検査はここで `setLayerStatus(id, text, false)` と**旗を自分で渡して**いた。
+   仕掛けだけを見て呼び出し側を見ていなかったので、点で描くレイヤーが旗を付け忘れて
+   いることに気づけず、実機で赤帯『山域・百名山：この範囲に山域がありません』が出た。
+   → **アプリと同じ道**（山域レイヤーを点けて、山域が1つも無い所へ動かす）で見る。 */
 {
-  await page.evaluate(() =>
-    setLayerStatus('thunder', 'この範囲に表示なし（z8のタイルが無い）', false));
-  await page.waitForTimeout(250);
+  await page.evaluate(() => { openMap(); });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => { if (!isOverlayOn('areas')) toggleOverlay('areas'); });
+  await page.waitForTimeout(800);
+  // 太平洋の沖。山域は1つも無い
+  await page.evaluate(() => leafletMap.setView([33.0, 142.5], 9));
+  await page.waitForTimeout(1200);
+
+  const panel = await page.evaluate(() => layerStatus.areas);
+  ok(panel && panel.includes('山域がありません'),
+    '★前提: 山域が無い所まで動かせている（この検査の土台）', panel);
   const b = await band();
-  ok(!b.shown, '★★★「この範囲に表示なし」では警告を出さない', b);
-  const panel = await page.evaluate(() => layerStatus.thunder);
-  ok(panel && panel.includes('表示なし'), '★ただしパネルの中には残す（事実は伝える）', panel);
+  ok(!b.shown,
+    '★★★「この範囲に山域がありません」で赤帯を出さない（実機で出た狼少年）', b);
+
+  // 山域のある所へ戻したら知らせも消える
+  await page.evaluate(() => leafletMap.setView([36.57, 137.65], 9));
+  await page.waitForTimeout(1200);
+  const back = await page.evaluate(() => layerStatus.areas);
+  ok(!back || !back.includes('ありません'), '★★戻したら知らせを持ち越さない', back);
+  await page.evaluate(() => { if (isOverlayOn('areas')) toggleOverlay('areas'); });
+  await page.waitForTimeout(400);
 }
 
-/* ============ 6. 本当の失敗なら出る（5と同じ経路で、旗だけ違う） ============ */
+/* ============ 5b. 旗を渡す書き方そのものを残さない ============
+   ⚠ `setLayerStatus(id, text, isError)` が残っていると、また付け忘れられる。
+   呼ぶ側が setLayerError / setLayerNote のどちらかを**選ばないと書けない**形にした。 */
 {
-  await page.evaluate(() =>
-    setLayerStatus('hillshade', '取得できません（z15のタイルが無い）', true));
+  const src = HTML.replace(/\/\*[\s\S]*?\*\//g, '');   // コメントの中の言及は数えない
+  ok(!/setLayerStatus\s*\(/.test(src),
+    '★★★旗つきの setLayerStatus を残さない（選ばないと書けない形にする）');
+  const api = await page.evaluate(() => ({
+    err: typeof setLayerError, note: typeof setLayerNote, clr: typeof clearLayerStatus }));
+  ok(api.err === 'function' && api.note === 'function' && api.clr === 'function',
+    '★3つに分かれている', api);
+}
+
+/* ============ 6. 知らせは畳み、本当の失敗だけ出す ============ */
+{
+  await page.evaluate(() => setLayerNote('thunder', 'この範囲に表示なし（z8のタイルが無い）'));
+  await page.waitForTimeout(250);
+  ok(!(await band()).shown, '★★★知らせ（setLayerNote）では警告を出さない', await band());
+  const panel = await page.evaluate(() => layerStatus.thunder);
+  ok(panel && panel.includes('表示なし'), '★ただしパネルの中には残す（事実は伝える）', panel);
+
+  await page.evaluate(() => setLayerError('hillshade', '取得できません（z15のタイルが無い）'));
   await page.waitForTimeout(250);
   const b = await band();
-  ok(b.shown && b.text.includes('陰影起伏図'),
-    '★★★本当の失敗なら地図の上に出す', b);
+  ok(b.shown && b.text.includes('陰影起伏図'), '★★★本当の失敗なら地図の上に出す', b);
   // 2件以上あるときは「ほか◯件」に畳む（帯を太らせない）
-  await page.evaluate(() => setLayerStatus('slope', '取得できません（z15のタイルが無い）', true));
+  await page.evaluate(() => setLayerError('slope', '取得できません（z15のタイルが無い）'));
   await page.waitForTimeout(250);
   const b2 = await band();
   ok(b2.text.includes('ほか1件'), '★★2件目からは「ほか◯件」に畳む（帯を太らせない）', b2.text);
