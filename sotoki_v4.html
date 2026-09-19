@@ -873,6 +873,35 @@ html, body {
 }
 #map-rain.nowcast { background: rgba(20,96,170,0.92); }
 #map-rain.hidden, #map-rain:empty { display: none; }
+/* ------ 縮尺のメジャー（出典の真上・右寄せ） ------
+   ⚠⚠ **Leaflet の `L.control.scale` は使えない。** ヘディングアップは `#map` 要素ごと
+   CSS で `rotate()` して実現しているので（`applyMapRotation`）、地図の中に置いた
+   コントロールは目盛りごと傾いて読めなくなる。`#map` の**外**に自前で置くこと。
+   ⚠ 地図を触る邪魔をしないよう `pointer-events` は殺したまま（`#map-bottom` が none）。 */
+#map-scale {
+  margin-left: auto;                 /* 右寄せ。左下は雨の予告・地点名で混んでいる */
+  display: flex; align-items: flex-end; gap: 5px;
+  padding: 2px 6px 1px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.82);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.22);
+}
+#map-scale.hidden { display: none; }
+/* 目盛り棒。両端に脚を出す「コの字」（地図の慣例）。⚠ 上辺は引かない */
+#map-scale-bar {
+  display: block;
+  height: 6px;
+  border: 2px solid #333;
+  border-top: none;
+  /* ⚠⚠ **transition を付けないこと。** なめらかに伸び縮みさせると、
+     拡大縮小の途中で**棒の長さと数字が食い違う**。メジャーは読み取る道具なので、
+     一瞬でも嘘の長さを出してはいけない（検査で実際に食い違いを捕まえた）。 */
+}
+#map-scale-label {
+  font-size: 10px; font-weight: 700; line-height: 1;
+  font-family: var(--font-mono); color: #333;
+  white-space: nowrap;
+}
 /* 出典表記。常時表示（利用条件） */
 #map-attribution {
   max-width: 60%;
@@ -1268,6 +1297,9 @@ html, body {
     background: #16181c;
   }
   #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
+  #map-overlay #map-scale { background: rgba(12,14,17,0.82); }
+  #map-overlay #map-scale-bar { border-color: #f2f4f7; }
+  #map-overlay #map-scale-label { color: #f2f4f7; }
   #map-overlay #map-elev { color: #f2f4f7; background: rgba(12,14,17,0.88); }
   #map-overlay #map-latlon { color: #cfd6de; background: rgba(12,14,17,0.88); }
 }
@@ -2028,7 +2060,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.92.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.93.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2082,6 +2114,10 @@ html, body {
       <div id="map-bottom">
         <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
         <div id="map-rain" class="hidden"></div>
+        <!-- 縮尺のメジャー。⚠ #map の外に置く（中だとヘディングアップで一緒に傾く） -->
+        <div id="map-scale" class="hidden" aria-hidden="true">
+          <i id="map-scale-bar"></i><span id="map-scale-label"></span>
+        </div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span><span id="map-latlon"></span></div>
           <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
@@ -6747,6 +6783,8 @@ function openMap() {
       patchRotatedInput(leafletMap);
       bindDoubleTapZoom(leafletMap);
       leafletMap.on('move zoom zoomend', updateMeSpotlight);
+      // 縮尺は倍率だけでなく緯度でも変わるので、動かしたときも測り直す
+      leafletMap.on('moveend zoomend', updateMapScale);
       applyBaseLayer();
       applyOverlays();
       /* ⚠ **ピンはタップを一切受けない。** Leaflet の既定のピンは `<img>` なので、
@@ -6764,11 +6802,12 @@ function openMap() {
       renderLayerPanel();
       refreshTileCacheUsage();
       startWxRefresh();
+      updateMapScale();      // 開いた時点で一度出す（moveendを待たない）
     }, 100);
   } else {
     leafletMap.setView([state.lat, state.lon], leafletMap.getZoom());
     leafletMarker.setLatLng([state.lat, state.lon]);
-    setTimeout(() => leafletMap.invalidateSize(), 100);
+    setTimeout(() => { leafletMap.invalidateSize(); updateMapScale(); }, 100);
     refreshTileCacheUsage();
     // 閉じている間に古くなっているので、開いた時点で一度貼り直す
     refreshWeatherLayers();
@@ -6965,6 +7004,50 @@ function updateLatLonLabel() {
   if (!el) return;
   if (typeof state.lat !== 'number' || typeof state.lon !== 'number') { el.textContent = ''; return; }
   el.textContent = `${state.lat.toFixed(4)}, ${state.lon.toFixed(4)}`;
+}
+
+/* ------ 縮尺のメジャー ------
+   拡大縮小したときに「画面のこの長さが何kmか」を出す。
+
+   ⚠⚠ **Leaflet の `L.control.scale` を使わないこと。** ヘディングアップは
+     `#map` 要素ごと CSS の `rotate()` で実現しているので、地図の中に置いた
+     コントロールは目盛りごと傾く。`#map-bottom`（`#map` の外）に自前で置いてある。
+   ⚠ **1pxあたりの距離は緯度で変わる**（メルカトル）。固定式で出さず、
+     実際に画面上の2点を緯度経度へ戻して測る。北海道と九州で1割以上ずれる。
+   ⚠ 回転は長さを変えないので、傾いていてもこの数字のままで正しい。 */
+const MAP_SCALE_MAX_PX = 110;        // 目盛り棒の最大の長さ
+
+/* 1 / 2 / 5 × 10ⁿ のうち、上限を超えない最大のもの。
+   ⚠ 中途半端な数字（例: 337m）を出さないための丸め。読み取れないと意味がない。 */
+function niceScaleMeters(max) {
+  if (!isFinite(max) || max <= 0) return 0;
+  const pow = Math.pow(10, Math.floor(Math.log10(max)));
+  for (const m of [5, 2, 1]) if (pow * m <= max) return pow * m;
+  return pow;
+}
+
+function updateMapScale() {
+  const el = document.getElementById('map-scale');
+  if (!el) return;
+  const bar = document.getElementById('map-scale-bar');
+  const label = document.getElementById('map-scale-label');
+  if (!leafletMap || !bar || !label) { el.classList.add('hidden'); return; }
+  const size = leafletMap.getSize();
+  if (!size || !size.x || !size.y) { el.classList.add('hidden'); return; }
+  const w = Math.min(MAP_SCALE_MAX_PX, Math.round(size.x * 0.4));
+  const y = Math.round(size.y / 2);      // 画面中央の緯度で測る
+  let meters = 0;
+  try {
+    meters = leafletMap.distance(
+      leafletMap.containerPointToLatLng([0, y]),
+      leafletMap.containerPointToLatLng([w, y]));
+  } catch (e) { meters = 0; }
+  const nice = niceScaleMeters(meters);
+  if (!nice) { el.classList.add('hidden'); return; }
+  bar.style.width = `${Math.max(1, Math.round(w * nice / meters))}px`;
+  // 1km未満はm（利用者判断 2026-09-19）。「0.2 km」より「200 m」のほうが読みやすい
+  label.textContent = nice >= 1000 ? `${nice / 1000} km` : `${nice} m`;
+  el.classList.remove('hidden');
 }
 
 /* ------ タイルキャッシュの使用量表示・削除（Service Workerと会話する） ------ */
@@ -7282,6 +7365,7 @@ function setHeadingUp(on) {
     }
   }
   leafletMap.invalidateSize();
+  updateMapScale();          // 幅が変わると目盛りの長さも変わる
   updateMapToolButtons();
 }
 
