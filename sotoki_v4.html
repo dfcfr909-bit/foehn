@@ -873,6 +873,35 @@ html, body {
 }
 #map-rain.nowcast { background: rgba(20,96,170,0.92); }
 #map-rain.hidden, #map-rain:empty { display: none; }
+/* ------ 画面を消さない（ヘディングアップ＋自機追跡） ------
+   ⚠ `#map-bottom` は `pointer-events: none` なので、押せるようにするのはボタンだけ。
+     帯そのものを押せるようにすると地図の操作を食う。 */
+#map-awake {
+  display: flex; align-items: center; gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 6px 4px 9px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 700; line-height: 1.3;
+  color: #1d3b12;
+  background: rgba(214,240,201,0.94);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
+}
+#map-awake.hidden { display: none; }
+/* 消さないつもりで消える端末がある（iOS18.4未満のPWA）。黙らず色を変える */
+#map-awake.warn { color: #5c1a1a; background: rgba(255,214,214,0.95); }
+/* 利用者が自分で切ったとき。責めない見た目にする */
+#map-awake.off { color: var(--text2); background: rgba(var(--surface-rgb), 0.92); }
+#map-awake small { font-weight: 400; opacity: .85; }
+#map-awake button {
+  pointer-events: auto;          /* ⚠ 親が none なので、ここで戻す */
+  flex-shrink: 0;
+  min-height: 26px; padding: 3px 9px;
+  border: none; border-radius: 13px;
+  font: inherit; font-size: 11px;
+  color: #fff; background: rgba(0,0,0,0.55);
+}
+#map-awake button:empty { display: none; }
 /* ------ 縮尺のメジャー（出典の真上・右寄せ） ------
    ⚠⚠ **Leaflet の `L.control.scale` は使えない。** ヘディングアップは `#map` 要素ごと
    CSS で `rotate()` して実現しているので（`applyMapRotation`）、地図の中に置いた
@@ -2060,7 +2089,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.93.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.94.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2114,6 +2143,11 @@ html, body {
       <div id="map-bottom">
         <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
         <div id="map-rain" class="hidden"></div>
+        <!-- 画面を消さないときの帯。⚠ 効かなかったときも黙らずここに出す -->
+        <div id="map-awake" class="hidden">
+          <span id="map-awake-text"></span>
+          <button id="map-awake-btn" type="button" onclick="toggleWakeLock()"></button>
+        </div>
         <!-- 縮尺のメジャー。⚠ #map の外に置く（中だとヘディングアップで一緒に傾く） -->
         <div id="map-scale" class="hidden" aria-hidden="true">
           <i id="map-scale-bar"></i><span id="map-scale-label"></span>
@@ -6824,6 +6858,7 @@ function closeMap() {
   dropAllStaleWxLayers();                   // 貼り替え待ちの置き去りを残さない
   releaseThunderScan();                     // 走査用canvasの裏地を手放す
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
+  syncWakeLock();                           // 閉じたら画面の保持も手放す
 }
 function isMapOpen() {
   const el = document.getElementById('map-overlay');
@@ -7006,6 +7041,84 @@ function updateLatLonLabel() {
   el.textContent = `${state.lat.toFixed(4)}, ${state.lon.toFixed(4)}`;
 }
 
+/* ------ 画面を消さない（Screen Wake Lock） ------
+   ヘディングアップで自機を追跡している最中に画面が落ちると、地図として使えない。
+
+   ⚠⚠ **「充電中だけ」は作れない。** Battery Status API は WebKit が実装していない
+     （指紋採取のリスクとして見送られたまま出荷されていない）。iOS はサードパーティの
+     ブラウザも WebKit 強制なので、どのブラウザでも充電状態は取れない。
+     だから「ヘディングアップ＋追跡のあいだは常に」にした（利用者判断 2026-09-19）。
+   ⚠⚠ **「あと◯分でスリープ」も出せない。** OS の自動ロック設定は Web から読めない。
+     分からない数字を書くと嘘になるので、時間は出さず「充電推奨」とだけ言う。
+   ⚠ **ホーム画面のPWAでは iOS 18.4 未満で効かない**（Apple が 18.4 で直したバグ）。
+     効かなかったときに黙ると、消えないつもりで山で画面が落ちる。**必ず帯で知らせる。**
+   ⚠ 画面を隠すとブラウザが勝手に解放する。戻ってきたら取り直すこと。 */
+let wakeLock = null;
+let wakeLockOptOut = false;      // 帯の「やめる」を押した
+let wakeLockFailed = false;      // この端末では取れなかった
+
+// 画面を消さずにおきたい状況か（地図を開いて・ヘディングアップで・追跡中）
+function wantsWakeLock() {
+  return isMapOpen() && mapHeadingUp && locateMode === 'follow' && !wakeLockOptOut;
+}
+
+async function syncWakeLock() {
+  const want = wantsWakeLock();
+  if (want && !wakeLock) {
+    try {
+      if (!navigator.wakeLock) throw new Error('unsupported');
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLockFailed = false;
+      // ⚠ 勝手に解放されたら取り直す（画面を隠した・電話が来た等）
+      wakeLock.addEventListener('release', () => { wakeLock = null; paintWakeBadge(); });
+    } catch (e) {
+      wakeLock = null;
+      wakeLockFailed = true;     // ⚠ 黙らない
+    }
+  } else if (!want && wakeLock) {
+    try { await wakeLock.release(); } catch (e) { /* 解放できなくても実害は無い */ }
+    wakeLock = null;
+  }
+  if (!want) wakeLockFailed = false;
+  paintWakeBadge();
+}
+
+function toggleWakeLock() {
+  wakeLockOptOut = !wakeLockOptOut;
+  syncWakeLock();
+}
+
+/* ⚠ **状態をそのまま出す。** 「消さないつもり」ではなく「いま取れているか」を出す。 */
+function paintWakeBadge() {
+  const el = document.getElementById('map-awake');
+  const txt = document.getElementById('map-awake-text');
+  const btn = document.getElementById('map-awake-btn');
+  if (!el || !txt || !btn) return;
+  // ヘディングアップで追跡しているときだけ出す（それ以外は関係が無い）
+  if (!isMapOpen() || !mapHeadingUp || locateMode !== 'follow') {
+    el.className = 'hidden';
+    return;
+  }
+  if (wakeLock) {
+    el.className = '';
+    txt.innerHTML = '🔆 画面を消しません <small>電池を使います・充電推奨</small>';
+    btn.textContent = 'やめる';
+  } else if (wakeLockOptOut) {
+    el.className = 'off';
+    txt.innerHTML = '🌙 画面は自動で消えます';
+    btn.textContent = '消さない';
+  } else {
+    el.className = 'warn';
+    txt.innerHTML = '⚠ この端末では画面が消えます <small>充電器につないでください</small>';
+    btn.textContent = '';
+  }
+}
+
+// 画面を隠すと解放されるので、戻ってきたら取り直す
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncWakeLock();
+});
+
 /* ------ 縮尺のメジャー ------
    拡大縮小したときに「画面のこの長さが何kmか」を出す。
 
@@ -7170,6 +7283,7 @@ function updateMapToolButtons() {
     o.setAttribute('aria-label', mapHeadingUp ? 'ノースアップに戻す' : 'ヘディングアップにする');
   }
   paintCompass();
+  syncWakeLock();          // 向き・追跡が変わるたびに、画面を消さない状態を合わせる
 }
 
 /* 方位環を実際の北へ向ける。**スマホの絵は動かさない**ので、
@@ -7350,6 +7464,9 @@ async function toggleOrientation() {
 
 function setHeadingUp(on) {
   if (!leafletMap) return;
+  // ⚠ 一度「やめる」を押しても、モードを入れ直したら既定（消さない）に戻す。
+  //   前回の取り消しが黙って残っていると、次に山で使うとき画面が落ちる
+  if (!on) wakeLockOptOut = false;
   mapHeadingUp = on;
   document.getElementById('map-stage').classList.toggle('rotating', on);
   if (on) {

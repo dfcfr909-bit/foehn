@@ -412,6 +412,18 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |
 
+## 地図 — 画面を消さない
+
+⚠⚠ 「充電中だけ」は作れない（Battery Status API を WebKit が実装していない）。
+⚠⚠ 握れなかったときに黙らない。仕様は `map.md`「画面を消さない」。
+
+| 名前 | 役割 |
+|---|---|
+| `wantsWakeLock()` | 地図を開いて・ヘディングアップ・追跡中・切っていない |
+| `syncWakeLock()` | 取る／手放すを状態に合わせる。失敗は `wakeLockFailed` に残す |
+| `toggleWakeLock()` | 帯のボタン（やめる／消さない） |
+| `paintWakeBadge()` | **いま握れているか**をそのまま出す（つもりではなく状態） |
+
 ## 地図 — 縮尺のメジャー
 
 ⚠⚠ `#map` の**外**（`#map-bottom`）に置く。中だとヘディングアップで目盛りごと傾く。
