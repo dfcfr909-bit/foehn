@@ -36,6 +36,22 @@ https://api.open-meteo.com/v1/forecast
 - `past_days=3` で過去3日ぶん（解析値）、`forecast_days=9` で先に余裕を持たせる
 - 応答は `processData(json)` が整形して `state.fullData` に入る。
   **末尾の null は切り落とす**ので、モデルが返さない先まで指定しても表示は壊れない
+- ⚠⚠ **積算値は「先の1時間」にずらして持つ（v4.97.0）。**
+  Open-Meteo の `precipitation` / `snowfall` は**直前1時間の合計**、
+  `wind_gusts_10m` は**直前1時間の最大**。気温・気圧・風・雲量は**瞬間値**。
+  そのまま同じ行に詰めると1つの行に2つの意味が混ざり、20:34 に見たとき
+  `indexOfNow` が指す 20:00 の行が「19〜20時に降った雨」を出す
+  （実機の報告：降っていないのに 3.7mm）。
+  → `aheadHour(arr, i)` で `arr[i+1]` を取り、行の意味を
+  **「その時刻から1時間のあいだに降る／吹く」**に揃えている。
+  - 対象は `precip` / `snow` / `gust` の3つだけ。瞬間値は動かさない
+  - **最後の行は `null`**（先が無い。0を置くと分からないものを断言することになる）
+  - 補助リクエストの突風（`applySupplemental`）も**同じ分だけずらす**。
+    素の時刻で引くと、補助が通った端末だけ後から1時間ずれた値で上書きされる
+  - ⚠ これは**判定の入力**を動かす。`judgePoint` / `abcScore` / `THRESH` は不変。
+    変わるのは「どの時間の雨がどの行に入るか」だけ
+  - ⚠ `snowRanking.js` は**独立**（自前で `hourly` を取り、窓ごとに合計する）。
+    ここはずらしていない → `docs/decisions.md` 2026-09-19
 - `dpress`（6時間の気圧変化量）は全期間の文脈で `processData` が算出する
 - 表示範囲の切り出しは `applyRange()`（`PAST_HOURS`=72 ＋ 現在 ＋ `FORECAST_HOURS`=168）
 - 現在時刻の index は `indexOfNow(data)`、時刻キーは `isoHour(t)`
