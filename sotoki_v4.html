@@ -2112,7 +2112,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.96.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.97.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2734,7 +2734,13 @@ function applySupplemental(h, redraw) {
     if (gmap.size) {
       // fullDataとallDataは同じオブジェクト参照を共有するためfullDataへの反映で足りる
       if (state.fullData) {
-        state.fullData.forEach(d => { const v = gmap.get(isoHour(d.time)); if (v != null) d.gust = v; });
+        /* ⚠ 突風も直前1時間の最大なので、**1時間先の時刻**を引く。
+           ここを素の d.time で引くと、メイン側（aheadHour）とズレた値が後から
+           上書きし、補助リクエストが通った端末だけ1時間ずれる。 */
+        state.fullData.forEach(d => {
+          const v = gmap.get(isoHour(new Date(d.time.getTime() + 3600e3)));
+          if (v != null) d.gust = v;
+        });
       }
     }
   }
@@ -2836,6 +2842,23 @@ function applyRange() {
    **判定ロジックには一切触れずに入力の質だけを上げている。**
    その層が返ってこなかったときは地上10m風へ落とし、windSrc.fellBack を立てて
    画面に出す（黙って甘い判定に戻さない）。 */
+/* ⚠⚠ **Open-Meteo の積算値は「直前1時間」。そのまま並べると1時間ずれる。**
+   `precipitation` / `snowfall` は直前1時間の**合計**、`wind_gusts_10m` は直前1時間の
+   **最大**。いっぽう気温・気圧・風・雲量は**その時刻の瞬間値**。
+   つまり1つの行に「直前1時間の積算」と「いまの瞬間値」が混ざっている。
+   これまで両方をそのまま `time[i]` の値として詰めていたので、20:34 に見ると
+   `indexOfNow` が 20:00 の行を指し、**19〜20時に降った雨**を"いまの雨"として
+   出していた（実機の報告：降っていないのに 3.7mm）。
+   → 積算値は**1つ先**（`time[i+1]` にスタンプされた値）を取り、行の意味を
+     「`time[i]` から1時間のあいだに降る／吹く」に揃える。
+   ⚠ **これは判定の入力そのものを動かす。** `judgePoint` / `abcScore` / `THRESH` は
+     一切触っていない（規約どおり）。変わるのは**どの時間の雨がどの行に入るか**だけ。
+     そのぶん、v4.96.1 以前に見た判定とは1時間ぶん食い違う。
+   ⚠ **最後の行は「先」が無いので null にする。** 勝手に0を置くと、分からないものを
+     「0mm」と断言することになる。判定側は `d.precip > 0` / `|| 0` で受けるので、
+     null は"降っていない"として素通りする。 */
+function aheadHour(arr, i) { return (arr && arr[i + 1] != null) ? arr[i + 1] : null; }
+
 function processData(json, windSrc) {
   const h = json.hourly;
   const len = h.time.length; // past_days + forecast_days ぶん
@@ -2851,15 +2874,16 @@ function processData(json, windSrc) {
       time: dt,
       temp: h.temperature_2m[i],
       apparent: h.apparent_temperature[i],
-      precip: h.precipitation[i],
-      snow: h.snowfall[i],
+      // ⚠ 積算値は「先の1時間」。生の配列を直接見ない（aheadHour の注意書きを読むこと）
+      precip: aheadHour(h.precipitation, i),
+      snow: aheadHour(h.snowfall, i),
       pressure: h.surface_pressure[i],
       // 判定・表示に使う風。山頂高度が取れていればその層の値（ADR-0006）
       wind: (lvSpd && lvSpd[i] != null) ? lvSpd[i] : h.windspeed_10m[i],
       wdir: (lvDir && lvDir[i] != null) ? lvDir[i]
             : (h.winddirection_10m ? h.winddirection_10m[i] : null),
       wind10: h.windspeed_10m[i],   // 地上10m風。参考用に残す（判定には使わない）
-      gust: h.windgusts_10m ? h.windgusts_10m[i] : null,   // 突風(m/s)
+      gust: aheadHour(h.windgusts_10m, i),   // 突風(m/s)。これも直前1時間の最大なので1つ先
       wcode: h.weathercode[i],
       cloud: h.cloudcover[i],
       cloudLow: h.cloud_cover_low ? h.cloud_cover_low[i] : null,
