@@ -793,11 +793,18 @@ html, body {
    ⚠ 下地は rgba(var(--surface-rgb), α)。白で直書きするとダークモードで読めなくなる。
    器（#map-top）ではなく単独で置いているので pointer-events は none にして
    下の地図を触れるままにする（札の下で地図が死ぬと全画面にした意味が無い）。 */
-#map-when {
+/* 左上に縦に積む器。⚠ **`#map-results` より下に重ねる。** 同じ場所に出るので、
+   上に重ねると検索結果が読めなくなる（結果のほうが一時的で、優先される） */
+#map-topleft {
   position: absolute;
   left: 8px;
   top: calc(60px + var(--sa-top));
-  z-index: 1100;
+  z-index: 1090;
+  pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  max-width: calc(100% - 16px);
+}
+#map-when {
   pointer-events: none;
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px;
@@ -922,27 +929,28 @@ html, body {
    CSS で `rotate()` して実現しているので（`applyMapRotation`）、地図の中に置いた
    コントロールは目盛りごと傾いて読めなくなる。`#map` の**外**に自前で置くこと。
    ⚠ 地図を触る邪魔をしないよう `pointer-events` は殺したまま（`#map-bottom` が none）。 */
+/* ⚠ 置き場所は**左上**（利用者判断 2026-09-19。最初は右下に置いたが読みにくかった）。
+   走行中に一目で読めることが目的なので、下の混んだ所ではなく視線の近くに置く。 */
 #map-scale {
-  margin-left: auto;                 /* 右寄せ。左下は雨の予告・地点名で混んでいる */
-  display: flex; align-items: flex-end; gap: 5px;
-  padding: 2px 6px 1px;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.82);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.22);
+  display: flex; align-items: flex-end; gap: 7px;
+  padding: 4px 9px 3px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.88);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
 #map-scale.hidden { display: none; }
 /* 目盛り棒。両端に脚を出す「コの字」（地図の慣例）。⚠ 上辺は引かない */
 #map-scale-bar {
   display: block;
-  height: 6px;
-  border: 2px solid #333;
+  height: 10px;                      /* 走行中に読めるよう太くする（利用者判断） */
+  border: 3px solid #333;
   border-top: none;
   /* ⚠⚠ **transition を付けないこと。** なめらかに伸び縮みさせると、
      拡大縮小の途中で**棒の長さと数字が食い違う**。メジャーは読み取る道具なので、
      一瞬でも嘘の長さを出してはいけない（検査で実際に食い違いを捕まえた）。 */
 }
 #map-scale-label {
-  font-size: 10px; font-weight: 700; line-height: 1;
+  font-size: 15px; font-weight: 700; line-height: 1;
   font-family: var(--font-mono); color: #333;
   white-space: nowrap;
 }
@@ -2104,7 +2112,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.95.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.96.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2152,7 +2160,14 @@ html, body {
       </div>
       <div id="map-results"></div>
       <!-- 山域の色が「いつの判定か」を出す。レイヤーがオンで色が付いているときだけ -->
-      <div id="map-when" class="hidden"></div>
+      <!-- 左上に縦に積むもの。⚠ 検索結果（#map-results）より下に重ねる（結果が隠れない） -->
+      <div id="map-topleft">
+        <div id="map-when" class="hidden"></div>
+        <!-- 縮尺のメジャー。⚠ #map の外に置く（中だとヘディングアップで一緒に傾く） -->
+        <div id="map-scale" class="hidden" aria-hidden="true">
+          <i id="map-scale-bar"></i><span id="map-scale-label"></span>
+        </div>
+      </div>
 
       <!-- 下に浮かぶもの：案内文／地点名＋出典／お気に入り円柱 -->
       <div id="map-bottom">
@@ -2164,10 +2179,6 @@ html, body {
         <div id="map-awake" class="hidden">
           <span id="map-awake-text"></span>
           <button id="map-awake-btn" type="button" onclick="toggleWakeLock()"></button>
-        </div>
-        <!-- 縮尺のメジャー。⚠ #map の外に置く（中だとヘディングアップで一緒に傾く） -->
-        <div id="map-scale" class="hidden" aria-hidden="true">
-          <i id="map-scale-bar"></i><span id="map-scale-label"></span>
         </div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span><span id="map-latlon"></span></div>
@@ -7178,7 +7189,7 @@ document.addEventListener('visibilitychange', () => {
    ⚠ **1pxあたりの距離は緯度で変わる**（メルカトル）。固定式で出さず、
      実際に画面上の2点を緯度経度へ戻して測る。北海道と九州で1割以上ずれる。
    ⚠ 回転は長さを変えないので、傾いていてもこの数字のままで正しい。 */
-const MAP_SCALE_MAX_PX = 110;        // 目盛り棒の最大の長さ
+const MAP_SCALE_MAX_PX = 150;        // 目盛り棒の最大の長さ（v4.96.0 で 110→150）
 
 /* 1 / 2 / 5 × 10ⁿ のうち、上限を超えない最大のもの。
    ⚠ 中途半端な数字（例: 337m）を出さないための丸め。読み取れないと意味がない。 */

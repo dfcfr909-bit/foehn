@@ -119,22 +119,51 @@ const labelMeters = t => {
   ok(s && /^[\d.]+ (km|m)$/.test(s.text), '★数字と単位で出る', s && s.text);
 }
 
-/* ============ 2. ⚠⚠ #map の中に置かない（ヘディングアップで傾く） ============ */
+/* ============ 2. ⚠⚠ #map の中に置かない（ヘディングアップで傾く）／左上に置く ============ */
 {
   const where = await page.evaluate(() => {
     const el = document.getElementById('map-scale');
+    const ov = document.getElementById('map-overlay').getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const row = document.getElementById('map-search-row').getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const bar = document.getElementById('map-scale-bar').getBoundingClientRect();
+    const lab = getComputedStyle(document.getElementById('map-scale-label'));
     return {
       insideMap: !!el.closest('#map'),
       insideOverlay: !!el.closest('#map-overlay'),
-      // 出典の真上（利用者判断 2026-09-19）
-      beforeAttribution: !!(el.compareDocumentPosition(document.getElementById('map-attribution'))
-        & Node.DOCUMENT_POSITION_FOLLOWING),
+      左からの割合: (r.left - ov.left) / ov.width,
+      上からの割合: (r.top - ov.top) / ov.height,
+      検索行の下: r.top >= row.bottom,
+      棒の長さ: Math.round(bar.width), 棒の高さ: Math.round(bar.height),
+      棒の上限: MAP_SCALE_MAX_PX,
+      文字の大きさ: parseFloat(lab.fontSize),
+      器のz: getComputedStyle(document.getElementById('map-topleft')).zIndex,
+      結果のz: getComputedStyle(document.getElementById('map-results')).zIndex,
+      pe: cs.pointerEvents,
     };
   });
   ok(!where.insideMap,
     '★★★#map の中に置かない（中だとヘディングアップで目盛りごと傾く）', where);
   ok(where.insideOverlay, '★地図画面の中にはある', where);
-  ok(where.beforeAttribution, '★出典より前（＝真上）にある', where);
+
+  // 置き場所は左上（利用者判断 2026-09-19。最初は右下だったが読みにくかった）
+  ok(where.左からの割合 < 0.35, '★★★左寄せで置く', where);
+  ok(where.上からの割合 < 0.30, '★★★上寄せで置く', where);
+  ok(where.検索行の下, '★★検索行にかぶらない', where);
+
+  // 走行中に一目で読める大きさか（小さく戻さないための下限）
+  /* ⚠ 棒の長さは「きりのいい数字」に丸めるぶん毎回変わる（上限の40〜100%）。
+     固定の下限で見ると丸めの当たり外れで落ちるので、**上限の定数**を見る。 */
+  ok(where.棒の上限 >= 150, '★★★目盛り棒の上限が短く戻っていない（150px以上）', where);
+  ok(where.棒の長さ >= where.棒の上限 * 0.4 - 1,
+    '★棒の長さは上限の40%を下回らない（1/2/5の丸めの下限）', where);
+  ok(where.棒の高さ >= 8, '★★棒が細く戻っていない（8px以上）', where);
+  ok(where.文字の大きさ >= 13, '★★★文字が小さく戻っていない（13px以上）', where);
+
+  // ⚠ 検索結果と同じ場所に出るので、結果より下に重ねる（結果が読めなくなる）
+  ok(Number(where.器のz) < Number(where.結果のz),
+    '★★★検索結果より下に重ねる（同じ左上に出るので、結果を隠さない）', where);
 }
 
 /* ============ 3. ⚠⚠ 棒の長さと数字が合っている ============ */
