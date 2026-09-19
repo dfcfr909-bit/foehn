@@ -873,6 +873,21 @@ html, body {
 }
 #map-rain.nowcast { background: rgba(20,96,170,0.92); }
 #map-rain.hidden, #map-rain:empty { display: none; }
+/* ------ 取得できていないことを地図の上に出す ------
+   ⚠ パネルの中だけだと、開くまで気づけない。走行中に帯や筋が出た理由がこれで分かる。 */
+#map-trouble {
+  pointer-events: auto;          /* 押してレイヤーを開けるようにする（親は none） */
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 700; line-height: 1.3;
+  color: #fff;
+  background: rgba(176,42,42,0.94);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#map-trouble.hidden { display: none; }
 /* ------ 画面を消さない（ヘディングアップ＋自機追跡） ------
    ⚠ `#map-bottom` は `pointer-events: none` なので、押せるようにするのはボタンだけ。
      帯そのものを押せるようにすると地図の操作を食う。 */
@@ -2089,7 +2104,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.94.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.95.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2143,6 +2158,8 @@ html, body {
       <div id="map-bottom">
         <div id="map-hint">地図を<b>長押し</b>して地点を選ぶ（画面は開いたまま）</div>
         <div id="map-rain" class="hidden"></div>
+        <!-- 取得できていないことを地図の上にも出す。押すとレイヤーを開いて内訳が見える -->
+        <div id="map-trouble" class="hidden" onclick="toggleLayerPanel()"></div>
         <!-- 画面を消さないときの帯。⚠ 効かなかったときも黙らずここに出す -->
         <div id="map-awake" class="hidden">
           <span id="map-awake-text"></span>
@@ -5787,7 +5804,11 @@ function applyBaseLayer() {
   if (!leafletMap) return;
   if (baseTileLayer) { leafletMap.removeLayer(baseTileLayer); baseTileLayer = null; }
   const def = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT);
+  setLayerStatus(def.id, '');            // 貼り直したら前の失敗は持ち越さない
   baseTileLayer = L.tileLayer(def.url, tileOpts(def)).addTo(leafletMap);
+  /* ⚠ **下地こそ見張る。** これまで watchTileStatus が付いておらず、地図そのものが
+     取れていなくても誰も気づかなかった。帯や筋が出る原因として最初に疑う所（2026-09-19） */
+  watchTileStatus(baseTileLayer, def);
   updateMapAttribution();
 }
 
@@ -6239,9 +6260,10 @@ function watchTileStatus(layer, def, hooks) {
     const total = loaded + errors;
     if (!errors || total < WX_FAIL_MIN_TILES) return;
     if (loaded === 0) {
+      // ⚠ 雷などは「そもそも無い」ことがある。これは失敗ではないので警告に混ぜない
       setLayerStatus(def.id, def.mayBeEmpty
         ? `この範囲に表示なし（z${badZ}のタイルが無い）`
-        : `取得できません（z${badZ}のタイルが無い）`);
+        : `取得できません（z${badZ}のタイルが無い）`, !def.mayBeEmpty);
       return;
     }
     if (errors / total < WX_FAIL_RATIO) { setLayerStatus(def.id, ''); return; }
@@ -6267,11 +6289,38 @@ function watchTileStatus(layer, def, hooks) {
 
 // レイヤーごとの状態表示（取得できない等）
 const layerStatus = {};
-function setLayerStatus(id, text) {
-  if (layerStatus[id] === text) return;
+const layerFailed = {};      // id -> 本当の失敗か（「表示なし」と区別する）
+/* ⚠ **`isError` を分けて持つ。** 雷の「この範囲に表示なし」は失敗ではないので、
+   地図の上の警告に混ぜない。混ぜると狼少年になり、本物の失敗を見なくなる。
+   既定は「文言があれば失敗」。従来の空文字での消去はそのまま効く。 */
+function setLayerStatus(id, text, isError) {
+  const err = (isError === undefined) ? !!text : !!isError;
+  if (layerStatus[id] === text && layerFailed[id] === err) return;
   layerStatus[id] = text;
+  layerFailed[id] = err;
   const el = document.querySelector(`.layer-status[data-id="${id}"]`);
   if (el) el.textContent = text;
+  paintTileTrouble();          // ⚠ パネルの中だけに閉じ込めない（開かないと気づけない）
+}
+
+/* ------ 取得できていないことを地図の上にも出す ------
+   ⚠⚠ **パネルの中だけでは気づけない。** 走行中に地図へ帯や筋が出ても、
+     レイヤーを開くまで「取れていない」ことが分からなかった（2026-09-19 の報告）。
+   ⚠ 出すのは**本当の失敗だけ**。「この範囲に表示なし」は出さない。 */
+function paintTileTrouble() {
+  const el = document.getElementById('map-trouble');
+  if (!el) return;
+  const bad = Object.keys(layerFailed).filter(id => layerFailed[id] && layerStatus[id]);
+  if (!isMapOpen() || !bad.length) { el.className = 'hidden'; return; }
+  const name = id => {
+    const d = findOverlay(id) || findBase(id);
+    return (d && d.name) || id;
+  };
+  // 1枚目は理由まで、2枚目からは名前だけ（帯を太らせない）
+  const head = `${name(bad[0])}：${layerStatus[bad[0]]}`;
+  const rest = bad.length > 1 ? `　ほか${bad.length - 1}件` : '';
+  el.className = '';
+  el.textContent = `⚠ 地図が取れていません　${head}${rest}`;
 }
 
 /* ============================================================
@@ -6859,6 +6908,7 @@ function closeMap() {
   releaseThunderScan();                     // 走査用canvasの裏地を手放す
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
   syncWakeLock();                           // 閉じたら画面の保持も手放す
+  paintTileTrouble();                       // 閉じたら取得失敗の帯も畳む
 }
 function isMapOpen() {
   const el = document.getElementById('map-overlay');

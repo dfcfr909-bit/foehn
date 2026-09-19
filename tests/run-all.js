@@ -22,6 +22,7 @@ const TESTS = [
   ['smoke_tilecache', '地図タイルキャッシュ（対象ホスト・cache-first・LRU・削除）'],
   ['smoke_mapscale', '地図の縮尺メジャー（棒の長さと数字が一致・緯度で測り直す）'],
   ['smoke_awake',   '画面を消さない（取れないときに黙らない・抜けたら手放す）'],
+  ['smoke_tiletrouble', 'タイルの取得失敗を地図の上に出す（下地も見張る・表示なしと区別）'],
   ['smoke_rain',   '雨の予告（毎時の見込み・ナウキャスト1画素読み・分きざみ）'],
   ['smoke_offline', '圏外の予報（控えを出す・古さと距離を出す・24時間で切る）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
