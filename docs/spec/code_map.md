@@ -412,6 +412,17 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |
 
+## 地図 — 縮尺のメジャー
+
+⚠⚠ `#map` の**外**（`#map-bottom`）に置く。中だとヘディングアップで目盛りごと傾く。
+仕様は `map.md`「縮尺のメジャー」。
+
+| 名前 | 役割 |
+|---|---|
+| `MAP_SCALE_MAX_PX` | 目盛り棒の最大の長さ（110px） |
+| `niceScaleMeters(max)` | 1 / 2 / 5 × 10ⁿ に丸める |
+| `updateMapScale()` | 画面の2点を実測して棒とラベルを更新（⚠ 緯度で変わるので固定式にしない） |
+
 ## 標高タイル
 
 | 関数 | 役割 | 目安行 |
