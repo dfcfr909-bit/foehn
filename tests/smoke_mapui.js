@@ -801,6 +801,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       funcType: document.querySelector('#sat-filter-defs feFuncA').getAttribute('type'),
       matrix: (document.querySelector('#sat-filter-defs feColorMatrix')
         .getAttribute('values') || '').trim().split(/\s+/).map(Number),
+      // ⚠ 着色は v4.99.0 で撤去。**復活していないこと**を見るために残してある
       tintChips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
     });
   });
@@ -819,10 +820,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(curveAt(irBlend, 0.40) === 0,
     '★実機の晴れ（輝度0.40前後）は完全に透ける', { v: curveAt(irBlend, 0.40) });
 
-  /* ⚠**着色を入れた状態で雲頂へ切り替えること。** 着色なしのまま切り替えると
-     行列はどのみち素通しなので、「雲頂にも着色を掛ける」壊し方を見逃す（実際に見逃した）。 */
-  await page.evaluate(() => setSatTint('pink'));
-  await page.waitForTimeout(400);
+  /* ⚠ かつてはここで着色を入れてから雲頂へ切り替えていた（「雲頂にも着色を掛ける」
+     壊し方を捕まえるため）。着色は v4.99.0 で撤去したので、その手順は要らない。 */
   await page.evaluate(() => setSatBand('SND'));
   await page.waitForTimeout(900);
   const satBand = await page.evaluate(() => Object.assign(readSatOuter(), {
@@ -834,13 +833,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(Math.abs(curveAt(satBand, 0.40)) < 0.01,
     '★バンドを変えたら曲線も書き換わる（前のバンドのcutが残らない）', satBand);
 
-  /* ★雲頂は色そのものが雲頂高度の情報なので、着色は出さないしRGBも素通しのまま */
-  ok(satBand.tintChips.length === 0, '★色が情報のバンドには着色を出さない', satBand.tintChips);
   ok(satBand.matrix[0] === 1 && satBand.matrix[6] === 1 && satBand.matrix[12] === 1,
     '★雲頂はRGBをそのまま通す（色分けを潰さない）', satBand.matrix.slice(0, 15));
-
-  await page.evaluate(() => setSatTint('none'));
-  await page.waitForTimeout(300);
 
   // 保留中のバンドは指定しても選ばれない
   const repIgnored = await page.evaluate(() => {
@@ -1973,10 +1967,15 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const cloudOff = await page6.screenshot({ clip: satClip });
   ok(!cloudOn.equals(cloudOff), '★薄い雲も消さない（切り捨てが強すぎない）');
 
-  /* ★着色。白黒の雲をピンクで塗れること。
-     ⚠**属性の確認で済ませない。** 実際に画素がピンクに寄っているかを見る。
-     明るさを色にも掛けてしまうと薄い雲が「暗いピンク」になって地図に沈むので、
-     赤が地図より**明るい**方向に動くことまで確かめる。 */
+  /* ★フィルタを要素ごと作り直すこと。
+     ⚠⚠ **着色（ピンク／シアン）は v4.99.0 で撤去した。** 実機（iOS）では最後まで
+       白のままで、Chromium では正しく色が付く——つまり**ヘッドレスでは永久に
+       捕まえられない**不具合だった。出せない色を選ばせるUIは嘘なので消した。
+       詳細は sotoki_v4.html の SAT_BANDS の注意書き。**作り直さないこと。**
+     → 作り直しの検査は**バンド切替**（赤外↔雲頂で cut が変わる）で行う。
+     ⚠**これはChromiumでは絵が正しく変わるので、画素検査では捕まらない。**
+       iOS Safari は一度評価したフィルタを使い回し、属性だけ書き換えても絵が
+       変わらない（実機で踏んだ）。構造で見張るしかない。 */
   /* ⚠**レイヤーが載りきってから before を取ること。** タイルの取得は非同期なので、
      オンにした直後だと filter がまだ 'none' で、**何を比べても違って見える**
      （id を振り直さない壊し方が素通りした）。 */
@@ -1985,44 +1984,48 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   const filterBefore = await page6.evaluate(() =>
     getComputedStyle(leafletMap.getPane('mapSatMask')).filter);
   ok(/satAlpha/.test(filterBefore), 'before の時点でフィルタが載っている（検査の前提）', filterBefore);
-  const tinted = await page6.evaluate(async () => {
+  const rebuilt = await page6.evaluate(async () => {
     /* 印を付けておき、あとで消えているか＝**要素が作り直されたか**を見る。
        idを振り直すだけでは iOS Safari が古い絵を使い回す（実機で踏んだ）。 */
     document.querySelector('#sat-filter-defs filter').dataset.mark = '1';
-    setSatTint('pink');
-    await new Promise(r => setTimeout(r, 800));
+    setSatBand('SND');
+    await new Promise(r => setTimeout(r, 900));
     return {
       rebuilt: !document.querySelector('#sat-filter-defs filter').dataset.mark,
       filterAfter: getComputedStyle(leafletMap.getPane('mapSatMask')).filter,
-      saved: localStorage.getItem('sotoki.map.satTint'),
-      chips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
       matrix: (document.querySelector('#sat-filter-defs feColorMatrix')
         .getAttribute('values') || '').trim().split(/\s+/).map(Number),
     };
   });
-  await page6.waitForTimeout(500);
-  const pinkShot = await page6.screenshot({ clip: satClip });
-  ok(tinted.saved === 'pink', '選んだ色が保存される', tinted.saved);
-  /* ★中身を書き換えたら参照するidも変わること。
-     ⚠**これはChromiumでは絵が正しく変わるので、画素検査では捕まらない。**
-     iOS Safari は一度評価したフィルタを使い回し、属性だけ書き換えても絵が変わらない
-     （実機で「色を変えても変化なし」を踏んだ）。構造で見張るしかない。 */
-  ok(tinted.rebuilt,
-    '★フィルタは要素ごと作り直す（属性の書き換えだけでは iOS Safari に効かない）', tinted.rebuilt);
-  ok(tinted.filterAfter !== filterBefore && /satAlpha/.test(tinted.filterAfter),
+  ok(rebuilt.rebuilt,
+    '★フィルタは要素ごと作り直す（属性の書き換えだけでは iOS Safari に効かない）', rebuilt.rebuilt);
+  ok(rebuilt.filterAfter !== filterBefore && /satAlpha/.test(rebuilt.filterAfter),
     '★フィルタの中身を変えたら参照するidも変える（iOS Safariが作り直さないため）',
-    { filterBefore, filterAfter: tinted.filterAfter });
-  ok(tinted.chips.includes('ピンク'), '着色のチップが出る', tinted.chips);
-  // 明るさはアルファ側（4行目）に残し、RGBは定数（5列目のoffset）にする
-  ok(tinted.matrix[4] > 0.9 && tinted.matrix[9] < 0.4 && tinted.matrix[15] === 0.30,
-    '色は定数・明るさはアルファに載せる', tinted.matrix);
-  const [pr, pg, pb] = meanRGB(pinkShot);
-  const [br, bg, bb] = meanRGB(cloudOff);
-  ok(pr - pg > 12 && pr - pb > 4, '★雲が実際にピンクに寄る', { pinkShot: [pr, pg, pb].map(v => +v.toFixed(1)) });
-  ok(pr >= br - 2, '★薄い雲が暗く沈まない（明るさを色に掛けていない）',
-    { r: +pr.toFixed(1), base: +br.toFixed(1) });
-  await page6.evaluate(() => setSatTint('none'));
-  await page6.waitForTimeout(400);
+    { filterBefore, filterAfter: rebuilt.filterAfter });
+
+  /* ★★★ 着色が復活していないこと。
+     出せない色を選ばせるのは嘘。**うっかり戻されないようにここで釘を刺す。** */
+  {
+    const gone = await page6.evaluate(() => ({
+      chips: [...document.querySelectorAll('.sat-tints .amedas-el')].map(b => b.textContent),
+      fn: typeof setSatTint,
+      saved: localStorage.getItem('sotoki.map.satTint'),
+      rgbPassThrough: (() => {
+        const m = (document.querySelector('#sat-filter-defs feColorMatrix')
+          .getAttribute('values') || '').trim().split(/\s+/).map(Number);
+        return m[0] === 1 && m[6] === 1 && m[12] === 1;
+      })(),
+    }));
+    ok(gone.chips.length === 0,
+      '★★★着色のチップを出さない（実機で色が付かないので撤去した）', gone.chips);
+    ok(gone.fn === 'undefined', '★★setSatTint を残さない（死んだ道を残さない）', gone.fn);
+    ok(gone.saved === null, '★着色の設定を保存しない', gone.saved);
+    ok(gone.rgbPassThrough,
+      '★★RGBは常に素通し（定数に差し替える着色の経路が残っていない）');
+  }
+
+  await page6.evaluate(() => setSatBand('B13'));
+  await page6.waitForTimeout(900);
   /* 濃さを測る。灰色160（輝度0.627）を cut=0.30 / gamma=1.8 で抜くと
      alpha = ((0.627-0.30)/0.70)^1.8 ≒ 0.25。地図と全不透明の間の1/4あたりに来るはず。
      ⚠フィルタの色空間指定（sRGB）を落とすと**線形RGBで計算されて4%まで落ちる**。

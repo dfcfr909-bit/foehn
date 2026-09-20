@@ -2142,7 +2142,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.98.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.99.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -5735,7 +5735,6 @@ const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
-const MAP_LS_SAT_TINT = 'sotoki.map.satTint';
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -5771,21 +5770,27 @@ const SAT_BANDS = [
      取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
   { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
   // 赤外＝白黒。雲が白く晴れが暗い
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45, tintable: true },
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45 },
   // 雲頂＝明るさが雲・色が雲頂高度。色を保ちたいので合成ではなく透明度で抜く
   { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.40 },
 ];
 const SAT_BAND_DEFAULT = 'B13';
-/* 白黒のバンド（赤外）を目立つ色で塗る。
-   ⚠**雲頂には掛けない**（`tintable` が無い）。あちらは色そのものが雲頂高度の情報で、
-   塗り潰すと読めなくなる。 */
-const SAT_TINTS = [
-  { id: 'none', name: '白' },
-  { id: 'pink', name: 'ピンク', rgb: [1.00, 0.18, 0.72] },
-  { id: 'cyan', name: 'シアン', rgb: [0.20, 0.95, 1.00] },
-];
-const SAT_TINT_DEFAULT = 'none';
-function satTintDef(id) { return SAT_TINTS.find(t => t.id === id) || SAT_TINTS[0]; }
+/* ⚠⚠ **雲の着色（`SAT_TINTS`）は撤去した（v4.99.0）。作り直さないこと。**
+   白黒の赤外をピンク／シアンで塗る機能を v4.75.0 で入れ、v4.75.1 で「フィルタを
+   要素ごと作り直す」修正も入れたが、**実機（iOS）では最後まで白のままだった**
+   （2026-09-20 の報告。issue #2）。
+   ⚠ **Chromium では正しく色が付く。** 画素で測って ピンク(255,46,184) /
+     シアン(51,242,255) が出ることまで確認してある。**ヘッドレスでは再現しない。**
+     つまり検査を足しても、この不具合は永久に捕まえられない。
+   ⚠ 直す道も塞がっている。canonical な直し方（`feFlood` + `feComposite` で
+     アルファに色を流し込む）は**多段のフィルタ**になるが、
+     「実機で効くのは1段・`type=linear` だけ。2段に繋いだ版も `feFuncA` を table に
+     した版も効かなかった」と分かっている（`docs/spec/map.md`）。
+     いま効いているアルファ抜きを壊す危険のほうが大きい。
+   → 出せない色を選ばせるUIは**嘘**なので、チップごと消した。バンドは赤外と雲頂の2つ。
+     `docs/archive/handoff_v4.md` も「効かなければ諦めて出さないことを勧める。
+     iOSのSVGフィルタはヘッドレスで再現しない不具合を3回踏んでいるので、
+     これ以上の深追いは費用対効果が悪い」と予告していた。そのとおりになった。 */
 function satBands() { return SAT_BANDS.filter(b => !b.pending); }
 function satBandDef(id) {
   return satBands().find(b => b.id === id) || satBands()[0] || SAT_BANDS[0];
@@ -5866,12 +5871,7 @@ function loadMapPrefs() {
     const raw = localStorage.getItem(MAP_LS_SAT_BAND);
     if (raw && satBands().some(b => b.id === raw)) satBand = raw;   // pendingは復元しない
   } catch (e) { /* 読めなければ既定 */ }
-  let satTint = SAT_TINT_DEFAULT;
-  try {
-    const raw = localStorage.getItem(MAP_LS_SAT_TINT);
-    if (raw && SAT_TINTS.some(t => t.id === raw)) satTint = raw;
-  } catch (e) { /* 読めなければ既定 */ }
-  return { base, overlays, amedasElement, satBand, satTint };
+  return { base, overlays, amedasElement, satBand };
 }
 function saveMapPrefs() {
   try {
@@ -5879,7 +5879,6 @@ function saveMapPrefs() {
     localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(mapPrefs.overlays));
     localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
     localStorage.setItem(MAP_LS_SAT_BAND, mapPrefs.satBand);
-    localStorage.setItem(MAP_LS_SAT_TINT, mapPrefs.satTint);
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -5889,7 +5888,7 @@ function saveMapPrefs() {
 let leafletMap = null;
 let leafletMarker = null;
 let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
-                 satBand: SAT_BAND_DEFAULT, satTint: SAT_TINT_DEFAULT };
+                 satBand: SAT_BAND_DEFAULT };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -6050,11 +6049,10 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
 
    中身は2段だけ。**この形から動かさないこと**（実機で効くのはこの形だけ。
    2段に繋いだ版も feFuncA を table にした版も効かなかった）。
-   1) feColorMatrix … RGBの決め方と、A＝輝度
-      - 着色なし: RGBはそのまま通す（雲頂の色分けが残る）
-      - 着色あり: RGBを**定数**にし、明るさは**アルファだけ**に載せる。
-        薄い雲＝薄いピンク、厚い雲＝濃いピンクで濃淡が読める。
-        明るさを色にも掛けると薄い雲が「暗いピンク」になって地図に沈む
+   ⚠ この「1段しか効かない」という制約が、**着色を諦めた理由**でもある。
+     アルファに色を流し込む canonical な書き方（feFlood + feComposite）は
+     多段になるので、この端末では使えない → v4.99.0 で撤去（SAT_BANDS の注意書き）。
+   1) feColorMatrix … RGBはそのまま通し（雲頂の色分けが残る）、A＝輝度
    2) feComponentTransfer(feFuncA type="linear") … alpha=(輝度−cut)/(1−cut)
       ⚠ひまわりの「晴れ」は真っ黒ではなく中間の灰色（赤外なら地表の温度）なので
         **cutをそこより上に置く**。低いと晴れがベールとして残り地図が沈む。
@@ -6063,16 +6061,17 @@ function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'
      中間調の透明度が1/8まで落ちて雲がほぼ消える。 */
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let satFilterSeq = 0;
-function buildSatFilter(tint, cut) {
+function buildSatFilter(cut) {
   const host = document.getElementById('sat-filter-defs');
   if (!host) return null;
   const id = 'satAlpha' + (++satFilterSeq);
   const c = Math.max(0, Math.min(0.9, cut || 0));
   const slope = 1 / (1 - c);
   const lum = '0.30 0.59 0.11 0 0';
-  const values = (tint && tint.rgb)
-    ? `0 0 0 0 ${tint.rgb[0]} 0 0 0 0 ${tint.rgb[1]} 0 0 0 0 ${tint.rgb[2]} ${lum}`
-    : `1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 ${lum}`;
+  /* RGBはそのまま通し、A＝輝度にする。
+     ⚠ かつてはここで RGB を定数に差し替えて着色していたが、**実機で効かなかった**
+       ので撤去した（v4.99.0）。RGBを素通しにするのは雲頂の色分けを残すため。 */
+  const values = `1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 ${lum}`;
 
   const filt = document.createElementNS(SVG_NS, 'filter');
   filt.setAttribute('id', id);
@@ -6102,7 +6101,8 @@ function buildSatFilter(tint, cut) {
    重い・出ない端末に当たったら、バンド定義を `blend`/`floor` に戻せば従来動作。 */
 /* ⚠⚠**フィルタの中身を書き換えたら、参照するidごと変えること**（v4.75.1）。
    iOS Safari は一度評価したフィルタを使い回し、**あとから属性を書き換えても
-   絵が変わらない**。実機で「ピンクにしてもシアンにしても色が変わらない」を踏んだ。
+   絵が変わらない**。実機で「色を変えても変わらない」を踏んだ。
+   ⚠ いまは**バンド切替（赤外↔雲頂）で `cut` が変わる**のでこの作り直しが要る。
    Chromium は正しく作り直すので**この不具合はヘッドレスでは再現しない**。
    そのため id を毎回振り直し、CSSの `url(#…)` も新しい方を指すようにしている。
    （テストは「値を変えたらidも変わる」ことを見張っている） */
@@ -6112,7 +6112,7 @@ function applyWxBlend(def) {
   if (!host) return;
   const b = satBandDef(mapPrefs.satBand);
   if (b.alphaCut != null) {
-    const id = buildSatFilter(b.tintable ? satTintDef(mapPrefs.satTint) : null, b.alphaCut);
+    const id = buildSatFilter(b.alphaCut);
     host.style.mixBlendMode = 'normal';
     host.style.filter = id ? `url(#${id})` : '';
     return;
@@ -7227,11 +7227,9 @@ function satBandChips() {
   const chips = `<div class="amedas-els">` + satBands().map(b =>
     `<button class="amedas-el${b.id === mapPrefs.satBand ? ' active' : ''}"
              onclick="setSatBand('${b.id}')">${b.name}</button>`).join('') + `</div>`;
-  // 着色は白黒のバンドのときだけ選べる（雲頂は色が情報なので出さない）
-  if (!satBandDef(mapPrefs.satBand).tintable) return chips;
-  return chips + `<div class="amedas-els sat-tints">` + SAT_TINTS.map(t =>
-    `<button class="amedas-el${t.id === mapPrefs.satTint ? ' active' : ''}"
-             onclick="setSatTint('${t.id}')">${t.name}</button>`).join('') + `</div>`;
+  /* ⚠ 着色のチップはもう出さない（v4.99.0 で撤去）。実機で色が付かなかった。
+     SAT_BANDS の上の注意書きを読むこと。**作り直さない。** */
+  return chips;
 }
 
 function renderLayerPanel() {
@@ -8772,15 +8770,7 @@ function setAmedasElement(id) {
   renderLayerPanel();
 }
 
-// 衛星のバンド切替（カラー／赤外／雲頂）。新しいタイルが出るまで今の絵は残す
-function setSatTint(id) {
-  mapPrefs.satTint = satTintDef(id).id;
-  saveMapPrefs();
-  const def = findOverlay('satellite');
-  if (def) applyWxBlend(def);      // タイルは貼り直さなくてよい（色は合成側で変わる）
-  renderLayerPanel();
-}
-
+// 衛星のバンド切替（赤外／雲頂）。新しいタイルが出るまで今の絵は残す
 function setSatBand(id) {
   mapPrefs.satBand = satBandDef(id).id;
   saveMapPrefs();

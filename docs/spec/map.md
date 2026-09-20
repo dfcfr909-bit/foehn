@@ -166,8 +166,13 @@ Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると�
 
 ### 衛星の雲（ひまわり）
 
-バンドは `SAT_BANDS`（既定 `SAT_BAND_DEFAULT`='B13'）、着色は `SAT_TINTS`
-（既定 `SAT_TINT_DEFAULT`='none'）。切替は `setSatBand` / `setSatTint`。
+バンドは `SAT_BANDS`（既定 `SAT_BAND_DEFAULT`='B13'）。切替は `setSatBand`。
+⚠⚠ **着色（`SAT_TINTS`・ピンク／シアン）は v4.99.0 で撤去した。作り直さないこと。**
+実機（iOS）では最後まで白のままで、**Chromium では正しく色が付く**
+（画素で確認：ピンク(255,46,184) / シアン(51,242,255)）。
+つまり**ヘッドレスでは永久に捕まえられない**不具合で、検査を足しても意味が無い。
+直す道も塞がっている（下の「1段しか効かない」を参照）。
+出せない色を選ばせるUIは嘘なので、チップごと消した → `docs/decisions.md` 2026-09-20
 
 **JPEG なので透明部分が無い。「合成」ではなく「輝度→透明度」で抜く。**
 
@@ -181,8 +186,8 @@ Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると�
 - フィルタは2段構成（feColorMatrix ＋ feComponentTransfer(feFuncA linear)）
 - `color-interpolation-filters="sRGB"` は必須
 - フィルタの SVG を 0×0 や `display:none` で隠さない。実寸1px のまま画面外へ逃がす
-- 着色（`SAT_TINTS`）は RGB を定数にし、明るさはアルファだけに載せる。
-  **雲頂には出さない**（`tintable` が無い）
+- RGB は**常に素通し**（雲頂の色分けを潰さないため）。A＝輝度だけを作る。
+  ⚠ かつてここで RGB を定数に差し替えて着色していた。撤去済み（上記）
 - 旧方式（`blend`/`floor` による `screen` 合成）は逃げ道として残してある。
   適用は `applyWxBlend(def)`。**掛けないバンドでは必ず外す**
 
