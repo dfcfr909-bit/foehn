@@ -2142,7 +2142,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.99.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.100.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6275,6 +6275,16 @@ function probeTileAlpha(img, px, py) {
   ctx.drawImage(img, -px, -py);
   return ctx.getImageData(0, 0, 1, 1).data[3];   // CORSが通らないとここで例外
 }
+/* タイルが「届いていない」のか「届いたが読めない」のかを見分ける。
+   ⚠ `mode:'no-cors'` は**不透明な応答でも resolve する**ので、
+     中身は読めないが「サーバまで届いたか」だけは分かる。
+     届いた → 画素が読めない原因は CORS 側（待っても直らない）
+     届かない → 本当に通信が無い（圏外の帯が既に出ている） */
+async function tileReachable(url) {
+  try { await fetch(url, { mode: 'no-cors', cache: 'no-store' }); return true; }
+  catch (e) { return false; }
+}
+
 function loadTileImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -6337,9 +6347,22 @@ async function readNowcastSeriesRaw(lat, lon) {
        「降っていない」と言うほうが危ない）。 */
     let img;
     try { img = await loadTileImage(url); }
-    catch (e) { return { ok: false, kind: 'network', reason: 'タイルを取得できません' }; }
-    /* ⚠ ここで分ける。**取れなかった**のか、取れたが**読めなかった**のか。
-       読めない（CORSヘッダが無い）のは端末・配信側の性質で、待っても直らない。 */
+    catch (e) {
+      /* ⚠⚠ **CORSの失敗はここに来る。canvasが汚れる道ではない。**
+         `crossOrigin='anonymous'` を付けた <img> は、ACAOヘッダが無いと
+         **読み込み自体が失敗**する（onerror）。つまり CORS で拒まれた場合も、
+         通信で届かなかった場合も、同じ `onerror` に化ける。
+         ⚠ v4.98.0 はこれを一律 `kind:'network'`＝**黙る**に分類していた。
+           「黙らないため」に作った仕組みが、**本番の失敗モードでちょうど黙る**
+           状態だった（実機で帯も棒も出ないという報告。2026-09-20）。
+         → no-cors で取り直す。**届いてはいる**なら原因は CORS 側なので言う。
+           どちらも駄目なら本当に届いていないので、黙ってよい（圏外の帯がある）。 */
+      const reachable = await tileReachable(url);
+      return reachable
+        ? { ok: false, kind: 'device', reason: 'タイルの画素を読めません' }
+        : { ok: false, kind: 'network', reason: 'タイルを取得できません' };
+    }
+    // 念のため残す。crossOrigin を外した実装に戻したときはこちらに来る
     try { a = probeTileAlpha(img, p.px, p.py); }
     catch (e) { return { ok: false, kind: 'device', reason: 'この端末では画素を読めません' }; }
     const at = parseJmaTime(t.validtime);
@@ -6450,7 +6473,7 @@ function radarNoteText() {
      読めない端末）だけ。これは黙っていると「食い違いが無い」と区別がつかない。 */
   if (!state.radar.ok) {
     return state.radar.kind === 'device'
-      ? { kind: 'unreadable', text: `⚠ この端末ではレーダー実況を読めません（予報との突き合わせをしていません）` }
+      ? { kind: 'unreadable', text: `⚠ レーダー実況を読めません（予報との突き合わせをしていません）` }
       : null;
   }
   if (!radarUsable()) return { kind: 'stale', text: 'レーダー実況が古いので突き合わせていません' };

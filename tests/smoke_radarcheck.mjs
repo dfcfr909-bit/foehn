@@ -110,9 +110,16 @@ async function open(o) {
     if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather(o.modelRain)) });
     if (url.includes('targetTimes_N1')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(list) });
     if (url.includes('targetTimes')) return route.fulfill({ contentType: 'application/json', body: '[]' });
+    // 届かない状態（通信そのものが死んでいる）。no-cors の取り直しも落ちる
+    if (o.unreachable && url.includes('/surf/hrpns/')) { tileHits++; return route.abort(); }
     if (url.includes('/surf/hrpns/')) {
       tileHits++;
-      // ⚠ CORSヘッダを付けないと canvas が汚れ、画素が読めない（実機で起きうる状態）
+      /* ⚠⚠ **本番のCORS失敗はこの形になる。**
+         crossOrigin='anonymous' を付けた <img> は、ACAOヘッダが無いと
+         「汚れる」のではなく**読み込み自体が失敗**する（onerror）。
+         それを再現するため、**届くが画像として読めない**中身を返す。
+         no-cors の取り直しは成功するので、「届いてはいる」と判定できるはず。 */
+      if (o.badImage) return route.fulfill({ contentType: 'image/png', body: Buffer.from('not an image') });
       const headers = (o.cors === false) ? {} : { 'access-control-allow-origin': '*' };
       return route.fulfill({ contentType: 'image/png', body: o.radarWet ? WET_PNG : DRY_PNG, headers });
     }
@@ -203,6 +210,35 @@ const note = page => page.evaluate(() => {
   ok(st.ok === false && st.kind === 'device', '★前提: 画素が読めない状態を作れている', st);
   ok(n.shown && /読めません/.test(n.text),
     '★★★画素が読めない端末では黙らない（「食い違いなし」と区別がつかなくなる）', n);
+  await p.close();
+}
+
+/* ============ 4b. ⚠⚠⚠ 画像が読めないのに黙らないこと（実機で踏んだ穴） ============
+   v4.98.0 は「画像の読み込み失敗」を一律 kind:'network'＝黙る に分類していた。
+   ところが **CORS で拒まれた場合もここに来る**（crossOrigin='anonymous' を付けた
+   <img> は ACAO が無いと onerror になる）。つまり本番の失敗モードでちょうど黙り、
+   実機では帯も棒も出なかった。**この機能を作った目的そのものが達成できていなかった。** */
+{
+  const p = await open({ modelRain: true, radarWet: false, badImage: true });
+  const st = await p.evaluate(() => ({ ok: state.radar.ok, kind: state.radar.kind }));
+  const n = await note(p);
+  ok(p.tileHits() > 0, '★前提: タイルは取りに行っている（届いてはいる）', p.tileHits());
+  ok(st.ok === false && st.kind === 'device',
+    '★★★届くが読めないときは device に分類する（通信の失敗と混ぜない）', st);
+  ok(n.shown && /読めません/.test(n.text),
+    '★★★画像が読めないなら黙らない（CORSの失敗はここに化ける）', n);
+  await p.close();
+}
+
+/* ============ 4c. ★★ 本当に届かないなら黙る（帯を2本にしない） ============
+   ⚠ 4b と対。ここまで黙らなくすると、通信が死んでいるだけで帯が増えて
+   チャートが縮む。**届くかどうか**で分けているので、ここは静かなまま。 */
+{
+  const p = await open({ modelRain: true, radarWet: false, unreachable: true });
+  const st = await p.evaluate(() => ({ ok: state.radar.ok, kind: state.radar.kind }));
+  const n = await note(p);
+  ok(st.ok === false && st.kind === 'network', '★前提: 届かない状態を作れている', st);
+  ok(!n.shown, '★★★本当に届かないときは黙る（圏外の帯と二重にしない）', n);
   await p.close();
 }
 
