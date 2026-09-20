@@ -327,11 +327,11 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `MAP_LS_*` | localStorage のキー | 約 4571 |
 | `JMA_NOWCAST_BASE` / `JMA_TIMES_PRECIP` / `JMA_TIMES_THUNDER` | ナウキャスト | 約 4583 |
 | `JMA_SAT_BASE` / `JMA_TIMES_SAT` | ひまわり | 約 4592 |
-| `SAT_BANDS` / `SAT_TINTS` | 衛星のバンドと着色 | 約 4603 / 4619 |
+| `SAT_BANDS` | 衛星のバンド（赤外・雲頂）。⚠ 着色 `SAT_TINTS` は v4.99.0 で撤去 | 約 4603 |
 | `MAP_WEATHER` | 気象レイヤーの表 | 約 4634 |
 | `WX_REFRESH_MS` | 自動更新の間隔（5分） | 約 4632 |
 | `findBase` / `findOverlay` / `usableOverlays` / `usableWeather` | 表の引き当て（`pending` を除く） | 約 4668-4674 |
-| `satBandDef` / `satTintDef` / `satBands` | 同上（衛星） | 約 4625-4627 |
+| `satBandDef` / `satBands` | 同上（衛星） | 約 4625 |
 | `amedasElementDef` / `amedasDirName` / `amedasDirDeg` | 同上（アメダス） | 約 4559-4569 |
 
 ## 地図 — 本体とタイルレイヤー
