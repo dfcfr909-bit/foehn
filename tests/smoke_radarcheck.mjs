@@ -69,8 +69,11 @@ function nowcastTimes(shiftMin) {
   return { base, list: out };
 }
 
-/* 毎時データ。modelRain=true なら全時間ずっと雨（3.7mm）にする */
-function fakeWeather(modelRain) {
+/* 毎時データ。modelRain=true なら全時間ずっと雨（3.7mm）にする。
+   ⚠ `sky` で昼夜の陰影を固定する。雲パネルの背は昼夜で明るさが変わるので、
+     実況ストリップの見え方の検査は**両方で**確かめないと、実行した時刻しだいで
+     通ったり落ちたりする（CIで実際に踏んだ）。 */
+function fakeWeather(modelRain, sky) {
   const h = { time: [], temperature_2m: [], apparent_temperature: [], precipitation: [], snowfall: [],
     surface_pressure: [], windspeed_10m: [], winddirection_10m: [], windgusts_10m: [], weathercode: [], cloudcover: [] };
   const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 3);
@@ -86,7 +89,10 @@ function fakeWeather(modelRain) {
   for (let dd = 0; dd < 13; dd++) {
     const b = new Date(start.getTime() + dd * 864e5);
     const ds = `${b.getFullYear()}-${p2(b.getMonth() + 1)}-${p2(b.getDate())}`;
-    daily.time.push(ds); daily.sunrise.push(`${ds}T04:40`); daily.sunset.push(`${ds}T19:00`);
+    daily.time.push(ds);
+    if (sky === 'day')        { daily.sunrise.push(`${ds}T00:01`); daily.sunset.push(`${ds}T23:58`); }
+    else if (sky === 'night') { daily.sunrise.push(`${ds}T23:58`); daily.sunset.push(`${ds}T23:59`); }
+    else                      { daily.sunrise.push(`${ds}T04:40`); daily.sunset.push(`${ds}T19:00`); }
   }
   return { hourly: h, daily, elevation: 800 };
 }
@@ -107,7 +113,7 @@ async function open(o) {
     if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
     if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
     if (url.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
-    if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather(o.modelRain)) });
+    if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather(o.modelRain, o.sky)) });
     if (url.includes('targetTimes_N1')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(list) });
     if (url.includes('targetTimes')) return route.fulfill({ contentType: 'application/json', body: '[]' });
     // 届かない状態（通信そのものが死んでいる）。no-cors の取り直しも落ちる
@@ -167,22 +173,38 @@ async function stripVisibility(page) {
     cx.drawImage(ia, 0, 0); const da = cx.getImageData(0, 0, cv.width, cv.height).data;
     cx.clearRect(0, 0, cv.width, cv.height);
     cx.drawImage(ib, 0, 0); const db = cx.getImageData(0, 0, cv.width, cv.height).data;
-    /* ⚠ 明暗の**両方向**を測る。薄い白を乗せただけなら「明るくなる」しか起きない。
-       濃い縁が敷かれていれば「暗くなる」画素も必ず出る。
-       ⚠⚠ 差分の大きさだけで見てはいけない。ここの背は濃い青なので、
-         10%の白でも差は出る——**実機の明るい背では埋もれるのに通ってしまう**
-         （実際そう書いて壊し方をすり抜けさせた）。 */
-    let maxD = 0, cnt = 0, up = 0, down = 0;
+    /* ⚠⚠ **背景と比べてはいけない。描いたものの中身を見る。**
+       はじめは「実況を描いて明るくなった画素／暗くなった画素」を数えたが、
+       雲パネルの背は**昼夜の陰影で明るさが変わる**。白い塗りは
+       暗い背では「明るくなった」、明るい背では「暗くなった」に化けるので、
+       **実行した時刻で結果が変わる**検査になっていた（CIで落ちて気づいた）。
+       → 変わった画素の**絶対的な明るさ**を見る。縁は必ず暗く、塗りは必ず明るい。
+         これなら背が何色でも同じ判定になる。 */
+    const diff = (i) => Math.max(Math.abs(da[i] - db[i]), Math.abs(da[i+1] - db[i+1]), Math.abs(da[i+2] - db[i+2]));
+    let maxD = 0, cnt = 0, minX = 1e9, maxX = -1;
     for (let i = 0; i < da.length; i += 4) {
-      const la = (da[i] + da[i+1] + da[i+2]) / 3;
-      const lb = (db[i] + db[i+1] + db[i+2]) / 3;
-      const d = Math.max(Math.abs(da[i] - db[i]), Math.abs(da[i+1] - db[i+1]), Math.abs(da[i+2] - db[i+2]));
+      const d = diff(i);
       if (d > maxD) maxD = d;
-      if (d >= 24) cnt++;                  // 「うっすら」は数えない
-      if (la - lb >= 24) up++;             // 実況を描いて明るくなった（塗り）
-      if (lb - la >= 24) down++;           // 実況を描いて暗くなった（縁）
+      if (d < 24) continue;                // 「うっすら」は数えない
+      cnt++;
+      const x = (i / 4) % cv.width;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
     }
-    return { maxD, cnt, up, down };
+    /* ⚠⚠ **「実況」の札を除いて数えること。** 札は濃い座布団なので、
+       **縁を外しても暗い画素が残り**、縁の検査が素通りする（実際にすり抜けた）。
+       札はストリップの**左端**に付くので、**右端の数列だけ**を見れば札は入らない。 */
+    let darkPx = 0, lightPx = 0;
+    const x0 = maxX - 8;
+    for (let i = 0; i < da.length; i += 4) {
+      if (diff(i) < 24) continue;
+      const x = (i / 4) % cv.width;
+      if (x < x0) continue;                // 左側（札のある方）は見ない
+      const la = (da[i] + da[i+1] + da[i+2]) / 3;   // 実況を描いた後の明るさ
+      if (la < 110) darkPx++;              // 縁
+      if (la > 175) lightPx++;             // 塗り
+    }
+    return { maxD, cnt, darkPx, lightPx, 幅: maxX - minX };
   }, [withShot.toString('base64'), withoutShot.toString('base64')]);
 }
 
@@ -211,18 +233,21 @@ const note = page => page.evaluate(() => {
    遅く返るのに、初回は描き直さない実装にしていたため（実機で発覚）。
    ⚠ 雲パネルの背は青にも白にもなるので、**薄い色だけで描かない**。
      縁を敷いて、どちらの背でも読めること。 */
-{
-  const p = await open({ modelRain: false, radarWet: false });
+/* ⚠⚠ **昼と夜の両方で確かめる。** 雲パネルの背は昼夜の陰影で明るさが変わるので、
+   片方だけだと**実行した時刻しだいで通ったり落ちたりする**（CIで実際に踏んだ）。 */
+for (const sky of ['day', 'night']) {
+  const p = await open({ modelRain: false, radarWet: false, sky });
   const before = await p.evaluate(() => ({ ok: state.radar && state.radar.ok, usable: radarUsable() }));
-  ok(before.ok && before.usable, '★前提: 実況を読めている', before);
+  ok(before.ok && before.usable, `★前提: 実況を読めている（${sky}）`, before);
   const v = await stripVisibility(p);
   ok(v.maxD >= 40,
-    '★★★実況のストリップが画面に描かれている（stateに入っただけで終わらせない）', v);
-  ok(v.cnt >= 40, '★★はっきり分かる面積で描く', v);
-  /* ⚠⚠ 濃い縁が敷かれていること。塗りだけだと**明るい背で埋もれて**、
-     「実況が無い」と見分けがつかなくなる。 */
-  ok(v.down >= 20 && v.up >= 20,
-    '★★★塗りと縁の両方がある（明るい背でも暗い背でも読める）', v);
+    `★★★実況のストリップが画面に描かれている（${sky}／stateに入っただけで終わらせない）`, v);
+  ok(v.cnt >= 40, `★★はっきり分かる面積で描く（${sky}）`, v);
+  /* ⚠⚠ 濃い縁と明るい塗りが**両方**あること。塗りだけだと**明るい背で埋もれて**、
+     「実況が無い」と見分けがつかなくなる。
+     ⚠ 背との比較ではなく、描いた画素そのものの明るさで見る。 */
+  ok(v.darkPx >= 6 && v.lightPx >= 6,
+    `★★★濃い縁と明るい塗りの両方で描く（${sky}／背の明るさによらず読める）`, v);
   await p.close();
 }
 

@@ -4631,7 +4631,7 @@ function drawCloudPrecip(u) {
       const xb = u.valToPos(toIdx(st.at.getTime() + halfMs), 'x', true);
       if (xb < PADDING_L * pr || xa > W - PADDING_R * pr) continue;
       const w = Math.max(1, xb - xa);
-      ctx.fillStyle = 'rgba(18,28,44,0.60)';                 // 縁（背が明るくても沈まない）
+      ctx.fillStyle = 'rgba(18,28,44,0.75)';                 // 縁（背が白でも必ず暗く残る濃さ）
       ctx.fillRect(xa, rTop - pr, w, rH + 2 * pr);
       // 降っている＝雨の棒と同じteal、降っていない＝見に行った印の白
       ctx.fillStyle = st.wet ? 'rgba(26,190,190,0.95)' : 'rgba(255,255,255,0.80)';
@@ -4642,7 +4642,7 @@ function drawCloudPrecip(u) {
     if (lx > (PADDING_L + 30) * pr) {
       ctx.font = `${9 * pr}px system-ui, sans-serif`;
       const tw = ctx.measureText('実況').width;
-      ctx.fillStyle = 'rgba(18,28,44,0.72)';                 // 札（白文字が背に負けないように）
+      ctx.fillStyle = 'rgba(18,28,44,0.78)';                 // 札（白文字が背に負けないように）
       ctx.fillRect(lx - tw - 5 * pr, rTop - pr, tw + 4 * pr, rH + 2 * pr);
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.textAlign = 'right';
