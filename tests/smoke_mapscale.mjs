@@ -181,8 +181,15 @@ const labelMeters = t => {
   const bad = [];
   const seen = [];
   for (let z = 6; z <= 16; z++) {
-    await page.evaluate(zz => leafletMap.setZoom(zz), z);
-    await page.waitForTimeout(260);
+    /* ⚠⚠ **演出を止めて倍率を変えること。** `setZoom` は既定で約250msかけて
+       animateするので、固定待ち260msでは**間に合わないことがある**。すると
+       メジャーは前の倍率のまま・地図は新しい倍率、という状態で測ってしまい、
+       「長さ不一致」で落ちる。**実装の不具合ではなく検査の競合**だった
+       （固定待ちのまま4回中4回落ちた。2026-09-20）。
+       ⚠ アプリ側は棒と数字を `updateMapScale` が**一緒に**書くので、演出中でも
+       「棒と数字」は食い違わない。食い違って見えるのは検査の測り方だけ。 */
+    await page.evaluate(zz => leafletMap.setZoom(zz, { animate: false }), z);
+    await page.waitForTimeout(160);
     const s = await readScale();
     const m = labelMeters(s.text);
     seen.push(s.text);
