@@ -2142,7 +2142,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.100.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.100.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -2719,7 +2719,7 @@ function applyWeatherJson(json, dem, lat, lon) {
      paintRadarNote / buildCharts を自分で呼び直す（refreshRadarCheck の中）。 */
   state.radar = null;                          // 前の地点の実況を持ち越さない
   paintRadarNote();
-  refreshRadarCheck(false);                    // 直後は下の render() が描く
+  refreshRadarCheck();                         // 遅れて返ったら自分で描き直す
   startRadarWatch();
   // DOM反映後に描画
   requestAnimationFrame(() => {
@@ -2976,11 +2976,16 @@ async function reverseGeocode(lat, lon) {
 /* ============================================================
    RENDER MASTER
    ============================================================ */
+/* ⚠ チャートが一度でも組み上がったか。**遅れて届いたデータを描き直してよいかの判断に使う。**
+   立つ前に buildCharts() を外から呼ぶと、rAF で走る render() と二重になって壊れる。 */
+let chartsReady = false;
+
 function render() {
   if (!state.allData) return;
   try {
     updateLocationName();
     buildCharts();          // データ取得・リサイズ時のみの1回描画
+    chartsReady = true;     // ここから先は外から描き直してよい
     scrollToIndex(state.sliderIndex);   // 選択時刻が見える位置へスクロール
     positionScrubLine();                // 赤の選択線を選択時刻の位置へ
     updatePopup();
@@ -4616,21 +4621,32 @@ function drawCloudPrecip(u) {
     const halfMs = NOWC_STEP_MIN * 60000 / 2;
     const rH = 4 * pr;
     const rTop = bottom - 5 * pr - rH - 1 * pr;      // 地表帯のすぐ上
+    /* ⚠⚠ **縁を先に敷くこと。** 雲パネルの背は青にも白にもなる。
+       「降っていない」を薄い白だけで描くと、**明るい所で完全に埋もれる**。
+       濃い縁を下に敷けば、どちらの背でも帯の在りかが読める。
+       ⚠ 描いてある区間＝見に行けた区間、という読み方の土台なので、
+         「見えないことがある」は「無い」と区別がつかず致命的。 */
     for (const st of state.radar.steps) {
       const xa = u.valToPos(toIdx(st.at.getTime() - halfMs), 'x', true);
       const xb = u.valToPos(toIdx(st.at.getTime() + halfMs), 'x', true);
       if (xb < PADDING_L * pr || xa > W - PADDING_R * pr) continue;
-      // 降っている＝雨の棒と同じteal、降っていない＝見に行った印の薄い白
-      ctx.fillStyle = st.wet ? 'rgba(26,190,190,0.95)' : 'rgba(255,255,255,0.30)';
-      ctx.fillRect(xa, rTop, Math.max(1, xb - xa), rH);
+      const w = Math.max(1, xb - xa);
+      ctx.fillStyle = 'rgba(18,28,44,0.60)';                 // 縁（背が明るくても沈まない）
+      ctx.fillRect(xa, rTop - pr, w, rH + 2 * pr);
+      // 降っている＝雨の棒と同じteal、降っていない＝見に行った印の白
+      ctx.fillStyle = st.wet ? 'rgba(26,190,190,0.95)' : 'rgba(255,255,255,0.80)';
+      ctx.fillRect(xa, rTop, w, rH);
     }
     // 「実況」と分かるように左端へ小さく添える（棒＝予報との取り違え防止）
     const lx = u.valToPos(toIdx(state.radar.steps[0].at.getTime() - halfMs), 'x', true);
-    if (lx > (PADDING_L + 26) * pr) {
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    if (lx > (PADDING_L + 30) * pr) {
       ctx.font = `${9 * pr}px system-ui, sans-serif`;
+      const tw = ctx.measureText('実況').width;
+      ctx.fillStyle = 'rgba(18,28,44,0.72)';                 // 札（白文字が背に負けないように）
+      ctx.fillRect(lx - tw - 5 * pr, rTop - pr, tw + 4 * pr, rH + 2 * pr);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.textAlign = 'right';
-      ctx.fillText('実況', lx - 2 * pr, rTop + rH);
+      ctx.fillText('実況', lx - 3 * pr, rTop + rH);
       ctx.textAlign = 'left';
     }
   }
@@ -6437,19 +6453,30 @@ function radarWetAt(t) {
   return best ? best.wet : null;
 }
 
-/* ⚠⚠ **`redraw` を渡されたときだけ描き直すこと。**
-   はじめは無条件に `buildCharts()` を呼んでいたが、読み込み直後は
-   `applyWeatherJson` の `render()` が rAF で**あとから走る**ので、
-   uPlot を二重に組み立てて**チャートが壊れた**（雲パネルの標高の破線が
-   消え、`smoke_elev` が捕まえた）。描き直しは `applySupplemental` と
-   同じ三点セットに揃える。 */
-async function refreshRadarCheck(redraw) {
+/* ⚠⚠ **「チャートが組み上がっているか」で描き直しを決めること。**
+   ここは2度間違えた。
+
+   1回目: 無条件に `buildCharts()` を呼んだ。読み込み直後は
+     `applyWeatherJson` の `render()` が rAF で**あとから走る**ので、
+     uPlot を二重に組み立ててチャートが壊れた（`smoke_elev` が捕まえた）。
+   2回目: それを避けようと初回は `redraw: false` にした。ところが実況の
+     読み取りはタイル13枚ぶんで**必ず `render()` より遅い**。つまり
+     **結果が出ても誰も描かず、ストリップが永久に出なかった**
+     （実機で「実況が出ない」。画素で測って差分ゼロ＝一度も描かれていないと確認）。
+
+   → 旗ではなく**状態**で決める。`chartsReady` が立つのは `render()` が
+     `buildCharts()` を終えた後だけ。
+     - 実況が `render()` **より早く**返った → まだ false。何もしない
+       （これから走る `render()` が最新の `state.radar` を読んで描く）
+     - 実況が `render()` **より遅く**返った → true。ここで描き直す
+   どちらでも二重組み立てにならず、どちらでも必ず描かれる。 */
+async function refreshRadarCheck() {
   const seq = ++radarSeq;
   const r = await readNowcastSeries(state.lat, state.lon);
   if (seq !== radarSeq) return;              // 地点が変わっていたら捨てる
   state.radar = r;
   paintRadarNote();
-  if (redraw && state.allData) {
+  if (chartsReady && state.allData) {
     try { buildCharts(); positionScrubLine(); updatePopup(); } catch (e) { /* 描画前なら無視 */ }
   }
 }
@@ -6459,7 +6486,7 @@ async function refreshRadarCheck(redraw) {
 function startRadarWatch() {
   if (radarTimer) return;
   radarTimer = setInterval(() => {
-    if (document.visibilityState === 'visible') refreshRadarCheck(true);
+    if (document.visibilityState === 'visible') refreshRadarCheck();
   }, RADAR_REFRESH_MS);
 }
 

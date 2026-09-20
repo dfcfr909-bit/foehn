@@ -149,6 +149,43 @@ async function open(o) {
   page.tileHits = () => tileHits;
   return page;
 }
+/* 実況を「消す前」と「消した後」の画面を突き合わせて、**本当に描かれているか**を測る。
+   ⚠⚠ **これが無かったから素通りした。** v4.98.0〜v4.100.0 は `state.radar` と帯の
+     文言しか見ておらず、**ストリップが一度も描かれていない**ことに気づけなかった。
+     実機で「実況が出ない」と言われて初めて分かった（画素で測って差分ゼロ）。 */
+async function stripVisibility(page) {
+  const withShot = await page.screenshot();
+  await page.evaluate(() => { state.radar = null; buildCharts(); });
+  await page.waitForTimeout(500);
+  const withoutShot = await page.screenshot();
+  return page.evaluate(async ([a, b]) => {
+    const load = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,' + src; });
+    const [ia, ib] = await Promise.all([load(a), load(b)]);
+    const cv = document.createElement('canvas');
+    cv.width = ia.width; cv.height = ia.height;
+    const cx = cv.getContext('2d');
+    cx.drawImage(ia, 0, 0); const da = cx.getImageData(0, 0, cv.width, cv.height).data;
+    cx.clearRect(0, 0, cv.width, cv.height);
+    cx.drawImage(ib, 0, 0); const db = cx.getImageData(0, 0, cv.width, cv.height).data;
+    /* ⚠ 明暗の**両方向**を測る。薄い白を乗せただけなら「明るくなる」しか起きない。
+       濃い縁が敷かれていれば「暗くなる」画素も必ず出る。
+       ⚠⚠ 差分の大きさだけで見てはいけない。ここの背は濃い青なので、
+         10%の白でも差は出る——**実機の明るい背では埋もれるのに通ってしまう**
+         （実際そう書いて壊し方をすり抜けさせた）。 */
+    let maxD = 0, cnt = 0, up = 0, down = 0;
+    for (let i = 0; i < da.length; i += 4) {
+      const la = (da[i] + da[i+1] + da[i+2]) / 3;
+      const lb = (db[i] + db[i+1] + db[i+2]) / 3;
+      const d = Math.max(Math.abs(da[i] - db[i]), Math.abs(da[i+1] - db[i+1]), Math.abs(da[i+2] - db[i+2]));
+      if (d > maxD) maxD = d;
+      if (d >= 24) cnt++;                  // 「うっすら」は数えない
+      if (la - lb >= 24) up++;             // 実況を描いて明るくなった（塗り）
+      if (lb - la >= 24) down++;           // 実況を描いて暗くなった（縁）
+    }
+    return { maxD, cnt, up, down };
+  }, [withShot.toString('base64'), withoutShot.toString('base64')]);
+}
+
 const note = page => page.evaluate(() => {
   const el = document.getElementById('radar-note');
   return { shown: !!el.offsetParent, cls: el.className, text: (el.textContent || '').trim() };
@@ -164,6 +201,28 @@ const note = page => page.evaluate(() => {
   ok(n.shown, '★★★予報とレーダーが食い違ったら帯を出す', n);
   ok(/レーダー/.test(n.text) && /ありません/.test(n.text),
     '★★どちらが何と言っているかを書く', n.text);
+  await p.close();
+}
+
+/* ============ 1b. ★★★ ストリップが実際に画面に描かれていること ============
+   ⚠⚠ **「state に入っているか」ではなく「画面に出ているか」を見る。**
+   v4.98.0〜v4.100.0 は前者しか見ておらず、`state.radar.ok === true` なのに
+   **一度も描かれていなかった**。読み取りはタイル13枚ぶんで必ず `render()` より
+   遅く返るのに、初回は描き直さない実装にしていたため（実機で発覚）。
+   ⚠ 雲パネルの背は青にも白にもなるので、**薄い色だけで描かない**。
+     縁を敷いて、どちらの背でも読めること。 */
+{
+  const p = await open({ modelRain: false, radarWet: false });
+  const before = await p.evaluate(() => ({ ok: state.radar && state.radar.ok, usable: radarUsable() }));
+  ok(before.ok && before.usable, '★前提: 実況を読めている', before);
+  const v = await stripVisibility(p);
+  ok(v.maxD >= 40,
+    '★★★実況のストリップが画面に描かれている（stateに入っただけで終わらせない）', v);
+  ok(v.cnt >= 40, '★★はっきり分かる面積で描く', v);
+  /* ⚠⚠ 濃い縁が敷かれていること。塗りだけだと**明るい背で埋もれて**、
+     「実況が無い」と見分けがつかなくなる。 */
+  ok(v.down >= 20 && v.up >= 20,
+    '★★★塗りと縁の両方がある（明るい背でも暗い背でも読める）', v);
   await p.close();
 }
 
