@@ -460,8 +460,12 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   });
   ok(whenOff, '★レイヤーを切ると表記も消える', whenOff);
 
-  // ズームを引くと山域名は消え、面と△は残る（低ズームで札が重ならないように）
-  await page.evaluate(() => leafletMap.setView([36.4, 138.0], 6));
+  /* ズームを引くと山域名は消え、面と△は残る（低ズームで札が重ならないように）
+     ⚠⚠ **演出を止めて動かすこと。** `setView` は既定でアニメーションするので、
+       固定待ち400msでは `moveend` に間に合わないことがある。すると `drawAreas` が
+       まだ走っておらず、**前のズームの札（19枚）が残ったまま**測って落ちる。
+       実装の不具合ではなく検査の競合（2026-09-20 に踏んだ）。 */
+  await page.evaluate(() => leafletMap.setView([36.4, 138.0], 6, { animate: false }));
   await page.waitForTimeout(400);
   const areasFar = await page.evaluate(() => ({
     labels: document.querySelectorAll('.area-label-box').length,
