@@ -114,7 +114,17 @@ async function open(o) {
     if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
     if (url.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
     if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather(o.modelRain, o.sky)) });
-    if (url.includes('targetTimes_N1')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(list) });
+    /* ⚠ 時刻表だけ落ちる状態。タイルには届くのに、その手前で諦める経路。
+       CORSが時刻表のJSONで弾かれるとこうなる（fetch は ACAO が無いと失敗する）。 */
+    if (url.includes('targetTimes_N1')) {
+      /* ⚠ **「届くが読めない」を作ること。** `route.abort()` にすると no-cors の
+         取り直しも落ちるので、それは「本当に届かない」＝黙ってよい側になる
+         （最初そう書いて、直したはずの検査が落ちたままになった）。
+         CORSで弾かれた形＝サーバには届くが中身が使えない、を中身を壊して作る。 */
+      if (o.timesFail) return route.fulfill({ contentType: 'application/json', body: 'not json' });
+      if (o.timesGone) return route.abort();
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(list) });
+    }
     if (url.includes('targetTimes')) return route.fulfill({ contentType: 'application/json', body: '[]' });
     // 届かない状態（通信そのものが死んでいる）。no-cors の取り直しも落ちる
     if (o.unreachable && url.includes('/surf/hrpns/')) { tileHits++; return route.abort(); }
@@ -248,6 +258,33 @@ for (const sky of ['day', 'night']) {
      ⚠ 背との比較ではなく、描いた画素そのものの明るさで見る。 */
   ok(v.darkPx >= 6 && v.lightPx >= 6,
     `★★★濃い縁と明るい塗りの両方で描く（${sky}／背の明るさによらず読める）`, v);
+  await p.close();
+}
+
+/* ============ 1c. ⚠⚠⚠ 時刻表で落ちても黙らないこと ============
+   ⚠ タイルを1枚も読む前に、時刻表の fetch で落ちる経路がある。`fetch` は
+     ACAOヘッダが無いと失敗するので、**CORSで弾かれるとここに来る**。
+     v4.100.0 はこれを一律 `kind:'network'`＝黙るに分類していたため、
+     `tileReachable` による切り分けが**一度も使われない**まま黙っていた。 */
+{
+  const p = await open({ modelRain: true, radarWet: false, timesFail: true });
+  const st = await p.evaluate(() => ({ ok: state.radar.ok, kind: state.radar.kind, reason: state.radar.reason }));
+  const n = await note(p);
+  ok(st.ok === false && st.kind === 'device', '★前提: 時刻表で落ちている（届いてはいる）', st);
+  ok(n.shown && /読めません/.test(n.text),
+    '★★★時刻表で落ちても黙らない（タイルに届くのに手前で諦めている）', { st, n });
+  ok(/時刻表/.test(n.text), '★★どの段で落ちたかを帯に書く（推測で直さないため）', n.text);
+  await p.close();
+}
+
+/* ============ 1d. ★★ 時刻表にも届かないなら黙る ============
+   ⚠ 1c と対。通信そのものが死んでいるだけで帯を増やさない。 */
+{
+  const p = await open({ modelRain: true, radarWet: false, timesGone: true });
+  const st = await p.evaluate(() => ({ ok: state.radar.ok, kind: state.radar.kind }));
+  const n = await note(p);
+  ok(st.kind === 'network', '★前提: 時刻表にも届かない状態', st);
+  ok(!n.shown, '★★★届かないだけなら黙る（圏外の帯と二重にしない）', n);
   await p.close();
 }
 

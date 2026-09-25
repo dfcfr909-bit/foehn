@@ -2142,7 +2142,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.100.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.101.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6349,9 +6349,18 @@ async function readNowcastSeriesRaw(lat, lon) {
   try {
     seq = nowcastSeries(await jmaTimesList(def.timesFile)).slice(0, NOWC_MAX_STEPS);
   } catch (e) {
-    return { ok: false, kind: 'network', reason: '時刻表を取得できません' };
+    /* ⚠⚠ **ここも切り分けること。タイルより手前で落ちる。**
+       `jmaTimesList` は素の `fetch` なので、ACAOヘッダが無いと失敗する。
+       つまり**CORSで弾かれるとタイルを1枚も読まずにここへ来る**。
+       v4.100.0 はこれを一律 `network`＝黙るにしていたので、せっかく足した
+       `tileReachable` の切り分けが**一度も動かないまま黙っていた**
+       （実機で帯も棒も出ないという報告。検査で同じ状態を再現して確認）。 */
+    const reachable = await tileReachable(def.timesFile);
+    return reachable
+      ? { ok: false, kind: 'device', reason: '時刻表を読めません' }
+      : { ok: false, kind: 'network', reason: '時刻表を取得できません' };
   }
-  if (seq.length < 2) return { ok: false, kind: 'network', reason: '時刻表が足りません' };
+  if (seq.length < 2) return { ok: false, kind: 'device', reason: '時刻表が足りません' };
   const p = tilePixelAt(lat, lon, NOWC_TILE_Z);
   const steps = [];
   for (const t of seq) {
@@ -6500,7 +6509,9 @@ function radarNoteText() {
      読めない端末）だけ。これは黙っていると「食い違いが無い」と区別がつかない。 */
   if (!state.radar.ok) {
     return state.radar.kind === 'device'
-      ? { kind: 'unreadable', text: `⚠ レーダー実況を読めません（予報との突き合わせをしていません）` }
+      /* ⚠ **理由を書く。** どの段で落ちたかが画面から分かるようにしないと、
+         実機で「出ない」と言われるたびに推測で直すことになる（実際そうなった）。 */
+      ? { kind: 'unreadable', text: `⚠ レーダー実況を読めません（${state.radar.reason}）` }
       : null;
   }
   if (!radarUsable()) return { kind: 'stale', text: 'レーダー実況が古いので突き合わせていません' };
