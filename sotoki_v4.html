@@ -2142,7 +2142,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.101.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.102.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6360,7 +6360,14 @@ async function readNowcastSeriesRaw(lat, lon) {
       ? { ok: false, kind: 'device', reason: '時刻表を読めません' }
       : { ok: false, kind: 'network', reason: '時刻表を取得できません' };
   }
-  if (seq.length < 2) return { ok: false, kind: 'device', reason: '時刻表が足りません' };
+  /* ⚠⚠ **1点でよい。2点を要求してはいけない。**
+     実物の `targetTimes_N1.json` には**未来の時刻が入っていない**（実況だけ）。
+     「実況＋5分先×12」が入っている前提で検査のスタブを書いていたので、
+     検査は緑なのに**実機では必ずここで弾かれていた**（実機の帯が
+     「時刻表が足りません」と教えてくれた。2026-09-25）。
+     この機能の本体は「いま降っているか」なので、**実況の1点で成り立つ**。
+     先の時間はあれば描く、無ければ描かない、でよい。 */
+  if (!seq.length) return { ok: false, kind: 'device', reason: '時刻表が空です' };
   const p = tilePixelAt(lat, lon, NOWC_TILE_Z);
   const steps = [];
   for (const t of seq) {
@@ -6479,6 +6486,20 @@ function radarWetAt(t) {
        （これから走る `render()` が最新の `state.radar` を読んで描く）
      - 実況が `render()` **より遅く**返った → true。ここで描き直す
    どちらでも二重組み立てにならず、どちらでも必ず描かれる。 */
+/* いまの実況。
+   ⚠⚠ **`radarWetAt(new Date())` を使ってはいけない。** 実況の時刻はたいてい
+     数分前なので、1点しか無いときは**範囲外**に落ちて null になる。
+     古さは `radarUsable()`（20分）が見ているので、**直近の1点を「いま」として
+     使ってよい**。範囲を広げるのは `radarWetAt` の側ではない——あちらは
+     ストリップを描くための「どこを見に行けたか」なので、広げると嘘になる。 */
+function radarNowWet() {
+  if (!radarUsable()) return null;
+  const now = Date.now();
+  const past = state.radar.steps.filter(s => s.at.getTime() <= now);
+  const s = past.length ? past[past.length - 1] : state.radar.steps[0];
+  return s ? s.wet : null;
+}
+
 async function refreshRadarCheck() {
   const seq = ++radarSeq;
   const r = await readNowcastSeries(state.lat, state.lon);
@@ -6524,8 +6545,8 @@ function radarNoteText() {
      ナウキャストは「いま＋60分」なので、行の時刻で引くと**最大59分ぶん過去に
      外れて** null になり、食い違っていても黙ってしまう（検査が捕まえた）。
      モデル側は「いまの1時間」の値、レーダー側は「いまこの瞬間」で比べる。 */
-  const wet = radarWetAt(new Date());
-  if (wet == null) return null;                        // 範囲外。言えることが無い
+  const wet = radarNowWet();
+  if (wet == null) return null;                        // 使える実況が無い
   const modelWet = (d.precip || 0) >= RAIN_MM;
   if (modelWet === wet) return null;                   // 一致。黙っていてよい
   return modelWet

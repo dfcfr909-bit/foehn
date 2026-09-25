@@ -59,11 +59,24 @@ const DRY_PNG = rgbaPng(256, 256, () => [0, 0, 0, 0]);        // 透明＝降っ
 const TILE_PNG = rgbaPng(8, 8, () => [200, 200, 200, 255]);
 
 const LAT = 36.57, LON = 137.65;
-function nowcastTimes(shiftMin) {
+/* ⚠⚠ **`obsOnly` が実物の形。** 実際の `targetTimes_N1.json` には
+   **未来の時刻が入っていない**。ここに「実況＋5分先×12」を書いていたせいで、
+   検査は緑なのに実機では必ず弾かれていた（2026-09-25 に実機の帯で発覚）。
+   未来ありの形も残す（相手の都合で増える可能性はあるため）。 */
+function nowcastTimes(shiftMin, obsOnly) {
   const base = new Date(Math.floor(Date.now() / 300e3) * 300e3 - (shiftMin || 0) * 60000);
   const stamp = d => `${d.getUTCFullYear()}${p2(d.getUTCMonth() + 1)}${p2(d.getUTCDate())}T` +
     `${p2(d.getUTCHours())}${p2(d.getUTCMinutes())}${p2(d.getUTCSeconds())}Z`;
   const b = stamp(base);
+  if (obsOnly) {
+    // 実況だけ。過去5分刻みが並び、いちばん新しいものが base
+    const out = [];
+    for (let i = 11; i >= 0; i--) {
+      const t = stamp(new Date(base.getTime() - i * 300e3));
+      out.push({ basetime: t, validtime: t, elements: ['hrpns'] });
+    }
+    return { base, list: out };
+  }
   const out = [{ basetime: b, validtime: b, elements: ['hrpns'] }];
   for (let i = 1; i <= 12; i++) out.push({ basetime: b, validtime: stamp(new Date(base.getTime() + i * 300e3)), elements: ['hrpns'] });
   return { base, list: out };
@@ -103,7 +116,7 @@ const errors = [];
 
 /* o = { modelRain, radarWet, cors, offline, ageMin } */
 async function open(o) {
-  const { list } = nowcastTimes(o.ageMin || 0);
+  const { list } = nowcastTimes(o.ageMin || 0, o.obsOnly);
   let tileHits = 0;
   const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   page.on('pageerror', e => errors.push(e.message));
@@ -285,6 +298,35 @@ for (const sky of ['day', 'night']) {
   const n = await note(p);
   ok(st.kind === 'network', '★前提: 時刻表にも届かない状態', st);
   ok(!n.shown, '★★★届かないだけなら黙る（圏外の帯と二重にしない）', n);
+  await p.close();
+}
+
+/* ============ 1e. ⚠⚠⚠ 実況だけの時刻表でも成り立つこと（実物の形） ============
+   実際の `targetTimes_N1.json` には未来の時刻が入っていない。
+   「2点以上」を要求していたせいで、**実機では必ず「時刻表が足りません」で
+   弾かれていた**。この機能の本体は「いま降っているか」なので、実況1点で足りる。
+   ⚠ 実況の時刻はたいてい数分前なので、`radarWetAt(now)` では範囲外に落ちる。
+     `radarNowWet()` が直近の1点を「いま」として返すこと。 */
+{
+  /* ⚠⚠ **実況を必ず数分前にすること（ageMin）。** 既定だと直近の5分境界に
+     なるので、いまが境界の直後だと `radarWetAt(now)` でも範囲内に入ってしまい、
+     **時刻しだいで壊し方がすり抜ける**（実際すり抜けた）。
+     6分ずらせば「6〜11分前」に固定でき、±2.5分の窓からは必ず外れる。
+     20分（RADAR_MAX_AGE_MS）以内なので `radarUsable()` は真のまま。 */
+  const p = await open({ modelRain: true, radarWet: false, obsOnly: true, ageMin: 6 });
+  const st = await p.evaluate(() => ({
+    ok: state.radar.ok, n: state.radar.steps ? state.radar.steps.length : 0,
+    usable: radarUsable(), now: radarNowWet(),
+  }));
+  ok(st.ok === true, '★★★実況だけの時刻表でも読めたことにする（2点を要求しない）', st);
+  ok(st.usable === true && st.now === false, '★★直近の1点を「いま」として使う', st);
+  // ⚠ 対に見ておく。radarWetAt は「見に行けた範囲」なので、ここは範囲外で正しい
+  const outside = await p.evaluate(() => radarWetAt(new Date()));
+  ok(outside === null,
+    '★★radarWetAt の窓は広げない（ストリップは見に行けた所だけを描く）', outside);
+  const n = await note(p);
+  ok(n.shown && /レーダーに雨雲はありません/.test(n.text),
+    '★★★実況だけでも食い違いを言える（この機能の本体）', n);
   await p.close();
 }
 
