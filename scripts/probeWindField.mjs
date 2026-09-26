@@ -16,7 +16,7 @@
  *     GitHub Actions「外部の情報源を調べる」（target: wind-field）から手動実行する。
  *
  * ⚠ **調べるだけ。判定も表示も何も変えない。**
- * ⚠ 相手を叩く回数はおよそ12回（elevation=nan は20地点ずつに分ける）。大きい要求の間は1分あけて、無料枠（1分600回）に収める。
+ * ⚠ 相手を叩く回数はおよそ20回（すべて20地点ずつに分ける）。大きい要求の間は1分あけて、無料枠（1分600回）に収める。
  *   Open-Meteo は「地点数 ×（変数の数/10）」で回数を数える（open-meteo の
  *   ForecastApiResult.swift の calculateQueryWeight）。
  * ⚠ ABC判定の層の選び方（WIND_LEVELS / windLevelFor）は本体から読み出す。書き写さない。
@@ -100,11 +100,19 @@ async function om(label, params, base = OM) {
   console.log(`  [${label}] HTTP ${res.status} / ${(text.length / 1024).toFixed(0)}KB / ${Date.now() - t0}ms` +
     (rl ? ` / ${rl}` : ''));
   if (!res.ok) { console.log(`    ${text.slice(0, 300)}`); return null; }
-  const json = JSON.parse(text);
-  return Array.isArray(json) ? json : [json];
+  /* ⚠ HTTP 200 でも本文が途中で切れて JSON でないことがある。110地点×18変数を送ったとき
+     42秒後に「Unexpected error while streaming data: timeoutReached」が返った（2026-09-26。
+     同じ要求が1回目は1秒で通っている＝相手の混み具合しだい） */
+  try {
+    const json = JSON.parse(text);
+    return Array.isArray(json) ? json : [json];
+  } catch (e) {
+    console.log(`    JSON でない応答: ${text.slice(0, 120).replace(/\s+/g, ' ')}`);
+    return null;
+  }
 }
-/* 地点を分けて取り、順につなぐ。⚠ elevation=nan を110地点まとめて送ると、HTTPの応答なしで
-   接続を切られた（2026-09-26。5地点なら通る）。分ければ回数の数え方は変わらない */
+/* 地点を分けて取り、順につなぐ。⚠ 110地点をまとめて送ると、接続を切られたり（fetch failed）
+   本文が途中で切れたり（timeoutReached）した（2026-09-26）。分ければ回数の数え方は変わらない */
 async function omChunked(label, pts, extra = {}, size = 20) {
   const out = [];
   for (let s = 0; s < pts.length; s += size) {
@@ -211,14 +219,14 @@ console.log(`峰 ${peaks.length} / 横断線 ${LINES.map(l => l.pts.length).join
 
 console.log('## 通信');
 // 1) 峰：既定の標高（地形の標高で縮尺補正される）
-const R1 = await om('峰・既定の標高', baseParams(peaks));
+const R1 = await omChunked('峰・既定の標高', peaks);
 await sleep(SLEEP_MS);
 // 2) 峰：elevation=nan（標高の補正を切る＝格子そのものの標高が返るはず）
 const R2 = await omChunked('峰・elevation=nan', peaks, { elevation: 'nan' });
 await sleep(SLEEP_MS);
 // 3) 横断線：既定と nan
 const linePts = LINES.flatMap(l => l.pts);
-const R3a = await om('横断線・既定の標高', baseParams(linePts));
+const R3a = await omChunked('横断線・既定の標高', linePts);
 await sleep(SLEEP_MS);
 const R3b = await omChunked('横断線・elevation=nan', linePts, { elevation: 'nan' });
 await sleep(SLEEP_MS);
