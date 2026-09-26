@@ -33,7 +33,7 @@
 地図を開いている間の「取得中…」は地点名の欄に出る（`showLoading`）。**取り終えたら `hideLoading` が
 地点名へ戻す**（v4.105.0。戻していなかったので「気象データ取得中…」が残り続けていた）
 
-## 高度別の風の場（Wind Field Engine・v4.111.0）→ `docs/adr/0012-wind-field-reference-height.md`
+## 高度別の風の場（Wind Field Engine・v4.112.0）→ `docs/adr/0012-wind-field-reference-height.md`
 
 **目的は「気圧面を標高に読み替える作業」をエンジンで行うこと。** 地点ごと・時刻ごとに
 「その場所で代表させるべき風」を決め、**1枚の U/V の場**（`buildWindField`）にする。
