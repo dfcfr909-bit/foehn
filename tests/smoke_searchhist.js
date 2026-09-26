@@ -115,6 +115,17 @@ const NOMINATIM = {
   ok(rows.length === 2 && rows[0].name === '月山' && rows[1].name === '笙ケ岳 二峰',
     '★★空の窓にフォーカスすると新しい順に履歴が出る', rows);
   ok(rows[1] && rows[1].sub === '39.0927, 140.0020', '副題に緯度経度を出す', rows);
+  /* ⚠ 1行にまとめる（座標は名前の右）。2行だと枠が太すぎた（利用者の指摘） */
+  const shape = await page.evaluate(() => {
+    const row = document.querySelector('#map-results .map-hist-row');
+    const nm = row.querySelector('.map-result-name').getBoundingClientRect();
+    const sub = row.querySelector('.map-result-sub').getBoundingClientRect();
+    return { h: Math.round(row.getBoundingClientRect().height),
+      sameLine: Math.abs((nm.top + nm.bottom) / 2 - (sub.top + sub.bottom) / 2) < 6,
+      subRight: sub.left > nm.left + 40 };
+  });
+  ok(shape.sameLine && shape.subRight, '★★座標は名前と同じ行の右に置く', shape);
+  ok(shape.h >= 44 && shape.h <= 50, '★★行は1行ぶんの高さ（44px前後。押しやすさは残す）', shape);
 
   hits.length = 0;
   const picked = await page.evaluate(() => {

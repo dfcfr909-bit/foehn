@@ -160,7 +160,7 @@ html, body {
   background: rgba(var(--surface-rgb), 0.86);
   box-shadow: 0 1px 6px rgba(0,0,0,0.28);
 }
-#btn-home {
+.spot-btn {
   flex-shrink: 0;
   width: 44px; height: 44px;
   border: 1px solid var(--border);
@@ -171,9 +171,9 @@ html, body {
   cursor: pointer;
 }
 /* いま自宅を見ているとき */
-#btn-home.on { border: 2px solid var(--accent, #e05020); background: var(--bg2); }
+.spot-btn.on { border: 2px solid var(--accent, #e05020); background: var(--bg2); }
 /* 自宅が未設定のとき。押すと「いまの地点を自宅にしますか？」と聞く */
-#btn-home.unset { opacity: 0.5; }
+.spot-btn.unset { opacity: 0.5; }
 #fav-rotary {
   /* 🏠の右の残りを横幅いっぱいに使う。円柱の半径と1駒の角度はJSが決める（layoutFavRotary） */
   flex: 1 1 0;
@@ -877,7 +877,14 @@ html, body {
   padding: 6px 14px; font-size: 11px; color: var(--text3); border-bottom: 1px solid var(--border); }
 .map-hist-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .map-hist-row .map-result-item { flex: 1; min-width: 0; border-bottom: none; }
-.map-hist-row .map-result-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 履歴の行は1行にまとめる（名前＋標高を左、座標を右）。2行だと枠が太すぎた（利用者の指摘）。
+   ⚠ 高さは min-height 44px（押しやすさ）を下限に残す */
+.map-hist-row .map-result-item {
+  flex-direction: row; align-items: center; gap: 8px;
+  padding-top: 6px; padding-bottom: 6px;
+}
+.map-hist-row .map-result-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-hist-row .map-result-sub { flex-shrink: 0; font-family: var(--font-mono); }
 .map-hist-del { flex-shrink: 0; width: 44px; border: none; background: none;
   color: var(--text3); font-size: 15px; cursor: pointer; }
 .map-hist-clear { border: none; background: none; color: var(--text3); font-size: 11px;
@@ -1472,12 +1479,12 @@ html, body {
 .fav-item:active { background: var(--bg2); }
 .fav-item-name { flex: 1; font-weight: 700; font-size: 14px; }
 .fav-item-coord { font-size: 10px; font-family: var(--font-mono); color: var(--text3); }
-.fav-home {
+.fav-spot {
   font-size: 18px; padding: 4px 6px; margin-right: 2px;
   background: none; border: 2px solid transparent; border-radius: 10px; cursor: pointer;
   opacity: 0.35;
 }
-.fav-home.on { opacity: 1; border-color: var(--accent, #e05020); }
+.fav-spot.on { opacity: 1; border-color: var(--accent, #e05020); }
 .fav-delete {
   font-size: 18px; padding: 4px 6px;
   background: none; border: none; cursor: pointer; color: var(--c-col);
@@ -2181,7 +2188,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.105.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.106.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2208,9 +2215,10 @@ html, body {
        （#map-bottom）で同じにしてある。片方だけ変えると🏠の位置がずれる -->
   <div id="fav-bar-slot">
     <div id="fav-bar">
-      <button id="btn-home" type="button" onclick="goHome()" aria-label="自宅" title="自宅（お気に入り一覧で設定）">🏠</button>
+      <button id="btn-home" class="spot-btn" type="button" onclick="goSpot('home')" aria-label="自宅" title="自宅（お気に入り一覧で設定）">🏠</button>
       <!-- スクロールは入力専用。駒はstickyなstage上に絶対配置して円柱の側面に並べる -->
       <div id="fav-rotary"><div id="fav-track"><div id="fav-stage"></div></div></div>
+      <button id="btn-work" class="spot-btn" type="button" onclick="goSpot('work')" aria-label="職場" title="職場（お気に入り一覧で設定）">🏥</button>
     </div>
   </div>
 
@@ -3070,60 +3078,99 @@ let favRotaryKey = '';               // 今DOMが表している地点リスト�
 let favRafPending = false;
 let favSpunByUser = false;           // 利用者が円柱を回したか（自宅を見ている間の強調の要否）
 
+/* ------ 循環（v4.106.0）------
+   最後の次に最初が来る。スクロールは端のある入力なので、**同じ並びを FAV_CYCLES 周ぶん
+   並べたトラックの真ん中から回し**、駒の位置は周回を剰余で畳む（見た目は1周ぶんの駒だけ）。
+   止まるたびに真ん中の周へこっそり戻すので、実際に端へ着くことはない。
+   ⚠ 地点が2つ以下のときは循環させない（同じ駒が左右両方に見えて紛らわしい） */
+const FAV_CYCLES = 41;               // 奇数。真ん中の周から回し始める
+const FAV_CYCLE_MIN = 3;             // これ未満の地点数では循環させない
+function favCount() { return document.querySelectorAll('#fav-stage .fav-chip').length; }
+function favCircular(n = favCount()) { return n >= FAV_CYCLE_MIN; }
+// 正面からの距離（駒数）。循環するときは -n/2〜n/2 に畳む
+function favWrapD(d, n) {
+  if (!favCircular(n)) return d;
+  d = ((d % n) + n) % n;
+  return d > n / 2 ? d - n : d;
+}
+// 駒 i を正面に出すスクロール位置（駒数）。循環するときは今の位置からいちばん近い周の i
+function favTargetPos(i, n = favCount()) {
+  if (!favCircular(n)) return i;
+  const mid = Math.floor(FAV_CYCLES / 2) * n + i;
+  const cur = favPos();
+  const k = i + n * Math.round((cur - i) / n);
+  // トラックの端に近すぎる（または初回で0付近にいる）ときは真ん中の周を使う
+  return (k < n * 2 || k > n * (FAV_CYCLES - 2)) ? mid : k;
+}
+
 // 2地点が同一か（緯度経度の近接判定）
 function sameLoc(a, b) {
   return Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lon - b.lon) < 1e-4;
 }
 
 // 円柱に並べる地点（お気に入り＋未登録なら現在地点を先頭に）
-// ⚠ 自宅は🏠ボタン専用なので円柱には並べない。いま自宅を見ているときも先頭に足さない
+// ⚠ 自宅🏠・職場🏥はボタン専用なので円柱には並べない。いまそこを見ているときも先頭に足さない
 function favRotaryItems() {
-  const home = loadHome();
-  const favs = loadFavs().filter(f => !(home && sameLoc(f, home)));
+  const spots = SPOT_KINDS.map(k => loadSpot(k)).filter(Boolean);
+  const isSpot = p => spots.some(h => sameLoc(p, h));
+  const favs = loadFavs().filter(f => !isSpot(f));
   const items = favs.slice();
-  const atHome = home && sameLoc(home, state);
-  if (!atHome && !favs.some(f => sameLoc(f, state))) {
+  if (!isSpot(state) && !favs.some(f => sameLoc(f, state))) {
     items.unshift({ name: state.locationName, lat: state.lat, lon: state.lon });
   }
   return items;
 }
 
-/* ------ 自宅（🏠）------
-   ⚠ お気に入りとは別に1地点だけ持つ。設定はお気に入り一覧の🏠で。
-   未設定で🏠を押したら、いまの地点を自宅にするか聞く */
-function loadHome() {
+/* ------ 自宅（🏠）・職場（🏥）------
+   ⚠ お気に入りとは別に1地点ずつ持つ。設定はお気に入り一覧の各行の🏠／🏥で。
+   未設定でボタンを押したら、いまの地点をそこにするか聞く。
+   最下段の左端が🏠、右端が🏥（v4.106.0）。どちらもグラフと地図で同じ位置 */
+const SPOTS = {
+  home: { key: 'sotoki_home', icon: '🏠', label: '自宅', btn: 'btn-home' },
+  work: { key: 'sotoki_work', icon: '🏥', label: '職場', btn: 'btn-work' },
+};
+const SPOT_KINDS = Object.keys(SPOTS);
+function loadSpot(kind) {
   try {
-    const h = JSON.parse(localStorage.getItem('sotoki_home') || 'null');
+    const h = JSON.parse(localStorage.getItem(SPOTS[kind].key) || 'null');
     return (h && isFinite(h.lat) && isFinite(h.lon) && typeof h.name === 'string') ? h : null;
   } catch { return null; }
 }
-function saveHome(h) {
+function saveSpot(kind, h) {
   try {
-    if (h) localStorage.setItem('sotoki_home', JSON.stringify({ name: h.name, lat: h.lat, lon: h.lon }));
-    else localStorage.removeItem('sotoki_home');
+    if (h) localStorage.setItem(SPOTS[kind].key, JSON.stringify({ name: h.name, lat: h.lat, lon: h.lon }));
+    else localStorage.removeItem(SPOTS[kind].key);
   } catch { /* 保存できない環境 */ }
   favRotaryKey = '';            // 顔ぶれが変わるので作り直させる
   renderFavRotary();
-  updateHomeButton();
+  updateSpotButtons();
 }
-function goHome() {
-  const home = loadHome();
-  if (!home) {
-    if (confirm(`いまの地点「${state.locationName}」を自宅（🏠）にしますか？\n（あとから お気に入り一覧 の🏠で変えられます）`)) {
-      saveHome({ name: state.locationName, lat: state.lat, lon: state.lon });
+function goSpot(kind) {
+  const sp = SPOTS[kind], h = loadSpot(kind);
+  if (!h) {
+    if (confirm(`いまの地点「${state.locationName}」を${sp.label}（${sp.icon}）にしますか？\n（あとから お気に入り一覧 の${sp.icon}で変えられます）`)) {
+      saveSpot(kind, { name: state.locationName, lat: state.lat, lon: state.lon });
     }
     return;
   }
-  selectFav(home.lat, home.lon, home.name);
+  selectFav(h.lat, h.lon, h.name);
 }
-function updateHomeButton() {
-  const btn = document.getElementById('btn-home');
-  if (!btn) return;
-  const home = loadHome();
-  btn.classList.toggle('unset', !home);
-  btn.classList.toggle('on', !!(home && sameLoc(home, state)));
-  btn.title = home ? `自宅（${home.name}）` : '自宅（未設定。押すといまの地点を自宅にできます）';
+function updateSpotButtons() {
+  for (const kind of SPOT_KINDS) {
+    const sp = SPOTS[kind];
+    const btn = document.getElementById(sp.btn);
+    if (!btn) continue;
+    const h = loadSpot(kind);
+    btn.classList.toggle('unset', !h);
+    btn.classList.toggle('on', !!(h && sameLoc(h, state)));
+    btn.title = h ? `${sp.label}（${h.name}）` : `${sp.label}（未設定。押すといまの地点を${sp.label}にできます）`;
+  }
 }
+// 自宅の呼び名（検査・既存の呼び出し口）
+const loadHome = () => loadSpot('home');
+const saveHome = h => saveSpot('home', h);
+const goHome = () => goSpot('home');
+const updateHomeButton = updateSpotButtons;
 
 // 現在の地点に対応する駒
 function currentFavChip() {
@@ -3211,7 +3258,9 @@ function layoutFavRotary() {
     if (Math.sin(r) - cw * Math.cos(r) >= cw) { FAV_ANGLE = a; break; }
   }
   // 表示幅ぶん＋(駒数-1)*STEP。これで scrollLeft の範囲が 0〜(n-1)*STEP になる
-  track.style.width = (w + Math.max(0, n - 1) * FAV_STEP) + 'px';
+  // 循環するときは FAV_CYCLES 周ぶん並べる（真ん中の周から回す）
+  const span = favCircular(n) ? n * FAV_CYCLES - 1 : Math.max(0, n - 1);
+  track.style.width = (w + span * FAV_STEP) + 'px';
   updateFavRotaryTransforms();
 }
 
@@ -3225,7 +3274,7 @@ function updateFavRotaryTransforms() {
   const half = (stage.clientWidth || 200) / 2;
   let best = null, bestD = Infinity;
   chips.forEach(chip => {
-    const d = Number(chip.dataset.i) - pos;          // 正面からの距離（駒数）
+    const d = favWrapD(Number(chip.dataset.i) - pos, chips.length);   // 正面からの距離（駒数）
     const ang = d * FAV_ANGLE;                       // 円柱の回転角
     const ad = Math.abs(ang);
     // 円柱の裏側、および枠の外へ完全に出た駒は消す
@@ -3245,9 +3294,8 @@ function updateFavRotaryTransforms() {
     if (ad < bestD) { bestD = ad; best = chip; }
   });
   // 回している最中も正面の駒を即座に強調する（選択の確定はスクロール停止後）
-  // ⚠ いま自宅を見ているとき、円柱にその地点は無い。回すまでは強調しない（選んでいるように見えてしまう）
-  const home = loadHome();
-  const idle = home && sameLoc(home, state) && !favSpunByUser;
+  // ⚠ いま自宅・職場を見ているとき、円柱にその地点は無い。回すまでは強調しない（選んでいるように見えてしまう）
+  const idle = !favSpunByUser && SPOT_KINDS.some(k => { const h = loadSpot(k); return h && sameLoc(h, state); });
   chips.forEach(c => c.classList.toggle('centered', !idle && c === best));
 }
 
@@ -3257,7 +3305,7 @@ function spinToIndex(i, select) {
   if (!el) return;
   favRotaryProgrammatic = true;
   clearTimeout(favScrollTimer);
-  el.scrollTo({ left: i * FAV_STEP, behavior: 'smooth' });
+  el.scrollTo({ left: favTargetPos(i) * FAV_STEP, behavior: 'smooth' });
   setTimeout(() => { favRotaryProgrammatic = false; updateFavRotaryTransforms(); }, 420);
   if (!select) return;
   const chip = el.querySelector(`.fav-chip[data-i="${i}"]`);
@@ -3271,7 +3319,7 @@ function centerActiveChip(smooth) {
   const doCenter = () => {
     const active = currentFavChip();
     if (!active) return;
-    const target = Number(active.dataset.i) * FAV_STEP;
+    const target = favTargetPos(Number(active.dataset.i)) * FAV_STEP;
     favRotaryProgrammatic = true;
     clearTimeout(favScrollTimer);   // 直後のスクロール選択を抑止
     el.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'auto' });
@@ -3317,9 +3365,10 @@ function centeredChip() {
   const stage = document.getElementById('fav-stage');
   if (!stage) return null;
   const pos = favPos();
+  const n = favCount();
   let best = null, bestD = Infinity;
   stage.querySelectorAll('.fav-chip').forEach(chip => {
-    const d = Math.abs(Number(chip.dataset.i) - pos);
+    const d = Math.abs(favWrapD(Number(chip.dataset.i) - pos, n));
     if (d < bestD) { bestD = d; best = chip; }
   });
   return best;
@@ -3358,8 +3407,23 @@ updateHomeButton();
       const chip = centeredChip();
       if (!chip) return;
       const i = Number(chip.dataset.i);
-      // 駒の切れ目で止まった場合に備え、正面へきっちり吸い付ける
-      if (Math.abs(el.scrollLeft - i * FAV_STEP) > 0.5) spinToIndex(i, false);
+      /* 駒の切れ目で止まった場合に備え、正面へきっちり吸い付ける（循環するときは今いる周のまま）。
+         ⚠ 循環していてトラックの端へ近づいていたら、吸い付けの代わりに真ん中の周の同じ駒へ
+         一度で置き直す（周回を剰余で畳んでいるので見た目は変わらない）。
+         なめらかな吸い付けと置き直しを両方走らせると、途中で取り合ってずれる */
+      const n = favCount();
+      const snap = Math.round(favPos());
+      const nearEdge = favCircular(n) && (snap < n * 4 || snap > n * (FAV_CYCLES - 4));
+      favRotaryProgrammatic = true;
+      if (nearEdge) {
+        el.scrollLeft = (Math.floor(FAV_CYCLES / 2) * n + i) * FAV_STEP;
+        setTimeout(() => { favRotaryProgrammatic = false; updateFavRotaryTransforms(); }, 60);
+      } else if (Math.abs(el.scrollLeft - snap * FAV_STEP) > 0.5) {
+        el.scrollTo({ left: snap * FAV_STEP, behavior: 'smooth' });
+        setTimeout(() => { favRotaryProgrammatic = false; updateFavRotaryTransforms(); }, 420);
+      } else {
+        favRotaryProgrammatic = false;
+      }
       const lat = parseFloat(chip.dataset.lat), lon = parseFloat(chip.dataset.lon);
       if (!sameLoc({ lat, lon }, state)) selectFav(lat, lon, chip.dataset.name);
     }, 160);
@@ -8746,19 +8810,22 @@ function renderFavList() {
         <div class="fav-item-name">${f.name}</div>
         <div class="fav-item-coord">${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}</div>
       </div>
-      <button class="fav-home" data-i="${i}" aria-label="自宅にする">🏠</button>
+      <button class="fav-spot fav-home" data-kind="home" aria-label="自宅にする">🏠</button>
+      <button class="fav-spot fav-work" data-kind="work" aria-label="職場にする">🏥</button>
       <button class="fav-delete" data-i="${i}">🗑</button>
     `;
-    // 自宅に指定済みの地点は🏠を点ける。押すと自宅の指定を切り替える
-    const home = loadHome();
-    const isHome = !!(home && sameLoc(home, f));
-    const hb = el.querySelector('.fav-home');
-    hb.classList.toggle('on', isHome);
-    hb.title = isHome ? '自宅の指定を外す' : 'この地点を自宅（🏠）にする';
-    hb.addEventListener('click', e => {
-      e.stopPropagation();
-      saveHome(isHome ? null : f);
-      renderFavList();
+    // 自宅・職場に指定済みの地点はそのボタンを点ける。押すと指定を切り替える
+    el.querySelectorAll('.fav-spot').forEach(b => {
+      const kind = b.dataset.kind, sp = SPOTS[kind];
+      const h = loadSpot(kind);
+      const isIt = !!(h && sameLoc(h, f));
+      b.classList.toggle('on', isIt);
+      b.title = isIt ? `${sp.label}の指定を外す` : `この地点を${sp.label}（${sp.icon}）にする`;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        saveSpot(kind, isIt ? null : f);
+        renderFavList();
+      });
     });
     el.querySelector('.fav-delete').addEventListener('click', e => {
       e.stopPropagation();
