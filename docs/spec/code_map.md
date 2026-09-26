@@ -102,6 +102,11 @@
 | `windLevelFor(elevM)` | 山頂高度に最も近い気圧面 | 約 1920 |
 | `pickWindSource(summitM)` | **気圧面と地上10mのどちらで判定するか**（ADR-0011。モデル標高は見ない） | 約 1932 |
 | `windSourceLabel(src)` | どこの風か画面に出す文言 | 約 1950 |
+| `GSM_LEVELS` / `windInterpLevels()` | GSM が持つ気圧面／判定の補間に使う層（WIND_LEVELS＋500） | 約 2570 |
+| `windModelPhases(h, len)` | 時刻ごとのモデル（MSM / 移行 / GSM）。GSM に無い層が null かで見る | 約 2585 |
+| `summitWindAt(h, i, src, model)` | **判定に使う1時間ぶんの風**。層が無い時刻は上下の層から山頂高度へ補間、無理なら「データなし」（v4.113.0） | 約 2600 |
+| `gradeOf(d)` | **判定の入口**。風データなしを A にしない（`abcScore(null)`＝0 の手前で止める） | 約 2640 |
+| `windTraceLabel(d, src)` | その時刻の判定に使った風を一言で（ポップアップの @） | 約 2650 |
 
 ## 圏外の控え（オフラインキャッシュ）
 
@@ -388,8 +393,16 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `haversineKm(...)` | 2点間の距離(km)。山域の広がりを測る | 約 5275 |
 | `loadAmedas()` | アメダス実測の取得 | 約 5255 |
 | `drawAmedas(bounds, opacity)` | 表示範囲ぶんの点を描く（最大140地点） | 約 5283 |
-| `loadWindGrid(bounds)` | 画面を5×5に割った代表点の風を1リクエストで | 約 5331 |
-| `drawWindArrows(bounds, opacity)` | 矢印（向きは風向+180°） | 約 5375 |
+| `WIND_FIELD_LEVELS` / `WIND_FIELD_MODES` | 高度別の風の場の層の表（10m/925/900/850/800/700・どのモデルにあるか）と AUTO＋手動 | 約 7200 |
+| `loadTerrainRef()` / `zRefAt(i, j)` | 地形表（基準標高 z_ref）→ ADR-0012 | 約 7240 |
+| `WindVertical.auto / .layer / .nearSurface` | **鉛直の決め方（独立モジュール）**。AUTO＝気圧面の高さで按分／手動＝層そのもの／地表付近の埋め方 | 約 7260 |
+| `windFieldLattice(bounds, z)` | 地図に固定の格子（MSM 上空の格子を k 点おき） | 約 7330 |
+| `fetchWindColumns(pts, span)` | 全部の層を1回で取る（AUTO と手動で分けない）。`elevation=nan`・`wind_speed_unit=ms` | 約 7350 |
+| `resolveWindAt(rec, timeKey, mode)` | 1点・1時刻の風と根拠（trace）。時刻は完全一致だけ | 約 7400 |
+| `buildWindField(bounds, z, mode, timeKey)` | **統合した U/V の場**（描画・粒子が見るのはこれだけ） | 約 7410 |
+| `sampleWindField(f, lat, lon)` | 場の任意の点の U/V（双線形） | 約 7435 |
+| `windTraceText(res)` | 矢印を押したときの根拠の文 | 約 7450 |
+| `drawWindArrows(bounds, opacity)` | 場の格子点に矢印（向きは風向+180°）。推定値は点線・地中は「地中」 | 約 7500 |
 | `loadPressureGrid(bounds)` | 画面を9×9に割った海面気圧を1リクエストで（#26） | 約 5626 |
 | `pressAt(g, i, j)` | 格子の添字→気圧。欠測は null | 約 5670 |
 | `pressureExtremes(g)` | 高気圧/低気圧の中心。⚠ **縁は極値と呼ばない**・起伏0.8hPa以上 | 約 5685 |
