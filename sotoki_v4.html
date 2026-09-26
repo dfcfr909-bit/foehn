@@ -1340,6 +1340,13 @@ html, body {
 }
 /* 15m/s超は赤（吹き飛び・ウインドスラブの目安。チャート側と同じしきい値） */
 .wind-box.strong { border-color: var(--c-col); }
+/* 推定値（地表付近の按分・上端の面で代用）。点線で「確かではない」と見せる */
+.wind-box.est { border-style: dashed; }
+/* 手動で選んだ層がモデルの地中（外挿値）。値は出さない */
+.wind-box.under { opacity: .55; }
+.wind-box.under b { color: #6b7280; font-size: 9px; }
+.wind-why { font-size: 12px; line-height: 1.5; }
+.wind-why small { color: #5b6573; }
 .wind-box.strong b, .wind-box.strong .wind-a { color: var(--c-col); }
 /* 地点のピン。⚠ **タップを一切受けない。**
    Leaflet の既定のピンは `<img>` なので、iOSでは長押しすると**画像として**
@@ -2237,7 +2244,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.110.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.111.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6134,6 +6141,7 @@ function amedasDirDeg(i) { return (i >= 1 && i <= 16) ? i * 22.5 : null; }
 const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
+const MAP_LS_WIND_MODE = 'sotoki.map.windMode';   // 風の場：AUTO／手動の層（高度別の風の場）
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
@@ -6228,9 +6236,11 @@ const MAP_WEATHER = [
   // アメダス。新雪ランキングで使っている取得口と同じ（snowRanking.js のヘルパを再利用）
   { id: 'amedas', name: 'アメダス', kind: 'amedas', opacity: 1,
     attribution: '気象庁アメダス', note: '実測値。地図を拡大すると表示' },
-  // 風。Open-Meteoの値を格子状に矢印で置く（leaflet-velocity禁止のためアニメーションはしない）
+  /* 風。高度別の風の場（ADR-0012）の格子点に矢印を置く。既定は AUTO（地形と気圧面の高さから、
+     その場所の稜線の高さの風を自動で決める）。層を手動で選ぶこともできる。
+     leaflet-velocity は使わない（依存を増やさない。粒子は自前で描く予定） */
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
-    attribution: 'Open-Meteo', note: '選択時刻の風。地図を拡大すると表示' },
+    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
 ];
 
 function findBase(id) { return MAP_BASES.find(b => b.id === id) || null; }
@@ -6271,7 +6281,13 @@ function loadMapPrefs() {
     const raw = localStorage.getItem(MAP_LS_SAT_BAND);
     if (raw && satBands().some(b => b.id === raw)) satBand = raw;   // pendingは復元しない
   } catch (e) { /* 読めなければ既定 */ }
-  return { base, overlays, amedasElement, satBand };
+  // 風の場の決め方。既定は AUTO。知らない値（層を減らした等）は AUTO へ落とす
+  let windMode = WIND_MODE_DEFAULT;
+  try {
+    const raw = localStorage.getItem(MAP_LS_WIND_MODE);
+    if (raw && WIND_FIELD_MODES.some(m => m.id === raw)) windMode = raw;
+  } catch (e) { /* 読めなければ既定 */ }
+  return { base, overlays, amedasElement, satBand, windMode };
 }
 function saveMapPrefs() {
   try {
@@ -6279,6 +6295,7 @@ function saveMapPrefs() {
     localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(mapPrefs.overlays));
     localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
     localStorage.setItem(MAP_LS_SAT_BAND, mapPrefs.satBand);
+    localStorage.setItem(MAP_LS_WIND_MODE, mapPrefs.windMode);
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -6288,7 +6305,8 @@ function saveMapPrefs() {
 let leafletMap = null;
 let leafletMarker = null;
 let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
-                 satBand: SAT_BAND_DEFAULT };
+                 // ⚠ WIND_MODE_DEFAULT はこの下で定義する。ここで参照すると読み込み時に止まる（TDZ）
+                 satBand: SAT_BAND_DEFAULT, windMode: 'auto' };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -7074,28 +7092,26 @@ function paintTileTrouble() {
    ============================================================ */
 let weatherPointsDirty = false;
 let amedasData = null;        // { stations: [...], time: '...' }
-/* 風の矢印の控え（v4.108.0）。格子の1点ごとに2日分の毎時の値を持つ。
-   ⚠⚠ **HTTP 429（問い合わせが多すぎる）を出していた。** 以前は「画面の範囲＋選択時刻」を鍵にして
-   25地点をまとめて取り直していたので、**地図を少し動かすたび・時刻を変えるたびに**25地点ぶん
-   問い合わせていた。Open-Meteo は地点の数だけ回数を数える（無料枠は1分600回など）。
-   いまは①格子を**ズームごとに固定の網目**にして、動かしても同じ点は控えを使う
-   ②取るのは控えに無い点だけ ③2日分を持つので時刻を変えても取らない
+/* 風の場の控え（v4.111.0。v4.108.0 の 429 対策を引き継ぐ）。
+   ⚠⚠ **HTTP 429（問い合わせが多すぎる）を出したことがある。** Open-Meteo は地点の数だけ
+   回数を数える（無料枠は1分600回など）。守っていること:
+   ①格子は**地図に固定**（MSM 上空の格子。動かしても同じ点は控えを使う）
+   ②取るのは控えに無い点だけ ③時刻の幅ごと持つので時刻を変えても取らない
    ④動き終わってから少し待って取る ⑤429 のあとは1分待つ */
-const windCache = new Map();  // `${z}:${i}:${j}` -> { at, lat, lon, time[], spd[], dir[] }
+const windCols = new Map();   // `${i}:${j}` -> { at, i, j, lat, lon, zModel, span, time[], idx, cols, phases }
 const WIND_CACHE_MS = 30 * 60 * 1000;   // 30分で古いとみなす
 const WIND_CACHE_MAX = 600;             // 点の数の上限（古いものから捨てる）
 const WIND_FETCH_DELAY_MS = 500;        // 動き終わってから取りに行くまでの間
 const WIND_BACKOFF_MS = 60 * 1000;      // 429 を受けたらこれだけ取りに行かない
+/* 1回の問い合わせの地点数の上限。⚠ 110地点×18変数を一度に送ったら、HTTP 200 のまま
+   本文が「timeoutReached」で切れた（2026-09-26）。20地点ずつなら0.2〜0.8秒で返った */
+const WIND_FETCH_MAX_POINTS = 40;
 let windBackoffUntil = 0;
 let windFetchTimer = null;
 let windFetchGen = 0;
 let weatherMarkers = [];
 const AMEDAS_MIN_ZOOM = 8;    // これ未満は点が多すぎるので出さない
 const WIND_MIN_ZOOM = 7;
-// 格子の網目（ズームごとに固定）。タイル1枚の幅に対して横3つ・縦2つ。
-// 縦長のスマホ画面で横4〜5・縦5前後（以前の 5×5 と同じくらい）になる
-const WIND_STEP_LON_PER_TILE = 1 / 3;
-const WIND_STEP_LAT_PER_TILE = 1 / 2;
 
 function clearWeatherMarkers() {
   weatherMarkers.forEach(m => leafletMap.removeLayer(m));
@@ -7176,53 +7192,165 @@ function drawAmedas(bounds, opacity) {
   if (shown === 0) setLayerNote('amedas', `この範囲に${el.name}の観測点がありません`);
 }
 
-/* 風の矢印。leaflet-velocity（禁止）を使わないので、Open-Meteoの値を
-   格子の代表点で取り、矢印を置く方式にしている。
-   アニメーションはしないが、風向と強さは読める。 */
-// いま画面に入る格子点（ズームごとに固定の網目。動かしても同じ点は同じ鍵になる）
-function windLattice(bounds, z) {
-  const tile = 360 / Math.pow(2, z);
-  const sLon = tile * WIND_STEP_LON_PER_TILE, sLat = tile * WIND_STEP_LAT_PER_TILE;
+/* ============================================================
+   高度別の風の場（Wind Field Engine）— ADR-0012
+   目的は見た目ではなく、**人間が毎回やっている「気圧面を標高に読み替える作業」を
+   エンジンで行う**こと。「この標高なら今日は850」「850 が地中だから800」「でも谷だから…」を
+   地点ごと・時刻ごとに決め、**1枚の U/V の場**（x, y, 時刻 → U, V）にする。
+
+   ・AUTO（既定）… 基準標高 z_ref（地形表：升目の90%点をならした稜線の高さ）の風を、
+                   その時刻・その地点の気圧面の高さ（geopotential_height）で上下の面から補間
+   ・手動 ……………… 10m / 925 / 900 / 850 / 800 / 700 の各層そのもの（検証・経験者向け）
+   ⚠ **AUTO と手動は同じ取得・同じ控え・同じ場を通る。** 違うのは鉛直の決め方
+     （WindVertical.auto / .layer）だけ。描画（矢印・次は粒子）は buildWindField が返す
+     U/V の格子しか見ない。層を足すときは WIND_FIELD_LEVELS に1行足す
+   ⚠ 固定表（850hPa≒1,460m 等）で高さを決めない。必ずその時刻の geopotential_height
+   ⚠ 無い層を別の層で黙って埋めない（GSM の期間の 900/800 等）。無いものは無いと言う
+   ============================================================ */
+const WIND_FIELD_LEVELS = [
+  { id: '10m', type: 'surface', label: '地上10m', spd: 'wind_speed_10m', dir: 'wind_direction_10m', models: ['MSM', 'GSM'] },
+  { id: '925', type: 'pressure', hPa: 925, label: '925hPa', models: ['MSM', 'GSM'] },
+  { id: '900', type: 'pressure', hPa: 900, label: '900hPa', models: ['MSM'] },   // GSM に無い
+  { id: '850', type: 'pressure', hPa: 850, label: '850hPa', models: ['MSM', 'GSM'] },
+  { id: '800', type: 'pressure', hPa: 800, label: '800hPa', models: ['MSM'] },   // GSM に無い
+  { id: '700', type: 'pressure', hPa: 700, label: '700hPa', models: ['MSM', 'GSM'] },
+];
+function wfVars(lv) {
+  return lv.type === 'surface' ? { spd: lv.spd, dir: lv.dir, z: null }
+    : { spd: `wind_speed_${lv.hPa}hPa`, dir: `wind_direction_${lv.hPa}hPa`, z: `geopotential_height_${lv.hPa}hPa` };
+}
+const WIND_FIELD_MODES = [{ id: 'auto', label: 'AUTO' },
+  ...WIND_FIELD_LEVELS.map(l => ({ id: l.id, label: l.type === 'surface' ? '10m' : String(l.hPa) }))];
+const WIND_MODE_DEFAULT = 'auto';
+const windModeDef = id => WIND_FIELD_MODES.find(m => m.id === id) || WIND_FIELD_MODES[0];
+// 格子は MSM 上空の格子（data/terrain_ref.json と同じ）。ズームが粗いほど間引く（k 点おき）
+const WIND_GRID = { lon0: 120, lat0: 22.4, dlon: 0.125, dlat: 0.1 };
+const WIND_BANDS = [{ minZoom: 10, k: 1 }, { minZoom: 9, k: 2 }, { minZoom: 8, k: 4 }, { minZoom: 7, k: 8 }];
+const windBand = z => WIND_BANDS.find(b => z >= b.minZoom) || WIND_BANDS[WIND_BANDS.length - 1];
+// 取る時刻の幅。ふだんは近い分だけ。スライダーをその外へ動かしたら全体を取り直す
+const WIND_SPANS = { near: { past_days: '1', forecast_days: '3' }, full: { past_days: '3', forecast_days: '8' } };
+
+function windUV(spd, dir) { const r = dir * Math.PI / 180; return [-spd * Math.sin(r), -spd * Math.cos(r)]; }
+function windSpdDir(w) { return { spd: Math.hypot(w[0], w[1]), dir: (Math.atan2(-w[0], -w[1]) * 180 / Math.PI + 360) % 360 }; }
+const windLerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+// 風向（吹いてくる方角）の16方位の名前。アメダスと同じ呼び方
+function windDirName(deg) { return deg == null ? '' : AMEDAS_DIR16[((Math.round(deg / 22.5) + 15) % 16) + 1]; }
+
+/* ------ 地形表（基準標高 z_ref）。scripts/buildTerrainRef.mjs が作る → ADR-0012 ------ */
+let terrainRef = null;
+let terrainRefState = 'idle';   // 'idle' | 'loading' | 'ok' | 'error'
+let terrainRefError = '';
+function loadTerrainRef() {
+  if (terrainRefState !== 'idle') return;
+  terrainRefState = 'loading';
+  fetch('data/terrain_ref.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => { terrainRef = j; terrainRefState = 'ok'; })
+    .catch(e => { terrainRefState = 'error'; terrainRefError = e.message; })
+    .finally(() => { if (isMapOpen() && isOverlayOn('windArrows')) refreshWeatherPoints(); });
+}
+// 格子点 (i, j) の z_ref。表に無い升目（海・陸がほぼ無い）は null
+function zRefAt(i, j) {
+  const c = terrainRef && terrainRef.cells && terrainRef.cells[`${i},${j}`];
+  return c ? c[0] : null;
+}
+
+/* ------ 鉛直の決め方（独立したモジュール）------
+   ⚠ 地表〜最下の有効な面の埋め方（nearSurface）は、**高さで線形**（Phase 1）。
+     実測で試した中では最も誤差が小さく（925hPa を伏せた答え合わせ：中央2.1 m/s、
+     10m風そのまま 2.5・対数 2.9・上の面そのまま 3.8）、連続にもなる。
+     ⚠ 物理的に正しい形ではない（境界層の中は直線で変わらない）。**推定値として画面で断る。**
+     境界層のモデル等に替えるときは nearSurface だけを差し替える（利用者の判断 2026-09-26） */
+const WindVertical = {
+  nearSurface(wSfc, zSfc, wLo, zLo, z) {
+    const t = Math.max(0, Math.min(1, (z - zSfc) / (zLo - zSfc)));
+    return windLerp(wSfc, wLo, t);
+  },
+  /* AUTO。col は windColumnAt の返り値。zRef＝基準標高、zModel＝モデル地形（elevation=nan）。
+     ⚠ 役割分担（ADR-0012）：実際の地形（zRef）で「どの高さを見せるか」、
+       モデル地形（zModel）で「その面がモデル上で有効か」（下は外挿値なので使わない） */
+  auto(col, zRef, zModel) {
+    const sfc = col.find(c => c.lv.type === 'surface');
+    const base = { mode: 'auto', zRef, zModel };
+    const miss = reason => ({ w: null, trace: { ...base, kind: 'missing', reason } });
+    if (zRef == null) {
+      // 地形表に無い升目＝海・陸がほぼ無い。地表の風で表す（これは決まり。代用ではない）
+      return sfc && sfc.w ? { w: sfc.w, trace: { ...base, kind: 'surface', reason: 'sea' } } : miss('noSurface');
+    }
+    if (zModel == null) return miss('noModelElev');
+    if (zRef <= zModel) {
+      // 基準標高がモデル地形以下（谷・平地）。モデルの中では地表そのもの
+      return sfc && sfc.w ? { w: sfc.w, trace: { ...base, kind: 'surface', reason: 'belowModel' } } : miss('noSurface');
+    }
+    const valid = col.filter(c => c.lv.type === 'pressure' && c.w && c.z != null && c.z >= zModel)
+      .sort((a, b) => a.z - b.z);
+    if (!valid.length) return miss('noLevel');
+    const lo = valid[0];
+    if (zRef < lo.z) {
+      if (!sfc || !sfc.w) return miss('noSurface');
+      const z0 = zModel + 10;   // 10m風が立っている高さ（モデル地形から10m）
+      return { w: WindVertical.nearSurface(sfc.w, z0, lo.w, lo.z, zRef),
+        trace: { ...base, kind: 'gap', estimate: true, lo: { id: '10m', z: z0 }, hi: { id: lo.lv.id, z: lo.z },
+          t: (zRef - z0) / (lo.z - z0) } };
+    }
+    for (let k = 0; k < valid.length - 1; k++) {
+      const a = valid[k], b = valid[k + 1];
+      if (a.z <= zRef && zRef <= b.z) {
+        const t = (zRef - a.z) / (b.z - a.z);
+        return { w: windLerp(a.w, b.w, t),
+          trace: { ...base, kind: 'interp', lo: { id: a.lv.id, z: a.z }, hi: { id: b.lv.id, z: b.z }, t } };
+      }
+    }
+    // いちばん上の面より高い（富士山など）。上の面を使い、そう断る
+    const top = valid[valid.length - 1];
+    return { w: top.w, trace: { ...base, kind: 'top', estimate: true, hi: { id: top.lv.id, z: top.z } } };
+  },
+  // 手動：その層そのもの。⚠ 無い時刻・モデル上の地中は別の層で埋めない
+  layer(col, id, zModel) {
+    const c = col.find(x => x.lv.id === id);
+    if (!c || !c.w) return { w: null, trace: { mode: id, kind: 'missing', reason: 'noData' } };
+    if (c.lv.type === 'pressure' && zModel != null && c.z != null && c.z < zModel) {
+      return { w: null, trace: { mode: id, kind: 'underground', z: c.z, zModel } };
+    }
+    return { w: c.w, trace: { mode: id, kind: 'layer', z: c.z } };
+  },
+};
+
+/* ------ 取得と控え ------ */
+// 画面に入る格子点（地図に固定。ズームが粗いほど k 点おき）
+function windFieldLattice(bounds, z) {
+  const { k } = windBand(z);
+  const i0 = Math.ceil((bounds.getSouth() - WIND_GRID.lat0) / WIND_GRID.dlat / k) * k;
+  const i1 = Math.floor((bounds.getNorth() - WIND_GRID.lat0) / WIND_GRID.dlat / k) * k;
+  const j0 = Math.ceil((bounds.getWest() - WIND_GRID.lon0) / WIND_GRID.dlon / k) * k;
+  const j1 = Math.floor((bounds.getEast() - WIND_GRID.lon0) / WIND_GRID.dlon / k) * k;
   const pts = [];
-  const i0 = Math.floor(bounds.getSouth() / sLat), i1 = Math.floor(bounds.getNorth() / sLat);
-  const j0 = Math.floor(bounds.getWest() / sLon), j1 = Math.floor(bounds.getEast() / sLon);
-  for (let i = i0; i <= i1; i++) {
-    for (let j = j0; j <= j1; j++) {
-      const lat = (i + 0.5) * sLat, lon = (j + 0.5) * sLon;
-      if (!bounds.contains([lat, lon])) continue;
-      pts.push({ key: `${z}:${i}:${j}`, lat, lon });
+  for (let i = i0; i <= i1; i += k) {
+    for (let j = j0; j <= j1; j += k) {
+      pts.push({ key: `${i}:${j}`, i, j,
+        lat: +(WIND_GRID.lat0 + i * WIND_GRID.dlat).toFixed(4), lon: +(WIND_GRID.lon0 + j * WIND_GRID.dlon).toFixed(4) });
     }
   }
-  return pts;
+  return { k, i0, i1, j0, j1, pts };
 }
-// 控えのうち、まだ新しいもの
-function windCached(key) {
-  const c = windCache.get(key);
+function windRecord(key) {
+  const c = windCols.get(key);
   return (c && Date.now() - c.at < WIND_CACHE_MS) ? c : null;
 }
-// 選択時刻（無ければ現在）の行の値を読む
-function windValueAt(c) {
-  const sel = state.allData && state.allData[state.sliderIndex];
-  const at = sel ? sel.time : new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const wantKey = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:00`;
-  let k = c.time.indexOf(wantKey);
-  if (k < 0) { for (let j = 0; j < c.time.length; j++) if (c.time[j] <= wantKey) k = j; }
-  if (k < 0) k = 0;
-  if (!c.time.length) return null;   // 値が返らなかった点
-  const speed = c.spd[k];
-  return speed == null ? null : { lat: c.lat, lon: c.lon, speed, dir: c.dir ? (c.dir[k] ?? 0) : 0 };
-}
-// 控えに無い点だけをまとめて取る
-async function fetchWindPoints(pts) {
+// 控えに無い点をまとめて取る。全部の層を1回で（AUTO と手動で取り方を分けない）
+async function fetchWindColumns(pts, span) {
+  const vars = WIND_FIELD_LEVELS.flatMap(lv => Object.values(wfVars(lv)).filter(Boolean));
   const q = new URLSearchParams({
-    latitude: pts.map(p => p.lat.toFixed(4)).join(','),
-    longitude: pts.map(p => p.lon.toFixed(4)).join(','),
-    hourly: 'wind_speed_10m,wind_direction_10m',
+    latitude: pts.map(p => p.lat).join(','),
+    longitude: pts.map(p => p.lon).join(','),
+    // モデル地形を返させる（既定は実際の地形に補正された標高になる → ADR-0012）
+    elevation: pts.map(() => 'nan').join(','),
+    cell_selection: 'nearest',   // 既定の land は標高の近い隣の格子を選び直す
+    hourly: vars.join(','),
     models: 'jma_seamless',
     timezone: 'Asia/Tokyo',
-    wind_speed_unit: 'ms',       // ★既定はkm/h。付け忘れると3.6倍になる
-    forecast_days: '2',
+    wind_speed_unit: 'ms',       // ★既定はkm/h。付け忘れると3.6倍になる（ADR-0005）
+    ...WIND_SPANS[span],
   });
   const res = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`);
   if (res.status === 429) {
@@ -7235,42 +7363,174 @@ async function fetchWindPoints(pts) {
   const now = Date.now();
   /* ⚠ 返事に値の無い点も「取った」として控える（空で）。控えないと、描き直すたびに
      その点が「控えに無い」ままになり、**取り直しが止まらない**（429 の元をまた作る） */
-  pts.forEach((p, i) => {
-    const h = arr[i] && arr[i].hourly;
-    const ok = h && h.time && h.wind_speed_10m;
-    windCache.set(p.key, { at: now, lat: p.lat, lon: p.lon, time: ok ? h.time : [],
-      spd: ok ? h.wind_speed_10m : [], dir: ok ? (h.wind_direction_10m || null) : null });
+  pts.forEach((p, n) => {
+    const r = arr[n], h = r && r.hourly;
+    const time = (h && h.time) || [];
+    const cols = {};
+    for (const v of vars) cols[v] = (h && h[v]) || null;
+    windCols.set(p.key, { at: now, i: p.i, j: p.j, lat: p.lat, lon: p.lon, span,
+      zModel: r && typeof r.elevation === 'number' ? r.elevation : null,
+      time, idx: new Map(time.map((t, k) => [t, k])), cols,
+      phases: windModelPhases(cols, time.length) });
   });
-  // 増えすぎたら古いものから捨てる（Map は入れた順）
-  while (windCache.size > WIND_CACHE_MAX) windCache.delete(windCache.keys().next().value);
+  while (windCols.size > WIND_CACHE_MAX) windCols.delete(windCols.keys().next().value);
 }
 
-function drawWindArrows(bounds, opacity) {
-  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerNote('windArrows', 'もう少し拡大すると表示されます'); return; }
-  const pts = windLattice(bounds, leafletMap.getZoom());
-  // 控えにあるものはすぐ描く（通信を待たない）
-  const missing = [];
-  pts.forEach(p => {
-    const c = windCached(p.key);
-    if (!c) { missing.push(p); return; }
-    const v = windValueAt(c);
-    if (!v) return;
-    // 風向は「吹いてくる方角」なので、矢印は+180°側へ進む
-    const to = (v.dir + 180) % 360;
-    const strong = v.speed >= 15;
-    const m = L.marker([v.lat, v.lon], {
-      pane: 'mapWeather', opacity,
-      icon: L.divIcon({
-        className: 'wind-arrow',
-        html: `<div class="wind-box${strong ? ' strong' : ''}">` +
-              `<span class="wind-a" style="--wind-deg:${to}deg">↑</span>` +
-              `<b>${v.speed.toFixed(0)}</b></div>`,
-        iconSize: null,
-      }),
-    }).addTo(leafletMap);
-    weatherMarkers.push(m);
+/* ------ 1点・1時刻の風 ------ */
+function windColumnAt(rec, k) {
+  const g = n => (rec.cols[n] && rec.cols[n][k] != null) ? rec.cols[n][k] : null;
+  return WIND_FIELD_LEVELS.map(lv => {
+    const v = wfVars(lv), spd = g(v.spd), dir = g(v.dir);
+    return { lv, spd, dir, z: v.z ? g(v.z) : null, w: (spd == null || dir == null) ? null : windUV(spd, dir) };
   });
-  if (!missing.length) { clearLayerStatus('windArrows'); return; }
+}
+/* 返り値 { w:[u,v]|null, trace, col, model }。⚠ 時刻は完全一致だけ。無ければ別の時刻で埋めない */
+function resolveWindAt(rec, timeKey, mode) {
+  const k = rec.idx.get(timeKey);
+  if (k == null) return { w: null, trace: { mode, kind: 'noTime' }, col: null, model: null };
+  const col = windColumnAt(rec, k);
+  const zRef = zRefAt(rec.i, rec.j);
+  const r = mode === 'auto' ? WindVertical.auto(col, zRef, rec.zModel) : WindVertical.layer(col, mode, rec.zModel);
+  return { ...r, col, model: rec.phases[k] };
+}
+
+/* ------ 統合した U/V の場 ------
+   描画側（矢印・粒子）が見るのはこれだけ。10m なのか 850 なのかは場の中に閉じている。
+   返り値: { mode, timeKey, i0, j0, k, ni, nj, lat0, lon0, dlat, dlon,
+             u, v: Float32Array, ok: Uint8Array, cells: [{i,j,lat,lon,res}], missing: [点], needFull: [点] } */
+function buildWindField(bounds, z, mode, timeKey) {
+  const L = windFieldLattice(bounds, z);
+  const ni = Math.max(0, Math.floor((L.i1 - L.i0) / L.k) + 1), nj = Math.max(0, Math.floor((L.j1 - L.j0) / L.k) + 1);
+  const f = { mode, timeKey, k: L.k, i0: L.i0, j0: L.j0, ni, nj,
+    lat0: WIND_GRID.lat0 + L.i0 * WIND_GRID.dlat, lon0: WIND_GRID.lon0 + L.j0 * WIND_GRID.dlon,
+    dlat: WIND_GRID.dlat * L.k, dlon: WIND_GRID.dlon * L.k,
+    u: new Float32Array(ni * nj), v: new Float32Array(ni * nj), ok: new Uint8Array(ni * nj),
+    cells: [], missing: [], needFull: [] };
+  for (const p of L.pts) {
+    const rec = windRecord(p.key);
+    if (!rec) { f.missing.push(p); continue; }
+    const res = resolveWindAt(rec, timeKey, mode);
+    if (res.trace.kind === 'noTime' && rec.span !== 'full' && rec.time.length) f.needFull.push(p);
+    const n = ((p.i - L.i0) / L.k) * nj + (p.j - L.j0) / L.k;
+    if (res.w) { f.u[n] = res.w[0]; f.v[n] = res.w[1]; f.ok[n] = 1; }
+    f.cells.push({ i: p.i, j: p.j, lat: p.lat, lon: p.lon, res, zModel: rec.zModel });
+  }
+  return f;
+}
+// 場の中の任意の点の風（双線形・U/V で）。有効な角が半分未満なら null（無い所を作らない）
+function sampleWindField(f, lat, lon) {
+  const y = (lat - f.lat0) / f.dlat, x = (lon - f.lon0) / f.dlon;
+  const i = Math.floor(y), j = Math.floor(x);
+  if (i < 0 || j < 0 || i >= f.ni || j >= f.nj) return null;
+  const fy = y - i, fx = x - j;
+  let u = 0, v = 0, w = 0;
+  for (const [di, dj, wt] of [[0, 0, (1 - fy) * (1 - fx)], [0, 1, (1 - fy) * fx], [1, 0, fy * (1 - fx)], [1, 1, fy * fx]]) {
+    const ii = i + di, jj = j + dj;
+    if (ii >= f.ni || jj >= f.nj) continue;
+    const n = ii * f.nj + jj;
+    if (!f.ok[n]) continue;
+    u += wt * f.u[n]; v += wt * f.v[n]; w += wt;
+  }
+  return w >= 0.5 ? [u / w, v / w] : null;
+}
+
+/* ------ 何を根拠にその風か（矢印を押したときの説明）------ */
+function windTraceText(res) {
+  const t = res.trace, lvName = id => (WIND_FIELD_LEVELS.find(l => l.id === id) || {}).label || id;
+  const m = res.model ? `モデル：${res.model === 'GSM' ? 'GSM（粗い・約50km）' : res.model === '移行' ? 'MSMとGSMの混合（移行中）' : 'MSM'}` : '';
+  const f0 = x => Math.round(x).toLocaleString();
+  const lines = [];
+  if (t.mode === 'auto') {
+    lines.push('<b>AUTO</b>（地形と気圧面の高さから自動）');
+    if (t.zRef != null) lines.push(`基準標高（稜線の目安）${f0(t.zRef)}m／モデル地形 ${t.zModel != null ? f0(t.zModel) + 'm' : '不明'}`);
+    if (t.kind === 'interp') {
+      const a = Math.round((1 - t.t) * 100);
+      lines.push(`採用：${lvName(t.lo.id)}/${lvName(t.hi.id)} を高度按分（${lvName(t.lo.id)} ${a}%・${lvName(t.hi.id)} ${100 - a}%）`);
+    } else if (t.kind === 'gap') {
+      lines.push(`採用：地表付近：10m風と${lvName(t.hi.id)}を高度按分（<b>推定値・不確かさあり</b>）`);
+    } else if (t.kind === 'surface') {
+      lines.push(t.reason === 'sea' ? '採用：地上10m（海・陸がほぼ無い升目）' : '採用：地上10m（基準標高がモデルの地表以下＝谷・平地）');
+    } else if (t.kind === 'top') {
+      lines.push(`採用：${lvName(t.hi.id)}（それより上の面が無い。<b>推定値</b>）`);
+    }
+  } else {
+    lines.push(`<b>${lvName(t.mode)}</b>（手動・その層そのもの）`);
+    if (t.kind === 'underground') lines.push(`この地点ではモデルの地中（${f0(t.z)}m ＜ モデル地形 ${f0(t.zModel)}m）。外挿値なので描かない`);
+  }
+  if (t.kind === 'missing' || t.kind === 'noTime') {
+    lines.push(t.kind === 'noTime' ? 'この時刻の風はまだ取得していません'
+      : t.reason === 'noData' ? `${lvName(t.mode)}：この時間帯はデータなし（約3日半より先は粗いモデルで、この層が配信されない）`
+      : '風データなし');
+  }
+  if (res.w) {
+    const sd = windSpdDir(res.w);
+    lines.push(`風速 <b>${sd.spd.toFixed(1)}m/s</b>・風向 ${windDirName(sd.dir)}（${Math.round(sd.dir)}°から）`);
+  }
+  if (m) lines.push(m);
+  if (res.col) {
+    const rows = res.col.map(c => {
+      if (!c.w) return `${c.lv.label} なし`;
+      const under = c.lv.type === 'pressure' && t.zModel != null && c.z != null && c.z < t.zModel;
+      return `${c.lv.label}${c.z != null ? ` ${f0(c.z)}m` : ''} ${c.spd.toFixed(1)} ${windDirName(c.dir)}${under ? '（地中）' : ''}`;
+    });
+    lines.push(`<small>${rows.join(' / ')}</small>`);
+  }
+  return lines.join('<br>');
+}
+
+/* ------ 描く（いまは矢印。粒子は同じ場を使う）------ */
+function windModeNote(f) {
+  const md = windModeDef(f.mode);
+  // 取れる幅の外の時刻（別の時刻の値で埋めない。⚠ 以前はここを黙って埋めていた）
+  if (f.cells.length && f.cells.every(c => c.res.trace.kind === 'noTime')) return 'この時刻の風はありません（予報の範囲の外）';
+  const phases = new Set(f.cells.map(c => c.res.model).filter(Boolean));
+  const tag = phases.has('GSM') ? '・この時刻は粗いモデル（GSM・約50km）'
+    : phases.has('移行') ? '・MSMとGSMの混合（移行中）' : '';
+  if (f.mode === 'auto') return `AUTO：稜線の高さの風（地形と気圧面の高さから自動）${tag}`;
+  const lv = WIND_FIELD_LEVELS.find(l => l.id === f.mode);
+  const none = f.cells.length && f.cells.every(c => c.res.trace.kind === 'missing' && c.res.trace.reason === 'noData');
+  if (none) return `${lv.label}：この時間帯はデータなし（約3日半より先は粗いモデルで、この層が配信されない）`;
+  return `${md.label === '10m' ? '地上10m' : lv.label}（手動）${tag}`;
+}
+function drawWindArrows(bounds, opacity) {
+  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { setLayerNote('windArrows', '拡大すると風の流れを表示します'); return; }
+  const mode = mapPrefs.windMode || WIND_MODE_DEFAULT;
+  if (mode === 'auto') {
+    loadTerrainRef();
+    if (terrainRefState === 'loading' || terrainRefState === 'idle') { setLayerNote('windArrows', '地形表を読み込み中…'); return; }
+    if (terrainRefState === 'error') {
+      // ⚠ 地形が分からないまま AUTO を出さない（基準標高が無いと「どの高さの風か」を決められない）
+      setLayerError('windArrows', `地形表を読めないため AUTO が使えません（${terrainRefError}）。手動で層を選べます`);
+      return;
+    }
+  }
+  const sel = state.allData && state.allData[state.sliderIndex];
+  const timeKey = isoHour(sel ? sel.time : new Date());
+  const f = buildWindField(bounds, leafletMap.getZoom(), mode, timeKey);
+  lastWindField = f;
+  for (const c of f.cells) {
+    const r = c.res, t = r.trace;
+    if (!r.w && t.kind !== 'underground') continue;
+    let html;
+    if (r.w) {
+      const sd = windSpdDir(r.w);
+      // 風向は「吹いてくる方角」なので、矢印は+180°側へ進む
+      const to = (sd.dir + 180) % 360;
+      html = `<div class="wind-box${sd.spd >= 15 ? ' strong' : ''}${t.estimate ? ' est' : ''}">` +
+             `<span class="wind-a" style="--wind-deg:${to}deg">↑</span><b>${sd.spd.toFixed(0)}</b></div>`;
+    } else {
+      html = `<div class="wind-box under"><b>地中</b></div>`;
+    }
+    const m = L.marker([c.lat, c.lon], {
+      pane: 'mapWeather', opacity,
+      icon: L.divIcon({ className: 'wind-arrow', html, iconSize: null }),
+    }).addTo(leafletMap);
+    m.bindPopup(() => `<div class="wind-why">${windTraceText(r)}</div>`, { maxWidth: 280 });
+    weatherMarkers.push(m);
+  }
+  const fetchPts = f.missing.length ? f.missing : f.needFull;
+  const span = f.missing.length ? 'near' : 'full';
+  if (!fetchPts.length) { setLayerNote('windArrows', windModeNote(f)); return; }
   // 429 のあとは取りに行かない（控えだけ描いて、待っていることを言う）
   const wait = windBackoffUntil - Date.now();
   if (wait > 0) {
@@ -7279,27 +7539,30 @@ function drawWindArrows(bounds, opacity) {
     windFetchTimer = setTimeout(() => { if (isMapOpen() && isOverlayOn('windArrows')) refreshWeatherPoints(); }, wait + 200);
     return;
   }
+  setLayerNote('windArrows', span === 'full' ? 'この時刻の風を取得中…' : windModeNote(f));
   // 動き終わってから取りに行く（続けて動かしている間は取らない）
   const gen = ++windFetchGen;
   clearTimeout(windFetchTimer);
-  windFetchTimer = setTimeout(() => {
+  windFetchTimer = setTimeout(async () => {
     if (gen !== windFetchGen) return;
-    fetchWindPoints(missing)
-      .then(() => {
-        if (gen !== windFetchGen || !isOverlayOn('windArrows')) return;
-        clearLayerStatus('windArrows');
-        refreshWeatherPoints();       // 控えが埋まったので描き直す（今度は通信しない）
-      })
-      .catch(e => {
-        if (e.rateLimited) {
-          setLayerError('windArrows', `問い合わせが多すぎると断られました（HTTP 429）。${Math.round(WIND_BACKOFF_MS / 1000)}秒ほどで取り直します`);
-          windFetchTimer = setTimeout(() => { if (isMapOpen() && isOverlayOn('windArrows')) refreshWeatherPoints(); }, WIND_BACKOFF_MS + 200);
-        } else {
-          setLayerError('windArrows', `取得できません（${e.message}）`);
-        }
-      });
+    try {
+      for (let s = 0; s < fetchPts.length; s += WIND_FETCH_MAX_POINTS) {
+        await fetchWindColumns(fetchPts.slice(s, s + WIND_FETCH_MAX_POINTS), span);
+      }
+      if (gen !== windFetchGen || !isOverlayOn('windArrows')) return;
+      clearLayerStatus('windArrows');
+      refreshWeatherPoints();       // 控えが埋まったので描き直す（今度は通信しない）
+    } catch (e) {
+      if (e.rateLimited) {
+        setLayerError('windArrows', `問い合わせが多すぎると断られました（HTTP 429）。${Math.round(WIND_BACKOFF_MS / 1000)}秒ほどで取り直します`);
+        windFetchTimer = setTimeout(() => { if (isMapOpen() && isOverlayOn('windArrows')) refreshWeatherPoints(); }, WIND_BACKOFF_MS + 200);
+      } else {
+        setLayerError('windArrows', `取得できません（${e.message}）`);
+      }
+    }
   }, WIND_FETCH_DELAY_MS);
 }
+let lastWindField = null;   // いま描いている場（粒子と検査が使う）
 
 /* ------ 山域・百名山レイヤー（areas.json から描く） ------
    タイルではなく手持ちのデータなので通信ゼロ。ランキングの評価単位そのものを
@@ -7767,6 +8030,14 @@ function satBandChips() {
   return chips;
 }
 
+/* 風の場の決め方の切り替え。AUTO が既定（ふだん使い）、層は検証・比較用。
+   ⚠ 切り替えても**取り直さない**（全部の層を1回で取ってある）。場の決め方だけが変わる */
+function windModeChips() {
+  return `<div class="amedas-els wind-modes">` + WIND_FIELD_MODES.map(m =>
+    `<button class="amedas-el${m.id === mapPrefs.windMode ? ' active' : ''}"
+             onclick="setWindMode('${m.id}')">${m.label}</button>`).join('') + `</div>`;
+}
+
 function renderLayerPanel() {
   const baseWrap = document.getElementById('layer-bases');
   const ovWrap = document.getElementById('layer-overlays');
@@ -7790,7 +8061,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${o.id === 'windArrows' && on ? windModeChips() : ''}
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
@@ -9660,6 +9931,13 @@ function setRankTab(tab) {
     p.classList.toggle('active', p.id === `rank-pane-${tab}`));
   // 新雪タブは開いたときに初めて取りに行く（毎回の起動を重くしない）
   if (tab === 'snow' && !snowResult && !snowLoading) refreshSnowRanking();
+}
+
+function setWindMode(id) {
+  mapPrefs.windMode = windModeDef(id).id;
+  saveMapPrefs();
+  refreshWeatherPoints();
+  renderLayerPanel();
 }
 
 function setAmedasElement(id) {

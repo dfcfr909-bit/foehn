@@ -41,16 +41,32 @@ function fakeWeather() {
   }
   return { hourly: h, daily, elevation: 500 };
 }
-function windResp(n, drop = 0) {
+/* 風の場の応答（v4.111.0）。全部の層を1回で返す。時刻は「昨日0時から4日分」（near）か
+   「3日前から11日分」（full）。⚠ 高度別の風の場は AUTO と手動で取り方を分けない */
+function windResp(n, drop = 0, span = 'near') {
   const start = new Date(); start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (span === 'full' ? 3 : 1));
   const time = [];
-  for (let i = 0; i < 48; i++) {
+  for (let i = 0; i < (span === 'full' ? 264 : 96); i++) {
     const d = new Date(start.getTime() + i * 3600e3);
     time.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`);
   }
   // drop>0 なら末尾の点を欠かす（返事が欠けたときに取り直しが止まらなくならないか）
-  return Array.from({ length: n - drop }, (_, i) => ({ hourly: { time,
-    wind_speed_10m: time.map((_, k) => 3 + (k % 5)), wind_direction_10m: time.map(() => 270) } }));
+  const lv = { 925: 780, 900: 1000, 850: 1460, 800: 1950, 700: 3010 };
+  return Array.from({ length: n - drop }, (_, i) => {
+    const h = { time, wind_speed_10m: time.map((_, k) => 3 + (k % 5)), wind_direction_10m: time.map(() => 270) };
+    for (const [p, z] of Object.entries(lv)) {
+      h[`wind_speed_${p}hPa`] = time.map(() => 8); h[`wind_direction_${p}hPa`] = time.map(() => 280);
+      h[`geopotential_height_${p}hPa`] = time.map(() => z);
+    }
+    return { elevation: 900, hourly: h };
+  });
+}
+// 地形表（AUTO の基準標高）。どの升目も 1,500m にしておく
+function terrainJson() {
+  const cells = {};
+  for (let i = 100; i < 200; i++) for (let j = 100; j < 200; j++) cells[`${i},${j}`] = [1500, 1500, 1800, 1200, 5000];
+  return JSON.stringify({ version: 1, fields: ['p90s', 'p90', 'max', 'mean', 'n'], cells });
 }
 
 const browser = await chromium.launch({
@@ -72,11 +88,13 @@ await page.route('**/*', route => {
       const n = new URL(url).searchParams.get('latitude').split(',').length;
       windReqs.push(n);
       if (mode === '429') return route.fulfill({ status: 429, body: '{"reason":"Too many"}', headers: { 'access-control-allow-origin': '*' } });
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(windResp(n, mode === 'drop' ? 3 : 0)),
+      const span = new URL(url).searchParams.get('forecast_days') === '8' ? 'full' : 'near';
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(windResp(n, mode === 'drop' ? 3 : 0, span)),
         headers: { 'access-control-allow-origin': '*' } });
     }
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather()) });
   }
+  if (url.endsWith('/data/terrain_ref.json')) return route.fulfill({ contentType: 'application/json', body: terrainJson() });
   return route.fulfill({ status: 404, body: '' });
 });
 await page.addInitScript(() => localStorage.setItem('sotoki_last',
@@ -104,7 +122,7 @@ ok(windReqs.length === 0, '★★★時刻を変えても問い合わせない',
 ok(await arrows() > 0, '時刻を変えても矢印は出たまま');
 
 /* --- 3. 少し動かして戻す：新しく見えた点だけ取る／戻したら取らない --- */
-const first = await page.evaluate(() => windLattice(leafletMap.getBounds(), leafletMap.getZoom()).length);
+const first = await page.evaluate(() => windFieldLattice(leafletMap.getBounds(), leafletMap.getZoom()).pts.length);
 windReqs.length = 0;
 await page.evaluate(() => leafletMap.panBy([60, 0], { animate: false }));
 await page.waitForTimeout(1200);
@@ -147,7 +165,7 @@ await page.waitForTimeout(2500);
 ok(windReqs.length === 1, '★★返事に欠けた点があっても、取り直しを繰り返さない', windReqs);
 
 /* --- 7. Open-Meteo は m/s を指定している（⚠ ADR-0005） --- */
-ok(/wind_speed_unit:\s*'ms'/.test(HTML.slice(HTML.indexOf('async function fetchWindPoints'), HTML.indexOf('function drawWindArrows'))),
+ok(/wind_speed_unit:\s*'ms'/.test(HTML.slice(HTML.indexOf('async function fetchWindColumns'), HTML.indexOf('function windColumnAt'))),
   '★★★風の取得で wind_speed_unit=ms を指定している（ADR-0005）');
 
 ok(!errors.length, 'ページ内で例外が出ていない', errors);

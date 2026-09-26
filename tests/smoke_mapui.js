@@ -194,13 +194,24 @@ function windGridResponse(n) {
     const d = new Date(start.getTime() + i * 3600e3);
     time.push(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:00`);
   }
-  return Array.from({ length: n }, (_, i) => ({
-    hourly: {
-      time,
+  /* v4.112.0 から地図の風は高度別の風の場（AUTO が既定）。全部の層と気圧面の高さを返す。
+     地形表（基準標高）はどこも 1,000m、モデル地形も 1,000m にして、AUTO が地上10m を選ぶ形にする
+     （ここは矢印の向き・回転の検査なので、1点だけ強風のまま） */
+  return Array.from({ length: n }, (_, i) => {
+    const h = { time,
       wind_speed_10m: time.map(() => (i === 0 ? 18 : 6)),
-      wind_direction_10m: time.map(() => 270),
-    },
-  }));
+      wind_direction_10m: time.map(() => 270) };
+    for (const [p, z] of Object.entries({ 925: 780, 900: 1000, 850: 1460, 800: 1950, 700: 3010 })) {
+      h[`wind_speed_${p}hPa`] = time.map(() => 9); h[`wind_direction_${p}hPa`] = time.map(() => 280);
+      h[`geopotential_height_${p}hPa`] = time.map(() => z);
+    }
+    return { elevation: 1000, hourly: h };
+  });
+}
+function terrainJson() {
+  const cells = {};
+  for (let i = 100; i < 250; i++) for (let j = 100; j < 250; j++) cells[`${i},${j}`] = [1000, 1000, 1200, 900, 5000];
+  return JSON.stringify({ version: 1, fields: ['p90s', 'p90', 'max', 'mean', 'n'], cells });
 }
 
 function fakeWeather() {
@@ -308,6 +319,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
             display_name: `東町${i}, 矢板市, 栃木県, 日本`, name: `東町${i}`,
           }))) });
       }
+      if (url.endsWith('/data/terrain_ref.json')) return route.fulfill({ contentType: 'application/json', body: terrainJson() });
       if (url.includes('api.open-meteo.com')) {
         // 風の格子（複数座標・wind_speed_10m）は配列で返す
         if (url.includes('wind_speed_10m')) {
