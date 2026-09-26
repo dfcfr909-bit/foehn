@@ -22,6 +22,8 @@ on:
           - wind-vs-report
           - wind-elev-gap
           - wind-field
+          - wind-seam
+          - terrain-ref
           - pages-cache
       peak:
         description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
@@ -77,6 +79,14 @@ jobs:
       - name: 高度別の風の場と自動選択の前提
         if: ${{ inputs.target == 'wind-field' }}
         run: node scripts/probeWindField.mjs | tee result.txt
+
+      - name: MSM と GSM の継ぎ目
+        if: ${{ inputs.target == 'wind-seam' }}
+        run: node scripts/probeWindSeam.mjs | tee result.txt
+
+      - name: 基準標高の候補を比べる
+        if: ${{ inputs.target == 'terrain-ref' }}
+        run: node scripts/probeTerrainRef.mjs | tee result.txt
 
       - name: 公開URLのキャッシュ指示
         if: ${{ inputs.target == 'pages-cache' }}
