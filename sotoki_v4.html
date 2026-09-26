@@ -2154,7 +2154,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.103.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.104.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8286,9 +8286,7 @@ function findHyakumeizan(name, lat, lon) {
      読めなければ OSM だけの結果に戻るだけで、検索そのものは壊れない。 */
 async function gsiPlaceSearch(term) {
   const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(term)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
+  const json = await fetchJsonWithTimeout(url);
   const list = Array.isArray(json) ? json : (json && json.features) || [];
   return list.map(f => {
     const c = f && f.geometry && f.geometry.coordinates;
@@ -8369,11 +8367,33 @@ function renderMapResults() {
   }
 }
 
+/* 検索の1本あたりの待ち時間の上限。⚠ これが無いと、どちらかの相手が詰まったとき
+   「検索中…」のまま止まり続ける（実機で「やたら重い」と言われた一因）。
+   let にしているのは検査で短くするため */
+let SEARCH_TIMEOUT_MS = 5000;
+async function fetchJsonWithTimeout(url, opts = {}) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), SEARCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...opts, signal: ctl.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw new Error('応答なし（' + (SEARCH_TIMEOUT_MS / 1000) + '秒）');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+let mapSearchSeq = 0;   // 打ち直したとき、前の検索の遅い応答で一覧を上書きしないための通し番号
+
 async function doMapSearch() {
   const input = document.getElementById('map-search-input');
   const q = input.value.trim();
   const results = document.getElementById('map-results');
   if (!q) { results.innerHTML = ''; return; }
+  const seq = ++mapSearchSeq;
   results.innerHTML = '<div class="map-result-msg">検索中…</div>';
   try {
     /* 日本国内に限定して山名・地名を検索。表記揺れぶんだけ順に引き、
@@ -8391,16 +8411,32 @@ async function doMapSearch() {
       items.push(item);
     };
     const terms = nameSearchVariants(q);
-    for (const term of terms) {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=jp&accept-language=ja&limit=8&q=${encodeURIComponent(term)}`;
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      (await res.json()).forEach(add);
-    }
+    /* ⚠ **OSMと地理院は同時に回す。** 以前は OSM×3 → 地理院×3 を1本ずつ待っていて、
+         揺れのある語（〜ヶ岳）では最大6往復を直列に待たされた。
+       ⚠ **OSM（Nominatim）の中は直列のまま。** 利用条件が「1秒1回まで」なので並べて叩かない。
+       ⚠ 片方が落ちても、もう片方の結果は出す。どちらも空で OSM が落ちていたときだけ失敗と言う */
+    const osmTask = (async () => {
+      const out = [];
+      for (const term of terms) {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=jp&accept-language=ja&limit=8&q=${encodeURIComponent(term)}`;
+        out.push(...await fetchJsonWithTimeout(url, { headers: { 'Accept': 'application/json' } }));
+      }
+      return out;
+    })();
     // ⚠ 地理院側は落ちても黙って捨てる。読めなければOSMだけの結果に戻る
-    for (const term of terms) {
-      try { (await gsiPlaceSearch(term)).forEach(add); } catch (e) { /* 読めない環境 */ }
-    }
+    const gsiTask = (async () => {
+      const out = [];
+      for (const term of terms) {
+        try { out.push(...await gsiPlaceSearch(term)); } catch (e) { /* 読めない環境・応答なし */ }
+      }
+      return out;
+    })();
+    const [osm, gsi] = await Promise.allSettled([osmTask, gsiTask]);
+    if (seq !== mapSearchSeq) return;   // もう次の検索が走っている
+    // 足す順は以前と同じ（OSM → 地理院）。重複を畳むとき、どちらを残すかを変えない
+    if (osm.status === 'fulfilled') osm.value.forEach(add);
+    if (gsi.status === 'fulfilled') gsi.value.forEach(add);
+    if (!items.length && osm.status === 'rejected') throw osm.reason;
     if (!items.length) {
       results.innerHTML = '<div class="map-result-msg">見つかりませんでした</div>';
       return;
@@ -8435,6 +8471,7 @@ async function doMapSearch() {
       });
     });
   } catch (e) {
+    if (seq !== mapSearchSeq) return;
     results.innerHTML = `<div class="map-result-msg">検索失敗: ${e.message}</div>`;
   }
 }
