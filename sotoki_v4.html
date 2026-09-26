@@ -2262,7 +2262,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.114.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.115.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7325,6 +7325,12 @@ function zRefAt(i, j) {
   const c = terrainRef && terrainRef.cells && terrainRef.cells[`${i},${j}`];
   return c ? c[0] : null;
 }
+// 升目の最高点（terrain_ref.json の fields の 'max'）。山頂付近の目安に使う
+function zMaxAt(i, j) {
+  const c = terrainRef && terrainRef.cells && terrainRef.cells[`${i},${j}`];
+  const k = terrainRef && Array.isArray(terrainRef.fields) ? terrainRef.fields.indexOf('max') : -1;
+  return c && k >= 0 ? c[k] : null;
+}
 
 /* ------ 鉛直の決め方（独立したモジュール）------
    ⚠ 地表〜最下の有効な面の埋め方（nearSurface）は、**高さで線形**（Phase 1）。
@@ -7368,8 +7374,14 @@ const WindVertical = {
       const a = valid[k], b = valid[k + 1];
       if (a.z <= zRef && zRef <= b.z) {
         const t = (zRef - a.z) / (b.z - a.z);
+        /* 間の層が**データなし**で飛んでいる（GSM の期間の 800/900 など）なら推定値と断る（v4.115.0）。
+           850→700 を一気に按分すると、間の下層ジェットを取りこぼしうる（答え合わせで中央1.7・90%3.5 m/s の誤差）。
+           ⚠ 間の層がモデルの地中で外れたのは「飛ばした」に数えない（その高さに風は無い） */
+        const skipped = col.filter(c => c.lv.type === 'pressure' && !c.w
+          && c.lv.hPa < a.lv.hPa && c.lv.hPa > b.lv.hPa).map(c => c.lv.id);
         return { w: windLerp(a.w, b.w, t),
-          trace: { ...base, kind: 'interp', lo: { id: a.lv.id, z: a.z }, hi: { id: b.lv.id, z: b.z }, t } };
+          trace: { ...base, kind: 'interp', lo: { id: a.lv.id, z: a.z }, hi: { id: b.lv.id, z: b.z }, t,
+            ...(skipped.length ? { estimate: true, skipped } : {}) } };
       }
     }
     // いちばん上の面より高い（富士山など）。上の面を使い、そう断る
@@ -7462,7 +7474,13 @@ function resolveWindAt(rec, timeKey, mode) {
   const col = windColumnAt(rec, k);
   const zRef = zRefAt(rec.i, rec.j);
   const r = mode === 'auto' ? WindVertical.auto(col, zRef, rec.zModel) : WindVertical.layer(col, mode, rec.zModel);
-  return { ...r, col, model: rec.phases[k] };
+  // 山頂付近（升目の最高点）の風。説明の窓に添えるだけで、場（描画）には使わない
+  let summit = null;
+  const zMax = zMaxAt(rec.i, rec.j);
+  if (mode === 'auto' && zMax != null && zRef != null && zMax > zRef) {
+    summit = { z: zMax, ...WindVertical.auto(col, zMax, rec.zModel) };
+  }
+  return { ...r, col, model: rec.phases[k], summit };
 }
 
 /* ------ 統合した U/V の場 ------
@@ -7517,6 +7535,7 @@ function windTraceText(res) {
     if (t.kind === 'interp') {
       const a = Math.round((1 - t.t) * 100);
       lines.push(`採用：${lvName(t.lo.id)}/${lvName(t.hi.id)} を高度按分（${lvName(t.lo.id)} ${a}%・${lvName(t.hi.id)} ${100 - a}%）`);
+      if (t.skipped) lines.push(`${t.skipped.map(lvName).join('・')}が無い時刻のため間を飛ばして按分（<b>推定値</b>）`);
     } else if (t.kind === 'gap') {
       lines.push(`採用：地表付近：10m風と${lvName(t.hi.id)}を高度按分（<b>推定値・不確かさあり</b>）`);
     } else if (t.kind === 'surface') {
@@ -7536,6 +7555,13 @@ function windTraceText(res) {
   if (res.w) {
     const sd = windSpdDir(res.w);
     lines.push(`風速 <b>${sd.spd.toFixed(1)}m/s</b>・風向 ${windDirName(sd.dir)}（${Math.round(sd.dir)}°から）`);
+  }
+  /* 山頂付近の目安（v4.115.0）。基準標高は稜線の帯の代表なので、上空で急に強まる日は
+     山頂（升目の最高点）の風がこれよりずっと強いことがある。同じ決め方でその高さの風も添える */
+  if (t.mode === 'auto' && res.summit && res.summit.w) {
+    const ss = windSpdDir(res.summit.w);
+    lines.push(`山頂付近（升目の最高点 ${f0(res.summit.z)}m）なら 約${ss.spd.toFixed(1)}m/s・${windDirName(ss.dir)}` +
+      (res.summit.trace.estimate ? '（推定値）' : ''));
   }
   if (m) lines.push(m);
   if (res.col) {

@@ -23,7 +23,7 @@
  *   TERRAIN_OUT  … 出力先（既定 data/terrain_ref.json）
  *   TERRAIN_BBOX … "lat0,lon0,lat1,lon1" で範囲を絞る（手元の空回し・部分の作り直し用）
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchDemTile, tileX, tileY, lonOfX, latOfY, DEM_URL } from './lib/demPng.mjs';
@@ -158,6 +158,17 @@ const doc = {
   cells: out,
 };
 if (!Object.keys(out).length) { console.log('✗ 升目が1つも作れなかった（タイルが取れていない）'); process.exit(1); }
+/* ⚠ 升目の中身が前と同じなら書き直さない（v4.115.0）。生成日時だけ違うファイルを書くと、
+   ブランチを作り直しただけでワークフローが「変わった」とコミットを積んでしまう（実際に起きかけた） */
+if (existsSync(OUT)) {
+  try {
+    const prev = JSON.parse(readFileSync(OUT, 'utf8'));
+    if (JSON.stringify(prev.cells) === JSON.stringify(out) && JSON.stringify(prev.fields) === JSON.stringify(doc.fields)) {
+      console.log(`升目の中身は前と同じ（${Object.keys(out).length}升目）。書き直さない`);
+      process.exit(stats.errors > 0 ? 1 : 0);
+    }
+  } catch (e) { /* 読めなければ書き直す */ }
+}
 mkdirSync(dirname(OUT), { recursive: true });
 // 升目は1行1つ（差分が読めるように）
 const head = JSON.stringify({ ...doc, cells: undefined }).slice(0, -1);
