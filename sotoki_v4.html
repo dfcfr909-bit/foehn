@@ -924,6 +924,27 @@ html, body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #map-rain.nowcast { background: rgba(20,96,170,0.92); }
+/* 地図のタイムスライダー（v4.119.0）。地図の上で読めるよう暗い地に白字（#map-rain と同じ系統） */
+#map-time {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: rgba(38,52,70,0.9);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+  color: #fff;
+}
+#map-time.hidden { display: none; }
+#map-time-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#map-time-label { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#map-time-label .mt-past { font-size: 10px; font-weight: 600; opacity: 0.75; }
+#map-time-range { width: 100%; margin: 0; height: 22px; accent-color: #ff6b3d; }
+#map-time .mt-btn {
+  flex-shrink: 0; min-width: 32px; height: 32px; padding: 0 6px;
+  border: 0; border-radius: 8px;
+  background: rgba(255,255,255,0.14); color: #fff;
+  font-size: 13px; font-weight: 800;
+}
+#map-time .mt-btn:disabled { opacity: 0.35; }
 #map-rain.hidden, #map-rain:empty { display: none; }
 /* ------ 取得できていないことを地図の上に出す ------
    ⚠ パネルの中だけだと、開くまで気づけない。走行中に帯や筋が出た理由がこれで分かる。 */
@@ -2256,7 +2277,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.118.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.119.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2329,6 +2350,18 @@ html, body {
         <div id="map-awake" class="hidden">
           <span id="map-awake-text"></span>
           <button id="map-awake-btn" type="button" onclick="toggleWakeLock()"></button>
+        </div>
+        <!-- 地図のタイムスライダー（v4.119.0）。**グラフと同じ選択時刻**（state.sliderIndex）を動かす。
+             時刻で変わるのは風の層だけなので、風の層が入っているときだけ出す（updateMapTime） -->
+        <div id="map-time" class="hidden">
+          <button id="map-time-prev" class="mt-btn" type="button" onclick="stepMapTime(-1)" aria-label="1時間前">◀</button>
+          <div id="map-time-body">
+            <div id="map-time-label"></div>
+            <input type="range" id="map-time-range" min="0" max="0" step="1" value="0" aria-label="時刻"
+              oninput="onMapTimeInput(this.value)" onchange="onMapTimeCommit(this.value)">
+          </div>
+          <button id="map-time-next" class="mt-btn" type="button" onclick="stepMapTime(1)" aria-label="1時間後">▶</button>
+          <button id="map-time-now" class="mt-btn" type="button" onclick="mapTimeNow()">今</button>
         </div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
@@ -7992,8 +8025,56 @@ function refreshWeatherPoints() {
     stopWindFlow();
   }
   updateThunderIcons();
+  updateMapTime();
   weatherPointsDirty = false;
 }
+
+/* ------ 地図のタイムスライダー（v4.119.0・利用者の要望） ------
+   グラフと地図を行き来しないと時刻を変えられなかった。**グラフと同じ選択時刻**（state.sliderIndex）を
+   動かすので、地図で選んだ時刻はグラフに戻っても同じ。
+   ・出すのは風の層（流れ・矢印）が入っているときだけ。時刻で変わるのは風だけで、雨雲・雷・衛星・
+     アメダスは実況（常に最新）。動かしても何も変わらない帯で地図を狭くしない
+   ・動かしている間は日時の表示だけ変える。指を離したら風を描き直す（iPhone の負荷）。
+     風は過去3日〜8日先を控えているので、ふつうは取り直さない */
+function mapTimeLabel(idx) {
+  const t = state.allData[idx].time;
+  const frac = nowIndexFrac();
+  const past = frac != null && idx < Math.round(frac);
+  const now = frac != null && idx === Math.round(frac);
+  return `${t.getMonth() + 1}/${t.getDate()}(${DOW_JP[t.getDay()]}) ${String(t.getHours()).padStart(2, '0')}時` +
+    (now ? '<span class="mt-past">・いま</span>' : past ? '<span class="mt-past">・過去（解析値）</span>' : '');
+}
+function updateMapTime() {
+  const box = document.getElementById('map-time');
+  if (!box) return;
+  const show = isMapOpen() && !!state.allData && typeof windAnyOn === 'function' && windAnyOn();
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const r = document.getElementById('map-time-range');
+  r.max = String(HOURS - 1);
+  if (!mapTimeDragging) r.value = String(state.sliderIndex);
+  document.getElementById('map-time-label').innerHTML = mapTimeLabel(mapTimeDragging ? +r.value : state.sliderIndex);
+  document.getElementById('map-time-prev').disabled = state.sliderIndex <= 0;
+  document.getElementById('map-time-next').disabled = state.sliderIndex >= HOURS - 1;
+  const frac = nowIndexFrac();
+  document.getElementById('map-time-now').disabled = frac == null || Math.round(frac) === state.sliderIndex;
+}
+let mapTimeDragging = false;
+// 動かしている間：表示だけ（風は描き直さない）
+function onMapTimeInput(v) {
+  mapTimeDragging = true;
+  document.getElementById('map-time-label').innerHTML = mapTimeLabel(+v);
+}
+// 離したとき・◀▶・今：選択時刻を変えて風を描き直す
+function setMapTime(idx) {
+  mapTimeDragging = false;
+  if (!state.allData) return;
+  setSelectedIndex(idx, true);   // グラフの選択線も同じ時刻へ（戻ったときに揃っている）
+  refreshWeatherPoints();        // 風をこの時刻で描き直す（updateMapTime もここで走る）
+}
+function onMapTimeCommit(v) { setMapTime(+v); }
+function stepMapTime(d) { setMapTime(state.sliderIndex + d); }
+function mapTimeNow() { const f = nowIndexFrac(); if (f != null) setMapTime(Math.round(f)); }
 
 /* ------ 雷を「雷らしく」見せる（v4.61.0） ------
    気象庁のタイルはべた塗りの多角形なので、色だけでは雷と分からない

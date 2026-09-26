@@ -408,6 +408,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `buildFlowGrid(f)` / `flowAt(g, x, y)` | 場を画面の速度の格子に写す／粒の位置の速度 | 約 7740 |
 | `updateWindFlow(f)` / `stopWindFlow()` / `pauseWindFlow()` | 流す・止める（動かしている間・閉じた・隠れた） | 約 7780 |
 | `windFlowFrame(ts)` | 1コマ（薄める→色ごとにまとめて描く。30コマ／秒） | 約 7800 |
+| `updateMapTime()` / `setMapTime(idx)` | **地図のタイムスライダー**（風の層があるときだけ出す・グラフと同じ選択時刻を動かして風を描き直す） | 約 8050 |
 | `drawWindArrows(f, opacity)` | 場の格子点に矢印（向きは風向+180°）。推定値は点線・地中は「地中」 | 約 7500 |
 | `loadPressureGrid(bounds)` | 画面を9×9に割った海面気圧を1リクエストで（#26） | 約 5626 |
 | `pressAt(g, i, j)` | 格子の添字→気圧。欠測は null | 約 5670 |
