@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const TESTS = [
   ['smoke_window',  '表示ウィンドウ（実績72h+予報168h・241点）・祝日判定'],
   ['smoke_hscroll', 'スクラバー帯操作・現在ボタン・4パネル'],
+  ['smoke_scrubgrade', 'スクラバー帯の判定バー（Aが続くところは継ぎ目なく1本・B/Cは区切ったまま）'],
   ['smoke_rank',    'ランキング（全山域・日付切替・峰タップ遷移）'],
   ['smoke_align',   '赤の選択線と選択indexの位置一致・タップ選択'],
   ['smoke_outlook', 'AI全国概況カードの表示/非表示'],

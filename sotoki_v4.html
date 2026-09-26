@@ -5544,10 +5544,21 @@ function drawScrubber() {
   const barTop = 17, barH = 17;
   const precBase = cssH - 2, precMax = 16;
 
+  /* ABC判定バー。**A（緑）が続くところは区切らず1本につなげる**（v4.105.0）。
+     「行ける時間帯」がひとかたまりの帯として一目で読めるように。
+     ⚠ B・Cは1時間ずつ区切ったまま（長く続くと何時間続くかを数えにくくなるため）
+     ⚠ 続きの区間は**1本の四角で塗る**。1時間ずつ隙間なく並べて塗ると、座標が小数のとき
+       境目のアンチエイリアスが重なって薄い継ぎ目が残る */
+  const grades = data.map(d => judgePoint(d).grade);
   for (let i = 0; i < data.length; i++) {
-    // ABC判定バー
-    ctx.fillStyle = GRADE_COL[judgePoint(data[i]).grade] || GRADE_COL_NONE;
-    ctx.fillRect(cell(i) + 0.5, barTop, pph - 1, barH);
+    const g = grades[i];
+    if (g === 'A' && grades[i - 1] === 'A') continue;   // 続きは先頭でまとめて塗った
+    let j = i;
+    if (g === 'A') while (grades[j + 1] === 'A') j++;
+    ctx.fillStyle = GRADE_COL[g] || GRADE_COL_NONE;
+    ctx.fillRect(cell(i) + 0.5, barTop, cell(j) + pph - 0.5 - (cell(i) + 0.5), barH);
+  }
+  for (let i = 0; i < data.length; i++) {
     // 降水バー（5mm/hで振り切れ。雪は水色）
     const mm = data[i].precip || 0;
     if (mm > 0) {
