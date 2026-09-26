@@ -877,7 +877,14 @@ html, body {
   padding: 6px 14px; font-size: 11px; color: var(--text3); border-bottom: 1px solid var(--border); }
 .map-hist-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .map-hist-row .map-result-item { flex: 1; min-width: 0; border-bottom: none; }
-.map-hist-row .map-result-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 履歴の行は1行にまとめる（名前＋標高を左、座標を右）。2行だと枠が太すぎた（利用者の指摘）。
+   ⚠ 高さは min-height 44px（押しやすさ）を下限に残す */
+.map-hist-row .map-result-item {
+  flex-direction: row; align-items: center; gap: 8px;
+  padding-top: 6px; padding-bottom: 6px;
+}
+.map-hist-row .map-result-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-hist-row .map-result-sub { flex-shrink: 0; font-family: var(--font-mono); }
 .map-hist-del { flex-shrink: 0; width: 44px; border: none; background: none;
   color: var(--text3); font-size: 15px; cursor: pointer; }
 .map-hist-clear { border: none; background: none; color: var(--text3); font-size: 11px;
