@@ -216,7 +216,12 @@ for (const w of [390, 360]) {
   ok(at.centered.length === 0, '★★自宅を見ている間、円柱の駒を「選択中」に見せない', at);
 
   // 円柱を回せば、そこへ移る（自宅から抜けられる）
-  await page.evaluate(() => { document.getElementById('fav-rotary').scrollLeft = 2 * FAV_STEP; });
+  // ⚠ v4.110.0 から円柱は🏠から近い順。位置ではなく名前で探して回す
+  await page.evaluate(() => {
+    const i = favRotaryItems().findIndex(f => f.name === '火打山');
+    const el = document.getElementById('fav-rotary');
+    el.scrollLeft = el.scrollLeft + (i - Math.round(favPos()) % favCount()) * FAV_STEP;
+  });
   await page.waitForTimeout(1200);
   const spun = await page.evaluate(() => ({ name: state.locationName,
     on: document.getElementById('btn-home').classList.contains('on') }));
@@ -281,6 +286,69 @@ for (const w of [390, 360]) {
   const m = await page.evaluate(() => ({ favs: loadFavs().map(f => f.name), home: loadHome() }));
   ok(!m.favs.includes('うち') && m.favs.length === 3 && m.home && m.home.name === 'うち',
     '★★起動時に、お気に入りに残っている自宅を抜く（v4.106.0 以前の保存値）', m);
+  await page.close();
+}
+
+/* ============ 3c. お気に入りは🏠から近い順（v4.110.0）・行は履歴と同じ作り ============ */
+{
+  // 自宅は架空の地点。保存順は わざと 遠い→近い にしておく
+  const page = await openPage(390, ([home]) => {
+    localStorage.setItem('sotoki_favs', JSON.stringify([
+      { name: '遠い', lat: 36.0, lon: 139.0 }, { name: '中くらい', lat: 35.5, lon: 139.0 },
+      { name: '近い', lat: 35.1, lon: 139.0 }]));
+    localStorage.setItem('sotoki_home', JSON.stringify(home));
+    localStorage.setItem('sotoki_last', JSON.stringify({ name: '遠い', lat: 36.0, lon: 139.0 }));
+  }, [HOME]);
+  await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; openFav(); });
+  await page.waitForTimeout(200);
+  const r = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#fav-rows .fav-item')];
+    const first = rows[0];
+    const nm = first.querySelector('.fav-item-name').getBoundingClientRect();
+    const co = first.querySelector('.fav-item-coord').getBoundingClientRect();
+    return {
+      order: rows.map(x => x.querySelector('.fav-item-name').textContent),
+      dist: rows.map(x => (x.querySelector('.fav-item-dist') || {}).textContent),
+      stored: loadFavs().map(f => f.name),
+      dial: favRotaryItems().map(f => f.name),
+      sameLine: Math.abs((nm.top + nm.bottom) / 2 - (co.top + co.bottom) / 2) < 6,
+      rightAligned: co.right > first.getBoundingClientRect().right - 120,
+      h: Math.round(first.getBoundingClientRect().height),
+    };
+  });
+  ok(r.order.join('/') === '近い/中くらい/遠い', '★★★お気に入りは🏠から近い順に並ぶ', r);
+  ok(r.dial.join('/') === '近い/中くらい/遠い' || r.dial.slice(0, 3).join('/') === '近い/中くらい/遠い', '★★円柱も同じ順', r);
+  ok(r.stored.join('/') === '遠い/中くらい/近い', '★保存順は書き換えない（表示のときだけ並べる）', r);
+  ok(r.dist[0] === '🏠11km' && r.dist[2] === '🏠111km', '★自宅からの距離を名前の横に出す', r.dist);
+  ok(r.sameLine && r.rightAligned && r.h <= 52, '★★行は履歴と同じ作り（座標は同じ行の右・1行の高さ）', r);
+  // 座標を押すと表記の窓（地点は移らない）
+  const c = await page.evaluate(() => {
+    const before = state.locationName;
+    document.querySelector('#fav-rows .fav-item .fav-item-coord').click();
+    return { open: !document.getElementById('coord-sheet').hidden,
+      title: document.getElementById('coord-sheet-title').textContent, moved: state.locationName !== before,
+      favOpen: document.getElementById('fav-overlay').classList.contains('open') };
+  });
+  ok(c.open && c.title.includes('近い'), '★★★お気に入りの座標を押すと表記の窓が開く', c);
+  ok(!c.moved && c.favOpen, '★座標を押しても地点は移らず、一覧も閉じない', c);
+  // 窓はお気に入り一覧より上に見えている
+  const onTop = await page.evaluate(() => {
+    const r0 = document.getElementById('coord-sheet-card').getBoundingClientRect();
+    const el = document.elementFromPoint(r0.left + r0.width / 2, r0.top + 20);
+    return !!(el && el.closest('#coord-sheet'));
+  });
+  ok(onTop, '★★表記の窓がお気に入り一覧の上に重なる', onTop);
+  await page.evaluate(() => closeCoordSheet());
+  // 並べ替えていても、✕で消えるのはその地点
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#fav-rows .fav-item')].find(x => x.querySelector('.fav-item-name').textContent === '中くらい');
+    row.querySelector('.fav-delete').click();
+  });
+  const left = await page.evaluate(() => loadFavs().map(f => f.name));
+  ok(left.join('/') === '遠い/近い', '★★★並べ替えていても、✕で消えるのは押した行の地点', left);
+  // 自宅を外すと保存順に戻る
+  const noHome = await page.evaluate(() => { releaseSpot('home'); return sortedFavs().map(f => f.name); });
+  ok(noHome[0] === '遠い', '自宅を外すと保存順に戻る', noHome);
   await page.close();
 }
 

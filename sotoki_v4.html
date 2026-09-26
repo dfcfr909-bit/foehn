@@ -1466,19 +1466,20 @@ html, body {
   flex-direction: column;
   gap: 8px;
 }
-.fav-item {
-  display: flex;
-  align-items: center;
-  padding: 12px 14px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  gap: 10px;
-  transition: background 0.15s;
-}
+/* お気に入りの行は検索の履歴と同じ作り（v4.110.0）。1枚の札に1行ずつ並べる */
+#fav-rows { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.fav-item { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 0 6px 14px;
+  border-bottom: 1px solid var(--border); cursor: pointer; }
+.fav-item:last-child { border-bottom: none; }
 .fav-item:active { background: var(--bg2); }
-.fav-item-name { flex: 1; font-weight: 700; font-size: 14px; }
-.fav-item-coord { font-size: 10px; font-family: var(--font-mono); color: var(--text3); }
+.fav-item-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px;
+  overflow: hidden; white-space: nowrap; }
+.fav-item-name { font-weight: 700; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.fav-item-dist { font-size: 12px; color: var(--text3); flex-shrink: 0; }
+/* 座標は右寄せ・押せる（押すと表記の窓）。見た目は履歴の座標と同じ */
+.fav-item-coord { flex-shrink: 0; text-align: right; font-size: 11px; font-family: var(--font-mono);
+  color: var(--text3); border: none; background: none; padding: 6px 4px; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px; }
 /* 自宅・職場の欄（お気に入りとは別の項目。v4.107.0） */
 #fav-spots { display: flex; flex-direction: column; gap: 6px;
   padding-bottom: 10px; margin-bottom: 4px; border-bottom: 2px dashed var(--border); }
@@ -1508,8 +1509,8 @@ html, body {
   opacity: 0.55;
 }
 .fav-delete {
-  font-size: 18px; padding: 4px 6px;
-  background: none; border: none; cursor: pointer; color: var(--c-col);
+  flex-shrink: 0; width: 44px; align-self: stretch; font-size: 15px; padding: 0;
+  background: none; border: none; cursor: pointer; color: var(--text3);
 }
 #fav-save-btn {
   margin: 0 12px calc(12px + var(--sa-bottom));
@@ -1716,13 +1717,14 @@ html, body {
 #coord-sheet { position: absolute; inset: 0; z-index: 120; display: flex; align-items: center;
   justify-content: center; padding: 16px; background: rgba(0,0,0,0.45); }
 #coord-sheet[hidden] { display: none; }
-#coord-sheet-card { width: 100%; max-width: 440px; background: var(--surface); color: var(--text);
+#coord-sheet-card { width: 100%; max-width: 440px; max-height: 100%; overflow-y: auto; background: var(--surface); color: var(--text);
   border-radius: 14px; padding: 14px 14px 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.35); }
 #coord-sheet-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 #coord-sheet-head h3 { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #coord-sheet-close { width: 44px; height: 44px; border: none; background: none; font-size: 20px; color: var(--text); cursor: pointer; }
-.coord-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
-.coord-k { flex-shrink: 0; width: 52px; font-size: 12px; font-weight: 800; color: var(--text3); }
+.coord-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 6px 0 8px; border-top: 1px solid var(--border); }
+/* 見出しは値の上に1行で（「度・十進分（DDM）」など長いので横に並べると値が細る） */
+.coord-k { flex: 0 0 100%; font-size: 11px; font-weight: 800; color: var(--text3); }
 /* ⚠ 値はそのまま選んでコピーもできるようにする（ボタンが効かない端末のため） */
 .coord-v { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 14px;
   user-select: all; -webkit-user-select: all; }
@@ -2236,7 +2238,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.109.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.110.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2450,7 +2452,7 @@ html, body {
       </div>
       <div id="coord-sheet-rows"></div>
       <button id="coord-copy-all" type="button">まとめてコピー</button>
-      <div id="coord-sheet-note">世界測地系（WGS84）。検索で選んだ地点の座標です</div>
+      <div id="coord-sheet-note">世界測地系（WGS84）。UTM・MGRS は1m未満を切り捨て</div>
     </div>
   </div>
 
@@ -3174,10 +3176,28 @@ function sameLoc(a, b) {
 
 // 円柱に並べる地点（お気に入り＋未登録なら現在地点を先頭に）
 // ⚠ 自宅🏠・職場🏥はボタン専用なので円柱には並べない。いまそこを見ているときも先頭に足さない
+/* お気に入りの並び（v4.110.0）。**自宅🏠から近い順**に自動で並べ直す（利用者の要望）。
+   ⚠ 保存順は書き換えない（表示のときだけ並べる）。自宅を外せば元の順に戻る。
+   自宅が未設定なら保存順のまま。一覧と円柱で同じ順にする */
+function distKm(a, b) {
+  const R = 6371, toR = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * toR, dLon = (b.lon - a.lon) * toR;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function sortedFavs(favs = loadFavs()) {
+  const home = loadSpot('home');
+  if (!home) return favs.slice();
+  return favs.map((f, i) => ({ f, i, d: distKm(home, f) }))
+    .sort((a, b) => (a.d - b.d) || (a.i - b.i))      // 同じ距離なら保存順
+    .map(x => x.f);
+}
+function fmtKm(km) { return km < 10 ? `${km.toFixed(1)}km` : `${Math.round(km)}km`; }
+
 function favRotaryItems() {
   const spots = SPOT_KINDS.map(k => loadSpot(k)).filter(Boolean);
   const isSpot = p => spots.some(h => sameLoc(p, h));
-  const favs = loadFavs().filter(f => !isSpot(f));
+  const favs = sortedFavs().filter(f => !isSpot(f));
   const items = favs.slice();
   if (!isSpot(state) && !favs.some(f => sameLoc(f, state))) {
     items.unshift({ name: state.locationName, lat: state.lat, lon: state.lon });
@@ -8961,15 +8981,82 @@ function fmtJpDMS(v, pos, neg) {
   const m = Math.floor(rest / 600), s10 = rest % 600;
   return `${v < 0 ? neg : pos}${deg}度${m}分${(s10 / 10).toFixed(1)}秒`;
 }
-// v はコピーする1行、parts は画面で緯度・経度を2行に分けて出すためのもの
+/* ------ UTM・MGRS（v4.110.0）------
+   WGS84 の緯度経度から UTM（横メルカトル、クリューゲル級数）を求め、MGRS はそこから組み立てる。
+   ⚠ 答え合わせは pyproj（EPSG:326xx/327xx）と mgrs ライブラリで作った値（tests/smoke_coord.mjs）。
+   ⚠ **1m 単位は切り捨て**（MGRS の決まり）。UTM もそろえて切り捨てる（表示が食い違わないように）。
+   ⚠ UTM は南緯80°〜北緯84°だけ。外は極（UPS）の座標系になるので「範囲外」と出す。
+   ⚠ 帯の例外：ノルウェー南西部（32V）とスバールバル（31X/33X/35X/37X）。 */
+const UTM_BANDS = 'CDEFGHJKLMNPQRSTUVWX';
+function utmZone(lat, lon) {
+  let z = Math.floor((lon + 180) / 6) + 1;
+  if (z > 60) z = 60;
+  if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) z = 32;
+  if (lat >= 72 && lat < 84) {
+    if (lon >= 0 && lon < 9) z = 31;
+    else if (lon >= 9 && lon < 21) z = 33;
+    else if (lon >= 21 && lon < 33) z = 35;
+    else if (lon >= 33 && lon < 42) z = 37;
+  }
+  return z;
+}
+function toUTM(lat, lon) {
+  if (!(lat >= -80 && lat < 84)) return null;
+  const zone = utmZone(lat, lon);
+  const band = UTM_BANDS[Math.min(19, Math.floor((lat + 80) / 8))];
+  const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996;
+  const n = f / (2 - f), n2 = n * n, n3 = n2 * n;
+  const A = a / (1 + n) * (1 + n2 / 4 + n2 * n2 / 64);
+  const al = [n / 2 - 2 * n2 / 3 + 5 * n3 / 16, 13 * n2 / 48 - 3 * n3 / 5, 61 * n3 / 240];
+  const phi = lat * Math.PI / 180;
+  const dl = (lon - (zone * 6 - 183)) * Math.PI / 180;
+  const c = 2 * Math.sqrt(n) / (1 + n);
+  const t = Math.sinh(Math.atanh(Math.sin(phi)) - c * Math.atanh(c * Math.sin(phi)));
+  const xi = Math.atan2(t, Math.cos(dl));
+  const eta = Math.atanh(Math.sin(dl) / Math.sqrt(1 + t * t));
+  let E = eta, N = xi;
+  for (let j = 1; j <= 3; j++) {
+    E += al[j - 1] * Math.cos(2 * j * xi) * Math.sinh(2 * j * eta);
+    N += al[j - 1] * Math.sin(2 * j * xi) * Math.cosh(2 * j * eta);
+  }
+  return { zone, band, e: 500000 + k0 * A * E, n: (lat < 0 ? 10000000 : 0) + k0 * A * N };
+}
+function fmtUTM(u) {
+  return u ? `${u.zone}${u.band} ${Math.floor(u.e)} ${Math.floor(u.n)}` : null;
+}
+function fmtMGRS(u) {
+  if (!u) return null;
+  const set = ((u.zone - 1) % 6) + 1;                       // 1〜6
+  const cols = ['ABCDEFGH', 'JKLMNPQR', 'STUVWXYZ'][(set - 1) % 3];
+  const rows = 'ABCDEFGHJKLMNPQRSTUV';
+  const e = Math.floor(u.e), n = Math.floor(u.n);
+  const col = cols[Math.floor(e / 100000) - 1];
+  const row = rows[(Math.floor(n / 100000) + (set % 2 === 0 ? 5 : 0)) % 20];
+  const pad5 = v => String(v % 100000).padStart(5, '0');
+  return `${u.zone}${u.band} ${col}${row} ${pad5(e)} ${pad5(n)}`;
+}
+
+/* v はコピーする1行、parts は画面での行分け（緯度・経度を2行に）。
+   見出しは利用者の指定した「UIでのおすすめ表記」 */
 function coordFormats(lat, lon) {
   const mk = (k, a, b, sep = ' ') => ({ k, v: `${a}${sep}${b}`, parts: [a, b] });
-  return [
-    mk('DD', lat.toFixed(5), lon.toFixed(5), ', '),
-    mk('DMS', fmtDMS(lat, 'N', 'S'), fmtDMS(lon, 'E', 'W')),
-    mk('DDM', fmtDDM(lat, 'N', 'S'), fmtDDM(lon, 'E', 'W')),
-    mk('度分秒', fmtJpDMS(lat, '北緯', '南緯'), fmtJpDMS(lon, '東経', '西経')),
+  const u = toUTM(lat, lon);
+  const out = [
+    mk('十進度（DD）', lat.toFixed(5), lon.toFixed(5), ', '),
+    mk('度・十進分（DDM）', fmtDDM(lat, 'N', 'S'), fmtDDM(lon, 'E', 'W')),
+    mk('度分秒（DMS）', fmtDMS(lat, 'N', 'S'), fmtDMS(lon, 'E', 'W')),
+    mk('度分秒（北緯・東経）', fmtJpDMS(lat, '北緯', '南緯'), fmtJpDMS(lon, '東経', '西経')),
   ];
+  if (u) {
+    const utm = fmtUTM(u), [zb, e, n] = utm.split(' ');
+    out.push({ k: 'UTM座標', v: utm, parts: [`${zb} E ${e}`, `N ${n}`] });
+    out.push({ k: 'MGRS', v: fmtMGRS(u), parts: [fmtMGRS(u)] });
+  } else {
+    // 極地は UTM・MGRS の外（UPS）。黙って消さず、範囲外と言う
+    out.push({ k: 'UTM座標', v: '範囲外（南緯80°〜北緯84°の外）', parts: ['範囲外（南緯80°〜北緯84°の外）'], none: true });
+    out.push({ k: 'MGRS', v: '範囲外', parts: ['範囲外'], none: true });
+  }
+  return out;
 }
 // クリップボードへ。⚠ 使えない端末では選択してコピーする旧方式に落とす
 async function copyText(text) {
@@ -9009,17 +9096,18 @@ function openCoordSheet(lat, lon, name) {
     const v = document.createElement('div'); v.className = 'coord-v';
     f.parts.forEach((p, i) => {
       const line = document.createElement('span');
-      line.textContent = p + (i === 0 && f.k === 'DD' ? ',' : '');
+      line.textContent = p + (i === 0 && f.k === '十進度（DD）' ? ',' : '');
       v.appendChild(line);
     });
     const b = document.createElement('button'); b.type = 'button'; b.className = 'coord-copy'; b.textContent = 'コピー';
     b.addEventListener('click', async () => flashCopied(b, await copyText(f.v)));
+    if (f.none) b.disabled = true;
     row.append(k, v, b);
     rows.appendChild(row);
   }
   const all = document.getElementById('coord-copy-all');
   all.onclick = async () => flashCopied(all, await copyText(
-    (name ? `${name}\n` : '') + fm.map(f => `${f.k}: ${f.v}`).join('\n')));
+    (name ? `${name}\n` : '') + fm.filter(f => !f.none).map(f => `${f.k}: ${f.v}`).join('\n')));
   sheet.hidden = false;
 }
 function closeCoordSheet() { document.getElementById('coord-sheet').hidden = true; }
@@ -9070,7 +9158,8 @@ function closeFav() {
 
 function renderFavList() {
   const list = document.getElementById('fav-list');
-  const favs = loadFavs();
+  const favs = sortedFavs();
+  const home = loadSpot('home');
   list.innerHTML = '';
 
   /* 自宅・職場の欄（お気に入りとは別の項目。v4.107.0）。
@@ -9145,24 +9234,42 @@ function renderFavList() {
     list.appendChild(empty);
     return;
   }
-  favs.forEach((f, i) => {
-    const el = document.createElement('div');
-    el.className = 'fav-item';
-    el.innerHTML = `
-      <div style="font-size:18px">⭐</div>
-      <div style="flex:1">
-        <div class="fav-item-name"></div>
-        <div class="fav-item-coord">${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}</div>
-      </div>
-      <button class="fav-spot fav-home" data-kind="home" aria-label="自宅にする">🏠</button>
-      <button class="fav-spot fav-work" data-kind="work" aria-label="職場にする">🏥</button>
-      <button class="fav-delete" data-i="${i}">🗑</button>
-    `;
-    el.querySelector('.fav-item-name').textContent = f.name;
-    // 🏠／🏥：この地点を自宅・職場へ**移す**（お気に入りからは抜ける）
-    el.querySelectorAll('.fav-spot').forEach(b => {
-      const kind = b.dataset.kind, sp = SPOTS[kind];
-      const cur = loadSpot(kind);
+  /* 行は検索の履歴と同じ作り（v4.110.0）：名前＋🏠からの距離を左、座標を右（押すと表記の窓）、右端に✕。
+     ⚠ 保存値は textContent で組む（innerHTML に入れない） */
+  const box = document.createElement('div');
+  box.id = 'fav-rows';
+  favs.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'fav-item';
+    const main = document.createElement('div');
+    main.className = 'fav-item-main';
+    const nm = document.createElement('span');
+    nm.className = 'fav-item-name';
+    nm.textContent = f.name;
+    main.appendChild(nm);
+    if (home) {
+      const d = document.createElement('span');
+      d.className = 'fav-item-dist';
+      d.textContent = `🏠${fmtKm(distKm(home, f))}`;
+      d.title = '自宅からの直線距離';
+      main.appendChild(d);
+    }
+    const co = document.createElement('button');
+    co.type = 'button';
+    co.className = 'fav-item-coord';
+    co.textContent = `${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}`;
+    co.title = '座標の表記（DD・DMS・DDM・UTM・MGRS）を開いてコピーする';
+    co.addEventListener('click', e => { e.stopPropagation(); openCoordSheet(f.lat, f.lon, f.name); });
+    row.append(main, co);
+    // 🏠／🏥：この地点を自宅・職場へ**移す**（お気に入りからは抜ける）。見出しのマークで開いたときだけ出る
+    for (const kind of SPOT_KINDS) {
+      const sp = SPOTS[kind], cur = loadSpot(kind);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `fav-spot fav-${kind}`;
+      b.dataset.kind = kind;
+      b.textContent = sp.icon;
+      b.setAttribute('aria-label', `${sp.label}にする`);
       b.title = `この地点を${sp.label}（${sp.icon}）にする（お気に入りから移す）`;
       b.addEventListener('click', e => {
         e.stopPropagation();
@@ -9170,24 +9277,31 @@ function renderFavList() {
         assignSpot(kind, f);
         renderFavList();
       });
-    });
-    el.querySelector('.fav-delete').addEventListener('click', e => {
+      row.appendChild(b);
+    }
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'fav-delete';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `${f.name} をお気に入りから外す`);
+    // ⚠ 並べ替えて表示しているので、消すのは位置ではなく**同じ地点**を探して消す
+    del.addEventListener('click', e => {
       e.stopPropagation();
-      const favs2 = loadFavs();
-      favs2.splice(i, 1);
-      saveFavs(favs2);
+      saveFavs(loadFavs().filter(x => !(sameLoc(x, f) && x.name === f.name)));
       renderFavList();
       renderFavRotary();
     });
-    el.addEventListener('click', () => {
+    row.appendChild(del);
+    row.addEventListener('click', () => {
       state.lat = f.lat;
       state.lon = f.lon;
       state.locationName = f.name;
       closeFav();
       fetchWeather(f.lat, f.lon);
     });
-    list.appendChild(el);
+    box.appendChild(row);
   });
+  list.appendChild(box);
 }
 
 function saveCurrentAsFav() {
