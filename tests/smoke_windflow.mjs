@@ -144,15 +144,15 @@ const dir = await page.evaluate(() => {
 });
 ok(dir.sx > 0 && Math.abs(dir.sy) < Math.abs(dir.sx), '★★西から吹く風の粒は東（右）へ流れる', dir);
 
-// ⑥弱風でも流れる（v4.117.0）。正比例だと 0.4 m/s で1コマ 0.06px しか動かず、実機で点にしか見えなかった
+// ⑥見た目の速さは風速に正比例（v4.118.0）。v4.117.0 で √＋下限にしたら「ほぼ無風なのに勢いよく流れる」
+//   と言われて戻した。弱い風を持ち上げない
 const calm = await page.evaluate(() => ({
   p01: windFlowPx(0.1), p1: windFlowPx(1), p10: windFlowPx(10), p20: windFlowPx(20),
   c01: windFlowColorIndex(windFlowPx(0.1)), c5: windFlowColorIndex(windFlowPx(5)),
   c10: windFlowColorIndex(windFlowPx(10)), c25: windFlowColorIndex(windFlowPx(25)),
   fade: WIND_FLOW.FADE }));
-ok(calm.p01 >= 0.35, '★★弱風（0.1 m/s）でも1コマ0.35px以上動く（止まって点にならない）', calm);
-ok(calm.p1 < calm.p10 && calm.p10 < calm.p20, '★強い風ほど速く流れる（順序は保つ）', calm);
-ok(calm.c01 === 0 && calm.c5 === 1 && calm.c10 === 2 && calm.c25 === 4, '★色は風速の帯のまま（見た目の速さを曲げても色はずれない）', calm);
+ok(Math.abs(calm.p10 / calm.p1 - 10) < 1e-6 && calm.p01 < 0.05, '★★速さは風速に正比例（無風に近い風を持ち上げない）', calm);
+ok(calm.c01 === 0 && calm.c5 === 1 && calm.c10 === 2 && calm.c25 === 4, '★色は風速の帯のまま', calm);
 ok(calm.fade >= 0.95, '★尾を長く残す（0.9 では点に見えた）', calm);
 
 // ② 矢印を足しても・層を変えても取り直さない
