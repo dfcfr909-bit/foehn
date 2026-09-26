@@ -41,7 +41,7 @@ function fakeWeather() {
   }
   return { hourly: h, daily, elevation: 500 };
 }
-/* 風の場の応答（v4.112.0）。全部の層を1回で返す。時刻は「昨日0時から4日分」（near）か
+/* 風の場の応答（v4.113.0）。全部の層を1回で返す。時刻は「昨日0時から4日分」（near）か
    「3日前から11日分」（full）。⚠ 高度別の風の場は AUTO と手動で取り方を分けない */
 function windResp(n, drop = 0, span = 'near') {
   const start = new Date(); start.setHours(0, 0, 0, 0);

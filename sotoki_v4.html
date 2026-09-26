@@ -2262,7 +2262,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.112.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.113.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2580,7 +2580,7 @@ function pickWindSource(summitM) {
 function windSourceLabel(src) {
   if (!src) return '地上10m';
   if (src.kind === 'level') {
-    // 層が無い時刻の扱いは時刻ごとに違うので windTraceLabel が言う（v4.112.0）
+    // 層が無い時刻の扱いは時刻ごとに違うので windTraceLabel が言う（v4.113.0）
     return `${Math.round(src.summitM)}m`;
   }
   if (src.reason === 'noElev') return '地上10m（標高不明）';
@@ -2591,7 +2591,7 @@ function windSourceLabel(src) {
   return '地上10m';
 }
 
-/* ------ 判定に使う風を1時間ずつ決める（v4.112.0） ------
+/* ------ 判定に使う風を1時間ずつ決める（v4.113.0） ------
    ⚠⚠ **以前は「選んだ層が null の時刻は地上10m風」に黙って落としていた。**
    jma_seamless は MSM の予報期間（およそ3日半）を過ぎると GSM に切り替わり、
    **GSM には 900/800/600hPa が無い**（open-meteo の JmaDomain.gsm.levels）。
@@ -3127,7 +3127,7 @@ function applyRange() {
 /* windSrc は pickWindSource() の戻り値。'level' なら wind/wdir に山頂高度の
    気圧面風を入れる（ADR-0006）。⚠ judgePoint は d.wind を見るだけなので、
    **判定ロジックには一切触れずに入力の質だけを上げている。**
-   ⚠⚠ その層が無い時刻は**地上10m風へ落とさない**（v4.112.0）。上下の層から補間し、
+   ⚠⚠ その層が無い時刻は**地上10m風へ落とさない**（v4.113.0）。上下の層から補間し、
    できなければ「風データなし」にする → summitWindAt / gradeOf の注意書き */
 /* ⚠⚠ **Open-Meteo の積算値は「直前1時間」。そのまま並べると1時間ずれる。**
    `precipitation` / `snowfall` は直前1時間の**合計**、`wind_gusts_10m` は直前1時間の
@@ -7128,7 +7128,7 @@ function paintTileTrouble() {
    ============================================================ */
 let weatherPointsDirty = false;
 let amedasData = null;        // { stations: [...], time: '...' }
-/* 風の場の控え（v4.112.0。v4.108.0 の 429 対策を引き継ぐ）。
+/* 風の場の控え（v4.113.0。v4.108.0 の 429 対策を引き継ぐ）。
    ⚠⚠ **HTTP 429（問い合わせが多すぎる）を出したことがある。** Open-Meteo は地点の数だけ
    回数を数える（無料枠は1分600回など）。守っていること:
    ①格子は**地図に固定**（MSM 上空の格子。動かしても同じ点は控えを使う）
@@ -9791,7 +9791,7 @@ async function fetchRankData(dates) {
   // （110地点ぶんの変数が増えるとレートに効くため。全6層でなく実際に使う5層で足りる）
   /* ⚠ 使う層に加えて、**補間の上下になりうる層（GSM にもある 925/850/700/500）と
      モデルの見分けに使う 800** も取る。選んだ層が無い時刻に地上10m風へ落とさないため
-     （v4.112.0）。風向と気圧面の高さも要る（U/V を高さで補間する） */
+     （v4.113.0）。風向と気圧面の高さも要る（U/V を高さで補間する） */
   const used = peaks.map(p => {
     const s = pickWindSource(p.elev);
     return s.kind === 'level' ? s.hPa : null;

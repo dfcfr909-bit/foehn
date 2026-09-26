@@ -194,7 +194,7 @@ function windGridResponse(n) {
     const d = new Date(start.getTime() + i * 3600e3);
     time.push(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:00`);
   }
-  /* v4.112.0 から地図の風は高度別の風の場（AUTO が既定）。全部の層と気圧面の高さを返す。
+  /* v4.113.0 から地図の風は高度別の風の場（AUTO が既定）。全部の層と気圧面の高さを返す。
      地形表（基準標高）はどこも 1,000m、モデル地形も 1,000m にして、AUTO が地上10m を選ぶ形にする
      （ここは矢印の向き・回転の検査なので、1点だけ強風のまま） */
   return Array.from({ length: n }, (_, i) => {
