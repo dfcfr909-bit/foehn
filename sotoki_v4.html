@@ -1724,17 +1724,26 @@ html, body {
 #coord-sheet-head h3 { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #coord-sheet-close { width: 44px; height: 44px; border: none; background: none; font-size: 20px; color: var(--text); cursor: pointer; }
 /* 行：[略号を大きく・左端・上下中央][呼び名][値][コピー]（利用者の指定） */
-.coord-row { display: grid; grid-template-columns: 72px 58px minmax(0, 1fr) auto; align-items: center;
+.coord-row { display: grid; grid-template-columns: 72px 70px minmax(0, 1fr) auto; align-items: center;
   gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .coord-abbr { font-size: 22px; font-weight: 800; line-height: 1; letter-spacing: 0.02em;
   justify-self: start; align-self: center; font-family: var(--font-ui); }
 .coord-k { font-size: 11px; font-weight: 700; color: var(--text3); line-height: 1.3; }
+/* ⚠ 呼び名は意味のまとまりごとに1行（途中で折らない）。列は「ユニバーサル」「横メルカトル」（6文字）が収まる幅 */
+.coord-k span { display: block; white-space: nowrap; }
+/* 狭いスマホ（360px 前後）：略号の列を詰め、「読み」の値を少し小さく。
+   ⚠ 「北緯39度51分0.4秒」の「秒」だけが次の行に落ちないように */
+@media (max-width: 374px) {
+  .coord-row { grid-template-columns: 64px 70px minmax(0, 1fr) auto; gap: 6px; }
+  .coord-abbr { font-size: 20px; }
+  .coord-row[data-k="度分秒（北緯・東経）"] .coord-v { font-size: 11px; }
+  .coord-copy { padding: 4px 10px; }
+}
 /* ⚠ 値はそのまま選んでコピーもできるようにする（ボタンが効かない端末のため） */
 .coord-v { min-width: 0; font-family: var(--font-mono); font-size: 13px;
   user-select: all; -webkit-user-select: all; }
 /* ⚠ 緯度・経度で1行ずつ。数字の途中で折り返すと読み違える */
 .coord-v span { display: block; white-space: nowrap; }
-.coord-row[data-k="度分秒（北緯・東経）"] .coord-v span { white-space: normal; }
 .coord-v .coord-note { margin-top: 3px; font-family: var(--font-ui); font-size: 11px; font-weight: 700;
   color: var(--accent, #e05020); white-space: normal; user-select: none; -webkit-user-select: none; }
 .coord-copy, #coord-copy-all { flex-shrink: 0; min-height: 36px; padding: 4px 12px; border-radius: 999px;
@@ -2245,7 +2254,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.111.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.112.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -9057,20 +9066,25 @@ function coordFormats(lat, lon) {
   if (u) {
     const utm = fmtUTM(u), [zb, e, n] = utm.split(' ');
     out.push({ k: 'UTM座標', v: utm, parts: [`${zb} E ${e}`, `N ${n}`] });
-    out.push({ k: 'MGRS', v: fmtMGRS(u), parts: [fmtMGRS(u)] });
+    // 画面では「帯＋100km四方」と「東・北」の2行に分ける（狭い画面でコピーのボタンの下に潜らないように）。コピーは1行
+    const mg = fmtMGRS(u).split(' ');
+    out.push({ k: 'MGRS', v: fmtMGRS(u), parts: [`${mg[0]} ${mg[1]}`, `${mg[2]} ${mg[3]}`] });
   } else {
     // 極地は UTM・MGRS の外（UPS）。黙って消さず、範囲外と言う
     out.push({ k: 'UTM座標', v: '範囲外（南緯80°〜北緯84°の外）', parts: ['範囲外（南緯80°〜北緯84°の外）'], none: true });
     out.push({ k: 'MGRS', v: '範囲外', parts: ['範囲外'], none: true });
   }
   // 画面用：左端に大きく出す略号・その右の呼び名・注釈（v4.111.0。利用者の指定）
+  /* 呼び名は「意味のまとまり」ごとの配列。1要素＝1行で、要素の途中では折り返さない（v4.112.0。利用者の指定）。
+     ⚠ 「ユニバーサル／横メルカトル」「軍事グリッド／参照系」を語の途中で割らない。
+     「読み」は座標形式ではなく、口頭で伝える（通報など）ための日本語の読み方 */
   const LOOK = {
-    '十進度（DD）': ['DD', '十進度', 'Google mapに貼るならこれ！'],
-    '度・十進分（DDM）': ['DDM', '度・十進分'],
-    '度分秒（DMS）': ['DMS', '度分秒'],
-    '度分秒（北緯・東経）': ['和', '度分秒（漢字）'],
-    'UTM座標': ['UTM', 'ユニバーサル横メルカトル'],
-    'MGRS': ['MGRS', '軍事グリッド参照系'],
+    '十進度（DD）': ['DD', ['十進度'], 'Google mapに貼るならこれ！'],
+    '度・十進分（DDM）': ['DDM', ['度・十進分']],
+    '度分秒（DMS）': ['DMS', ['度分秒']],
+    '度分秒（北緯・東経）': ['読み', ['読み']],
+    'UTM座標': ['UTM', ['ユニバーサル', '横メルカトル']],
+    'MGRS': ['MGRS', ['軍事グリッド', '参照系']],
   };
   out.forEach(f => { [f.abbr, f.jp, f.note] = LOOK[f.k]; });
   return out;
@@ -9112,7 +9126,8 @@ function openCoordSheet(lat, lon, name) {
     row.className = 'coord-row';
     row.dataset.k = f.k;
     const ab = document.createElement('div'); ab.className = 'coord-abbr'; ab.textContent = f.abbr;
-    const k = document.createElement('div'); k.className = 'coord-k'; k.textContent = f.jp;
+    const k = document.createElement('div'); k.className = 'coord-k';
+    f.jp.forEach(w => { const sp = document.createElement('span'); sp.textContent = w; k.appendChild(sp); });
     // 緯度と経度を2行に分ける（数字の途中で折り返さない）
     const v = document.createElement('div'); v.className = 'coord-v';
     f.parts.forEach((p, i) => {
