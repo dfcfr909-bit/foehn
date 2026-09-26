@@ -9280,8 +9280,9 @@ function renderFavList() {
     const co = document.createElement('button');
     co.type = 'button';
     co.className = 'fav-item-coord';
-    co.textContent = `${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}`;
-    co.title = '座標の表記（DD・DMS・DDM・UTM・MGRS）を開いてコピーする';
+    // 検索の履歴にそろえて「（座標）」とだけ出す（v4.111.0）。押すと座標の画面へ
+    co.textContent = '（座標）';
+    co.title = `座標の画面を開く（${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}）`;
     co.addEventListener('click', e => { e.stopPropagation(); openCoordSheet(f.lat, f.lon, f.name); });
     row.append(main, co);
     // 🏠／🏥：この地点を自宅・職場へ**移す**（お気に入りからは抜ける）。見出しのマークで開いたときだけ出る
