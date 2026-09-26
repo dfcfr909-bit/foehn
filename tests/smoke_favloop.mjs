@@ -181,11 +181,13 @@ for (const w of [390, 360]) {
         .find(x => x.querySelector('.fav-item-name').textContent === 'しごと');
       row.querySelector('.fav-work').click();
       return { work: loadSpot('work'), home: loadSpot('home'), name: state.locationName,
-        lit: [...document.querySelectorAll('#fav-list .fav-work.on')].length };
+        favs: loadFavs().map(f => f.name),
+        spot: document.querySelector('#fav-spots .fav-spot-row[data-kind="work"] .fav-item-name').textContent };
     });
     ok(r.work && r.work.name === 'しごと', '★★お気に入り一覧の🏥で職場を指定できる', r);
     ok(r.home === null, '🏥を押しても自宅は変わらない', r);
-    ok(r.lit === 1 && r.name === '那須岳', '一覧で職場の行だけ🏥が点き、その行を選んだことにはならない', r);
+    ok(!r.favs.includes('しごと') && r.spot.includes('しごと'), '★★職場にした地点はお気に入りから抜け、職場の欄に出る', r);
+    ok(r.name === '那須岳', '🏥を押しても、その行を選んだことにはならない', r);
     await page.evaluate(() => closeFav());
     const items = await page.evaluate(() => favRotaryItems().map(f => f.name));
     ok(!items.includes('しごと'), '★★職場は円柱に並べない', items);

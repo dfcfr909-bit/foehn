@@ -151,12 +151,17 @@ for (const w of [390, 360]) {
     const row = rows.find(r => r.querySelector('.fav-item-name').textContent === 'うち');
     row.querySelector('.fav-home').click();
     return { n: rows.length, home: loadHome(),
-      on: [...document.querySelectorAll('#fav-list .fav-home.on')].length,
+      favNames: loadFavs().map(f => f.name),
+      rowsAfter: [...document.querySelectorAll('#fav-list .fav-item .fav-item-name')].map(e => e.textContent),
+      spotText: document.querySelector('#fav-spots .fav-spot-row[data-kind="home"] .fav-item-name').textContent,
       name: state.locationName };
   });
   ok(listed.n === 4, '前提: お気に入りが4件', listed);
   ok(listed.home && listed.home.name === 'うち', '★★お気に入り一覧の🏠で自宅を指定できる', listed);
-  ok(listed.on === 1, '一覧で自宅の行だけ🏠が点く', listed);
+  /* v4.107.0: 自宅・職場はお気に入りとは別の項目。指定したらお気に入りから抜く（利用者の要望） */
+  ok(!listed.favNames.includes('うち') && !listed.rowsAfter.includes('うち'),
+    '★★★自宅にした地点はお気に入りから抜ける（別の項目）', listed);
+  ok(listed.spotText.includes('うち'), '★★一覧の上の自宅の欄に出る', listed);
   ok(listed.name === '燧ヶ岳', '★🏠を押しても、その行を選んだことにはならない', listed);
   await page.evaluate(() => closeFav());
 
@@ -195,11 +200,55 @@ for (const w of [390, 360]) {
   ok(await page.evaluate(() => state.locationName === 'うち' && document.getElementById('map-picked-name').textContent === 'うち'),
     '★★地図の中でも🏠で自宅へ移る（地点名も変わる）');
 
-  // 一覧で自宅の指定を外す
+  // 自宅の欄の「外す」→ お気に入りへ戻る（黙って消さない）
   await page.evaluate(() => { closeMap(); openFav(); });
   await page.waitForTimeout(200);
-  await page.evaluate(() => document.querySelector('#fav-list .fav-home.on').click());
-  ok(await page.evaluate(() => loadHome() === null), '一覧の🏠をもう一度押すと自宅の指定を外せる');
+  await page.evaluate(() => document.querySelector('#fav-spots .fav-spot-row[data-kind="home"] .fav-spot-off').click());
+  const off = await page.evaluate(() => ({ home: loadHome(), favs: loadFavs().map(f => f.name) }));
+  ok(off.home === null, '★自宅の欄の「外す」で指定を外せる', off);
+  ok(off.favs.includes('うち'), '★★★外した地点はお気に入りへ戻る（黙って消さない）', off);
+
+  // 自宅の欄の「いまの地点に」：いま見ている地点がお気に入りなら、そこから抜いて自宅にする
+  const here = await page.evaluate(() => {
+    const cur = state.locationName;
+    document.querySelector('#fav-spots .fav-spot-row[data-kind="home"] .fav-spot-here').click();
+    return { cur, home: loadHome(), favs: loadFavs().map(f => f.name) };
+  });
+  ok(here.home && here.home.name === here.cur && !here.favs.includes(here.cur),
+    '★★「いまの地点に」でいまの地点が自宅になり、お気に入りからは抜ける', here);
+  // 置き換え：別の地点を🏠にすると、前の自宅はお気に入りへ戻る
+  page.once('dialog', d => d.accept());
+  const swap = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('#fav-list .fav-item')]
+      .find(x => x.querySelector('.fav-item-name').textContent === '那須岳');
+    row.querySelector('.fav-home').click();
+    return { home: loadHome(), favs: loadFavs().map(f => f.name) };
+  });
+  ok(swap.home.name === '那須岳' && swap.favs.includes(here.cur) && !swap.favs.includes('那須岳'),
+    '★★自宅を置き換えると、前の自宅はお気に入りへ戻る', swap);
+  // ★は自宅・職場をお気に入りに入れない
+  const star = await page.evaluate(() => {
+    closeFav();
+    const h = loadHome();
+    state.lat = h.lat; state.lon = h.lon; state.locationName = h.name;
+    const msgs = []; const a = window.alert; window.alert = m => msgs.push(m);
+    toggleFavStar(); window.alert = a;
+    return { msgs, favs: loadFavs().map(f => f.name) };
+  });
+  ok(!star.favs.includes('那須岳') && star.msgs.length === 1, '★自宅の地点で★を押してもお気に入りに入れない', star);
+  await page.close();
+}
+
+/* ============ 3b. 以前の版で「お気に入りの中で指定した」自宅は、起動時にお気に入りから抜く ============ */
+{
+  const page = await openPage(390, ([favs, home]) => {
+    localStorage.setItem('sotoki_favs', JSON.stringify([...favs, home]));
+    localStorage.setItem('sotoki_home', JSON.stringify(home));
+    localStorage.setItem('sotoki_last', JSON.stringify(favs[0]));
+  }, [FAVS, HOME]);
+  const m = await page.evaluate(() => ({ favs: loadFavs().map(f => f.name), home: loadHome() }));
+  ok(!m.favs.includes('うち') && m.favs.length === 3 && m.home && m.home.name === 'うち',
+    '★★起動時に、お気に入りに残っている自宅を抜く（v4.106.0 以前の保存値）', m);
   await page.close();
 }
 
