@@ -146,6 +146,38 @@ for (const w of [390, 360]) {
   // 一覧の「うち」の行の🏠を押す
   await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; openFav(); });
   await page.waitForTimeout(200);
+  /* v4.108.0: 自宅・職場の設定は**見出しの右の🏠／🏥**から開く（利用者：「お気に入り地点の右側が
+     空いてる。そこに🏠🏥ってマークを置くだけでいい」）。ふだんは欄も各行のボタンも出さない */
+  const fold = await page.evaluate(() => {
+    const shown = el => !!el && getComputedStyle(el).display !== 'none';
+    const head = document.getElementById('fav-header');
+    const hb = document.getElementById('btn-fav-spot-home'), wb = document.getElementById('btn-fav-spot-work');
+    const title = head.querySelector('h2').getBoundingClientRect();
+    const close = document.getElementById('btn-fav-close').getBoundingClientRect();
+    const hr = hb.getBoundingClientRect(), wr = wb.getBoundingClientRect();
+    const rowBtns = sel => [...document.querySelectorAll(`#fav-list .fav-item ${sel}`)];
+    const r = {
+      inHeader: head.contains(hb) && head.contains(wb),
+      between: hr.left > title.left && wr.right <= close.left + 1 && Math.abs(hr.top - close.top) < 12,
+      noSpots: !document.getElementById('fav-spots') || !document.getElementById('fav-list').contains(document.getElementById('fav-spots')),
+      rowBtnsHidden: rowBtns('.fav-spot').every(b => !shown(b)),
+      noToggleRow: !document.getElementById('fav-spots-toggle'),
+    };
+    hb.click();
+    r.homeRow = !!document.querySelector('#fav-spots .fav-spot-row[data-kind="home"]');
+    r.workRowWhileHome = !!document.querySelector('#fav-spots .fav-spot-row[data-kind="work"]');
+    r.homeBtns = rowBtns('.fav-home').every(b => shown(b));
+    r.workBtnsWhileHome = rowBtns('.fav-work').some(b => shown(b));
+    hb.click();
+    r.closedAgain = !document.querySelector('#fav-spots .fav-spot-row') && rowBtns('.fav-spot').every(b => !shown(b));
+    return r;
+  });
+  ok(fold.inHeader && fold.between, '★★★見出しの右（✕の左）に🏠と🏥のマークがある', fold);
+  ok(fold.noSpots && fold.rowBtnsHidden && fold.noToggleRow, '★★★ふだんは自宅・職場の欄も各行の🏠／🏥も出さない', fold);
+  ok(fold.homeRow && fold.homeBtns, '★★🏠を押すと自宅の欄と各行の🏠が出る', fold);
+  ok(!fold.workRowWhileHome && !fold.workBtnsWhileHome, '★🏠を押しても職場のぶんは出さない', fold);
+  ok(fold.closedAgain, 'もう一度押すと閉じる', fold);
+  await page.evaluate(() => toggleFavSpots('home'));
   const listed = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('#fav-list .fav-item')];
     const row = rows.find(r => r.querySelector('.fav-item-name').textContent === 'うち');
@@ -201,7 +233,7 @@ for (const w of [390, 360]) {
     '★★地図の中でも🏠で自宅へ移る（地点名も変わる）');
 
   // 自宅の欄の「外す」→ お気に入りへ戻る（黙って消さない）
-  await page.evaluate(() => { closeMap(); openFav(); });
+  await page.evaluate(() => { closeMap(); openFav(); toggleFavSpots('home'); });
   await page.waitForTimeout(200);
   await page.evaluate(() => document.querySelector('#fav-spots .fav-spot-row[data-kind="home"] .fav-spot-off').click());
   const off = await page.evaluate(() => ({ home: loadHome(), favs: loadFavs().map(f => f.name) }));
