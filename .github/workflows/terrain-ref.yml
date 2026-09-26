@@ -1,0 +1,66 @@
+name: 地形表（基準標高）を作る
+
+# 高度別の風の場の基準標高 z_ref の表 data/terrain_ref.json を作ってコミットする（ADR-0012）。
+# 升目（MSM 上空の格子 0.125°×0.1°）ごとに、地理院の標高タイル（dem_png・z10）の
+# 90パーセンタイルを取り、隣と 1-2-1 でならす。作り方は表の中（source / grid / stat）にも残る。
+#
+# ⚠ 開発環境から地理院へは到達できないので、ここで作る。
+# ⚠ 手動実行のみ。地形は変わらないので定期実行は足さない（相手を無駄に叩かない）。
+# ⚠ 実行したブランチにコミットする（outlook.yml と同じ形）。
+# ⚠ 作り方（スクリプト）を変えた push でも走る。新しいワークフローは main に入るまで
+#   手動実行できないため。main では走らせない（マージのたびに作り直してコミットしない）。
+on:
+  workflow_dispatch: {}
+  push:
+    branches-ignore: [main]
+    paths:
+      - scripts/buildTerrainRef.mjs
+      - scripts/lib/demPng.mjs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: terrain-ref
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 作る
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      # ⚠ shell: bash を明示する（pipefail が付く）。付けないと tee が失敗を飲み込み、
+      #   取れなかったタイルがある欠けた表までコミットしてしまう
+      - name: 地形表を作る
+        shell: bash
+        run: node scripts/buildTerrainRef.mjs | tee result.txt
+
+      - name: 変わっていればコミット
+        run: |
+          if git diff --quiet -- data/terrain_ref.json && git ls-files --error-unmatch data/terrain_ref.json >/dev/null 2>&1; then
+            echo "変更なし。コミットをスキップします。"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/terrain_ref.json
+          git commit -m "chore: 地形表（基準標高 z_ref）を生成 (自動生成)"
+          git push
+
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## 地形表'
+            echo
+            echo '```'
+            cat result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

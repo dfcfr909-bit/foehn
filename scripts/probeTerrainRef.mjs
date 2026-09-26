@@ -25,10 +25,10 @@
  *
  * 使い方: node scripts/probeTerrainRef.mjs
  */
-import { inflateSync } from 'node:zlib';
+import { decodePng, demOf, tileX as tX, tileY as tY, lonOfX as lX, latOfY as lY, DEM_URL } from './lib/demPng.mjs';
 
 const OM = 'https://api.open-meteo.com/v1/forecast';
-const DEM = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png';
+const DEM = DEM_URL;
 const DEM_Z = 11;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -48,40 +48,9 @@ PATCHES.forEach((P, pi) => {
 });
 const cellAt = new Map(cells.map((c, n) => [`${c.pi}:${c.i}:${c.j}`, n]));
 
-/* ---- 最小の PNG 読み（8bit RGB/RGBA・インターレース無し。dem_png はこれ） ---- */
-function decodePng(buf) {
-  let p = 8, w = 0, h = 0, ct = 0;
-  const idat = [];
-  while (p < buf.length) {
-    const len = buf.readUInt32BE(p), type = buf.toString('ascii', p + 4, p + 8);
-    const data = buf.subarray(p + 8, p + 8 + len);
-    if (type === 'IHDR') { w = data.readUInt32BE(0); h = data.readUInt32BE(4); ct = data[9]; if (data[8] !== 8 || data[12] !== 0) throw new Error('未対応のPNG'); }
-    else if (type === 'IDAT') idat.push(data);
-    else if (type === 'IEND') break;
-    p += 12 + len;
-  }
-  const bpp = ct === 6 ? 4 : ct === 2 ? 3 : 0;
-  if (!bpp) throw new Error(`未対応の色形式 ${ct}`);
-  const raw = inflateSync(Buffer.concat(idat)), stride = w * bpp, out = Buffer.alloc(h * stride);
-  for (let y = 0; y < h; y++) {
-    const f = raw[y * (stride + 1)], src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
-    for (let x = 0; x < stride; x++) {
-      const a = x >= bpp ? out[y * stride + x - bpp] : 0, b = y ? out[(y - 1) * stride + x] : 0;
-      const c = (x >= bpp && y) ? out[(y - 1) * stride + x - bpp] : 0;
-      let v = src[x];
-      if (f === 1) v += a; else if (f === 2) v += b; else if (f === 3) v += (a + b) >> 1;
-      else if (f === 4) { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); }
-      out[y * stride + x] = v & 255;
-    }
-  }
-  return { w, h, bpp, px: out };
-}
-// dem_png の画素 → 標高（アプリの decodeDemPixel と同じ定義）
-const demOf = (r, g, b) => { const x = r * 65536 + g * 256 + b; return x === 8388608 ? null : (x < 8388608 ? x : x - 16777216) * 0.01; };
-const tileX = lon => (lon + 180) / 360 * 2 ** DEM_Z;
-const tileY = lat => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** DEM_Z; };
-const lonOfX = x => x / 2 ** DEM_Z * 360 - 180;
-const latOfY = y => { const n = Math.PI - 2 * Math.PI * y / 2 ** DEM_Z; return 180 / Math.PI * Math.atan(Math.sinh(n)); };
+// タイル座標は共通の道具（scripts/lib/demPng.mjs）を DEM_Z で使う
+const tileX = lon => tX(lon, DEM_Z), tileY = lat => tY(lat, DEM_Z);
+const lonOfX = x => lX(x, DEM_Z), latOfY = y => lY(y, DEM_Z);
 
 /* ---- 地形：升目ごとの統計 ---- */
 console.log('# 基準標高 z_ref の候補を比べる');
