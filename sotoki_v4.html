@@ -1480,8 +1480,12 @@ html, body {
 .fav-item-name { flex: 1; font-weight: 700; font-size: 14px; }
 .fav-item-coord { font-size: 10px; font-family: var(--font-mono); color: var(--text3); }
 /* 自宅・職場の欄（お気に入りとは別の項目。v4.107.0） */
-#fav-spots { display: flex; flex-direction: column; gap: 6px;
-  padding-bottom: 10px; margin-bottom: 4px; border-bottom: 2px dashed var(--border); }
+#fav-spots { display: flex; flex-direction: column; gap: 6px; }
+#fav-spots[hidden] { display: none; }
+/* 自宅・職場の開閉。お気に入りの下に、控えめな行で置く */
+#fav-spots-toggle { margin-top: 6px; padding: 10px 12px; min-height: 44px; text-align: left;
+  border: none; border-top: 2px dashed var(--border); background: none; color: var(--text2);
+  font-size: 13px; font-weight: 700; font-family: var(--font-ui); cursor: pointer; }
 .fav-spot-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
   border: 2px solid var(--accent, #e05020); border-radius: var(--radius); cursor: pointer; }
 .fav-spot-row.unset { border-color: var(--border); border-style: dashed; cursor: default; }
@@ -8901,7 +8905,15 @@ function saveFavs(favs) {
   localStorage.setItem('sotoki_favs', JSON.stringify(favs));
 }
 
+/* 自宅・職場の欄は、ふだんは畳んでおく（v4.108.0。利用者の要望「基本隠しておいて展開できる」）。
+   一覧を開くたびに畳んだ状態から始める */
+let favSpotsOpen = false;
+function toggleFavSpots() {
+  favSpotsOpen = !favSpotsOpen;
+  renderFavList();
+}
 function openFav() {
+  favSpotsOpen = false;
   renderFavList();
   document.getElementById('fav-overlay').classList.add('open');
 }
@@ -8918,6 +8930,7 @@ function renderFavList() {
      ⚠ 保存値は textContent で組む（innerHTML に入れない） */
   const spotsBox = document.createElement('div');
   spotsBox.id = 'fav-spots';
+  spotsBox.hidden = !favSpotsOpen;
   for (const kind of SPOT_KINDS) {
     const sp = SPOTS[kind], h = loadSpot(kind);
     const row = document.createElement('div');
@@ -8965,13 +8978,23 @@ function renderFavList() {
     }
     spotsBox.appendChild(row);
   }
-  list.appendChild(spotsBox);
+  /* 開閉の行。**お気に入りの下**に置く（利用者の画に合わせた）。
+     畳んでいる間も、設定済みかどうかは見出しで分かるようにする */
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.id = 'fav-spots-toggle';
+  toggle.setAttribute('aria-expanded', String(favSpotsOpen));
+  const setCount = SPOT_KINDS.filter(k => loadSpot(k)).length;
+  toggle.textContent = `${favSpotsOpen ? '▾' : '▸'} 🏠 自宅・🏥 職場（${setCount}/${SPOT_KINDS.length} 設定済み）`;
+  toggle.addEventListener('click', toggleFavSpots);
+  const appendSpots = () => { list.appendChild(toggle); list.appendChild(spotsBox); };
 
   if (!favs.length) {
     const empty = document.createElement('div');
     empty.style.cssText = 'color:var(--text3);text-align:center;margin-top:20px;font-size:13px;';
     empty.textContent = 'お気に入りなし';
     list.appendChild(empty);
+    appendSpots();
     return;
   }
   favs.forEach((f, i) => {
@@ -9017,6 +9040,7 @@ function renderFavList() {
     });
     list.appendChild(el);
   });
+  appendSpots();
 }
 
 function saveCurrentAsFav() {

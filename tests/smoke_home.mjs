@@ -146,6 +146,25 @@ for (const w of [390, 360]) {
   // 一覧の「うち」の行の🏠を押す
   await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; openFav(); });
   await page.waitForTimeout(200);
+  /* v4.108.0: 自宅・職場の欄はふだん畳んでおく（利用者の要望）。開閉の行はお気に入りの下 */
+  const fold = await page.evaluate(() => {
+    const box = document.getElementById('fav-spots'), tg = document.getElementById('fav-spots-toggle');
+    const lastFav = [...document.querySelectorAll('#fav-list .fav-item')].pop();
+    const r = { hidden: getComputedStyle(box).display === 'none', label: tg && tg.textContent,
+      below: !!(lastFav && tg && (lastFav.compareDocumentPosition(tg) & Node.DOCUMENT_POSITION_FOLLOWING)) };
+    tg.click();
+    const box2 = document.getElementById('fav-spots');
+    r.shownAfter = getComputedStyle(box2).display !== 'none';
+    r.labelAfter = document.getElementById('fav-spots-toggle').textContent;
+    closeFav(); openFav();
+    r.foldedAgain = getComputedStyle(document.getElementById('fav-spots')).display === 'none';
+    return r;
+  });
+  ok(fold.hidden, '★★★自宅・職場の欄は、ふだんは畳んである', fold);
+  ok(fold.below, '★開閉の行はお気に入りの下にある', fold);
+  ok(/自宅/.test(fold.label) && /職場/.test(fold.label) && /設定済み/.test(fold.label), '畳んでいても見出しで設定の有無が分かる', fold);
+  ok(fold.shownAfter, '★★押すと開く', fold);
+  ok(fold.foldedAgain, '一覧を開き直すと畳んだ状態に戻る', fold);
   const listed = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('#fav-list .fav-item')];
     const row = rows.find(r => r.querySelector('.fav-item-name').textContent === 'うち');
