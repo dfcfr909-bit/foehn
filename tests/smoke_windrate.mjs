@@ -106,12 +106,17 @@ await page.waitForTimeout(600);
 await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9, { animate: false }); toggleOverlay('windArrows'); });
 await page.waitForTimeout(1500);
 
+/* v4.116.0 から1回の問い合わせは60地点まで（サーバが大きな要求を途中で切るため）。画面を囲む格子が
+   60を超えると「1回の取りに行き」が複数の問い合わせに分かれる。⚠ 見たいのは回数の性質
+   （取りに行くのが1回ぶん・控えに無い点だけ）なので、「1回ぶん」＝ 60 で割り切った数で数える */
+const oneRound = reqs => reqs.length >= 1 && reqs.slice(0, -1).every(n => n === 60) && reqs[reqs.length - 1] <= 60;
 const arrows = () => page.evaluate(() => document.querySelectorAll('.wind-box').length);
 const status = () => page.evaluate(() => (document.querySelector('.layer-status[data-id="windArrows"]') || {}).textContent || '');
 
 /* --- 1. 最初は1回で、画面の格子点ぶん --- */
-ok(windReqs.length === 1, '★最初の表示で問い合わせは1回', windReqs);
-ok(windReqs[0] >= 12 && windReqs[0] <= 40, '地点の数は以前（25）と同じくらい', windReqs);
+ok(oneRound(windReqs), '★最初の表示で取りに行くのは1回ぶん', windReqs);
+// v4.116.0 から画面を**囲む**点まで取る（流れの端に粒子の無い帯を出さないため）。以前の内側だけ（〜40）より少し多い
+ok(windReqs[0] >= 12 && windReqs[0] <= 60, '地点の数は画面を囲む格子点ぶん（60以内）', windReqs);
 ok(await arrows() > 0, '矢印が出る');
 
 /* --- 2. 時刻を変えても取り直さない（2日分を持っている） --- */
@@ -140,7 +145,7 @@ for (let k = 0; k < 6; k++) {
   await page.waitForTimeout(80);
 }
 await page.waitForTimeout(1500);
-ok(windReqs.length === 1, '★★続けて動かしている間は取らず、止まってから1回', windReqs);
+ok(oneRound(windReqs), '★★続けて動かしている間は取らず、止まってから1回ぶん', windReqs);
 
 /* --- 5. 429 を受けたら1分待つ（その間は取りに行かない）・理由を言う --- */
 mode = '429';
@@ -162,7 +167,7 @@ mode = 'drop';
 windReqs.length = 0;
 await page.evaluate(() => leafletMap.setZoom(11, { animate: false }));
 await page.waitForTimeout(2500);
-ok(windReqs.length === 1, '★★返事に欠けた点があっても、取り直しを繰り返さない', windReqs);
+ok(oneRound(windReqs), '★★返事に欠けた点があっても、取り直しを繰り返さない', windReqs);
 
 /* --- 7. Open-Meteo は m/s を指定している（⚠ ADR-0005） --- */
 ok(/wind_speed_unit:\s*'ms'/.test(HTML.slice(HTML.indexOf('async function fetchWindColumns'), HTML.indexOf('function windColumnAt'))),
