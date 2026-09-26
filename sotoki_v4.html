@@ -4262,6 +4262,7 @@ function buildCharts() {
     ],
     hooks: {
       drawClear: [drawDayBackground],
+      drawAxes: [drawFreezingLine],   // 0℃の線。気温の線より下に敷く（線を隠さない）
       draw: [drawTempOverlay, drawNowMarker],
     },
   }, [xs, temps], document.getElementById('chart-sky'));
@@ -5245,6 +5246,26 @@ function drawFeelBand(u, pr) {
       ctx.strokeRect(x0, top + pr, x1 - x0, bh - 2 * pr);
     }
   }
+  ctx.restore();
+}
+
+/* 0℃の線（v4.114.0）。氷点下かどうかが一目で分かるように、濃い青の点線を引く
+   （利用者の要望）。雪質・凍結・体感に直結するので、気温の線がどこで割り込むかを読ませる。
+   ⚠ 気温の目盛りの範囲に0℃が入っていないとき（夏）は引かない。範囲を0℃まで広げない
+     （広げると気温の線がつぶれて読みにくくなる） */
+const FREEZING_LINE_COLOR = '#1d3a9e';
+function drawFreezingLine(u) {
+  const y = u.valToPos(0, 'y', true);
+  const top = u.bbox.top, bottom = u.bbox.top + u.bbox.height;
+  if (!(y >= top && y <= bottom)) return;
+  const ctx = u.ctx, pr = canvasRatio(u);
+  ctx.save();
+  ctx.strokeStyle = FREEZING_LINE_COLOR;
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 1.5 * pr;
+  ctx.setLineDash([5 * pr, 3 * pr]);
+  const yy = Math.round(y) + 0.5;
+  ctx.beginPath(); ctx.moveTo(u.bbox.left, yy); ctx.lineTo(u.bbox.left + u.bbox.width, yy); ctx.stroke();
   ctx.restore();
 }
 

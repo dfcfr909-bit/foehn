@@ -269,6 +269,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 |---|---|---|
 | `drawCloudPrecip(u)` | 雲のラスタ＋降水バー（drawClear hook） | 約 3509 |
 | `drawCloudOverlay(u)` | 標高ライン＋時刻ラベル | 約 3595 |
+| `drawFreezingLine(u)` | **0℃の線**（濃い青の点線。drawAxes の hook＝気温の線の下。範囲に0℃が無ければ引かない） | 約 5250 |
 | `drawTempOverlay(u)` | 日付ヘッダー・**天気アイコン**・最高最低注記 | 約 3625 |
 | `drawPrecipBars(u)` | 降水・降雪バー | 約 3706 |
 | `drawWindOverlay(u)` | 風速バー（`THRESH` で色分け）＋風向矢印 | 約 3737 |
