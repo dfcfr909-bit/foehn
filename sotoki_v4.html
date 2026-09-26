@@ -1712,6 +1712,32 @@ html, body {
    （Webメルカトル）と座標系が違う → docs/adr/0010-pressure-layer-removed.md
    ⚠ **CSSフィルタで色を反転・減光しない。** このリポジトリはiOS特有のフィルタ不具合を
    2回踏んでいる（`tests/smoke_mapui.js` の注記）。暗いテーマでも素のまま出す。 */
+/* 座標の表記の窓（v4.109.0）。⚠ 地図（100）より上。検索窓のキーボードは開く時に畳む */
+#coord-sheet { position: absolute; inset: 0; z-index: 120; display: flex; align-items: center;
+  justify-content: center; padding: 16px; background: rgba(0,0,0,0.45); }
+#coord-sheet[hidden] { display: none; }
+#coord-sheet-card { width: 100%; max-width: 440px; background: var(--surface); color: var(--text);
+  border-radius: 14px; padding: 14px 14px 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.35); }
+#coord-sheet-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+#coord-sheet-head h3 { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#coord-sheet-close { width: 44px; height: 44px; border: none; background: none; font-size: 20px; color: var(--text); cursor: pointer; }
+.coord-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.coord-k { flex-shrink: 0; width: 52px; font-size: 12px; font-weight: 800; color: var(--text3); }
+/* ⚠ 値はそのまま選んでコピーもできるようにする（ボタンが効かない端末のため） */
+.coord-v { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 14px;
+  user-select: all; -webkit-user-select: all; }
+/* ⚠ 緯度・経度で1行ずつ。数字の途中で折り返すと読み違える */
+.coord-v span { display: block; white-space: nowrap; }
+.coord-copy, #coord-copy-all { flex-shrink: 0; min-height: 36px; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px;
+  font-weight: 700; font-family: var(--font-ui); cursor: pointer; }
+.coord-copy.done, #coord-copy-all.done { background: var(--a-col, #2a7d4f); color: #fff; border-color: transparent; }
+#coord-copy-all { width: 100%; margin-top: 8px; min-height: 44px; font-size: 14px; }
+#coord-sheet-note { margin-top: 8px; font-size: 11px; color: var(--text3); }
+/* 履歴の座標は押せる（見た目は控えめなまま） */
+.map-hist-coord { border: none; background: none; padding: 6px 4px; margin: -6px -4px; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px; color: var(--text3); }
+
 /* ⚠ 地図の上から開く（入口が地図の右側のボタン列）。地図（100）より上に重ねる */
 #wxmap-overlay {
   position: absolute;
@@ -2210,7 +2236,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.108.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.109.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2415,6 +2441,19 @@ html, body {
   <!-- ⚠ **地図には重ねない。** 天気図は円錐図法などで描かれた絵で、
        このアプリの地図（Webメルカトル）と座標系が違う。重ねると H の位置が
        数百kmずれる → docs/adr/0010-pressure-layer-removed.md -->
+  <!-- 座標の表記（DD・DMS・DDM・度分秒）をまとめて出す窓（v4.109.0）。検索の履歴の座標を押すと開く -->
+  <div id="coord-sheet" role="dialog" aria-modal="true" aria-labelledby="coord-sheet-title" hidden>
+    <div id="coord-sheet-card">
+      <div id="coord-sheet-head">
+        <h3 id="coord-sheet-title">座標</h3>
+        <button id="coord-sheet-close" type="button" onclick="closeCoordSheet()" aria-label="閉じる">✕</button>
+      </div>
+      <div id="coord-sheet-rows"></div>
+      <button id="coord-copy-all" type="button">まとめてコピー</button>
+      <div id="coord-sheet-note">世界測地系（WGS84）。検索で選んだ地点の座標です</div>
+    </div>
+  </div>
+
   <div id="wxmap-overlay">
     <div id="wxmap-header">
       <h2>天気図</h2>
@@ -8869,9 +8908,14 @@ function renderSearchHist() {
       ev.textContent = `${h.elev}m`;
       nm.appendChild(ev);
     }
-    const sub = document.createElement('div');
-    sub.className = 'map-result-sub';
+    // 座標は押せる。押すと DD／DMS／DDM／度分秒 をまとめた窓を開く（v4.109.0）。
+    // ⚠ 行を押したことにしない（その地点へ移らない）
+    const sub = document.createElement('button');
+    sub.type = 'button';
+    sub.className = 'map-result-sub map-hist-coord';
     sub.textContent = `${h.lat.toFixed(4)}, ${h.lon.toFixed(4)}`;
+    sub.title = '座標の表記（DD・DMS・DDM・度分秒）を開いてコピーする';
+    sub.addEventListener('click', e => { e.stopPropagation(); openCoordSheet(h.lat, h.lon, h.name); });
     el.append(nm, sub);
     /* ⚠ 標高は pickMapPoint の第4引数に渡さない（DEMの読みで公称値ではない。
        検索結果から選ぶときと同じ扱い） */
@@ -8893,6 +8937,97 @@ function renderSearchHist() {
     results.appendChild(row);
   }
 }
+/* ============================================================
+   座標の表記（DD・DMS・DDM・度分秒）— v4.109.0
+   ⚠ 繰り上がりに注意。秒を丸めて60になったら分へ、分が60なら度へ送る
+      （36°59'59.96" を 36°59'60.0" と出さない）。丸めは「最小単位の整数」で行う
+   ============================================================ */
+function coordParts(v, unitsPerDeg) {
+  // v の絶対値を最小単位（例: 0.1秒 → 36000/度）の整数に丸めてから度・分・秒へ割る
+  const n = Math.round(Math.abs(v) * unitsPerDeg);
+  return { deg: Math.floor(n / unitsPerDeg), rest: n % unitsPerDeg };
+}
+function fmtDMS(v, pos, neg) {
+  const { deg, rest } = coordParts(v, 36000);           // 0.1秒単位
+  const m = Math.floor(rest / 600), s10 = rest % 600;
+  return `${deg}°${String(m).padStart(2, '0')}'${(s10 / 10).toFixed(1).padStart(4, '0')}"${v < 0 ? neg : pos}`;
+}
+function fmtDDM(v, pos, neg) {
+  const { deg, rest } = coordParts(v, 60000);           // 0.001分単位
+  return `${deg}°${(rest / 1000).toFixed(3).padStart(6, '0')}'${v < 0 ? neg : pos}`;
+}
+function fmtJpDMS(v, pos, neg) {
+  const { deg, rest } = coordParts(v, 36000);
+  const m = Math.floor(rest / 600), s10 = rest % 600;
+  return `${v < 0 ? neg : pos}${deg}度${m}分${(s10 / 10).toFixed(1)}秒`;
+}
+// v はコピーする1行、parts は画面で緯度・経度を2行に分けて出すためのもの
+function coordFormats(lat, lon) {
+  const mk = (k, a, b, sep = ' ') => ({ k, v: `${a}${sep}${b}`, parts: [a, b] });
+  return [
+    mk('DD', lat.toFixed(5), lon.toFixed(5), ', '),
+    mk('DMS', fmtDMS(lat, 'N', 'S'), fmtDMS(lon, 'E', 'W')),
+    mk('DDM', fmtDDM(lat, 'N', 'S'), fmtDDM(lon, 'E', 'W')),
+    mk('度分秒', fmtJpDMS(lat, '北緯', '南緯'), fmtJpDMS(lon, '東経', '西経')),
+  ];
+}
+// クリップボードへ。⚠ 使えない端末では選択してコピーする旧方式に落とす
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+  } catch (e) { /* 旧方式へ */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+function flashCopied(btn, ok) {
+  const label = btn.dataset.label || btn.textContent;
+  btn.dataset.label = label;
+  btn.textContent = ok ? 'コピーしました' : '長押しで選んでください';
+  btn.classList.toggle('done', ok);
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => { btn.textContent = label; btn.classList.remove('done'); }, 1500);
+}
+function openCoordSheet(lat, lon, name) {
+  const q = document.getElementById('map-search-input');
+  if (q) q.blur();                 // キーボードを畳む（窓が隠れる）
+  const sheet = document.getElementById('coord-sheet');
+  document.getElementById('coord-sheet-title').textContent = name ? `${name} の座標` : '座標';
+  const rows = document.getElementById('coord-sheet-rows');
+  rows.innerHTML = '';
+  const fm = coordFormats(lat, lon);
+  for (const f of fm) {
+    const row = document.createElement('div');
+    row.className = 'coord-row';
+    const k = document.createElement('div'); k.className = 'coord-k'; k.textContent = f.k;
+    // 緯度と経度を2行に分ける（数字の途中で折り返さない）
+    const v = document.createElement('div'); v.className = 'coord-v';
+    f.parts.forEach((p, i) => {
+      const line = document.createElement('span');
+      line.textContent = p + (i === 0 && f.k === 'DD' ? ',' : '');
+      v.appendChild(line);
+    });
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'coord-copy'; b.textContent = 'コピー';
+    b.addEventListener('click', async () => flashCopied(b, await copyText(f.v)));
+    row.append(k, v, b);
+    rows.appendChild(row);
+  }
+  const all = document.getElementById('coord-copy-all');
+  all.onclick = async () => flashCopied(all, await copyText(
+    (name ? `${name}\n` : '') + fm.map(f => `${f.k}: ${f.v}`).join('\n')));
+  sheet.hidden = false;
+}
+function closeCoordSheet() { document.getElementById('coord-sheet').hidden = true; }
+// 窓の外（暗いところ）を押したら閉じる
+document.getElementById('coord-sheet').addEventListener('click', e => {
+  if (e.target.id === 'coord-sheet') closeCoordSheet();
+});
+
 {
   const input = document.getElementById('map-search-input');
   // フォーカスした時点で入力が空なら履歴を出す（前の検索結果が出ていれば残す）
