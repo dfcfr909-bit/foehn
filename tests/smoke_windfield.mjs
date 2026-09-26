@@ -147,6 +147,9 @@ ok(v.top.kind === 'top' && v.top.estimate === true, 'いちばん上の面より
 ok(v.gsm.trace.kind === 'interp' && v.gsm.trace.lo.id === '850' && v.gsm.trace.hi.id === '700',
   '★★GSM の期間（800 が無い）は実在する 850/700 から按分する', v.gsm.trace);
 ok(Math.abs(v.gsm.sd.spd - v.gsm.want.spd) < 1e-6, 'GSM の期間の按分も U/V・その時刻の高さ', v.gsm);
+ok(v.gsm.trace.estimate === true && JSON.stringify(v.gsm.trace.skipped) === '["800"]',
+  '★★800 が無くて 850/700 を一気に按分したら「推定値」と断る（飛ばした層を残す）', v.gsm.trace);
+ok(!v.mid.trace.estimate, '間の層が揃っているときは推定値にしない', v.mid.trace);
 ok(v.l800.kind === 'missing' && v.l800.reason === 'noData', '★★★手動800：無い時刻は別の層で埋めない（データなし）', v.l800);
 ok(v.l925.kind === 'underground', '★手動925：モデル地形より下は外挿値なので描かない', v.l925);
 ok(v.l850.trace.kind === 'layer' && Math.abs(v.l850.sd.spd - 10) < 1e-9, '手動850：その層そのもの', v.l850);
@@ -209,6 +212,7 @@ ok(/AUTO/.test(why) && /基準標高/.test(why) && /850hPa\/800hPa を高度按�
   '★★AUTO の根拠：基準標高・採用した面・按分の割合', why);
 ok(/1,400m/.test(why) && /1,880m/.test(why), '★各層の**その時刻の**高さを出す', why);
 ok(/モデル：MSM/.test(why), 'モデルを出す', why);
+ok(/山頂付近（升目の最高点 1,940m）なら 約/.test(why), '★★山頂付近（升目の最高点）の風も同じ決め方で添える', why);
 
 /* ---- 4. GSM の期間：手動800 はデータなしと言う・AUTO は 850/700 で按分 ---- */
 const gsm = await page.evaluate(async () => {
@@ -240,6 +244,7 @@ const ga = await page.evaluate(async () => {
 ok(ga.trace.kind === 'interp' && ga.trace.lo.id === '850' && ga.trace.hi.id === '700' && ga.model === 'GSM',
   '★★AUTO：GSM の期間は 850/700 で按分し、モデル GSM と記録', ga);
 ok(/GSM/.test(ga.status), '粗いモデルの期間だと言う', ga.status);
+ok(ga.trace.estimate === true && ga.trace.skipped.includes('800'), '★地図でも 800 を飛ばした按分は推定値', ga.trace);
 
 ok(!errors.length, 'ページ内で例外が出ていない', errors);
 await browser.close();
