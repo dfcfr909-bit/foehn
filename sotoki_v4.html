@@ -133,7 +133,7 @@ html, body {
   border-bottom: 1px dotted var(--text3);   /* ⚠ 幅を変えない下線（text-decoration だと詰まる端末がある） */
 }
 #app-version {
-  font-size: 11px;
+  font-size: 16px;   /* v4.107.0: 11px → 16px（利用者の要望「もっと大きく」。360px でも凡例は折れない） */
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--text3);
@@ -1479,12 +1479,24 @@ html, body {
 .fav-item:active { background: var(--bg2); }
 .fav-item-name { flex: 1; font-weight: 700; font-size: 14px; }
 .fav-item-coord { font-size: 10px; font-family: var(--font-mono); color: var(--text3); }
+/* 自宅・職場の欄（お気に入りとは別の項目。v4.107.0） */
+#fav-spots { display: flex; flex-direction: column; gap: 6px;
+  padding-bottom: 10px; margin-bottom: 4px; border-bottom: 2px dashed var(--border); }
+.fav-spot-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border: 2px solid var(--accent, #e05020); border-radius: var(--radius); cursor: pointer; }
+.fav-spot-row.unset { border-color: var(--border); border-style: dashed; cursor: default; }
+.fav-spot-row.unset .fav-item-name { color: var(--text3); }
+.fav-spot-ico { font-size: 22px; }
+.fav-spot-body { flex: 1; min-width: 0; }
+.fav-spot-here, .fav-spot-off { flex-shrink: 0; font-size: 12px; font-weight: 700; min-height: 32px;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer; font-family: var(--font-ui); }
+.fav-spot-off { color: var(--c-col); }
 .fav-spot {
   font-size: 18px; padding: 4px 6px; margin-right: 2px;
   background: none; border: 2px solid transparent; border-radius: 10px; cursor: pointer;
-  opacity: 0.35;
+  opacity: 0.55;
 }
-.fav-spot.on { opacity: 1; border-color: var(--accent, #e05020); }
 .fav-delete {
   font-size: 18px; padding: 4px 6px;
   background: none; border: none; cursor: pointer; color: var(--c-col);
@@ -2188,7 +2200,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.106.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.107.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -3145,11 +3157,42 @@ function saveSpot(kind, h) {
   renderFavRotary();
   updateSpotButtons();
 }
+/* ⚠ 自宅・職場は**お気に入りとは別の項目**（v4.107.0。利用者の要望「ダイヤル内にいるのが邪魔」）。
+   地点を自宅・職場にすると**お気に入りから抜く**。外すと**お気に入りへ戻す**（黙って消さない）。
+   前の自宅・職場を置き換えるときも、前のほうはお気に入りへ戻す */
+function returnToFavs(p) {
+  if (!p) return;
+  const favs = loadFavs();
+  if (!favs.some(f => sameLoc(f, p))) { favs.push({ name: p.name, lat: p.lat, lon: p.lon }); saveFavs(favs); }
+}
+function assignSpot(kind, p) {
+  const old = loadSpot(kind);
+  if (old && !sameLoc(old, p)) returnToFavs(old);
+  saveFavs(loadFavs().filter(f => !sameLoc(f, p)));
+  // もう片方（自宅⇔職場）と同じ地点なら、そちらは外す（同じ地点を両方に持たない）
+  for (const k of SPOT_KINDS) {
+    const h = loadSpot(k);
+    if (k !== kind && h && sameLoc(h, p)) saveSpot(k, null);
+  }
+  saveSpot(kind, { name: p.name, lat: p.lat, lon: p.lon });
+}
+function releaseSpot(kind) {
+  returnToFavs(loadSpot(kind));
+  saveSpot(kind, null);
+}
+// 起動時：お気に入りに残っている自宅・職場の地点を抜く（v4.106.0 までは一覧の中で指定していた）
+function migrateSpotsOutOfFavs() {
+  const spots = SPOT_KINDS.map(k => loadSpot(k)).filter(Boolean);
+  if (!spots.length) return;
+  const favs = loadFavs();
+  const kept = favs.filter(f => !spots.some(h => sameLoc(f, h)));
+  if (kept.length !== favs.length) saveFavs(kept);
+}
 function goSpot(kind) {
   const sp = SPOTS[kind], h = loadSpot(kind);
   if (!h) {
-    if (confirm(`いまの地点「${state.locationName}」を${sp.label}（${sp.icon}）にしますか？\n（あとから お気に入り一覧 の${sp.icon}で変えられます）`)) {
-      saveSpot(kind, { name: state.locationName, lat: state.lat, lon: state.lon });
+    if (confirm(`いまの地点「${state.locationName}」を${sp.label}（${sp.icon}）にしますか？\n（お気に入り一覧の上の「${sp.icon} ${sp.label}」で変えられます）`)) {
+      assignSpot(kind, { name: state.locationName, lat: state.lat, lon: state.lon });
     }
     return;
   }
@@ -3332,6 +3375,9 @@ function centerActiveChip(smooth) {
 
 // 現在地点のお気に入り登録トグル（名前入力なしのワンタップ）
 function toggleFavStar() {
+  // ⚠ 自宅・職場はお気に入りに入れない（別の項目）
+  const spotKind = SPOT_KINDS.find(k => { const h = loadSpot(k); return h && sameLoc(h, state); });
+  if (spotKind) { alert(`この地点は${SPOTS[spotKind].label}（${SPOTS[spotKind].icon}）として登録してあります`); return; }
   const favs = loadFavs();
   const idx = favs.findIndex(f => sameLoc(f, state));
   if (idx >= 0) favs.splice(idx, 1);   // 既に登録済み → 解除
@@ -3389,6 +3435,8 @@ function centeredChip() {
   }).observe(el);
 })();
 
+// お気に入りに残っている自宅・職場を抜く（別の項目にしたため。v4.107.0）
+migrateSpotsOutOfFavs();
 // 🏠の見た目は起動時にも合わせる（天気を一度も読まない起動でも「未設定」を出す）
 updateHomeButton();
 
@@ -8797,8 +8845,65 @@ function renderFavList() {
   const list = document.getElementById('fav-list');
   const favs = loadFavs();
   list.innerHTML = '';
+
+  /* 自宅・職場の欄（お気に入りとは別の項目。v4.107.0）。
+     ⚠ 保存値は textContent で組む（innerHTML に入れない） */
+  const spotsBox = document.createElement('div');
+  spotsBox.id = 'fav-spots';
+  for (const kind of SPOT_KINDS) {
+    const sp = SPOTS[kind], h = loadSpot(kind);
+    const row = document.createElement('div');
+    row.className = 'fav-spot-row' + (h ? '' : ' unset');
+    row.dataset.kind = kind;
+    const ico = document.createElement('div');
+    ico.className = 'fav-spot-ico';
+    ico.textContent = sp.icon;
+    const body = document.createElement('div');
+    body.className = 'fav-spot-body';
+    const nm = document.createElement('div');
+    nm.className = 'fav-item-name';
+    nm.textContent = h ? `${sp.label}：${h.name}` : `${sp.label}：未設定`;
+    body.appendChild(nm);
+    if (h) {
+      const co = document.createElement('div');
+      co.className = 'fav-item-coord';
+      co.textContent = `${h.lat.toFixed(4)}, ${h.lon.toFixed(4)}`;
+      body.appendChild(co);
+    }
+    const here = document.createElement('button');
+    here.type = 'button';
+    here.className = 'fav-spot-here';
+    here.textContent = 'いまの地点に';
+    here.title = `いま見ている地点を${sp.label}にする`;
+    here.addEventListener('click', e => {
+      e.stopPropagation();
+      assignSpot(kind, { name: state.locationName, lat: state.lat, lon: state.lon });
+      renderFavList();
+    });
+    row.append(ico, body, here);
+    if (h) {
+      const off = document.createElement('button');
+      off.type = 'button';
+      off.className = 'fav-spot-off';
+      off.textContent = '外す';
+      off.title = `${sp.label}の指定を外す（地点はお気に入りに戻す）`;
+      off.addEventListener('click', e => {
+        e.stopPropagation();
+        releaseSpot(kind);
+        renderFavList();
+      });
+      row.appendChild(off);
+      row.addEventListener('click', () => { closeFav(); goSpot(kind); });
+    }
+    spotsBox.appendChild(row);
+  }
+  list.appendChild(spotsBox);
+
   if (!favs.length) {
-    list.innerHTML = '<div style="color:var(--text3);text-align:center;margin-top:20px;font-size:13px;">お気に入りなし</div>';
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:var(--text3);text-align:center;margin-top:20px;font-size:13px;';
+    empty.textContent = 'お気に入りなし';
+    list.appendChild(empty);
     return;
   }
   favs.forEach((f, i) => {
@@ -8807,23 +8912,23 @@ function renderFavList() {
     el.innerHTML = `
       <div style="font-size:18px">⭐</div>
       <div style="flex:1">
-        <div class="fav-item-name">${f.name}</div>
+        <div class="fav-item-name"></div>
         <div class="fav-item-coord">${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}</div>
       </div>
       <button class="fav-spot fav-home" data-kind="home" aria-label="自宅にする">🏠</button>
       <button class="fav-spot fav-work" data-kind="work" aria-label="職場にする">🏥</button>
       <button class="fav-delete" data-i="${i}">🗑</button>
     `;
-    // 自宅・職場に指定済みの地点はそのボタンを点ける。押すと指定を切り替える
+    el.querySelector('.fav-item-name').textContent = f.name;
+    // 🏠／🏥：この地点を自宅・職場へ**移す**（お気に入りからは抜ける）
     el.querySelectorAll('.fav-spot').forEach(b => {
       const kind = b.dataset.kind, sp = SPOTS[kind];
-      const h = loadSpot(kind);
-      const isIt = !!(h && sameLoc(h, f));
-      b.classList.toggle('on', isIt);
-      b.title = isIt ? `${sp.label}の指定を外す` : `この地点を${sp.label}（${sp.icon}）にする`;
+      const cur = loadSpot(kind);
+      b.title = `この地点を${sp.label}（${sp.icon}）にする（お気に入りから移す）`;
       b.addEventListener('click', e => {
         e.stopPropagation();
-        saveSpot(kind, isIt ? null : f);
+        if (cur && !confirm(`${sp.label}を「${cur.name}」から「${f.name}」に変えますか？\n（「${cur.name}」はお気に入りに戻します）`)) return;
+        assignSpot(kind, f);
         renderFavList();
       });
     });
