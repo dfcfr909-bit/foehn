@@ -160,12 +160,12 @@ function fakeWeather() {
     init.favR > 120 &&                                       // 横幅いっぱいの大きい直径（以前は96px止まり）
     init.chipFont >= 16 &&                                   // 文字を大きく
     init.dateInHeader && init.legendBelow &&                  // 日付は上・凡例は下段
-    init.rotaryFrac > 0.7 && init.headerOverflow === 0 &&     // 横幅いっぱい・はみ出さない
+    init.rotaryFrac > 0.6 && init.headerOverflow === 0 &&     // 🏠と🏥の間を横幅いっぱい・はみ出さない
     init.versionInLegend && init.versionRightmost &&           // バージョンは下段の右端
     init.starInBadge && init.starRightOfTime && init.nowInHeader &&   // ★は時刻の右、現在はヘッダー
     /^\d+月\d+日\(.\)$/.test(init.dateText) &&               // 日付
     /^\d{2}:00$/.test(init.timeText) &&                       // その隣に選択時刻
-    init.rotaryRightGap < 30 &&                               // 右端まで使う
+    init.rotaryRightGap < 70 &&                               // 右端の🏥（44px＋余白）の手前まで使う
     after.centered.length === 1 && after.centered[0] === '槍ヶ岳' &&
     after.locationName === '槍ヶ岳' && Math.abs(after.lat - 36.3417) < 1e-3 &&
     after.domReused && after.count === 4;
