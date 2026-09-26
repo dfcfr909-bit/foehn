@@ -4609,10 +4609,19 @@ function drawAxisGutter() {
   ctx.fillText('℃', W - 4, 21);
   ctx.font = 'bold 11.5px monospace';
   const tIn = (si.tempMax - si.tempMin) * 0.14;
+  /* 0℃の目盛り（v4.114.0・利用者の要望）。0℃の点線（drawFreezingLine）と同じ濃い青で添える。
+     ⚠ 近くの目盛り（上下 12px 以内）は重なるので出さない。0℃を優先する */
+  const y0 = (si.tempMin < 0 && si.tempMax > 0) ? ty(0) : null;
+  const zeroOn = y0 != null && y0 > 22 && y0 < skyBottom;
   [si.tempMin + tIn, (si.tempMin + si.tempMax) / 2, si.tempMax - tIn].forEach(t => {
     const y = ty(t);
+    if (zeroOn && Math.abs(y - y0) < 12) return;
     if (y > 22 && y < skyBottom) ctx.fillText(Math.round(t) + '°', W - 4, y + 3);
   });
+  if (zeroOn) {
+    ctx.fillStyle = FREEZING_LINE_COLOR;
+    ctx.fillText('0°', W - 4, y0 + 3);
+  }
 
   // 雲＋降水（cloudパネル）: 左軸＝降水 mm/h（高度は右ガターに振り分け）
   const cTop = CHART_H_SKY;

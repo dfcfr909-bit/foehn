@@ -75,7 +75,18 @@ async function probe(temps) {
       let c = 0; for (let x = x0; x < x1; x += 3) if (blue(x, y)) c++;
       if (c > (x1 - x0) / 3 * 0.3) rowsWithLine++;
     }
-    return { inPlot, hits, runs, width: x1 - x0, rowsWithLine };
+    // 左の目盛り（固定の軸ガター）に「0°」が濃い青で出ているか。0℃の高さの行の青い画素を数える
+    const g = document.getElementById('axis-gutter');
+    let gutterBlue = 0;
+    if (g) {
+      const gc = g.getContext('2d'), gpr = g.width / g.clientWidth;
+      const gi = gc.getImageData(0, 0, g.width, Math.min(g.height, Math.round(CHART_H_SKY * gpr))).data;
+      for (let k = 0; k < gi.length; k += 4) {
+        const [r, gg, b] = [gi[k], gi[k + 1], gi[k + 2]];
+        if (gi[k + 3] > 150 && b > 110 && b - r > 50 && b - gg > 30) gutterBlue++;
+      }
+    }
+    return { inPlot, hits, runs, width: x1 - x0, rowsWithLine, gutterBlue, hasGutter: !!g };
   });
   await page.close();
   return r;
@@ -85,10 +96,12 @@ const winter = await probe([-4, -2, 0, 2, 4, 6, 4, 2, 0, -2]);
 ok(winter.inPlot, '前提：気温の範囲に0℃が入っている', winter);
 ok(winter.hits > winter.width * 0.35, '★★0℃の高さに濃い青の線がある（横幅の大半）', winter);
 ok(winter.runs > 10, '★点線になっている（途切れがある）', winter);
+ok(winter.hasGutter && winter.gutterBlue > 10, '★左の目盛りに「0°」が濃い青で出る', winter);
 
 const summer = await probe([22, 25, 28, 30, 27, 24]);
 ok(!summer.inPlot, '前提：夏は気温の範囲に0℃が入らない', summer);
 ok(summer.rowsWithLine === 0, '★夏は0℃の線を引かない（範囲を広げて気温の線をつぶさない）', summer);
+ok(summer.gutterBlue === 0, '夏は「0°」の目盛りも出さない', summer);
 
 ok(!errors.length, 'ページ内で例外が出ていない', errors);
 await browser.close();
