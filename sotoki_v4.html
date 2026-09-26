@@ -691,9 +691,6 @@ html, body {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
-/* ⚠ ここだけ伸縮させない。均等割りにすると他の5つが細って文字が2行になる。 */
-#btn-about-foot { flex: 0 0 auto; padding-left: 9px; padding-right: 9px; }
-#btn-about-foot .icon { margin: 0; }
 .foot-btn {
   flex: 1;
   padding: 4px 0;
@@ -1049,6 +1046,7 @@ html, body {
   flex-shrink: 0;
 }
 .map-round svg { width: 34px; height: 34px; display: block; overflow: visible; }
+.map-round.map-emoji { font-size: 20px; line-height: 1; }
 
 /* --- 方位バッジ --- */
 .orient-rim { fill: none; stroke: var(--text3); stroke-width: 1.8; }
@@ -1656,10 +1654,11 @@ html, body {
    （Webメルカトル）と座標系が違う → docs/adr/0010-pressure-layer-removed.md
    ⚠ **CSSフィルタで色を反転・減光しない。** このリポジトリはiOS特有のフィルタ不具合を
    2回踏んでいる（`tests/smoke_mapui.js` の注記）。暗いテーマでも素のまま出す。 */
+/* ⚠ 地図の上から開く（入口が地図の右側のボタン列）。地図（100）より上に重ねる */
 #wxmap-overlay {
   position: absolute;
   inset: 0;
-  z-index: 100;
+  z-index: 110;
   background: var(--surface);
   display: none;
   flex-direction: column;
@@ -2154,7 +2153,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.104.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.105.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2171,15 +2170,8 @@ html, body {
     <button class="foot-btn" id="btn-rank" onclick="openRank()">
       <span class="icon">🏔️</span>ランキング
     </button>
-    <button class="foot-btn" id="btn-wxmap" onclick="openWxMap()">
-      <span class="icon">🌐</span>天気図
-    </button>
-    <!-- このアプリについて（判定の基準・データの参照元・妥協点）。
-         ⚠ **文字は入れない。** 6つ目に「説明」と入れると 360px 幅で全ボタンが2行になり、
-         フッターが 47px → 61px に伸びる（実測）。アイコンだけなら 360px でも崩れない。 -->
-    <button class="foot-btn" id="btn-about-foot" onclick="location.href='about.html'"
-            title="このアプリについて（判定の基準・データの参照元・妥協点）"
-            aria-label="このアプリについて"><span class="icon">ℹ️</span></button>
+    <!-- ⚠ 天気図と「このアプリについて」は地図の右側のボタン列へ移した（v4.105.0）。
+         6つ並べると 390px 幅でも「お気に入り」「ランキング」の文字が2行に折れていた -->
   </div>
 
   <!-- Map Overlay -->
@@ -2263,6 +2255,12 @@ html, body {
           </svg>
           <span id="locate-badge" aria-hidden="true"></span>
         </button>
+        <!-- 天気図と「このアプリについて」。フッターから移した（v4.105.0）。
+             ⚠ 天気図は地図に**重ねない**（別の図法の1枚絵。ADR参照）ので、かぶせ画面で開く -->
+        <button id="btn-wxmap" class="map-round map-emoji" onclick="openWxMap()"
+                aria-label="天気図" title="天気図"><span aria-hidden="true">🌐</span></button>
+        <button id="btn-about" class="map-round map-emoji" onclick="location.href='about.html'"
+                aria-label="このアプリについて" title="このアプリについて（判定の基準・データの参照元・妥協点）"><span aria-hidden="true">ℹ️</span></button>
       </div>
 
       <!-- レイヤーパネル（ボトムシート） -->

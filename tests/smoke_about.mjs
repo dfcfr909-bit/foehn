@@ -123,9 +123,10 @@ ok(/margin-left:\s*auto/.test(linkCss),
   '★★版数を右端へ寄せる指定がリンク側にある（span 側では効かない）', linkCss);
 ok(/<span id="app-version">/.test(APP),
   '★★版数は span のまま（release.yml と smoke_version が読む）');
-/* フッターの「ℹ️」からも開ける（版数のリンクは見つけにくい） */
-ok(/id="btn-about-foot"[^>]*about\.html/.test(APP),
-  '★★★フッターに「このアプリについて」の入口がある');
+/* 地図の右側のボタン列の「ℹ️」からも開ける（版数のリンクは見つけにくい）。
+   v4.105.0 でフッターから移した（6つ並べると文字が2行に折れていた） */
+ok(/id="btn-about"[^>]*about\.html/.test(APP),
+  '★★★地図の右側に「このアプリについて」の入口がある');
 
 /* 相対リンクの先が実在すること（GitHub Pages ではサブパス配信なので絶対パスは使えない） */
 for (const href of [...ABOUT.matchAll(/(?:href|src)="(?!https?:|#|mailto:)([^"]+)"/g)].map(x => x[1])) {
@@ -200,23 +201,29 @@ ok(tables > 0 && tws === tables,
     const r = await page.evaluate(() => {
       const f = document.getElementById('footer');
       const btns = [...f.querySelectorAll('.foot-btn')];
-      const ab = document.getElementById('btn-about-foot');
+      // 文字が2行に折れていないか。1行なら文字の高さは行の高さ程度に収まる
+      const lines = btns.map(b => {
+        const r = document.createRange(); r.selectNodeContents(b);
+        const lh = parseFloat(getComputedStyle(b).fontSize) * 1.6;
+        return [...r.getClientRects()].reduce((m, x) => Math.max(m, x.height), 0) > lh ? 2 : 1;
+      });
       return {
         footerH: Math.round(f.getBoundingClientRect().height),
         count: btns.length,
-        aboutW: ab ? Math.round(ab.getBoundingClientRect().width) : null,
-        otherW: Math.round(btns.filter(b => b.id !== 'btn-about-foot')[0].getBoundingClientRect().width),
+        wrapped: btns.filter((b, i) => lines[i] > 1).map(b => b.textContent.trim()),
+        aboutInFooter: !!f.querySelector('[onclick*="about.html"]'),
       };
     });
     seen.push({ w, ...r });
     await page.close();
   }
   await browser.close();
-  ok(seen.every(x => x.count === 6), '前提: フッターに6つ並んでいる（検査が空振りしていない）', seen);
+  ok(seen.every(x => x.count === 4), '前提: フッターは4つ（天気図とℹ️は地図へ移した）', seen);
   ok(seen.every(x => x.footerH <= 50),
-    '★★★狭い端末でもフッターが2行にならない（ℹ️に文字を入れない）', seen);
-  ok(seen.every(x => x.aboutW !== null && x.aboutW < x.otherW),
-    '★★ℹ️は伸縮させない（均等割りだと他の5つが細って文字が2行になる）', seen);
+    '★★★狭い端末でもフッターが2行にならない', seen);
+  ok(seen.every(x => x.wrapped.length === 0),
+    '★★★ボタンの文字が2行に折れない（「お気に入り」「ランキング」が段組みになっていた）', seen);
+  ok(seen.every(x => !x.aboutInFooter), 'フッターに説明の入口を二重に置かない', seen);
 }
 
 if (fails.length) {

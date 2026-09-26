@@ -18,6 +18,9 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = fs.readFileSync(path.join(ROOT, 'sotoki_v4.html'), 'utf8');
 const UPLOT_JS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/uplot/dist/uPlot.iife.min.js'), 'utf8');
 const UPLOT_CSS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/uplot/dist/uPlot.min.css'), 'utf8');
+// 入口が地図の右側にあるので、地図（Leaflet）も開ける必要がある
+const LEAFLET_JS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/leaflet/dist/leaflet.js'), 'utf8');
+const LEAFLET_CSS = fs.readFileSync(path.join(ROOT, 'tests/node_modules/leaflet/dist/leaflet.css'), 'utf8');
 
 const fails = [];
 const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefined ? ` … ${JSON.stringify(extra).slice(0, 300)}` : '')); };
@@ -95,6 +98,8 @@ await page.route('**/*', route => {
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
   if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
   if (url.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
+  if (url.includes('leaflet') && url.endsWith('.js')) return route.fulfill({ contentType: 'application/javascript', body: LEAFLET_JS });
+  if (url.includes('leaflet') && url.endsWith('.css')) return route.fulfill({ contentType: 'text/css', body: LEAFLET_CSS });
   if (url.includes('weather_map/data/list.json')) {
     listHits++;
     if (listMode === 'fail') return route.fulfill({ status: 503, body: '' });
@@ -187,15 +192,25 @@ await page.waitForTimeout(500);
 ok(listHits - before === 1, '★一覧は1回だけ引く（切り替えるたびに叩かない）',
   { 増えた回数: listHits - before });
 
-/* --- 場面8: フッターから開けること --- */
+/* --- 場面8: 地図の右側のボタンから開けること（v4.105.0 でフッターから移した） --- */
 await page.evaluate(() => closeWxMap());
 /* ⚠ 気象データの取得を止めてあるので読み込みの覆いが出たままになる。
      これは検査の都合であって不具合ではないので、どかしてからボタンを押す
      （押せること自体を見たいので、`click()` を直接呼ばずに本物のタップにする）。 */
 await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; });
+await page.evaluate(() => openMap());
+await page.waitForTimeout(300);
 await page.click('#btn-wxmap');
 await page.waitForTimeout(300);
-ok((await view()).open, '★フッターのボタンから開ける');
+ok((await view()).open, '★地図の右側のボタンから開ける');
+/* ⚠ 地図の上に重なって見えていること（下に潜ると押しても何も起きないように見える） */
+const onTop = await page.evaluate(() => {
+  const r = document.getElementById('wxmap-overlay').getBoundingClientRect();
+  const el = document.elementFromPoint(r.left + r.width / 2, r.top + 20);
+  return !!(el && el.closest('#wxmap-overlay'));
+});
+ok(onTop, '★★天気図が地図の上に重なる（地図の下に潜らない）');
+await page.evaluate(() => { closeWxMap(); closeMap(); });
 
 /* --- 場面9: タップで原寸に切り替わること ---
    ⚠ 天気図は600px幅の絵。390pxの画面に収めると前線記号や気圧の数字が潰れて読めない。
