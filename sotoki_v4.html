@@ -779,7 +779,9 @@ html, body {
   position: absolute;
   left: 8px; right: 8px;
   top: calc(60px + var(--sa-top));
-  z-index: 1100;
+  /* ⚠ 右上の浮きボタン（#map-tools, 1100）より上、レイヤーパネル（1200）より下。
+     同じ1100だと後ろに書いたボタンが一覧に被り、行の右端（履歴の✕）が押せない */
+  z-index: 1150;
   max-height: 45%;
   overflow-y: auto;
   background: var(--surface);
@@ -844,6 +846,16 @@ html, body {
   background: var(--panel2, #2a2a2a); color: var(--text3); min-height: 28px; }
 .map-sort-chip.on { background: var(--accent, #e2703a); color: #fff; font-weight: 700; }
 .map-result-msg { padding: 12px 14px; font-size: 12px; color: var(--text3); text-align: center; }
+/* 検索の履歴（選んだ地点）。行の右に消す✕。見た目は検索結果の行に揃える */
+.map-hist-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 14px; font-size: 11px; color: var(--text3); border-bottom: 1px solid var(--border); }
+.map-hist-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.map-hist-row .map-result-item { flex: 1; min-width: 0; border-bottom: none; }
+.map-hist-row .map-result-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-hist-del { flex-shrink: 0; width: 44px; border: none; background: none;
+  color: var(--text3); font-size: 15px; cursor: pointer; }
+.map-hist-clear { border: none; background: none; color: var(--text3); font-size: 11px;
+  text-decoration: underline; padding: 4px 0; min-height: 28px; cursor: pointer; }
 /* overflow:hidden が要る。レイヤーパネルは閉じているとき translateY(101%) で
    下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
 #map-stage { flex: 1; position: relative; min-height: 0; overflow: hidden; }
@@ -2142,7 +2154,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.102.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.103.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8349,7 +8361,10 @@ function renderMapResults() {
     /* ⚠ **第4引数（山頂標高）は渡さない。** ここで渡せるのはDEMの読みであって
        公称の山頂標高ではない。`state.summitElev` は areas.json の値のための席で、
        DEMは `state.demElevation` に入って自動で使われる（`docs/spec/judge.md`）。 */
-    el.addEventListener('click', () => pickMapPoint(lat, lon, name));
+    el.addEventListener('click', () => {
+      addSearchHist(name, lat, lon, item._elev);   // 選んだ地点だけを残す（検索しただけでは残さない）
+      pickMapPoint(lat, lon, name);
+    });
     results.appendChild(el);
   }
 }
@@ -8428,6 +8443,130 @@ async function doMapSearch() {
 document.getElementById('map-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); doMapSearch(); }
 });
+
+/* ============================================================
+   検索の履歴（選んだ地点）
+   ⚠ **語ではなく「選んだ地点」（名前＋緯度経度）を残す。** 押したらその座標へ
+      直接飛ぶので通信が要らない（山の中の弱い電波で待たされない）。
+      同名の山（笙ヶ岳＝岐阜/山形）を取り違えないのも、座標を持っているから。
+   ⚠ 残すのは**検索結果から選んだとき**だけ。長押しのピン・円柱の選択は残さない。
+   容量は1件100バイト弱×100件で約10KB。タイルのキャッシュ（Cache API）とは別の置き場。
+   ============================================================ */
+const SEARCH_HIST_KEY = 'sotoki_search_hist';
+const SEARCH_HIST_MAX = 100;
+
+function loadSearchHist() {
+  try {
+    const a = JSON.parse(localStorage.getItem(SEARCH_HIST_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(h => h && typeof h.name === 'string' &&
+      isFinite(h.lat) && isFinite(h.lon)) : [];
+  } catch { return []; }
+}
+function saveSearchHist(list) {
+  try { localStorage.setItem(SEARCH_HIST_KEY, JSON.stringify(list)); } catch { /* 容量超過・無効 */ }
+}
+// 同じ地点かどうか。名前が同じで約1km四方以内（検索結果を畳むときと同じ粗さ）
+function sameHistPlace(h, name, lat, lon) {
+  return normalizeSearchName(h.name) === normalizeSearchName(name) &&
+    Math.abs(h.lat - lat) < 0.01 && Math.abs(h.lon - lon) < 0.01;
+}
+function addSearchHist(name, lat, lon, elev) {
+  if (!name || !isFinite(lat) || !isFinite(lon)) return;
+  // 同じ地点は重ねず先頭へ移す
+  const list = loadSearchHist().filter(h => !sameHistPlace(h, name, lat, lon));
+  const h = { name, lat: +lat.toFixed(5), lon: +lon.toFixed(5), t: Date.now() };
+  if (typeof elev === 'number' && isFinite(elev)) h.elev = Math.round(elev);
+  list.unshift(h);
+  saveSearchHist(list.slice(0, SEARCH_HIST_MAX));
+}
+function removeSearchHist(idx) {
+  const list = loadSearchHist();
+  list.splice(idx, 1);
+  saveSearchHist(list);
+}
+
+/* 入力が空なら全件、何か打っていればその文字を含むものだけを出す。
+   ⚠ 検索（Enter）の結果とは同じ #map-results を使う。打ち直した時点で
+      前の検索結果は古いので、履歴の絞り込みに置き換えてよい */
+function renderSearchHist() {
+  const results = document.getElementById('map-results');
+  const input = document.getElementById('map-search-input');
+  if (!results || !input) return;
+  const q = normalizeSearchName(input.value.trim());
+  const all = loadSearchHist();
+  const shown = all.map((h, i) => ({ h, i }))
+    .filter(({ h }) => !q || normalizeSearchName(h.name).includes(q));
+  results.innerHTML = '';
+  mapSearchItems = [];              // 並べ替えの札の対象を残さない
+  if (!shown.length) return;        // 空なら #map-results:empty で消える
+
+  const head = document.createElement('div');
+  head.className = 'map-hist-head';
+  const label = document.createElement('span');
+  label.textContent = `🕘 最近選んだ地点（${all.length}件）`;
+  head.appendChild(label);
+  if (!q) {
+    const clr = document.createElement('button');
+    clr.type = 'button';
+    clr.className = 'map-hist-clear';
+    clr.textContent = '履歴を消去';
+    clr.addEventListener('click', () => {
+      if (!confirm('検索の履歴をすべて消します。よろしいですか？')) return;
+      saveSearchHist([]);
+      renderSearchHist();
+    });
+    head.appendChild(clr);
+  }
+  results.appendChild(head);
+
+  for (const { h, i } of shown) {
+    const row = document.createElement('div');
+    row.className = 'map-hist-row';
+    const el = document.createElement('div');
+    el.className = 'map-result-item';
+    // ⚠ 保存値を innerHTML に入れない（textContent で組む）
+    const nm = document.createElement('div');
+    nm.className = 'map-result-name';
+    nm.textContent = h.name;
+    if (typeof h.elev === 'number') {
+      const ev = document.createElement('span');
+      ev.className = 'map-result-elev';
+      ev.textContent = `${h.elev}m`;
+      nm.appendChild(ev);
+    }
+    const sub = document.createElement('div');
+    sub.className = 'map-result-sub';
+    sub.textContent = `${h.lat.toFixed(4)}, ${h.lon.toFixed(4)}`;
+    el.append(nm, sub);
+    /* ⚠ 標高は pickMapPoint の第4引数に渡さない（DEMの読みで公称値ではない。
+       検索結果から選ぶときと同じ扱い） */
+    el.addEventListener('click', () => {
+      addSearchHist(h.name, h.lat, h.lon, h.elev);   // 使ったものを先頭へ
+      pickMapPoint(h.lat, h.lon, h.name);
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'map-hist-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `${h.name} を履歴から消す`);
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      removeSearchHist(i);
+      renderSearchHist();
+    });
+    row.append(el, del);
+    results.appendChild(row);
+  }
+}
+{
+  const input = document.getElementById('map-search-input');
+  // フォーカスした時点で入力が空なら履歴を出す（前の検索結果が出ていれば残す）
+  input.addEventListener('focus', () => {
+    if (!input.value.trim()) renderSearchHist();
+  });
+  // 打つたびに絞り込む。iOSの✕で空にしたときも全件に戻る
+  input.addEventListener('input', renderSearchHist);
+}
 
 /* ============================================================
    FAVORITES
