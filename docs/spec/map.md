@@ -71,6 +71,22 @@
 - 地形表を読めないときは AUTO を出さない（赤帯で言う）。手動は使える
 - 検査は `tests/smoke_windfield.mjs`（鉛直の決め方・同じ取得・GSM の期間）と `tests/smoke_windrate.mjs`（回数）
 
+### 風の流れ（Particle Engine・v4.116.0）
+
+レイヤー「風の流れ」（`windFlow`）。**矢印（`windArrows`）と同じ場**（`ensureWindField` → `buildWindField`）を粒子で流す。
+AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも切り替えを出す）。数値を読むのは矢印、流れを掴むのはこちら。
+
+- ⚠ 粒子は**気象を知らない**。見るのは統合した U/V の場（`sampleWindField`）だけ。WebGL に替えても場は作り直さない
+- 場を**画面の速度の格子**（`WIND_FLOW.STEP_PX`=8px）に写してから流す（`buildFlowGrid`）。毎コマ緯度経度に戻さない
+- 速さは**ズームに依らない見た目の速さ**（1 m/s あたり `SPEED_PX`）。北が上なので v は符号を反転
+- 軌跡は前のコマを `destination-in` で薄める（`FADE`）。専用の canvas（`mapWind` の pane・z 390）なので他を巻き添えにしない
+- 色は風速の帯（`WIND_FLOW.COLORS`）。⚠ 判定の閾値（`THRESH`）とは切り離す（層によって意味が違う）
+- **場の外（風の無い所・画面の外）に粒を置かない**。出たらその場で撒き直す（`spawnParticle`）
+- 格子は**画面を囲む点まで**取る（`windFieldLattice`）。内側だけだと端に粒子の無い帯が出た
+- iPhone の負荷：canvas の倍率を `DPR_MAX`(1.5) で頭打ち、**30コマ／秒**、粒の数は面積比例（`MIN` 150〜`MAX` 1,400）
+- **止める**：地図を動かし始めた（`movestart`/`zoomstart`。動き終わったら撒き直す）・層を切った・地図を閉じた・画面が隠れた
+- 検査は `tests/smoke_windflow.mjs`
+
 ### 問い合わせの回数（v4.108.0 の 429 対策を引き継ぐ）
 
 ⚠⚠ **HTTP 429（問い合わせが多すぎる）を出したことがある。** 控えの鍵が「画面の範囲＋選択時刻」で、
