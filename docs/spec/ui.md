@@ -115,6 +115,12 @@
 `openFav` / `closeFav` / `renderFavList` / `saveCurrentAsFav`。
 永続化は `loadFavs` / `saveFavs`（localStorage）。
 
+- **v4.110.0：行は検索の履歴と同じ作り**（1枚の札に1行ずつ）。名前＋🏠からの距離を左、
+  **座標を右寄せで押せる**（v4.111.0 から数字ではなく「（座標）」とだけ出す。押すと座標の画面 `openCoordSheet`。地点は移らない）、右端に✕
+- **🏠から近い順に自動で並べる**（`sortedFavs`、直線距離 `distKm`）。⚠ **保存順は書き換えない**
+  （表示のときだけ）。自宅を外せば保存順に戻る。**円柱も同じ順**（`favRotaryItems`）。
+  ⚠ 並べ替えて出しているので、✕は位置ではなく**同じ地点を探して**消す
+
 ## 時間スクラバー帯（`#scrubber`）
 
 - **チャートとまったく同じ座標系を使う。** 左右の余白（`chartPadL`/`chartPadR`）、

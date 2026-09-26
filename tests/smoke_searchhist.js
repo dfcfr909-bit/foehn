@@ -114,7 +114,7 @@ const NOMINATIM = {
   let rows = await histRows();
   ok(rows.length === 2 && rows[0].name === '月山' && rows[1].name === '笙ケ岳 二峰',
     '★★空の窓にフォーカスすると新しい順に履歴が出る', rows);
-  ok(rows[1] && rows[1].sub === '39.0927, 140.0020', '副題に緯度経度を出す', rows);
+  ok(rows[1] && rows[1].sub === '（座標）', '★座標は数字ではなく「（座標）」とだけ出す（v4.111.0）', rows);
   /* ⚠ 1行にまとめる（座標は名前の右）。2行だと枠が太すぎた（利用者の指摘） */
   const shape = await page.evaluate(() => {
     const row = document.querySelector('#map-results .map-hist-row');

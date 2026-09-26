@@ -53,15 +53,55 @@ const f = await page.evaluate(() => ({
   small: coordFormats(35.0000139, 139.0001),           // 小さい分・秒の桁埋め
 }));
 const get = (arr, k) => (arr.find(x => x.k === k) || {}).v;
-ok(get(f.hiuchi, 'DD') === '36.95300, 139.28730', '★DD は小数5桁', f.hiuchi);
-ok(get(f.hiuchi, 'DMS') === `36°57'10.8"N 139°17'14.3"E`, '★★DMS（度°分\'秒"＋N/E）', f.hiuchi);
-ok(get(f.hiuchi, 'DDM') === `36°57.180'N 139°17.238'E`, '★★DDM（度°分.分\'＋N/E）', f.hiuchi);
-ok(get(f.hiuchi, '度分秒') === '北緯36度57分10.8秒 東経139度17分14.3秒', '★★度分秒（北緯・東経）', f.hiuchi);
-ok(get(f.carry, 'DMS') === `37°00'00.0"N 140°00'00.0"E`, '★★★丸めで60秒・60分にしない（繰り上げる）', f.carry);
-ok(get(f.carry, 'DDM') === `37°00.000'N 140°00.000'E`, '★★★DDM も60分にしない', f.carry);
-ok(get(f.south, 'DMS') === `33°51'24.5"S 151°12'55.1"W`, '★南緯・西経は S/W', f.south);
-ok(get(f.south, '度分秒') === '南緯33度51分24.5秒 西経151度12分55.1秒', '★南緯・西経の漢字', f.south);
-ok(get(f.small, 'DMS') === `35°00'00.1"N 139°00'00.4"E`, '分・秒の桁を埋める（00）', f.small);
+const DD = '十進度（DD）', DDM = '度・十進分（DDM）', DMS = '度分秒（DMS）', JP = '度分秒（北緯・東経）';
+ok(get(f.hiuchi, DD) === '36.95300, 139.28730', '★DD は小数5桁', f.hiuchi);
+ok(get(f.hiuchi, DMS) === `36°57'10.8"N 139°17'14.3"E`, '★★DMS（度°分\'秒"＋N/E）', f.hiuchi);
+ok(get(f.hiuchi, DDM) === `36°57.180'N 139°17.238'E`, '★★DDM（度°分.分\'＋N/E）', f.hiuchi);
+ok(get(f.hiuchi, JP) === '北緯36度57分10.8秒 東経139度17分14.3秒', '★★度分秒（北緯・東経）', f.hiuchi);
+ok(get(f.carry, DMS) === `37°00'00.0"N 140°00'00.0"E`, '★★★丸めで60秒・60分にしない（繰り上げる）', f.carry);
+ok(get(f.carry, DDM) === `37°00.000'N 140°00.000'E`, '★★★DDM も60分にしない', f.carry);
+ok(get(f.south, DMS) === `33°51'24.5"S 151°12'55.1"W`, '★南緯・西経は S/W', f.south);
+ok(get(f.south, JP) === '南緯33度51分24.5秒 西経151度12分55.1秒', '★南緯・西経の漢字', f.south);
+ok(get(f.small, DMS) === `35°00'00.1"N 139°00'00.4"E`, '分・秒の桁を埋める（00）', f.small);
+ok(f.hiuchi.map(x => x.k).join('/') === '十進度（DD）/度・十進分（DDM）/度分秒（DMS）/度分秒（北緯・東経）/UTM座標/MGRS',
+  '★★見出しは「UIでのおすすめ表記」（利用者の指定）で、この順', f.hiuchi.map(x => x.k));
+
+/* ============ 1b. UTM・MGRS ============
+   ⚠ 答えは pyproj（EPSG:326xx/327xx）と mgrs ライブラリ（Python）で作った値。
+     ここを書き換えるときは、同じ道具で作り直すこと（手で直さない）。
+   ⚠ 1m 単位は切り捨て（MGRS の決まり。UTM もそろえる） */
+const REF = [
+  ['燧ヶ岳', 36.953, 139.2873, 54, 347510.591, 4091028.881, '54SUF4751091028'],
+  ['岩手山', 39.8501, 141.0021, 54, 500179.647, 4411120.003, '54SWK0017911120'],
+  ['富士山', 35.3606, 138.7274, 54, 293517.347, 3915404.017, '54STE9351715404'],
+  ['那須岳', 37.1249, 139.9629, 54, 407872.695, 4109231.349, '54SVG0787209231'],
+  ['南', -33.8568, 151.2153, 56, 334900.57, 6252288.753, '56HLH3490052288'],
+  ['西', 40.7128, -74.006, 18, 583959.372, 4507350.998, '18TWL8395907350'],
+  ['南西', -22.9068, -43.1729, 23, 687394.593, 7465634.128, '23KPQ8739465634'],
+  ['帯の境目（138°は54帯）', 36.0, 138.0, 54, 229578.63, 3988111.962, '54STE2957888111'],
+  ['赤道のすぐ北', 0.0001, 139.5, 54, 333068.357, 11.057, '54NUF3306800011'],
+  ['赤道のすぐ南', -0.0001, 139.5, 54, 333068.357, 9999988.943, '54MUE3306899988'],
+  ['ノルウェーの例外（32V）', 60.0, 5.5, 32, 304838.827, 6656575.859, '32VLM0483856575'],
+  ['スバールバルの例外（33X）', 78.0, 15.0, 33, 500000.0, 8658369.586, '33XWG0000058369'],
+  ['北限の近く', 83.9, 20.0, 33, 559245.722, 9319502.269, '33XWP5924519502'],
+  ['X帯（12°幅）', 75.0, -40.0, 24, 471110.825, 8323850.335, '24XVJ7111023850'],
+];
+const got = await page.evaluate(ref => ref.map(([n, la, lo]) => {
+  const u = toUTM(la, lo);
+  return { n, zone: u && u.zone, e: u && u.e, nn: u && u.n, utm: fmtUTM(u), mgrs: fmtMGRS(u) };
+}), REF);
+REF.forEach(([n, la, lo, zone, e, nn, mg], i) => {
+  const g = got[i];
+  ok(g.zone === zone, `★★UTM の帯: ${n}`, { want: zone, got: g.zone });
+  ok(Math.abs(g.e - e) < 0.01 && Math.abs(g.nn - nn) < 0.01, `★★★UTM の値が pyproj と1cm以内で一致: ${n}`, { want: [e, nn], got: [g.e, g.nn] });
+  // 答えは空白なしの15桁（例 54SUF4751091028）。帯＋緯度帯・100km 四方・東・北に分けて比べる
+  const mgWant = `${mg.slice(0, -12)} ${mg.slice(-12, -10)} ${mg.slice(-10, -5)} ${mg.slice(-5)}`;
+  ok(g.mgrs === mgWant, `★★★MGRS が mgrs ライブラリと一致: ${n}`, { want: mgWant, got: g.mgrs });
+});
+const utmRow = await page.evaluate(() => coordFormats(36.953, 139.2873).find(x => x.k === 'UTM座標').v);
+ok(utmRow === '54S 347510 4091028', '★★UTM座標の書き方（帯＋緯度帯・東距・北距、1m 切り捨て）', utmRow);
+const polar = await page.evaluate(() => coordFormats(85, 10).filter(x => x.none).map(x => x.k));
+ok(polar.join('/') === 'UTM座標/MGRS', '★極地（北緯84°以上）は UTM・MGRS を「範囲外」と言う（黙って消さない）', polar);
 
 /* ============ 2. 履歴の座標を押すと窓が開き、地点は移らない ============ */
 await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; openMap(); });
@@ -80,35 +120,72 @@ const sheet = await page.evaluate(() => {
     onTop: !!(hit && hit.closest('#coord-sheet')),
     title: document.getElementById('coord-sheet-title').textContent,
     rows: [...document.querySelectorAll('.coord-row')].map(x => ({
-      k: x.querySelector('.coord-k').textContent, v: x.querySelector('.coord-v').textContent })),
+      k: x.dataset.k, abbr: x.querySelector('.coord-abbr').textContent, jp: x.querySelector('.coord-k').textContent })),
+    full: (() => { const r = el.getBoundingClientRect(); return r.width >= innerWidth - 1 && r.height >= innerHeight - 1; })(),
+    histText: (document.querySelector('#map-results .map-hist-coord') || {}).textContent,
     name: state.locationName,
     kbd: document.activeElement && document.activeElement.id,
   };
 });
 ok(sheet.open && sheet.onTop, '★★★座標を押すと窓が地図の上に開く', sheet);
-ok(sheet.rows.map(r => r.k).join('/') === 'DD/DMS/DDM/度分秒', '★★4つの表記がまとめて出る', sheet.rows);
-ok(sheet.title.includes('燧ヶ岳'), '窓の見出しに地点名', sheet);
+ok(sheet.rows.map(r => r.k).join('/') === '十進度（DD）/度・十進分（DDM）/度分秒（DMS）/度分秒（北緯・東経）/UTM座標/MGRS',
+  '★★6つの表記がまとめて出る', sheet.rows);
+ok(sheet.title.includes('燧ヶ岳'), '画面の見出しに地点名', sheet);
+ok(sheet.full, '★★座標は全画面の画面で出す（遷移）', sheet);
+ok(sheet.rows.map(r => r.abbr).join('/') === 'DD/DDM/DMS/和/UTM/MGRS', '★★左端に略号', sheet.rows);
+ok(sheet.rows[0].jp === '十進度' && sheet.rows[1].jp === '度・十進分', '★略号の右に日本語の呼び名', sheet.rows);
+
+/* 並び：略号が大きく・左端・上下中央、その右に呼び名、値は中央から右、右端にコピー（利用者の指定） */
+const lay = await page.evaluate(() => [...document.querySelectorAll('.coord-row')].map(row => {
+  const r = row.getBoundingClientRect();
+  const ab = row.querySelector('.coord-abbr').getBoundingClientRect();
+  const jp = row.querySelector('.coord-k').getBoundingClientRect();
+  const v = row.querySelector('.coord-v').getBoundingClientRect();
+  const b = row.querySelector('.coord-copy').getBoundingClientRect();
+  return {
+    abbrFont: parseFloat(getComputedStyle(row.querySelector('.coord-abbr')).fontSize),
+    valFont: parseFloat(getComputedStyle(row.querySelector('.coord-v')).fontSize),
+    leftEdge: Math.round(ab.left - r.left),
+    vCenter: Math.abs((ab.top + ab.bottom) / 2 - (r.top + r.bottom) / 2),
+    order: ab.right <= jp.left + 1 && jp.right <= v.left + 1 && v.right <= b.left + 1,
+    valStartsMid: v.left > r.left + r.width * 0.3,
+    fits: b.right <= r.right + 1,
+  };
+}));
+ok(lay.every(x => x.abbrFont >= 20 && x.abbrFont > x.valFont), '★★★略号は大きく出す', lay);
+ok(lay.every(x => x.leftEdge <= 2), '★★略号は左端にそろえる', lay);
+ok(lay.every(x => x.vCenter < 3), '★★略号は行の上下中央', lay);
+ok(lay.every(x => x.order), '★★並びは 略号→呼び名→値→コピー', lay);
+// ⚠ 略号が枠からはみ出して呼び名に食い込まない（MGRS がいちばん長い）
+ok(await page.evaluate(() => [...document.querySelectorAll('.coord-abbr')].every(a => a.scrollWidth <= a.clientWidth + 1 && a.getBoundingClientRect().right <= a.nextElementSibling.getBoundingClientRect().left + 1)),
+  '★★略号が呼び名に食い込まない（MGRS）');
+ok(lay.every(x => x.valStartsMid), '★値は中央寄りから右（赤枠の位置）', lay);
+ok(lay.every(x => x.fits), 'コピーまで画面に収まる（はみ出さない）', lay);
+const note = await page.evaluate(() => (document.querySelector('.coord-row[data-k="十進度（DD）"] .coord-note') || {}).textContent);
+ok(note === '（Google mapに貼るならこれ！）', '★★DD に「Google mapに貼るならこれ！」の注釈', note);
+ok(sheet.histText === '（座標）', '★★履歴では数字ではなく「（座標）」とだけ出す', sheet.histText);
 ok(sheet.name === before, '★★★座標を押してもその地点へは移らない', { before, now: sheet.name });
 ok(sheet.kbd !== 'map-search-input', 'キーボード（検索窓のフォーカス）を畳む', sheet);
 
 /* ============ 3. コピー ============ */
-await page.click('.coord-row:nth-child(2) .coord-copy');
+await page.click('.coord-row[data-k="度分秒（DMS）"] .coord-copy');
 await page.waitForTimeout(200);
 const c1 = await page.evaluate(() => navigator.clipboard.readText());
 ok(c1 === `36°57'10.8"N 139°17'14.3"E`, '★★★行のコピーでその表記がクリップボードに入る', c1);
-const label = await page.evaluate(() => document.querySelector('.coord-row:nth-child(2) .coord-copy').textContent);
+await page.click('.coord-row[data-k="MGRS"] .coord-copy');
+await page.waitForTimeout(200);
+const cm = await page.evaluate(() => navigator.clipboard.readText());
+ok(cm === '54S UF 47510 91028', '★★MGRS もコピーできる', cm);
+const label = await page.evaluate(() => document.querySelector('.coord-row[data-k="MGRS"] .coord-copy').textContent);
 ok(label === 'コピーしました', 'コピーしたと分かる', label);
 await page.click('#coord-copy-all');
 await page.waitForTimeout(200);
 const c2 = await page.evaluate(() => navigator.clipboard.readText());
-ok(c2.startsWith('燧ヶ岳\n') && c2.includes('DD: 36.95300, 139.28730') && c2.includes('度分秒: 北緯36度57分10.8秒'),
+ok(c2.startsWith('燧ヶ岳\n') && c2.includes('十進度（DD）: 36.95300, 139.28730') && c2.includes('度分秒（北緯・東経）: 北緯36度57分10.8秒')
+  && c2.includes('UTM座標: 54S 347510 4091028') && c2.includes('MGRS: 54S UF 47510 91028'),
   '★★まとめてコピーで全部入る（地点名つき）', c2);
 
 /* ============ 4. 閉じる ============ */
-await page.mouse.click(10, 10);           // 窓の外（暗いところ）
-await page.waitForTimeout(100);
-ok(await page.evaluate(() => document.getElementById('coord-sheet').hidden), '窓の外を押すと閉じる');
-await page.evaluate(() => openCoordSheet(36, 138, 'x'));
 await page.click('#coord-sheet-close');
 ok(await page.evaluate(() => document.getElementById('coord-sheet').hidden), '✕で閉じる');
 
