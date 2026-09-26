@@ -2262,7 +2262,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.113.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.114.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2618,9 +2618,14 @@ const MSM_BLEND_HOURS = 5;
 /* 時刻ごとのモデル。'MSM' / '移行'（MSM と GSM の混合）/ 'GSM' / null（分からない）。
    GSM に無い層（800 等）がその時刻に null かどうかで見る。実測で「seamless の null」と
    「MSM が尽きた時刻」は全地点・全時刻で一致した（1,536件） */
+/* ⚠⚠ 見分けに使うのは**実測で確かめた 900/800 だけ**（v4.114.0）。
+   以前は「GSM に無い層（900/800/600）が全部 null」で見ていたが、実機の至仏山5日後で
+   800 は null なのに GSM と出なかった。600hPa は GSM の期間も値が返っているらしい
+   （Open-Meteo が 700/500 から上下に補間して埋めている見込み。未確認）。
+   900/800 は seamless の null と MSM が尽きた時刻が 1,536件すべて一致した（probeWindSeam） */
+const MSM_ONLY_PROBE_LEVELS = [900, 800];
 function windModelPhases(h, len) {
-  const probes = WIND_LEVELS.map(l => l[0]).filter(p => !GSM_LEVELS.includes(p))
-    .map(p => h[`wind_speed_${p}hPa`]).filter(Array.isArray);
+  const probes = MSM_ONLY_PROBE_LEVELS.map(p => h[`wind_speed_${p}hPa`]).filter(Array.isArray);
   if (!probes.length) return new Array(len).fill(null);
   let firstGsm = -1;
   for (let i = 0; i < len; i++) {
@@ -4257,6 +4262,7 @@ function buildCharts() {
     ],
     hooks: {
       drawClear: [drawDayBackground],
+      drawAxes: [drawFreezingLine],   // 0℃の線。気温の線より下に敷く（線を隠さない）
       draw: [drawTempOverlay, drawNowMarker],
     },
   }, [xs, temps], document.getElementById('chart-sky'));
@@ -4603,10 +4609,19 @@ function drawAxisGutter() {
   ctx.fillText('℃', W - 4, 21);
   ctx.font = 'bold 11.5px monospace';
   const tIn = (si.tempMax - si.tempMin) * 0.14;
+  /* 0℃の目盛り（v4.114.0・利用者の要望）。0℃の点線（drawFreezingLine）と同じ濃い青で添える。
+     ⚠ 近くの目盛り（上下 12px 以内）は重なるので出さない。0℃を優先する */
+  const y0 = (si.tempMin < 0 && si.tempMax > 0) ? ty(0) : null;
+  const zeroOn = y0 != null && y0 > 22 && y0 < skyBottom;
   [si.tempMin + tIn, (si.tempMin + si.tempMax) / 2, si.tempMax - tIn].forEach(t => {
     const y = ty(t);
+    if (zeroOn && Math.abs(y - y0) < 12) return;
     if (y > 22 && y < skyBottom) ctx.fillText(Math.round(t) + '°', W - 4, y + 3);
   });
+  if (zeroOn) {
+    ctx.fillStyle = FREEZING_LINE_COLOR;
+    ctx.fillText('0°', W - 4, y0 + 3);
+  }
 
   // 雲＋降水（cloudパネル）: 左軸＝降水 mm/h（高度は右ガターに振り分け）
   const cTop = CHART_H_SKY;
@@ -5240,6 +5255,26 @@ function drawFeelBand(u, pr) {
       ctx.strokeRect(x0, top + pr, x1 - x0, bh - 2 * pr);
     }
   }
+  ctx.restore();
+}
+
+/* 0℃の線（v4.114.0）。氷点下かどうかが一目で分かるように、濃い青の点線を引く
+   （利用者の要望）。雪質・凍結・体感に直結するので、気温の線がどこで割り込むかを読ませる。
+   ⚠ 気温の目盛りの範囲に0℃が入っていないとき（夏）は引かない。範囲を0℃まで広げない
+     （広げると気温の線がつぶれて読みにくくなる） */
+const FREEZING_LINE_COLOR = '#1d3a9e';
+function drawFreezingLine(u) {
+  const y = u.valToPos(0, 'y', true);
+  const top = u.bbox.top, bottom = u.bbox.top + u.bbox.height;
+  if (!(y >= top && y <= bottom)) return;
+  const ctx = u.ctx, pr = canvasRatio(u);
+  ctx.save();
+  ctx.strokeStyle = FREEZING_LINE_COLOR;
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 1.5 * pr;
+  ctx.setLineDash([5 * pr, 3 * pr]);
+  const yy = Math.round(y) + 0.5;
+  ctx.beginPath(); ctx.moveTo(u.bbox.left, yy); ctx.lineTo(u.bbox.left + u.bbox.width, yy); ctx.stroke();
   ctx.restore();
 }
 
