@@ -305,6 +305,16 @@ function fakeWeather() {
   });
   ok(phases[14] === 'MSM' && phases[15] === '移行' && phases[19] === '移行' && phases[20] === 'GSM',
     '★MSM が尽きる5時間前から「移行」、尽きたら GSM', phases);
+  /* ★v4.114.0 の本命。実機の至仏山5日後で、800 は null なのに 600 は値が返り、
+     「全部 null」を待つ見分けでは GSM と判定されなかった（@表示に「・GSM」が出なかった） */
+  const phases600 = await pageM.evaluate(() => {
+    const len = 30, mk = () => new Array(len).fill(1);
+    const h = { wind_speed_900hPa: mk(), wind_speed_800hPa: mk(), wind_speed_600hPa: mk() };
+    for (let i = 20; i < len; i++) { h.wind_speed_900hPa[i] = null; h.wind_speed_800hPa[i] = null; }   // 600 は残る
+    return windModelPhases(h, len);
+  });
+  ok(phases600[20] === 'GSM' && phases600[29] === 'GSM' && phases600[15] === '移行',
+    '★★600hPa に値が残っていても、900/800 が消えたら GSM と見分ける', phases600);
   await pageM.close();
 
   /* ============ 3.5 座標が山頂からずれていても外さない ============

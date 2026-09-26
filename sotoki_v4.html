@@ -2262,7 +2262,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.113.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.114.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2618,9 +2618,14 @@ const MSM_BLEND_HOURS = 5;
 /* 時刻ごとのモデル。'MSM' / '移行'（MSM と GSM の混合）/ 'GSM' / null（分からない）。
    GSM に無い層（800 等）がその時刻に null かどうかで見る。実測で「seamless の null」と
    「MSM が尽きた時刻」は全地点・全時刻で一致した（1,536件） */
+/* ⚠⚠ 見分けに使うのは**実測で確かめた 900/800 だけ**（v4.114.0）。
+   以前は「GSM に無い層（900/800/600）が全部 null」で見ていたが、実機の至仏山5日後で
+   800 は null なのに GSM と出なかった。600hPa は GSM の期間も値が返っているらしい
+   （Open-Meteo が 700/500 から上下に補間して埋めている見込み。未確認）。
+   900/800 は seamless の null と MSM が尽きた時刻が 1,536件すべて一致した（probeWindSeam） */
+const MSM_ONLY_PROBE_LEVELS = [900, 800];
 function windModelPhases(h, len) {
-  const probes = WIND_LEVELS.map(l => l[0]).filter(p => !GSM_LEVELS.includes(p))
-    .map(p => h[`wind_speed_${p}hPa`]).filter(Array.isArray);
+  const probes = MSM_ONLY_PROBE_LEVELS.map(p => h[`wind_speed_${p}hPa`]).filter(Array.isArray);
   if (!probes.length) return new Array(len).fill(null);
   let firstGsm = -1;
   for (let i = 0; i < len; i++) {
