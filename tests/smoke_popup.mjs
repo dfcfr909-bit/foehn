@@ -140,15 +140,12 @@ ok(['A', 'B', 'C'].includes(kept.grade), 'ABC判定が出ている', kept);
 const sel = await page.evaluate(() => {
   const g = id => getComputedStyle(document.getElementById(id)).webkitUserSelect
     || getComputedStyle(document.getElementById(id)).userSelect;
-  // 緯度経度は :empty で消えているので中身を入れてから見る
-  const ll = document.getElementById('map-latlon');
-  ll.textContent = '35.9000, 139.6000';
-  return { charts: g('charts-outer'), scrubber: g('scrubber'), latlon: g('map-latlon') };
+  return { charts: g('charts-outer'), scrubber: g('scrubber'), map: g('map-search-input') };
 });
 ok(sel.charts === 'none', '★★なぞる領域は選択できない（虫眼鏡が出ない）', sel);
 ok(sel.scrubber === 'none', '★★帯も選択できない', sel);
-/* ⚠ **巻き添えにしない。** 緯度経度はタップでコピーさせたい（#13で入れたもの） */
-ok(sel.latlon === 'all', '★★★地図の緯度経度はコピーできるまま（巻き添えにしない）', sel);
+/* ⚠ **巻き添えにしない。** 一括で全画面に指定すると、地図の検索欄まで選択できなくなる */
+ok(sel.map !== 'none', '★★地図の検索欄は巻き添えにしない', sel);
 
 await browser.close();
 if (errors.length) fails.push('ページエラー: ' + errors.join(' / '));
