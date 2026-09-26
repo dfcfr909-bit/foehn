@@ -2256,7 +2256,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.117.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.118.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7680,9 +7680,9 @@ function drawWindArrows(f, opacity) {
    ⚠ 気象を知らない。見るのは統合した U/V の場（buildWindField / sampleWindField）だけ。
      10m なのか 850 なのか AUTO なのかは場の中に閉じている（WebGL に替えても場は作り直さない）
    ・場を画面の等間隔（STEP_PX）の速度の格子に写してから流す（毎コマ緯度経度に戻さない）
-   ・速さはズームに依らない見た目の速さ。⚠ **風速に正比例させない**（v4.117.0）。正比例だと
-     弱風（0〜1 m/s）で粒がほぼ止まり、点にしか見えなかった（実機で「流れが見えない」）。
-     見た目の速さは √風速（下限あり）。風速の大小は**色**で読む
+   ・速さはズームに依らない見た目の速さで、**風速に正比例**（1 m/s あたり SPEED_PX）。
+     ⚠ v4.117.0 で √風速＋下限にしたら、実機で「ほぼ無風なのに勢いよく流れている」と言われて戻した
+     （v4.118.0・利用者の判断）。無風の日は粒がほぼ止まって見えるのが正しい
    ・軌跡は前のコマを少しずつ薄める（destination-in）。⚠ 天気記号の座布団の件（ADR-0004）とは
      別の canvas なので巻き添えは無い
    ・iPhone の負荷：canvas の倍率を DPR_MAX で頭打ち、30コマ／秒、粒の数は画面の面積に比例
@@ -7690,8 +7690,7 @@ function drawWindArrows(f, opacity) {
    ============================================================ */
 const WIND_FLOW = {
   STEP_PX: 8,            // 速度の格子の間隔（CSS px）
-  SPEED_K: 0.5,          // 1コマの移動量（CSS px）= SPEED_K × √風速。10 m/s で約1.6px
-  SPEED_MIN_MS: 0.7,     // これより弱い風もこの速さで流す（止まって点にならないように。向きは保つ）
+  SPEED_PX: 0.16,        // 1 m/s あたりの1コマの移動量（CSS px）。⚠ 正比例のまま（下限・√ にしない）
   DENSITY: 1 / 450,      // 画面の面積（CSS px²）あたりの粒の数（尾を伸ばしたので 1/280 から減らした。地図を覆わない）
   MIN: 150, MAX: 1400,
   AGE_MIN: 50, AGE_MAX: 110,   // 寿命（コマ）
@@ -7733,8 +7732,8 @@ function placeWindFlowCanvas() {
   L.DomUtil.setPosition(cv, leafletMap.containerPointToLayerPoint([0, 0]));
   cv.style.opacity = String(overlayOpacity('windFlow'));
 }
-// 風速（m/s）→ 1コマの見た目の移動量（CSS px）。√で弱風を持ち上げ、下限で止まらないようにする
-const windFlowPx = ms => WIND_FLOW.SPEED_K * Math.sqrt(Math.max(ms, WIND_FLOW.SPEED_MIN_MS));
+// 風速（m/s）→ 1コマの見た目の移動量（CSS px）。正比例（弱い風は遅く見えるのが正しい）
+const windFlowPx = ms => WIND_FLOW.SPEED_PX * ms;
 // 場を画面の速度の格子に写す（1コマ・CSS px 単位。北が上なので v は符号を反転）
 function buildFlowGrid(f) {
   const step = WIND_FLOW.STEP_PX, cols = Math.ceil(windFlow.w / step) + 1, rows = Math.ceil(windFlow.h / step) + 1;
@@ -7745,9 +7744,7 @@ function buildFlowGrid(f) {
       const w = sampleWindField(f, ll.lat, ll.lng);
       if (!w) continue;
       const n = r * cols + c, ms = Math.hypot(w[0], w[1]);
-      // 完全な無風は向きが無いので動かさない（粒は寿命で撒き直される）
-      const k = ms > 1e-3 ? windFlowPx(ms) / ms : 0;
-      vx[n] = w[0] * k; vy[n] = -w[1] * k; ok[n] = 1;
+      vx[n] = w[0] * WIND_FLOW.SPEED_PX; vy[n] = -w[1] * WIND_FLOW.SPEED_PX; ok[n] = 1;
     }
   }
   return { step, cols, rows, vx, vy, ok, okCount: ok.reduce((a, b) => a + b, 0) };
@@ -7796,9 +7793,9 @@ function updateWindFlow(f) {
   windFlow.ctx.clearRect(0, 0, windFlow.cv.width, windFlow.cv.height);
   if (!windFlow.running) { windFlow.running = true; windFlow.last = 0; windFlow.raf = requestAnimationFrame(windFlowFrame); }
 }
-// 見た目の移動量から風速に戻して色を決める（windFlowPx の逆。下限より弱い風は下限＝最も弱い色）
+// 見た目の移動量から風速に戻して色を決める（windFlowPx の逆）
 function windFlowColorIndex(spdPx) {
-  const ms = (spdPx / WIND_FLOW.SPEED_K) ** 2;
+  const ms = spdPx / WIND_FLOW.SPEED_PX;
   return WIND_FLOW.COLORS.findIndex(([lim]) => ms < lim);
 }
 function windFlowFrame(ts) {
