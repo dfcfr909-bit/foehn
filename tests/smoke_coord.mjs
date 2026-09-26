@@ -163,6 +163,13 @@ ok(lay.every(x => x.valStartsMid), '★値は中央寄りから右（赤枠の�
 ok(lay.every(x => x.fits), 'コピーまで画面に収まる（はみ出さない）', lay);
 const note = await page.evaluate(() => (document.querySelector('.coord-row[data-k="十進度（DD）"] .coord-note') || {}).textContent);
 ok(note === '（Google mapに貼るならこれ！）', '★★DD に「Google mapに貼るならこれ！」の注釈', note);
+/* 注釈は「（Google mapに」「貼るならこれ！）」の2行。語の途中で折らない */
+const noteLines = await page.evaluate(() => [...document.querySelectorAll('.coord-row[data-k="十進度（DD）"] .coord-note > span')].map(x => {
+  const range = document.createRange(); range.selectNodeContents(x);
+  return { t: x.textContent, n: range.getClientRects().length, top: x.getBoundingClientRect().top }; }));
+ok(noteLines.length === 2 && noteLines[0].t === '（Google mapに' && noteLines[1].t === '貼るならこれ！）'
+  && noteLines.every(l => l.n === 1) && noteLines[1].top > noteLines[0].top,
+  '★DD の注釈は「（Google mapに」／「貼るならこれ！）」の2行', JSON.stringify(noteLines));
 /* 呼び名は全行に出し、意味のまとまりの途中で折り返さない（v4.112.0。利用者の指定）。
    ⚠ 画面の幅を変えて見る（スマホ 360／390px） */
 for (const w of [390, 360]) {

@@ -1745,7 +1745,7 @@ html, body {
 /* ⚠ 緯度・経度で1行ずつ。数字の途中で折り返すと読み違える */
 .coord-v span { display: block; white-space: nowrap; }
 .coord-v .coord-note { margin-top: 3px; font-family: var(--font-ui); font-size: 11px; font-weight: 700;
-  color: var(--accent, #e05020); white-space: normal; user-select: none; -webkit-user-select: none; }
+  color: var(--accent, #e05020); white-space: nowrap; user-select: none; -webkit-user-select: none; }
 .coord-copy, #coord-copy-all { flex-shrink: 0; min-height: 36px; padding: 4px 12px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px;
   font-weight: 700; font-family: var(--font-ui); cursor: pointer; }
@@ -9079,7 +9079,7 @@ function coordFormats(lat, lon) {
      ⚠ 「ユニバーサル／横メルカトル」「軍事グリッド／参照系」を語の途中で割らない。
      「読み」は座標形式ではなく、口頭で伝える（通報など）ための日本語の読み方 */
   const LOOK = {
-    '十進度（DD）': ['DD', ['十進度'], 'Google mapに貼るならこれ！'],
+    '十進度（DD）': ['DD', ['十進度'], ['（Google mapに', '貼るならこれ！）']],
     '度・十進分（DDM）': ['DDM', ['度・十進分']],
     '度分秒（DMS）': ['DMS', ['度分秒']],
     '度分秒（北緯・東経）': ['読み', ['読み']],
@@ -9138,7 +9138,8 @@ function openCoordSheet(lat, lon, name) {
     if (f.note) {
       const nt = document.createElement('span');
       nt.className = 'coord-note';
-      nt.textContent = `（${f.note}）`;
+      // 句の切れ目で1行ずつ（語の途中で折らない）
+      f.note.forEach(w => { const sp = document.createElement('span'); sp.textContent = w; nt.appendChild(sp); });
       v.appendChild(nt);
     }
     const b = document.createElement('button'); b.type = 'button'; b.className = 'coord-copy'; b.textContent = 'コピー';
