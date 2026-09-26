@@ -321,6 +321,8 @@ for (const w of [390, 360]) {
   ok(r.stored.join('/') === '遠い/中くらい/近い', '★保存順は書き換えない（表示のときだけ並べる）', r);
   ok(r.dist[0] === '🏠11km' && r.dist[2] === '🏠111km', '★自宅からの距離を名前の横に出す', r.dist);
   ok(r.sameLine && r.rightAligned && r.h <= 52, '★★行は履歴と同じ作り（座標は同じ行の右・1行の高さ）', r);
+  const coText = await page.evaluate(() => [...document.querySelectorAll('#fav-rows .fav-item-coord')].map(x => x.textContent));
+  ok(coText.length === 3 && coText.every(x => x === '（座標）'), '★★お気に入りの座標も「（座標）」とだけ出す（履歴にそろえる）', coText);
   // 座標を押すと表記の窓（地点は移らない）
   const c = await page.evaluate(() => {
     const before = state.locationName;

@@ -120,7 +120,9 @@ const sheet = await page.evaluate(() => {
     onTop: !!(hit && hit.closest('#coord-sheet')),
     title: document.getElementById('coord-sheet-title').textContent,
     rows: [...document.querySelectorAll('.coord-row')].map(x => ({
-      k: x.querySelector('.coord-k').textContent, v: x.querySelector('.coord-v').textContent })),
+      k: x.dataset.k, abbr: x.querySelector('.coord-abbr').textContent, jp: x.querySelector('.coord-k').textContent })),
+    full: (() => { const r = el.getBoundingClientRect(); return r.width >= innerWidth - 1 && r.height >= innerHeight - 1; })(),
+    histText: (document.querySelector('#map-results .map-hist-coord') || {}).textContent,
     name: state.locationName,
     kbd: document.activeElement && document.activeElement.id,
   };
@@ -128,20 +130,53 @@ const sheet = await page.evaluate(() => {
 ok(sheet.open && sheet.onTop, '★★★座標を押すと窓が地図の上に開く', sheet);
 ok(sheet.rows.map(r => r.k).join('/') === '十進度（DD）/度・十進分（DDM）/度分秒（DMS）/度分秒（北緯・東経）/UTM座標/MGRS',
   '★★6つの表記がまとめて出る', sheet.rows);
-ok(sheet.title.includes('燧ヶ岳'), '窓の見出しに地点名', sheet);
+ok(sheet.title.includes('燧ヶ岳'), '画面の見出しに地点名', sheet);
+ok(sheet.full, '★★座標は全画面の画面で出す（遷移）', sheet);
+ok(sheet.rows.map(r => r.abbr).join('/') === 'DD/DDM/DMS/和/UTM/MGRS', '★★左端に略号', sheet.rows);
+ok(sheet.rows[0].jp === '十進度' && sheet.rows[1].jp === '度・十進分', '★略号の右に日本語の呼び名', sheet.rows);
+
+/* 並び：略号が大きく・左端・上下中央、その右に呼び名、値は中央から右、右端にコピー（利用者の指定） */
+const lay = await page.evaluate(() => [...document.querySelectorAll('.coord-row')].map(row => {
+  const r = row.getBoundingClientRect();
+  const ab = row.querySelector('.coord-abbr').getBoundingClientRect();
+  const jp = row.querySelector('.coord-k').getBoundingClientRect();
+  const v = row.querySelector('.coord-v').getBoundingClientRect();
+  const b = row.querySelector('.coord-copy').getBoundingClientRect();
+  return {
+    abbrFont: parseFloat(getComputedStyle(row.querySelector('.coord-abbr')).fontSize),
+    valFont: parseFloat(getComputedStyle(row.querySelector('.coord-v')).fontSize),
+    leftEdge: Math.round(ab.left - r.left),
+    vCenter: Math.abs((ab.top + ab.bottom) / 2 - (r.top + r.bottom) / 2),
+    order: ab.right <= jp.left + 1 && jp.right <= v.left + 1 && v.right <= b.left + 1,
+    valStartsMid: v.left > r.left + r.width * 0.3,
+    fits: b.right <= r.right + 1,
+  };
+}));
+ok(lay.every(x => x.abbrFont >= 20 && x.abbrFont > x.valFont), '★★★略号は大きく出す', lay);
+ok(lay.every(x => x.leftEdge <= 2), '★★略号は左端にそろえる', lay);
+ok(lay.every(x => x.vCenter < 3), '★★略号は行の上下中央', lay);
+ok(lay.every(x => x.order), '★★並びは 略号→呼び名→値→コピー', lay);
+// ⚠ 略号が枠からはみ出して呼び名に食い込まない（MGRS がいちばん長い）
+ok(await page.evaluate(() => [...document.querySelectorAll('.coord-abbr')].every(a => a.scrollWidth <= a.clientWidth + 1 && a.getBoundingClientRect().right <= a.nextElementSibling.getBoundingClientRect().left + 1)),
+  '★★略号が呼び名に食い込まない（MGRS）');
+ok(lay.every(x => x.valStartsMid), '★値は中央寄りから右（赤枠の位置）', lay);
+ok(lay.every(x => x.fits), 'コピーまで画面に収まる（はみ出さない）', lay);
+const note = await page.evaluate(() => (document.querySelector('.coord-row[data-k="十進度（DD）"] .coord-note') || {}).textContent);
+ok(note === '（Google mapに貼るならこれ！）', '★★DD に「Google mapに貼るならこれ！」の注釈', note);
+ok(sheet.histText === '（座標）', '★★履歴では数字ではなく「（座標）」とだけ出す', sheet.histText);
 ok(sheet.name === before, '★★★座標を押してもその地点へは移らない', { before, now: sheet.name });
 ok(sheet.kbd !== 'map-search-input', 'キーボード（検索窓のフォーカス）を畳む', sheet);
 
 /* ============ 3. コピー ============ */
-await page.click('.coord-row:nth-child(3) .coord-copy');
+await page.click('.coord-row[data-k="度分秒（DMS）"] .coord-copy');
 await page.waitForTimeout(200);
 const c1 = await page.evaluate(() => navigator.clipboard.readText());
 ok(c1 === `36°57'10.8"N 139°17'14.3"E`, '★★★行のコピーでその表記がクリップボードに入る', c1);
-await page.click('.coord-row:nth-child(6) .coord-copy');
+await page.click('.coord-row[data-k="MGRS"] .coord-copy');
 await page.waitForTimeout(200);
 const cm = await page.evaluate(() => navigator.clipboard.readText());
 ok(cm === '54S UF 47510 91028', '★★MGRS もコピーできる', cm);
-const label = await page.evaluate(() => document.querySelector('.coord-row:nth-child(6) .coord-copy').textContent);
+const label = await page.evaluate(() => document.querySelector('.coord-row[data-k="MGRS"] .coord-copy').textContent);
 ok(label === 'コピーしました', 'コピーしたと分かる', label);
 await page.click('#coord-copy-all');
 await page.waitForTimeout(200);
@@ -151,10 +186,6 @@ ok(c2.startsWith('燧ヶ岳\n') && c2.includes('十進度（DD）: 36.95300, 139
   '★★まとめてコピーで全部入る（地点名つき）', c2);
 
 /* ============ 4. 閉じる ============ */
-await page.mouse.click(10, 10);           // 窓の外（暗いところ）
-await page.waitForTimeout(100);
-ok(await page.evaluate(() => document.getElementById('coord-sheet').hidden), '窓の外を押すと閉じる');
-await page.evaluate(() => openCoordSheet(36, 138, 'x'));
 await page.click('#coord-sheet-close');
 ok(await page.evaluate(() => document.getElementById('coord-sheet').hidden), '✕で閉じる');
 
