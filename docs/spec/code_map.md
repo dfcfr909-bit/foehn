@@ -165,13 +165,13 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `favRotaryItems()` | 駒に並べる地点の一覧 | 約 2203 |
 | `renderFavRotary()` | 駒のDOMを作る（顔ぶれが同じなら作り直さない） | 約 2224 |
 | `layoutFavRotary()` | **枠の広さから `FAV_R` / `FAV_ANGLE` を決める** | 約 2267 |
-| `updateFavRotaryTransforms()` | 円柱座標→transform（88deg超は非表示） | 約 2296 |
+| `updateFavRotaryTransforms()` | 円柱座標→transform（88deg超は非表示）。循環は `favWrapD` / `favTargetPos`（`FAV_CYCLES` 周ぶんの真ん中から回す） | 約 2296 |
 | `spinToIndex(i, select)` | 指定の駒を正面へ回す | 約 2329 |
 | `centerActiveChip(smooth)` | 選択中の駒を正面へ | 約 2342 |
 | `centeredChip()` | いま正面にある駒 | 約 2389 |
 | `selectFav(lat, lon, name)` | 駒を選んで地点を切り替える（`releaseFollow` を呼ぶ） | 約 2378 |
 | `toggleFavStar` / `updateFavStar` | ヘッダーの★ | 約 2360 / 2369 |
-| `loadHome` / `saveHome` / `goHome` / `updateHomeButton` | **自宅🏠**（`sotoki_home`。円柱には並べない。v4.105.0） | 約 3109 |
+| `loadSpot` / `saveSpot` / `goSpot` / `updateSpotButtons` | **自宅🏠・職場🏥**（`SPOTS`。`sotoki_home` / `sotoki_work`。円柱には並べない。v4.105.0 / v4.106.0） | 約 3109 |
 
 ## 日付バッジ・祝日・ポップアップ
 
