@@ -102,6 +102,11 @@
 | `windLevelFor(elevM)` | 山頂高度に最も近い気圧面 | 約 1920 |
 | `pickWindSource(summitM)` | **気圧面と地上10mのどちらで判定するか**（ADR-0011。モデル標高は見ない） | 約 1932 |
 | `windSourceLabel(src)` | どこの風か画面に出す文言 | 約 1950 |
+| `GSM_LEVELS` / `windInterpLevels()` | GSM が持つ気圧面／判定の補間に使う層（WIND_LEVELS＋500） | 約 2570 |
+| `windModelPhases(h, len)` | 時刻ごとのモデル（MSM / 移行 / GSM）。GSM に無い層が null かで見る | 約 2585 |
+| `summitWindAt(h, i, src, model)` | **判定に使う1時間ぶんの風**。層が無い時刻は上下の層から山頂高度へ補間、無理なら「データなし」（v4.110.0） | 約 2600 |
+| `gradeOf(d)` | **判定の入口**。風データなしを A にしない（`abcScore(null)`＝0 の手前で止める） | 約 2640 |
+| `windTraceLabel(d, src)` | その時刻の判定に使った風を一言で（ポップアップの @） | 約 2650 |
 
 ## 圏外の控え（オフラインキャッシュ）
 

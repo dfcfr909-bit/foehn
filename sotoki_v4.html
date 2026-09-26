@@ -630,6 +630,7 @@ html, body {
 .pop-grade.g-A { background: var(--a-col); color: #06351f; }
 .pop-grade.g-B { background: var(--b-col); color: #4a2e05; }
 .pop-grade.g-C { background: var(--c-col); color: #fff; }
+.pop-grade.g-none { background: #9aa4b2; color: #fff; }   /* 判定不能（風データなし）。GRADE_COL_NONE と同じ色 */
 /* 見出しは1文字（温・雨・風・圧）。⚠ **絵文字にしない。** 上の行に天気の絵文字が
    出ているので、見出しまで絵文字にすると「どちらが天気か」が一瞬わからなくなる。
    幅も1文字ぶんで足りる */
@@ -2236,7 +2237,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.109.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.110.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2554,7 +2555,8 @@ function pickWindSource(summitM) {
 function windSourceLabel(src) {
   if (!src) return '地上10m';
   if (src.kind === 'level') {
-    return src.fellBack ? '地上10m（山頂の風が取れず）' : `${Math.round(src.summitM)}m`;
+    // 層が無い時刻の扱いは時刻ごとに違うので windTraceLabel が言う（v4.110.0）
+    return `${Math.round(src.summitM)}m`;
   }
   if (src.reason === 'noElev') return '地上10m（標高不明）';
   // ⚠ 落ちた理由が「読んだ標高が低い」ときは**その標高を出す**。
@@ -2562,6 +2564,105 @@ function windSourceLabel(src) {
   // 数字が出ていないと、実機で「なぜ地上風なのか」を切り分けられない（実際に踏んだ）
   if (typeof src.summitM === 'number') return `地上10m（山頂${Math.round(src.summitM)}m）`;
   return '地上10m';
+}
+
+/* ------ 判定に使う風を1時間ずつ決める（v4.110.0） ------
+   ⚠⚠ **以前は「選んだ層が null の時刻は地上10m風」に黙って落としていた。**
+   jma_seamless は MSM の予報期間（およそ3日半）を過ぎると GSM に切り替わり、
+   **GSM には 900/800/600hPa が無い**（open-meteo の JmaDomain.gsm.levels）。
+   実測（2026-09-26、scripts/probeWindSeam.mjs）で、800/900hPa は MSM が尽きた時刻から
+   全地点で null になった。つまり800hPaで判定する峰（1,705〜2,480m）と900hPaの峰は、
+   **4〜7日目の判定が地上10m風で甘く出ていた**（至仏山・ADR-0011 と同じ形の失敗）。
+   いまは:
+   ・選んだ層に値がある時刻 → その層（これまでどおり。固定表による選択は変えない）
+   ・選んだ層が無い時刻 → **実在する上下の層から、その時刻の気圧面の高さ
+     （geopotential_height）で山頂高度へ補間**。U/V で補間する（風向の平均を取らない）
+   ・それもできない → **風データなし**。⚠ abcScore(null) は 0＝A を返すので、
+     wind を null にしただけでは判定がAになる。gradeOf() で「判定不能」にする
+   どの風を使ったかは d.windTrace に1時間ずつ残す（層・高さ・モデル・補間の上下層・欠損）。 */
+// GSM が持つ気圧面（open-meteo Sources/App/JMA/JmaDownloader.swift の gsm.levels）。
+// ここに無い層（900/800/600）は MSM の期間にしか値が無い
+const GSM_LEVELS = [1000, 925, 850, 700, 500, 400, 300, 250, 200, 150, 100];
+// 補間の上側に使う層。600hPa（4,200m）の峰は GSM の期間に上側の層が無くなるので 500 も取る
+const WIND_INTERP_EXTRA = [500];
+const windInterpLevels = () => [...WIND_LEVELS.map(l => l[0]), ...WIND_INTERP_EXTRA];
+/* MSM の値が尽きる前のこの時間は、seamless が MSM と GSM を混ぜた値になっている
+   （実測：上空は3時間前、地上10mは5時間前から。どちらのモデルとも一致しない値） */
+const MSM_BLEND_HOURS = 5;
+
+/* 時刻ごとのモデル。'MSM' / '移行'（MSM と GSM の混合）/ 'GSM' / null（分からない）。
+   GSM に無い層（800 等）がその時刻に null かどうかで見る。実測で「seamless の null」と
+   「MSM が尽きた時刻」は全地点・全時刻で一致した（1,536件） */
+function windModelPhases(h, len) {
+  const probes = WIND_LEVELS.map(l => l[0]).filter(p => !GSM_LEVELS.includes(p))
+    .map(p => h[`wind_speed_${p}hPa`]).filter(Array.isArray);
+  if (!probes.length) return new Array(len).fill(null);
+  let firstGsm = -1;
+  for (let i = 0; i < len; i++) {
+    if (probes.every(a => a[i] == null)) { firstGsm = i; break; }
+  }
+  return Array.from({ length: len }, (_, i) =>
+    firstGsm < 0 ? 'MSM' : i >= firstGsm ? 'GSM' : i >= firstGsm - MSM_BLEND_HOURS ? '移行' : 'MSM');
+}
+
+/* 1時間ぶんの判定用の風。返り値 { spd, dir, trace }。
+   trace.kind: 'level'（選んだ層そのもの）/ 'interp'（上下の層から山頂高度へ補間）/
+               'ground'（地上10m。山頂が最下層より低い・標高不明＝もともと地上風の地点）/
+               'missing'（風データなし） */
+function summitWindAt(h, i, src, model) {
+  const at = name => (h[name] && h[name][i] != null) ? h[name][i] : null;
+  if (!src || src.kind !== 'level') {
+    const spd = at('windspeed_10m');
+    return { spd, dir: at('winddirection_10m'),
+      trace: { kind: spd == null ? 'missing' : 'ground', model, reason: src ? src.reason : null } };
+  }
+  const lv = p => ({ hPa: p, spd: at(`wind_speed_${p}hPa`), dir: at(`wind_direction_${p}hPa`),
+    z: at(`geopotential_height_${p}hPa`) });
+  const own = lv(src.hPa);
+  if (own.spd != null) {
+    return { spd: own.spd, dir: own.dir, trace: { kind: 'level', hPa: src.hPa, z: own.z, model } };
+  }
+  // 選んだ層がこの時刻に無い。高さの分かる実在の層で、山頂高度を上下から挟む
+  const H = src.summitM;
+  const have = windInterpLevels().map(lv)
+    .filter(l => l.spd != null && l.dir != null && l.z != null).sort((a, b) => a.z - b.z);
+  for (let k = 0; k < have.length - 1; k++) {
+    const a = have[k], b = have[k + 1];
+    if (a.z <= H && H <= b.z) {
+      const w = (H - a.z) / (b.z - a.z);
+      const r = d => d * Math.PI / 180;
+      const u = -((1 - w) * a.spd * Math.sin(r(a.dir)) + w * b.spd * Math.sin(r(b.dir)));
+      const v = -((1 - w) * a.spd * Math.cos(r(a.dir)) + w * b.spd * Math.cos(r(b.dir)));
+      return {
+        spd: Math.hypot(u, v),
+        dir: (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360,
+        trace: { kind: 'interp', hPa: src.hPa, model,
+          lo: { hPa: a.hPa, z: a.z }, hi: { hPa: b.hPa, z: b.z }, w },
+      };
+    }
+  }
+  // ⚠ 挟めないときに近い層や地上風で埋めない（それが今回直した失敗そのもの）
+  return { spd: null, dir: null, trace: { kind: 'missing', hPa: src.hPa, model } };
+}
+
+/* 判定の入口。⚠ judgePoint / abcScore は変更禁止（CLAUDE.md）なので、その手前で
+   **風データなしを「A」にしない**。grade が null なら判定不能として扱う
+   （スクラバー帯・地図は GRADE_COL_NONE の灰色、ポップアップは「—」） */
+function gradeOf(d) {
+  if (d && d.windMissing) return { grade: null, reasons: ['風データなし'] };
+  return judgePoint(d);
+}
+
+// その時刻の判定に使った風を一言で（ポップアップの @ の後ろ）
+function windTraceLabel(d, src) {
+  const t = d && d.windTrace;
+  if (!t) return windSourceLabel(src);
+  const m = t.model && t.model !== 'MSM' ? `・${t.model}` : '';
+  if (t.kind === 'missing') return `風データなし${m}`;
+  if (t.kind === 'ground') return windSourceLabel(src);
+  const top = `${Math.round(src.summitM)}m`;
+  if (t.kind === 'interp') return `${top}（${t.hPa}hPa無し→${t.lo.hPa}/${t.hi.hPa}hPaから按分${m}）`;
+  return `${top}${m ? `（${t.model}）` : ''}`;
 }
 
 const THRESH = {
@@ -2774,7 +2875,9 @@ async function fetchWeather(lat, lon) {
   // 山頂高度の風（ADR-0006）。jma_seamless が気圧面の風を返すことは実測で確認済み
   // （models未指定の値と完全一致）。**補助リクエストではなく本体で取る**のは、
   // モデルを混ぜないため／通信を増やさないため／判定が後から覆らないため
-  const lvVars = WIND_LEVELS.map(([hPa]) => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa`).join(',');
+  // 気圧面の高さも取る：選んだ層が無い時刻（GSM の期間）に上下の層から山頂高度へ補間するため
+  const lvVars = windInterpLevels()
+    .map(hPa => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join(',');
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=jma_seamless`;
   try {
     // 山頂標高（地理院DEM）は**判定の入力**なので、気象データと一緒に待つ。
@@ -2999,8 +3102,8 @@ function applyRange() {
 /* windSrc は pickWindSource() の戻り値。'level' なら wind/wdir に山頂高度の
    気圧面風を入れる（ADR-0006）。⚠ judgePoint は d.wind を見るだけなので、
    **判定ロジックには一切触れずに入力の質だけを上げている。**
-   その層が返ってこなかったときは地上10m風へ落とし、windSrc.fellBack を立てて
-   画面に出す（黙って甘い判定に戻さない）。 */
+   ⚠⚠ その層が無い時刻は**地上10m風へ落とさない**（v4.110.0）。上下の層から補間し、
+   できなければ「風データなし」にする → summitWindAt / gradeOf の注意書き */
 /* ⚠⚠ **Open-Meteo の積算値は「直前1時間」。そのまま並べると1時間ずれる。**
    `precipitation` / `snowfall` は直前1時間の**合計**、`wind_gusts_10m` は直前1時間の
    **最大**。いっぽう気温・気圧・風・雲量は**その時刻の瞬間値**。
@@ -3021,14 +3124,12 @@ function aheadHour(arr, i) { return (arr && arr[i + 1] != null) ? arr[i + 1] : n
 function processData(json, windSrc) {
   const h = json.hourly;
   const len = h.time.length; // past_days + forecast_days ぶん
-  const useLevel = windSrc && windSrc.kind === 'level';
-  const lvSpd = useLevel ? h[`wind_speed_${windSrc.hPa}hPa`] : null;
-  const lvDir = useLevel ? h[`wind_direction_${windSrc.hPa}hPa`] : null;
-  if (useLevel && !lvSpd) windSrc.fellBack = true;   // 層が返ってこなかった
+  const phases = windModelPhases(h, len);
   const data = [];
   for (let i = 0; i < len; i++) {
     const dt = new Date(h.time[i]);
     const pres6 = i >= 6 ? (h.surface_pressure[i] - h.surface_pressure[i-6]) : 0;
+    const sw = summitWindAt(h, i, windSrc, phases[i]);
     data.push({
       time: dt,
       temp: h.temperature_2m[i],
@@ -3037,10 +3138,11 @@ function processData(json, windSrc) {
       precip: aheadHour(h.precipitation, i),
       snow: aheadHour(h.snowfall, i),
       pressure: h.surface_pressure[i],
-      // 判定・表示に使う風。山頂高度が取れていればその層の値（ADR-0006）
-      wind: (lvSpd && lvSpd[i] != null) ? lvSpd[i] : h.windspeed_10m[i],
-      wdir: (lvDir && lvDir[i] != null) ? lvDir[i]
-            : (h.winddirection_10m ? h.winddirection_10m[i] : null),
+      // 判定・表示に使う風。山頂高度の層の値（ADR-0006）。無い時刻は補間か「データなし」
+      wind: sw.spd,
+      wdir: sw.dir,
+      windTrace: sw.trace,                          // どの風を使ったか（層・高さ・モデル・補間）
+      windMissing: sw.trace.kind === 'missing',     // ⚠ true なら判定不能（gradeOf）
       wind10: h.windspeed_10m[i],   // 地上10m風。参考用に残す（判定には使わない）
       gust: aheadHour(h.windgusts_10m, i),   // 突風(m/s)。これも直前1時間の最大なので1つ先
       wcode: h.weathercode[i],
@@ -3806,10 +3908,11 @@ function updatePopup() {
   const isNight = t.getHours() < 5 || t.getHours() >= 19;
   document.getElementById('pop-wx').textContent = weatherEmoji(d.wcode, isNight);
 
-  const { grade } = judgePoint(d);
+  // ⚠ 風データなしは「A」にしない（gradeOf）。判定不能は「—」の灰色
+  const { grade } = gradeOf(d);
   const g = document.getElementById('pop-grade');
-  g.textContent = grade;
-  g.className = 'pop-grade g-' + grade;
+  g.textContent = grade || '—';
+  g.className = 'pop-grade g-' + (grade || 'none');
 
   // 判定の根拠になった数値を色分けする（B相当=黄 / C相当=赤）
   const bd = judgeBreakdown(d);
@@ -3839,7 +3942,8 @@ function updatePopup() {
   document.getElementById('pop-windw').textContent = windWord(d.wind) || '—';
   // どこの高度の風かを添える（ADR-0006）。地上10m風に落ちているときも黙らない
   const wsEl = document.getElementById('pop-windsrc');
-  if (wsEl) wsEl.textContent = `@${windSourceLabel(state.windSource)}`;
+  // 選んだ層が無くて補間した時刻・データなしの時刻は、その時刻ごとに言う
+  if (wsEl) wsEl.textContent = `@${windTraceLabel(d, state.windSource)}`;
   // 突風は取得できたときのみ出す。⚠ 行ではなく風の行の中に畳んである
   const gustRow = document.getElementById('pop-gust-row');
   if (d.gust != null) {
@@ -5808,7 +5912,7 @@ function drawScrubber() {
      ⚠ B・Cは1時間ずつ区切ったまま（長く続くと何時間続くかを数えにくくなるため）
      ⚠ 続きの区間は**1本の四角で塗る**。1時間ずつ隙間なく並べて塗ると、座標が小数のとき
        境目のアンチエイリアスが重なって薄い継ぎ目が残る */
-  const grades = data.map(d => judgePoint(d).grade);
+  const grades = data.map(d => gradeOf(d).grade);   // 風データなしは null＝灰色
   for (let i = 0; i < data.length; i++) {
     const g = grades[i];
     if (g === 'A' && grades[i - 1] === 'A') continue;   // 続きは先頭でまとめて塗った
@@ -9260,17 +9364,23 @@ async function fetchRankData(dates) {
   const peaks = areas.areas.flatMap(a => a.peaks);
   // 判定に使う気圧面（ADR-0006）。峰ごとに必要な層だけを要求する
   // （110地点ぶんの変数が増えるとレートに効くため。全6層でなく実際に使う5層で足りる）
-  const levels = [...new Set(peaks.map(p => {
+  /* ⚠ 使う層に加えて、**補間の上下になりうる層（GSM にもある 925/850/700/500）と
+     モデルの見分けに使う 800** も取る。選んだ層が無い時刻に地上10m風へ落とさないため
+     （v4.110.0）。風向と気圧面の高さも要る（U/V を高さで補間する） */
+  const used = peaks.map(p => {
     const s = pickWindSource(p.elev);
     return s.kind === 'level' ? s.hPa : null;
-  }).filter(Boolean))];
+  }).filter(Boolean);
+  const levels = [...new Set([...used, 800,
+    ...windInterpLevels().filter(p => GSM_LEVELS.includes(p))])].sort((a, b) => b - a);
   const key = `${dates.join('_')}_v${areas.version}_${peaks.length}_${levels.join('-')}`;
   if (rankFetchCache[key]) return rankFetchCache[key];
 
   const lats  = peaks.map(p => p.lat).join(',');
   const lons  = peaks.map(p => p.lon).join(',');
   const elevs = peaks.map(p => p.elev).join(',');
-  const lvVars = levels.map(hPa => `,wind_speed_${hPa}hPa`).join('');
+  const lvVars = levels
+    .map(hPa => `,wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join('');
   // start_date/end_dateではなくforecast_daysで取得（将来日の欠落を防ぐ確実な方式）。
   // 今日から対象最終日までをカバーする日数を算出し、判定は日付でフィルタ
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
@@ -9308,7 +9418,10 @@ function judgePeakDay(hourData, dateStr) {
     if (fmtDateISO(d.time) !== dateStr) continue;
     const h = d.time.getHours();
     if (h < winStart || h > winEnd) continue;
-    const { grade, reasons } = judgePoint(d);
+    const { grade, reasons } = gradeOf(d);
+    /* ⚠ 風データなしの時刻が1つでもあれば、その日は判定不能にする。
+       残りの時刻だけで最悪を取ると、欠けた時刻が荒れていても A に見える */
+    if (grade == null) return null;
     const r = { A: 0, B: 1, C: 2 }[grade];
     if (worst == null || r > worst) { worst = r; worstReasons = reasons; }   // 最悪グレード時の理由を保持
     maxWind = Math.max(maxWind, d.wind || 0);

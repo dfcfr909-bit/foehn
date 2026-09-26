@@ -45,6 +45,14 @@ function fakeBatch(url) {
       h.windspeed_10m.push(2 + (p % 13));   // 峰ごとに風速差 → A/B/C分布
       h.weathercode.push(2);
       h.cloudcover.push(40);
+      /* 要求された気圧面の風も返す。⚠ v4.110.0 から、層が無い峰は地上10m風に落ちず
+         「判定不能」になる。ここは並びの検査なので、全峰に同じ風速差の層を持たせる */
+      for (const v of (u.searchParams.get('hourly') || '').split(',')) {
+        const m = v.match(/^(wind_speed|wind_direction|geopotential_height)_(\d+)hPa$/);
+        if (!m) continue;
+        (h[v] ||= []).push(m[1] === 'wind_speed' ? 2 + (p % 13)
+          : m[1] === 'wind_direction' ? 270 : { 925: 780, 900: 1000, 850: 1460, 800: 1950, 700: 3010, 600: 4200, 500: 5700 }[m[2]]);
+      }
     }
     out.push({ hourly: h });
   }

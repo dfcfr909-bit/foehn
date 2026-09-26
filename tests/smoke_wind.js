@@ -53,6 +53,12 @@ const WIND700 = 28.86;              // 実測（3,010m）
 
 let demMode = 'summit';   // 'summit' | 'low'
 let levelMode = 'ok';     // 'ok' | 'missing'（層が返ってこない場合）
+/* GSM の期間の再現。この index 以降は GSM に無い層（900/800/600）を null にする。
+   ⚠ 実測（2026-09-26）で jma_seamless は MSM が尽きた時刻から 800/900hPa を
+   全地点で null にした。以前はここで**地上10m風に黙って落ちていた**（v4.110.0 で修正） */
+let gsmFrom = Infinity;
+// 気圧面の高さ（m）。補間の答え合わせのため固定値にする
+const GH = { 925: 780, 900: 1000, 850: 1460, 800: 1950, 700: 3010, 600: 4200, 500: 5700 };
 /* 応答が返す elevation（モデル格子の標高）。
    ⚠ **ADR-0011 の本命。** 2026-08 の実測は 1,405m だったが、2026-09 に同じ地点を
    引き直すと 2,127m を返すようになっていた（山頂 2,144m との差 17m）。
@@ -67,9 +73,11 @@ function fakeWeather() {
     surface_pressure: [], windspeed_10m: [], winddirection_10m: [], windgusts_10m: [],
     weathercode: [], cloudcover: [],
   };
-  const levels = [925, 900, 850, 800, 700, 600];
+  const levels = [925, 900, 850, 800, 700, 600, 500];
   if (levelMode === 'ok') {
-    for (const p of levels) { h[`wind_speed_${p}hPa`] = []; h[`wind_direction_${p}hPa`] = []; }
+    for (const p of levels) {
+      h[`wind_speed_${p}hPa`] = []; h[`wind_direction_${p}hPa`] = []; h[`geopotential_height_${p}hPa`] = [];
+    }
   }
   const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 3);
   for (let i = 0; i < 288; i++) {
@@ -90,6 +98,15 @@ function fakeWeather() {
       h.wind_speed_800hPa.push(WIND800); h.wind_direction_800hPa.push(315);
       h.wind_speed_700hPa.push(WIND700); h.wind_direction_700hPa.push(320);
       h.wind_speed_600hPa.push(35.0); h.wind_direction_600hPa.push(320);
+      h.wind_speed_500hPa.push(40.0); h.wind_direction_500hPa.push(320);
+      for (const p of levels) h[`geopotential_height_${p}hPa`].push(GH[p]);
+      if (i >= gsmFrom) {
+        // GSM に無い層は値も高さも null（実物と同じ）
+        for (const p of [900, 800, 600]) {
+          h[`wind_speed_${p}hPa`][i] = null; h[`wind_direction_${p}hPa`][i] = null;
+          h[`geopotential_height_${p}hPa`][i] = null;
+        }
+      }
     }
   }
   const daily = { time: [], sunrise: [], sunset: [] };
@@ -225,20 +242,70 @@ function fakeWeather() {
   await page25.close();
   modelElev = MODEL_ELEV;
 
-  /* ============ 3. 層が返ってこないとき：黙って甘い判定に戻らない ============ */
+  /* ============ 3. 層が返ってこないとき：地上風に落とさず「判定不能」 ============
+     ⚠⚠ 以前は地上10m風に落として「取れず」と添えていた。落ちた先の判定は甘いまま
+     （abcScore は弱い風を A にする）なので、**表示で断っても危ない**。いまは風データなし
+     → 判定不能（A にしない）。abcScore(null) は 0＝A を返すので、gradeOf で止める */
   levelMode = 'missing';
   const page3 = await newPage();
   const miss = await page3.evaluate(() => {
     const d = state.allData[state.sliderIndex];
-    return { src: state.windSource, wind: d.wind, grade: judgePoint(d).grade,
-             popupSrc: document.getElementById('pop-windsrc').textContent };
+    const ds = fmtDateISO(d.time);
+    return { src: state.windSource, wind: d.wind, trace: d.windTrace, missing: d.windMissing,
+             grade: gradeOf(d).grade, raw: judgePoint(d).grade,
+             popGrade: document.getElementById('pop-grade').textContent,
+             popupSrc: document.getElementById('pop-windsrc').textContent,
+             rankDay: judgePeakDay(state.allData, ds) };
   });
-  ok(miss.src && miss.src.fellBack === true, '層が無ければフォールバックの印を立てる', miss.src);
-  ok(Math.abs(miss.wind - WIND10) < 0.01, '地上風に落ちる（壊れはしない）', miss.wind);
-  ok(miss.popupSrc.includes('取れず') || miss.popupSrc.includes('地上'),
-    '★★落ちたことを黙らない（黙って甘い判定に戻るのがいちばん危ない失敗）', miss.popupSrc);
+  ok(miss.wind == null, '★★層が無ければ地上10m風に落とさない（wind は null）', miss.wind);
+  ok(miss.missing === true && miss.trace && miss.trace.kind === 'missing', '欠損の印が時刻ごとに残る', miss.trace);
+  ok(miss.raw === 'A', '（前提）judgePoint 単体は null の風を A にする＝だから手前で止める', miss.raw);
+  ok(miss.grade === null, '★★★風データなしを A にしない（判定不能）', miss.grade);
+  ok(miss.popGrade === '—', '★ポップアップの判定は「—」', miss.popGrade);
+  ok(miss.popupSrc.includes('データなし'), '★風データなしと画面に出す', miss.popupSrc);
+  ok(miss.rankDay === null, '★★ランキングでも、その日は判定不能（残りの時刻だけで A にしない）', miss.rankDay);
   await page3.close();
   levelMode = 'ok';
+
+  /* ============ 3.2 GSM の期間：上下の層から山頂高度へ補間する ============
+     ★★v4.110.0 の本命。800hPa の峰（皇海山2,144m）の4〜7日目は、800hPa が null になる。
+     地上10m風（2.73）に落ちると A。実在する 850hPa(1,460m) と 700hPa(3,010m) から
+     その時刻の気圧面の高さで山頂2,144mへ U/V を補間する */
+  gsmFrom = 0;
+  const pageG = await newPage();
+  const gsm = await pageG.evaluate(() => {
+    const d = state.allData[state.sliderIndex];
+    return { wind: d.wind, wdir: d.wdir, trace: d.windTrace, missing: d.windMissing,
+             grade: gradeOf(d).grade,
+             popupSrc: document.getElementById('pop-windsrc').textContent };
+  });
+  // 期待値：850(4.47m/s,300°) と 700(28.86m/s,320°) を w=(2144-1460)/(3010-1460) で U/V 按分
+  const w = (2144 - 1460) / (3010 - 1460), rad = d => d * Math.PI / 180;
+  const eu = -((1 - w) * 4.47 * Math.sin(rad(300)) + w * WIND700 * Math.sin(rad(320)));
+  const ev = -((1 - w) * 4.47 * Math.cos(rad(300)) + w * WIND700 * Math.cos(rad(320)));
+  const expect = Math.hypot(eu, ev);
+  ok(gsm.trace && gsm.trace.kind === 'interp' && gsm.trace.lo.hPa === 850 && gsm.trace.hi.hPa === 700,
+    '★★800hPa が無い時刻は 850/700hPa から補間する（使った上下の層を残す）', gsm.trace);
+  ok(gsm.trace && gsm.trace.model === 'GSM', '★モデルが GSM だと記録する', gsm.trace);
+  ok(gsm.trace && gsm.trace.lo.z === 1460 && gsm.trace.hi.z === 3010, '上下の層の高さ（その時刻の実データ）を残す', gsm.trace);
+  ok(Math.abs(gsm.wind - expect) < 0.01, '★★U/V を高さで按分した風速になる', { got: gsm.wind, expect });
+  ok(Math.abs(gsm.wind - WIND10) > 1, '★★★地上10m風（2.73）に落ちていない', gsm.wind);
+  ok(gsm.grade === 'C', '★★★判定が A に戻らない（C）', gsm.grade);
+  ok(gsm.popupSrc.includes('按分') && gsm.popupSrc.includes('GSM'), '補間したこととモデルを画面に出す', gsm.popupSrc);
+  await pageG.close();
+
+  /* ============ 3.3 MSM → 移行 → GSM の見分け ============ */
+  const pageM = await newPage();
+  gsmFrom = Infinity;
+  const phases = await pageM.evaluate(() => {
+    const len = 30, mk = () => new Array(len).fill(1);
+    const h = { wind_speed_900hPa: mk(), wind_speed_800hPa: mk(), wind_speed_600hPa: mk() };
+    for (let i = 20; i < len; i++) { h.wind_speed_900hPa[i] = null; h.wind_speed_800hPa[i] = null; h.wind_speed_600hPa[i] = null; }
+    return windModelPhases(h, len);
+  });
+  ok(phases[14] === 'MSM' && phases[15] === '移行' && phases[19] === '移行' && phases[20] === 'GSM',
+    '★MSM が尽きる5時間前から「移行」、尽きたら GSM', phases);
+  await pageM.close();
 
   /* ============ 3.5 座標が山頂からずれていても外さない ============
      ★実機で踏んだ本命の落とし穴。areas.json の皇海山の座標は山頂から約490mずれており、
@@ -316,6 +383,6 @@ function fakeWeather() {
     console.log('WIND SMOKE FAILED');
     process.exit(1);
   }
-  console.log(JSON.stringify({ summit, low, near, miss, known, diag, pick }, null, 2));
+  console.log(JSON.stringify({ summit, low, near, miss, gsm, known, diag, pick }, null, 2));
   console.log('WIND SMOKE PASSED');
 })();
