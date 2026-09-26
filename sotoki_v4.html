@@ -1480,12 +1480,18 @@ html, body {
 .fav-item-name { flex: 1; font-weight: 700; font-size: 14px; }
 .fav-item-coord { font-size: 10px; font-family: var(--font-mono); color: var(--text3); }
 /* 自宅・職場の欄（お気に入りとは別の項目。v4.107.0） */
-#fav-spots { display: flex; flex-direction: column; gap: 6px; }
-#fav-spots[hidden] { display: none; }
-/* 自宅・職場の開閉。お気に入りの下に、控えめな行で置く */
-#fav-spots-toggle { margin-top: 6px; padding: 10px 12px; min-height: 44px; text-align: left;
-  border: none; border-top: 2px dashed var(--border); background: none; color: var(--text2);
-  font-size: 13px; font-weight: 700; font-family: var(--font-ui); cursor: pointer; }
+#fav-spots { display: flex; flex-direction: column; gap: 6px;
+  padding-bottom: 10px; margin-bottom: 4px; border-bottom: 2px dashed var(--border); }
+/* 各行の🏠／🏥は、見出しのマークで開いた種類だけ見せる（v4.108.0） */
+#fav-list .fav-spot { display: none; }
+#fav-list[data-spots-edit="home"] .fav-home,
+#fav-list[data-spots-edit="work"] .fav-work { display: inline-block; }
+/* 見出しの右の🏠／🏥 */
+.fav-head-spot { flex-shrink: 0; width: 44px; height: 44px; margin-right: 4px; padding: 0;
+  font-size: 22px; line-height: 1; background: none; border: 2px solid transparent;
+  border-radius: 50%; cursor: pointer; }
+.fav-head-spot.unset { opacity: 0.4; }
+.fav-head-spot.open { border-color: var(--accent, #e05020); background: var(--bg2); opacity: 1; }
 .fav-spot-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
   border: 2px solid var(--accent, #e05020); border-radius: var(--radius); cursor: pointer; }
 .fav-spot-row.unset { border-color: var(--border); border-style: dashed; cursor: default; }
@@ -2355,6 +2361,9 @@ html, body {
   <div id="fav-overlay">
     <div id="fav-header">
       <h2>お気に入り地点</h2>
+      <!-- 自宅・職場の設定はここから（v4.108.0）。ふだんはマークだけ。押すとその欄と各行のボタンが出る -->
+      <button id="btn-fav-spot-home" class="fav-head-spot" type="button" onclick="toggleFavSpots('home')" aria-label="自宅の設定">🏠</button>
+      <button id="btn-fav-spot-work" class="fav-head-spot" type="button" onclick="toggleFavSpots('work')" aria-label="職場の設定">🏥</button>
       <button id="btn-fav-close" onclick="closeFav()">✕</button>
     </div>
     <div id="fav-list"></div>
@@ -8905,15 +8914,18 @@ function saveFavs(favs) {
   localStorage.setItem('sotoki_favs', JSON.stringify(favs));
 }
 
-/* 自宅・職場の欄は、ふだんは畳んでおく（v4.108.0。利用者の要望「基本隠しておいて展開できる」）。
-   一覧を開くたびに畳んだ状態から始める */
-let favSpotsOpen = false;
-function toggleFavSpots() {
-  favSpotsOpen = !favSpotsOpen;
+/* 自宅・職場の設定は、見出しの右の🏠／🏥から開く（v4.108.0）。
+   利用者：「一回登録したらそんなに変えるものじゃない」「お気に入り地点の右側が空いてる。
+   そこに🏠🏥ってマークを置くだけでいい」。
+   ふだんはマークだけで、自宅・職場の欄も各行の🏠／🏥も出さない。
+   🏠を押すと自宅の欄と各行の🏠だけ、🏥なら職場のぶんだけ出す。一覧を開くたびに閉じた状態から */
+let favSpotsOpen = null;           // null | 'home' | 'work'
+function toggleFavSpots(kind) {
+  favSpotsOpen = (favSpotsOpen === kind) ? null : kind;
   renderFavList();
 }
 function openFav() {
-  favSpotsOpen = false;
+  favSpotsOpen = null;
   renderFavList();
   document.getElementById('fav-overlay').classList.add('open');
 }
@@ -8930,8 +8942,8 @@ function renderFavList() {
      ⚠ 保存値は textContent で組む（innerHTML に入れない） */
   const spotsBox = document.createElement('div');
   spotsBox.id = 'fav-spots';
-  spotsBox.hidden = !favSpotsOpen;
   for (const kind of SPOT_KINDS) {
+    if (kind !== favSpotsOpen) continue;       // 開いている種類だけ出す
     const sp = SPOTS[kind], h = loadSpot(kind);
     const row = document.createElement('div');
     row.className = 'fav-spot-row' + (h ? '' : ' unset');
@@ -8978,23 +8990,24 @@ function renderFavList() {
     }
     spotsBox.appendChild(row);
   }
-  /* 開閉の行。**お気に入りの下**に置く（利用者の画に合わせた）。
-     畳んでいる間も、設定済みかどうかは見出しで分かるようにする */
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.id = 'fav-spots-toggle';
-  toggle.setAttribute('aria-expanded', String(favSpotsOpen));
-  const setCount = SPOT_KINDS.filter(k => loadSpot(k)).length;
-  toggle.textContent = `${favSpotsOpen ? '▾' : '▸'} 🏠 自宅・🏥 職場（${setCount}/${SPOT_KINDS.length} 設定済み）`;
-  toggle.addEventListener('click', toggleFavSpots);
-  const appendSpots = () => { list.appendChild(toggle); list.appendChild(spotsBox); };
+  if (favSpotsOpen) list.appendChild(spotsBox);
+  // 見出しの🏠／🏥：設定済みかどうか（薄い＝未設定）と、いま開いているか
+  for (const kind of SPOT_KINDS) {
+    const b = document.getElementById(`btn-fav-spot-${kind}`);
+    if (!b) continue;
+    const h = loadSpot(kind);
+    b.classList.toggle('unset', !h);
+    b.classList.toggle('open', favSpotsOpen === kind);
+    b.setAttribute('aria-expanded', String(favSpotsOpen === kind));
+    b.title = `${SPOTS[kind].label}：${h ? h.name : '未設定'}（押すと設定を開く）`;
+  }
+  list.dataset.spotsEdit = favSpotsOpen || '';
 
   if (!favs.length) {
     const empty = document.createElement('div');
     empty.style.cssText = 'color:var(--text3);text-align:center;margin-top:20px;font-size:13px;';
     empty.textContent = 'お気に入りなし';
     list.appendChild(empty);
-    appendSpots();
     return;
   }
   favs.forEach((f, i) => {
@@ -9040,7 +9053,6 @@ function renderFavList() {
     });
     list.appendChild(el);
   });
-  appendSpots();
 }
 
 function saveCurrentAsFav() {

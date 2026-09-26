@@ -174,7 +174,7 @@ for (const w of [390, 360]) {
 
   if (w === 390) {
     // 一覧の「しごと」の行の🏥で指定
-    await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; openFav(); });
+    await page.evaluate(() => { document.getElementById('loading-overlay').style.display = 'none'; openFav(); toggleFavSpots('work'); });
     await page.waitForTimeout(200);
     const r = await page.evaluate(() => {
       const row = [...document.querySelectorAll('#fav-list .fav-item')]
