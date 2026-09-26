@@ -479,7 +479,7 @@ SW 側の実装は `sw.js` → `pwa.md`
 | `mapFlyTo(lat, lon, zoom)` | `flyTo` 0.8s（`setView` の瞬間移動は使わない） | 約 5908 |
 | `updatePinVisibility()` | 追跡中は選択地点のピンを出さない | 約 5941 |
 | `updateMapToolButtons()` | 右上3ボタンの状態 | 約 5948 |
-| `doMapSearch()` | 地名検索 | 約 6452 |
+| `doMapSearch()` | 地名検索。OSMと地理院を同時に回す（Nominatimの中は直列）。`fetchJsonWithTimeout`（`SEARCH_TIMEOUT_MS`=5秒） | 約 8391 |
 | `renderSearchHist()` / `addSearchHist()` | **検索の履歴**（選んだ地点。空の窓で全件・打つと絞り込み）。`sotoki_search_hist` に100件 | 約 8491 |
 | `showMapHint()` / `flashPinHint()` | 案内文（`MAP_HINT_MS`=4.5秒） | 約 6359 / 6341 |
 
