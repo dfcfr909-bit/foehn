@@ -480,6 +480,7 @@ SW 側の実装は `sw.js` → `pwa.md`
 | `updatePinVisibility()` | 追跡中は選択地点のピンを出さない | 約 5941 |
 | `updateMapToolButtons()` | 右上3ボタンの状態 | 約 5948 |
 | `doMapSearch()` | 地名検索 | 約 6452 |
+| `renderSearchHist()` / `addSearchHist()` | **検索の履歴**（選んだ地点。空の窓で全件・打つと絞り込み）。`sotoki_search_hist` に100件 | 約 8491 |
 | `showMapHint()` / `flashPinHint()` | 案内文（`MAP_HINT_MS`=4.5秒） | 約 6359 / 6341 |
 
 ## 現在地の追跡と地図の向き
