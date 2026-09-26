@@ -209,8 +209,8 @@
 なぞって時刻を選ぶ領域では、指を置くたびにルーペが被さって邪魔になる（利用者からの指摘）。
 `#charts-outer` と `#scrubber` に `user-select: none` / `-webkit-touch-callout: none`。
 
-- ⚠ **`body` へ一括指定しない。** 地図の緯度経度（`#map-latlon`）は
-  **タップでコピーさせたい**ので `user-select: all` にしてある（#13）。巻き添えにしない
+- ⚠ **`body` へ一括指定しない。** 地図の検索欄など、選択できないと困る所を巻き添えにする
+  （以前は地図の緯度経度 `#map-latlon` を守るためだったが、v4.117.0 で外した）
 - ⚠ `-webkit-touch-callout` は Chromium に無く `getComputedStyle` が空を返すので、
   検査は**原文で確かめる**しかない（`smoke_pin` で踏んだのと同じ）
 

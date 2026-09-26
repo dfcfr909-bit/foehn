@@ -78,12 +78,17 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
 
 - ⚠ 粒子は**気象を知らない**。見るのは統合した U/V の場（`sampleWindField`）だけ。WebGL に替えても場は作り直さない
 - 場を**画面の速度の格子**（`WIND_FLOW.STEP_PX`=8px）に写してから流す（`buildFlowGrid`）。毎コマ緯度経度に戻さない
-- 速さは**ズームに依らない見た目の速さ**（1 m/s あたり `SPEED_PX`）。北が上なので v は符号を反転
-- 軌跡は前のコマを `destination-in` で薄める（`FADE`）。専用の canvas（`mapWind` の pane・z 390）なので他を巻き添えにしない
-- 色は風速の帯（`WIND_FLOW.COLORS`）。⚠ 判定の閾値（`THRESH`）とは切り離す（層によって意味が違う）
+- 速さは**ズームに依らない見た目の速さ**。⚠ **風速に正比例させない**（v4.117.0）：1コマの移動量は
+  `windFlowPx(ms)` = `SPEED_K`(0.5) × √max(風速, `SPEED_MIN_MS` 0.7)。正比例（1 m/s あたり 0.16px）だと弱風で粒が止まり、
+  実機で点にしか見えなかった。風速の大小は**色**で読む（色は `windFlowColorIndex` で見た目の速さから風速に戻して決める）。北が上なので v は符号を反転
+- 軌跡は前のコマを `destination-in` で薄める（`FADE` 0.96。0.9 では尾が短かった）。⚠ 8bit の透明度は丸めで小さい値が消え残るので、
+  `CLEAN_EVERY`(8) コマごとに `CLEAN_FADE`(0.8) で強めに払う（残像は透明度 3/255 以下）。専用の canvas（`mapWind` の pane・z 390）なので他を巻き添えにしない
+- 色は風速の帯（`WIND_FLOW.COLORS`）。明るい色＋暗い縁取り（`HALO`）で、淡色地図にも紫の重ね（雨雲など）にも沈まない。
+  ⚠ 縁取りは `butt`（丸い端だと1コマ前の短い線の端を毎回塗りつぶして尾が暗くなる）。
+  ⚠ 判定の閾値（`THRESH`）とは切り離す（層によって意味が違う）
 - **場の外（風の無い所・画面の外）に粒を置かない**。出たらその場で撒き直す（`spawnParticle`）
 - 格子は**画面を囲む点まで**取る（`windFieldLattice`）。内側だけだと端に粒子の無い帯が出た
-- iPhone の負荷：canvas の倍率を `DPR_MAX`(1.5) で頭打ち、**30コマ／秒**、粒の数は面積比例（`MIN` 150〜`MAX` 1,400）
+- iPhone の負荷：canvas の倍率を `DPR_MAX`(1.5) で頭打ち、**30コマ／秒**、粒の数は面積比例（`DENSITY` 1/450。`MIN` 150〜`MAX` 1,400）
 - **止める**：地図を動かし始めた（`movestart`/`zoomstart`。動き終わったら撒き直す）・層を切った・地図を閉じた・画面が隠れた
 - 検査は `tests/smoke_windflow.mjs`
 
@@ -328,10 +333,8 @@ Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると�
 | `pickMapPoint(lat, lon, name)` | 検索結果・百名山の△ | **渡された名前を使う**。`mapFlyTo` でその地点へ飛ぶ |
 | `pickPinPoint(lat, lng)` | 長押しで落としたピン | 地名が分からないので**逆ジオコーディングで引く** |
 
-選んだ地点の**緯度経度**は `updateLatLonLabel()` が `#map-latlon` に4桁で出す。
-⚠ **消したり桁を落としたりしないこと。** `areas.json` の座標が山頂を指しているかを
-人が確かめる唯一の手段（#13）。開発環境から地理院に到達できず、座標の正否を
-機械で決められないため。長押しで山頂を選び、この数字を `areas.json` に写す。
+選んだ地点の緯度経度（`#map-latlon`・#13）は **v4.117.0 で外した**（利用者の判断。座標は地図の現在地から取る）。
+`areas.json` の座標の検査は Actions「山頂座標の検査」（`check` / `snap` / `search`）で行う。
 
 表示名は `setPickedName`、
 移動は `mapFlyTo(lat, lon, zoom)`（`flyTo`, duration 0.8s。`setView` の瞬間移動は使わない）。

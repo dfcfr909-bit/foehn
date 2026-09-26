@@ -487,9 +487,8 @@ html, body {
 /* ⚠ **iOSの虫眼鏡（テキスト選択のルーペ）を出さない。**
    なぞって時刻を選ぶこの領域では、指を置くたびにルーペが被さって邪魔になる
    （利用者からの指摘）。ここには選択して嬉しいものが何も無いので選択自体を切る。
-   ⚠ **一括で全画面に指定しないこと。** 地図の緯度経度（`#map-latlon`）は
-     逆に「タップでコピーさせたい」ので `user-select: all` にしてある（#13）。
-     指を置いてなぞる場所だけに絞る。 */
+   ⚠ **一括で全画面に指定しないこと。** 指を置いてなぞる場所だけに絞る
+     （地図の検索欄など、選択できないと困る所がある）。 */
 #charts-outer, #scrubber {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -1025,14 +1024,8 @@ html, body {
 #map-picked b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #map-elev { font-size: 11px; color: var(--text2); flex-shrink: 0; }
 #map-elev:empty { display: none; }
-/* 選んだ地点の緯度経度。areas.json の座標が山頂を指しているか人が確かめるための表示
-   （#13。長押しで山頂を選び、ここの数字を areas.json に写す）。
-   タップでコピーできるよう pointer-events は殺さない */
-#map-latlon {
-  font-size: 10px; font-family: var(--font-mono); color: var(--text2);
-  flex-shrink: 0; user-select: all; -webkit-user-select: all;
-}
-#map-latlon:empty { display: none; }
+/* ⚠ 選んだ地点の緯度経度（#map-latlon・#13）は v4.117.0 で外した（利用者判断）。
+   座標は地図の現在地から取る。山頂座標の検査は Actions「山頂座標の検査」（check/snap/search）で行う */
 /* 🏠＋円柱の器（#fav-bar）がグラフ画面から引っ越してくる。背景と影は #fav-bar 自身が持つ */
 #map-fav-slot { min-width: 0; }
 #map-tools {
@@ -1403,7 +1396,6 @@ html, body {
   #map-overlay #map-scale-bar { border-color: #f2f4f7; }
   #map-overlay #map-scale-label { color: #f2f4f7; }
   #map-overlay #map-elev { color: #f2f4f7; background: rgba(12,14,17,0.88); }
-  #map-overlay #map-latlon { color: #cfd6de; background: rgba(12,14,17,0.88); }
 }
 
 /* 案内文は浮かせたうえ、**しばらくすると消える**。
@@ -2264,7 +2256,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.116.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.117.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2339,7 +2331,7 @@ html, body {
           <button id="map-awake-btn" type="button" onclick="toggleWakeLock()"></button>
         </div>
         <div id="map-foot">
-          <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span><span id="map-latlon"></span></div>
+          <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
           <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
           <div id="map-attribution"></div>
         </div>
@@ -7688,7 +7680,9 @@ function drawWindArrows(f, opacity) {
    ⚠ 気象を知らない。見るのは統合した U/V の場（buildWindField / sampleWindField）だけ。
      10m なのか 850 なのか AUTO なのかは場の中に閉じている（WebGL に替えても場は作り直さない）
    ・場を画面の等間隔（STEP_PX）の速度の格子に写してから流す（毎コマ緯度経度に戻さない）
-   ・速さはズームに依らない見た目の速さ（1 m/s あたり SPEED_PX）
+   ・速さはズームに依らない見た目の速さ。⚠ **風速に正比例させない**（v4.117.0）。正比例だと
+     弱風（0〜1 m/s）で粒がほぼ止まり、点にしか見えなかった（実機で「流れが見えない」）。
+     見た目の速さは √風速（下限あり）。風速の大小は**色**で読む
    ・軌跡は前のコマを少しずつ薄める（destination-in）。⚠ 天気記号の座布団の件（ADR-0004）とは
      別の canvas なので巻き添えは無い
    ・iPhone の負荷：canvas の倍率を DPR_MAX で頭打ち、30コマ／秒、粒の数は画面の面積に比例
@@ -7696,18 +7690,25 @@ function drawWindArrows(f, opacity) {
    ============================================================ */
 const WIND_FLOW = {
   STEP_PX: 8,            // 速度の格子の間隔（CSS px）
-  SPEED_PX: 0.16,        // 1 m/s あたりの1コマの移動量（CSS px）
-  DENSITY: 1 / 280,      // 画面の面積（CSS px²）あたりの粒の数
+  SPEED_K: 0.5,          // 1コマの移動量（CSS px）= SPEED_K × √風速。10 m/s で約1.6px
+  SPEED_MIN_MS: 0.7,     // これより弱い風もこの速さで流す（止まって点にならないように。向きは保つ）
+  DENSITY: 1 / 450,      // 画面の面積（CSS px²）あたりの粒の数（尾を伸ばしたので 1/280 から減らした。地図を覆わない）
   MIN: 150, MAX: 1400,
   AGE_MIN: 50, AGE_MAX: 110,   // 寿命（コマ）
-  FADE: 0.9,             // 1コマごとに残す軌跡の濃さ
+  FADE: 0.96,            // 1コマごとに残す軌跡の濃さ（0.9 では尾が短く点に見えた）
+  // ⚠ 8bit の透明度は 0.96 を掛けても小さい値で丸めが止まり、薄い残像が消えない。
+  //   CLEAN_EVERY コマごとに一度だけ強めに薄めて残像を払う
+  CLEAN_EVERY: 8, CLEAN_FADE: 0.8,
   FPS: 30,
   DPR_MAX: 1.5,          // ⚠ iPhone の3倍のままだと毎コマ約300万画素を塗る
-  WIDTH: 1.3,            // 線の太さ（CSS px）
-  // 風速の色（m/s 未満）。判定の閾値（THRESH）とは切り離す（層によって意味が違うため）
-  COLORS: [[3, '#3a5a9a'], [7, '#1f6fb2'], [12, '#138a5a'], [18, '#c98600'], [Infinity, '#c42b2b']],
+  WIDTH: 1.8,            // 線の太さ（CSS px）
+  HALO: 1.4,             // 縁取りの幅（CSS px・線の両側の合計）。明るい地図にも暗い重ねにも沈まないように
+  HALO_COLOR: 'rgba(10,20,40,0.45)',
+  // 風速の色（m/s 未満）。判定の閾値（THRESH）とは切り離す（層によって意味が違うため）。
+  // ⚠ 暗い色は紫の重ね（雨雲など）の上で消えた。明るい色＋暗い縁取りにする
+  COLORS: [[3, '#9fdcff'], [7, '#45b4ff'], [12, '#3ddc84'], [18, '#ffc233'], [Infinity, '#ff5a5a']],
 };
-const windFlow = { cv: null, ctx: null, grid: null, parts: [], raf: 0, last: 0, running: false, dpr: 1, w: 0, h: 0 };
+const windFlow = { cv: null, ctx: null, grid: null, parts: [], raf: 0, last: 0, frame: 0, running: false, dpr: 1, w: 0, h: 0 };
 
 function windFlowCanvas() {
   if (windFlow.cv) return windFlow.cv;
@@ -7732,6 +7733,8 @@ function placeWindFlowCanvas() {
   L.DomUtil.setPosition(cv, leafletMap.containerPointToLayerPoint([0, 0]));
   cv.style.opacity = String(overlayOpacity('windFlow'));
 }
+// 風速（m/s）→ 1コマの見た目の移動量（CSS px）。√で弱風を持ち上げ、下限で止まらないようにする
+const windFlowPx = ms => WIND_FLOW.SPEED_K * Math.sqrt(Math.max(ms, WIND_FLOW.SPEED_MIN_MS));
 // 場を画面の速度の格子に写す（1コマ・CSS px 単位。北が上なので v は符号を反転）
 function buildFlowGrid(f) {
   const step = WIND_FLOW.STEP_PX, cols = Math.ceil(windFlow.w / step) + 1, rows = Math.ceil(windFlow.h / step) + 1;
@@ -7741,8 +7744,10 @@ function buildFlowGrid(f) {
       const ll = leafletMap.containerPointToLatLng([c * step, r * step]);
       const w = sampleWindField(f, ll.lat, ll.lng);
       if (!w) continue;
-      const n = r * cols + c;
-      vx[n] = w[0] * WIND_FLOW.SPEED_PX; vy[n] = -w[1] * WIND_FLOW.SPEED_PX; ok[n] = 1;
+      const n = r * cols + c, ms = Math.hypot(w[0], w[1]);
+      // 完全な無風は向きが無いので動かさない（粒は寿命で撒き直される）
+      const k = ms > 1e-3 ? windFlowPx(ms) / ms : 0;
+      vx[n] = w[0] * k; vy[n] = -w[1] * k; ok[n] = 1;
     }
   }
   return { step, cols, rows, vx, vy, ok, okCount: ok.reduce((a, b) => a + b, 0) };
@@ -7791,8 +7796,9 @@ function updateWindFlow(f) {
   windFlow.ctx.clearRect(0, 0, windFlow.cv.width, windFlow.cv.height);
   if (!windFlow.running) { windFlow.running = true; windFlow.last = 0; windFlow.raf = requestAnimationFrame(windFlowFrame); }
 }
+// 見た目の移動量から風速に戻して色を決める（windFlowPx の逆。下限より弱い風は下限＝最も弱い色）
 function windFlowColorIndex(spdPx) {
-  const ms = spdPx / WIND_FLOW.SPEED_PX;
+  const ms = (spdPx / WIND_FLOW.SPEED_K) ** 2;
   return WIND_FLOW.COLORS.findIndex(([lim]) => ms < lim);
 }
 function windFlowFrame(ts) {
@@ -7802,9 +7808,10 @@ function windFlowFrame(ts) {
   windFlow.last = ts;
   const { ctx, dpr, grid } = windFlow;
   const W = windFlow.cv.width, H = windFlow.cv.height;
-  // 前のコマを薄める（軌跡）
+  // 前のコマを薄める（軌跡）。ときどき強めに薄めて、丸めで消え残る残像を払う
   ctx.globalCompositeOperation = 'destination-in';
-  ctx.fillStyle = `rgba(0,0,0,${WIND_FLOW.FADE})`;
+  const clean = ++windFlow.frame % WIND_FLOW.CLEAN_EVERY === 0;
+  ctx.fillStyle = `rgba(0,0,0,${clean ? WIND_FLOW.CLEAN_FADE : WIND_FLOW.FADE})`;
   ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'source-over';
   // 色ごとにまとめて1回で描く
@@ -7819,14 +7826,25 @@ function windFlowFrame(ts) {
     // 場の外（風の無い所・画面の外）へ出たらその場で撒き直す（無い所に粒を残さない）
     if (!flowAt(grid, p.x, p.y)) spawnParticle(p);
   }
-  ctx.lineWidth = WIND_FLOW.WIDTH * dpr;
+  const trace = seg => {
+    ctx.beginPath();
+    for (let i = 0; i < seg.length; i += 4) { ctx.moveTo(seg[i] * dpr, seg[i + 1] * dpr); ctx.lineTo(seg[i + 2] * dpr, seg[i + 3] * dpr); }
+  };
+  // 先に暗い縁取りを全部描き、その上に色の線（色の線が隣の縁取りに潰されないように）
+  const all = [].concat(...paths);
+  // ⚠ 縁取りは butt（丸い端だと、1コマ前の短い線の端まで毎回塗りつぶして尾が暗くなる）
+  if (all.length) {
+    ctx.lineCap = 'butt';
+    ctx.lineWidth = (WIND_FLOW.WIDTH + WIND_FLOW.HALO) * dpr;
+    ctx.strokeStyle = WIND_FLOW.HALO_COLOR;
+    trace(all); ctx.stroke();
+  }
   ctx.lineCap = 'round';
+  ctx.lineWidth = WIND_FLOW.WIDTH * dpr;
   paths.forEach((seg, k) => {
     if (!seg.length) return;
     ctx.strokeStyle = WIND_FLOW.COLORS[k][1];
-    ctx.beginPath();
-    for (let i = 0; i < seg.length; i += 4) { ctx.moveTo(seg[i] * dpr, seg[i + 1] * dpr); ctx.lineTo(seg[i + 2] * dpr, seg[i + 3] * dpr); }
-    ctx.stroke();
+    trace(seg); ctx.stroke();
   });
 }
 // 画面が隠れたら止める・戻ったら流し直す（電池）
@@ -8449,16 +8467,6 @@ function updateElevationLabel() {
   try { if (leafletMap) buildCharts(); } catch (e) { /* 描画前なら無視 */ }
 }
 
-/* 選んだ地点の緯度経度を出す。areas.json の座標が本当に山頂を指しているかを
-   人が確かめるための表示（#13）。長押しで山頂を選び、ここの数字を写せばよい。
-   ⚠ 桁は areas.json と揃えて4桁（約11m）。これより細かくしても地図の指の精度で意味がない。 */
-function updateLatLonLabel() {
-  const el = document.getElementById('map-latlon');
-  if (!el) return;
-  if (typeof state.lat !== 'number' || typeof state.lon !== 'number') { el.textContent = ''; return; }
-  el.textContent = `${state.lat.toFixed(4)}, ${state.lon.toFixed(4)}`;
-}
-
 /* ------ 画面を消さない（Screen Wake Lock） ------
    ヘディングアップで自機を追跡している最中に画面が落ちると、地図として使えない。
 
@@ -8638,7 +8646,6 @@ function pickMapPoint(lat, lon, name, elev) {
 
 // 地点名の表示（地図を開いたまま選べるので、今どこを選んでいるか常に出す）
 function setPickedName(name) {
-  updateLatLonLabel();          // 地点名が変わる＝地点が変わったとき
   const el = document.getElementById('map-picked-name');
   if (el) el.textContent = name || '—';
 }

@@ -1764,12 +1764,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   });
   ok(picked.twoArg, '★名前つきで選ぶpickMapPointが生きている（長押しはpickPinPointに分離）', picked);
   ok(picked.moved, '★検索結果をタップすると地図がその地点へ飛ぶ', picked);
-  /* ★選んだ地点の緯度経度を出す（#13）。areas.json の座標が山頂を指しているか
-     人が確かめる唯一の手段なので、消したり桁を落としたりしないこと。
-     開発環境から地理院に到達できず、座標の正否を機械で決められないため。 */
-  const latlon = await pageS.evaluate(() => (document.getElementById('map-latlon') || {}).textContent || '');
-  ok(/^-?\d+\.\d{4}, -?\d+\.\d{4}$/.test(latlon),
-    '★選んだ地点の緯度経度を4桁で出す（座標検証の手段）', latlon);
+  /* 選んだ地点の緯度経度（#13）は v4.117.0 で外した（利用者判断。座標は地図の現在地から取る。
+     山頂座標の検査は Actions「山頂座標の検査」）。標高の横に戻っていないか */
+  const latlon = await pageS.evaluate(() => !!document.getElementById('map-latlon'));
+  ok(!latlon, '地図の下の緯度経度は出さない（v4.117.0 で外した）', latlon);
   ok(picked.label.includes(picked.name) || picked.picked.includes(picked.name),
     '★タップした名前がそのまま地点名になる（逆ジオコーディングし直さない）', picked);
 
