@@ -16,7 +16,7 @@
  *     GitHub Actions「外部の情報源を調べる」（target: wind-field）から手動実行する。
  *
  * ⚠ **調べるだけ。判定も表示も何も変えない。**
- * ⚠ 相手を叩く回数は7回。大きい要求の間は1分あけて、無料枠（1分600回）に収める。
+ * ⚠ 相手を叩く回数はおよそ12回（elevation=nan は20地点ずつに分ける）。大きい要求の間は1分あけて、無料枠（1分600回）に収める。
  *   Open-Meteo は「地点数 ×（変数の数/10）」で回数を数える（open-meteo の
  *   ForecastApiResult.swift の calculateQueryWeight）。
  * ⚠ ABC判定の層の選び方（WIND_LEVELS / windLevelFor）は本体から読み出す。書き写さない。
@@ -89,7 +89,9 @@ async function om(label, params, base = OM) {
     res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
     text = await res.text();
   } catch (e) {
-    console.log(`  [${label}] 通信できない: ${e.message}`);
+    // fetch failed の中身（接続を切られた・時間切れ等）まで出す
+    const c = e.cause ? ` (${e.cause.code || ''} ${e.cause.message || e.cause})` : '';
+    console.log(`  [${label}] 通信できない: ${e.message}${c} / ${Date.now() - t0}ms`);
     return null;
   }
   calls++;
@@ -100,6 +102,22 @@ async function om(label, params, base = OM) {
   if (!res.ok) { console.log(`    ${text.slice(0, 300)}`); return null; }
   const json = JSON.parse(text);
   return Array.isArray(json) ? json : [json];
+}
+/* 地点を分けて取り、順につなぐ。⚠ elevation=nan を110地点まとめて送ると、HTTPの応答なしで
+   接続を切られた（2026-09-26。5地点なら通る）。分ければ回数の数え方は変わらない */
+async function omChunked(label, pts, extra = {}, size = 20) {
+  const out = [];
+  for (let s = 0; s < pts.length; s += size) {
+    const part = pts.slice(s, s + size);
+    const ex = { ...extra };
+    if (ex.elevation === 'nan') ex.elevation = part.map(() => 'nan').join(',');
+    let r = await om(`${label} ${s + 1}〜${s + part.length}`, baseParams(part, ex));
+    if (!r) { await sleep(10000); r = await om(`${label} ${s + 1}〜${s + part.length} 再試行`, baseParams(part, ex)); }
+    if (!r) return null;
+    out.push(...r);
+    await sleep(3000);
+  }
+  return out;
 }
 const baseParams = (pts, extra = {}) => ({
   latitude: pts.map(p => p.lat).join(','),
@@ -196,13 +214,13 @@ console.log('## 通信');
 const R1 = await om('峰・既定の標高', baseParams(peaks));
 await sleep(SLEEP_MS);
 // 2) 峰：elevation=nan（標高の補正を切る＝格子そのものの標高が返るはず）
-const R2 = await om('峰・elevation=nan', baseParams(peaks, { elevation: peaks.map(() => 'nan').join(',') }));
+const R2 = await omChunked('峰・elevation=nan', peaks, { elevation: 'nan' });
 await sleep(SLEEP_MS);
 // 3) 横断線：既定と nan
 const linePts = LINES.flatMap(l => l.pts);
 const R3a = await om('横断線・既定の標高', baseParams(linePts));
 await sleep(SLEEP_MS);
-const R3b = await om('横断線・elevation=nan', baseParams(linePts, { elevation: linePts.map(() => 'nan').join(',') }));
+const R3b = await omChunked('横断線・elevation=nan', linePts, { elevation: 'nan' });
 await sleep(SLEEP_MS);
 // 4) モデルの切り替わり：同じ5峰を seamless / msm / gsm で
 const SW_PEAKS = ['谷川岳', '至仏山', '槍ヶ岳', '火打山', '富士山'].map(peakBy);
