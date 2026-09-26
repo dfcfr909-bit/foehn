@@ -145,13 +145,40 @@ html, body {
    スクロールは入力（慣性・スナップ）専用で、駒の見た目の位置はJSが円柱上の
    座標として計算する。駒は左右で中央へ収束するため、地点数が増えても
    横幅は円柱の直径（FAV_R*2）を超えない。 */
+/* 最下段の器。⚠ 余白は地図側の #map-bottom（左右8px・下 6px+safe-area）と揃える。
+   揃っていないと、グラフと地図で🏠の位置がずれる */
+#fav-bar-slot {
+  flex-shrink: 0;
+  padding: 4px 8px calc(6px + var(--sa-bottom));
+  background: var(--surface);
+}
+#fav-bar {
+  display: flex; align-items: center; gap: 4px;
+  height: 52px;
+  padding: 0 4px;
+  border-radius: 12px;
+  background: rgba(var(--surface-rgb), 0.86);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.28);
+}
+#btn-home {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 22px; line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+/* いま自宅を見ているとき */
+#btn-home.on { border: 2px solid var(--accent, #e05020); background: var(--bg2); }
+/* 自宅が未設定のとき。押すと「いまの地点を自宅にしますか？」と聞く */
+#btn-home.unset { opacity: 0.5; }
 #fav-rotary {
-  /* 日付＋時刻と★を置いた残りを使い、右端（★の手前）へ寄せる。
-     枠の広さに応じて円柱の半径と1駒の角度はJSが決める（layoutFavRotary） */
+  /* 🏠の右の残りを横幅いっぱいに使う。円柱の半径と1駒の角度はJSが決める（layoutFavRotary） */
   flex: 1 1 0;
-  margin-left: auto;
   min-width: 0;
-  height: 38px;
+  height: 48px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -160,8 +187,8 @@ html, body {
   touch-action: pan-x;
   overscroll-behavior-x: contain;
   /* 枠が狭いので、端に回り込んだ駒はフェードして消す（窓から円柱を覗く見え方） */
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
 }
 #fav-rotary::-webkit-scrollbar { display: none; }
 /* スクロール量を作るだけの透明トラック（幅はJSで設定） */
@@ -172,7 +199,7 @@ html, body {
   position: sticky;
   left: 0;
   height: 100%;
-  perspective: 300px;
+  perspective: 600px;   /* 半径を大きくしたぶん遠くから見る（近いと端の駒が歪む） */
   perspective-origin: 50% 50%;
   transform-style: preserve-3d;
 }
@@ -180,13 +207,14 @@ html, body {
   position: absolute;
   left: 50%;
   top: 50%;
-  padding: 3px 10px;
+  /* 駒の大きさはあまり変えず、文字だけ大きくした（v4.105.0。12px → 16px） */
+  padding: 4px 10px;
   border: 2px solid transparent;
-  border-radius: 13px;
+  border-radius: 16px;
   background: var(--bg2);
   color: var(--text2);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -223,7 +251,7 @@ html, body {
   top: 50%;
   transform: translate(-50%, -50%);
   max-width: 100%;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text3);
   white-space: nowrap;
@@ -687,7 +715,8 @@ html, body {
 #footer {
   display: flex;
   gap: 6px;
-  padding: 4px 10px calc(4px + var(--sa-bottom));
+  /* ⚠ 下の safe-area は最下段の #fav-bar-slot が持つ（v4.105.0） */
+  padding: 4px 10px 0;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -996,14 +1025,8 @@ html, body {
   flex-shrink: 0; user-select: all; -webkit-user-select: all;
 }
 #map-latlon:empty { display: none; }
-/* 円柱はヘッダーから引っ越してくる。浮いているので背景を敷いて地図と分ける */
-#map-fav-slot {
-  min-width: 0; display: flex;
-  border-radius: 12px;
-  background: rgba(var(--surface-rgb), 0.86);
-  box-shadow: 0 1px 6px rgba(0,0,0,0.28);
-}
-#map-fav-slot > #fav-rotary { flex: 1 1 0; }
+/* 🏠＋円柱の器（#fav-bar）がグラフ画面から引っ越してくる。背景と影は #fav-bar 自身が持つ */
+#map-fav-slot { min-width: 0; }
 #map-tools {
   position: absolute;
   right: 8px;
@@ -1449,6 +1472,12 @@ html, body {
 .fav-item:active { background: var(--bg2); }
 .fav-item-name { flex: 1; font-weight: 700; font-size: 14px; }
 .fav-item-coord { font-size: 10px; font-family: var(--font-mono); color: var(--text3); }
+.fav-home {
+  font-size: 18px; padding: 4px 6px; margin-right: 2px;
+  background: none; border: 2px solid transparent; border-radius: 10px; cursor: pointer;
+  opacity: 0.35;
+}
+.fav-home.on { opacity: 1; border-color: var(--accent, #e05020); }
 .fav-delete {
   font-size: 18px; padding: 4px 6px;
   background: none; border: none; cursor: pointer; color: var(--c-col);
@@ -2058,9 +2087,8 @@ html, body {
       </div>
       <div id="date-holiday"></div>
     </div>
-    <!-- スクロールは入力専用。駒はstickyなstage上に絶対配置して円柱の側面に並べる -->
-    <div id="fav-rotary"><div id="fav-track"><div id="fav-stage"></div></div></div>
-    <!-- ★が抜けた右端へ「現在」を置く。選択が現在から離れたときだけ出る -->
+    <!-- ⚠ お気に入り円柱は最下段の #fav-bar へ移した（v4.105.0。横幅いっぱいで大きく回すため） -->
+    <!-- 右端へ「現在」を置く。選択が現在から離れたときだけ出る -->
     <button id="btn-now" onclick="jumpToNow()">⏱現在</button>
   </div>
 
@@ -2172,6 +2200,18 @@ html, body {
     </button>
     <!-- ⚠ 天気図と「このアプリについて」は地図の右側のボタン列へ移した（v4.105.0）。
          6つ並べると 390px 幅でも「お気に入り」「ランキング」の文字が2行に折れていた -->
+  </div>
+
+  <!-- 最下段：🏠（自宅）＋お気に入り円柱（v4.105.0）。
+       ⚠ **グラフと地図で🏠が同じ位置に来るようにする。** 器ごと地図の下へ引っ越す
+       （moveFavRotaryTo）。上下左右の余白はグラフ側（#fav-bar-slot）と地図側
+       （#map-bottom）で同じにしてある。片方だけ変えると🏠の位置がずれる -->
+  <div id="fav-bar-slot">
+    <div id="fav-bar">
+      <button id="btn-home" type="button" onclick="goHome()" aria-label="自宅" title="自宅（お気に入り一覧で設定）">🏠</button>
+      <!-- スクロールは入力専用。駒はstickyなstage上に絶対配置して円柱の側面に並べる -->
+      <div id="fav-rotary"><div id="fav-track"><div id="fav-stage"></div></div></div>
+    </div>
   </div>
 
   <!-- Map Overlay -->
@@ -3019,15 +3059,16 @@ function updateLocationName() {
 /* ------ お気に入り地点ピッカー（縦軸まわりに回る円柱） ------ */
 // 円柱の側面に地点名が書いてあるイメージ。駒は円周上に置き、正面に来たものが選択地点。
 // スクロールは入力（慣性・スナップ）専用で、駒の位置はここで円柱の座標として計算する。
-const FAV_STEP  = 54;   // 駒1つぶんのスクロール量(px)。回す手応えの重さ
+const FAV_STEP  = 64;   // 駒1つぶんのスクロール量(px)。回す手応えの重さ（直径を大きくしたので重めに）
 // 半径と1駒の角度は枠の広さと駒の幅から layoutFavRotary が決める（下は初期値）
 let FAV_ANGLE = 42;     // 駒1つぶんの回転角(deg)。枠が狭いほど大きくする
-let FAV_R     = 96;     // 円柱の半径(px)。枠の半分を上限にする
+let FAV_R     = 150;    // 円柱の半径(px)。枠の半分を上限にする
 
 let favScrollTimer = null;
 let favRotaryProgrammatic = false;   // プログラム的スクロールを無視するフラグ
 let favRotaryKey = '';               // 今DOMが表している地点リスト（再構築の要否判定）
 let favRafPending = false;
+let favSpunByUser = false;           // 利用者が円柱を回したか（自宅を見ている間の強調の要否）
 
 // 2地点が同一か（緯度経度の近接判定）
 function sameLoc(a, b) {
@@ -3035,13 +3076,53 @@ function sameLoc(a, b) {
 }
 
 // 円柱に並べる地点（お気に入り＋未登録なら現在地点を先頭に）
+// ⚠ 自宅は🏠ボタン専用なので円柱には並べない。いま自宅を見ているときも先頭に足さない
 function favRotaryItems() {
-  const favs = loadFavs();
+  const home = loadHome();
+  const favs = loadFavs().filter(f => !(home && sameLoc(f, home)));
   const items = favs.slice();
-  if (!favs.some(f => sameLoc(f, state))) {
+  const atHome = home && sameLoc(home, state);
+  if (!atHome && !favs.some(f => sameLoc(f, state))) {
     items.unshift({ name: state.locationName, lat: state.lat, lon: state.lon });
   }
   return items;
+}
+
+/* ------ 自宅（🏠）------
+   ⚠ お気に入りとは別に1地点だけ持つ。設定はお気に入り一覧の🏠で。
+   未設定で🏠を押したら、いまの地点を自宅にするか聞く */
+function loadHome() {
+  try {
+    const h = JSON.parse(localStorage.getItem('sotoki_home') || 'null');
+    return (h && isFinite(h.lat) && isFinite(h.lon) && typeof h.name === 'string') ? h : null;
+  } catch { return null; }
+}
+function saveHome(h) {
+  try {
+    if (h) localStorage.setItem('sotoki_home', JSON.stringify({ name: h.name, lat: h.lat, lon: h.lon }));
+    else localStorage.removeItem('sotoki_home');
+  } catch { /* 保存できない環境 */ }
+  favRotaryKey = '';            // 顔ぶれが変わるので作り直させる
+  renderFavRotary();
+  updateHomeButton();
+}
+function goHome() {
+  const home = loadHome();
+  if (!home) {
+    if (confirm(`いまの地点「${state.locationName}」を自宅（🏠）にしますか？\n（あとから お気に入り一覧 の🏠で変えられます）`)) {
+      saveHome({ name: state.locationName, lat: state.lat, lon: state.lon });
+    }
+    return;
+  }
+  selectFav(home.lat, home.lon, home.name);
+}
+function updateHomeButton() {
+  const btn = document.getElementById('btn-home');
+  if (!btn) return;
+  const home = loadHome();
+  btn.classList.toggle('unset', !home);
+  btn.classList.toggle('on', !!(home && sameLoc(home, state)));
+  btn.title = home ? `自宅（${home.name}）` : '自宅（未設定。押すといまの地点を自宅にできます）';
 }
 
 // 現在の地点に対応する駒
@@ -3063,6 +3144,8 @@ function renderFavRotary() {
   if (!el || !stage || !track) return;
   const items = favRotaryItems();
   const key = items.map(f => `${f.name}@${f.lat.toFixed(4)},${f.lon.toFixed(4)}`).join('|');
+  favSpunByUser = false;
+  updateHomeButton();
 
   if (!items.length) {
     stage.innerHTML = `<span class="fav-rotary-empty">${state.locationName || '──'}</span>`;
@@ -3075,6 +3158,7 @@ function renderFavRotary() {
   // （地点選択のたびに全消し→再構築するとスクロール位置がリセットされて引っかかる）
   if (key === favRotaryKey && stage.querySelector('.fav-chip')) {
     centerActiveChip(true);
+    updateFavRotaryTransforms();   // ⚠ 自宅へ移ったときは正面合わせが起きないので、強調をここで外す
     updateFavStar();
     return;
   }
@@ -3115,10 +3199,14 @@ function layoutFavRotary() {
   let chipW = 0;
   chips.forEach(c => { chipW = Math.max(chipW, c.offsetWidth); });
   chipW = chipW || 70;
-  FAV_R = Math.max(30, Math.min(96, (w / 2) * 0.98));   // 「現在」表示時は枠がさらに狭くなる
+  /* ⚠ 半径の上限（以前は96px）は外した。最下段で横幅いっぱいを使うので、
+     **枠の半分まで大きくする**（直径の大きいダイヤルを回す手応え。v4.105.0） */
+  FAV_R = Math.max(30, (w / 2) * 0.98);
   const cw = (chipW / 2) / FAV_R;
   FAV_ANGLE = 78;
-  for (let a = 40; a <= 78; a += 2) {
+  /* ⚠ 探索は20°から。以前は40°からで、半径を大きくしても片側に2駒しか並ばなかった
+     （直径の大きいダイヤルなら1駒の角度は小さくてよい） */
+  for (let a = 20; a <= 78; a += 2) {
     const r = a * Math.PI / 180;
     if (Math.sin(r) - cw * Math.cos(r) >= cw) { FAV_ANGLE = a; break; }
   }
@@ -3157,7 +3245,10 @@ function updateFavRotaryTransforms() {
     if (ad < bestD) { bestD = ad; best = chip; }
   });
   // 回している最中も正面の駒を即座に強調する（選択の確定はスクロール停止後）
-  chips.forEach(c => c.classList.toggle('centered', c === best));
+  // ⚠ いま自宅を見ているとき、円柱にその地点は無い。回すまでは強調しない（選んでいるように見えてしまう）
+  const home = loadHome();
+  const idle = home && sameLoc(home, state) && !favSpunByUser;
+  chips.forEach(c => c.classList.toggle('centered', !idle && c === best));
 }
 
 // 指定番号の駒を正面へ回す。select=trueならその地点を選択する
@@ -3249,6 +3340,9 @@ function centeredChip() {
   }).observe(el);
 })();
 
+// 🏠の見た目は起動時にも合わせる（天気を一度も読まない起動でも「未設定」を出す）
+updateHomeButton();
+
 // 回している間は毎フレーム角度を更新し、止まったら正面の駒に吸い付けて選択を確定する
 (function bindFavRotary() {
   const el = document.getElementById('fav-rotary');
@@ -3258,6 +3352,7 @@ function centeredChip() {
       requestAnimationFrame(() => { favRafPending = false; updateFavRotaryTransforms(); });
     }
     if (favRotaryProgrammatic) return;
+    favSpunByUser = true;
     clearTimeout(favScrollTimer);
     favScrollTimer = setTimeout(() => {
       const chip = centeredChip();
@@ -7186,8 +7281,9 @@ function setOverlayOpacity(id, value) {
    2つ作ると寸法計算（layoutFavRotary）と選択確定が二重になって必ず食い違うため。
    幅が変わるので寸法は取り直すが、#fav-rotary のResizeObserverが拾ってくれる。 */
 let favRotaryHome = null;      // { parent, next } 元の居場所
+/* ⚠ 動かすのは円柱ではなく🏠ごとの器（#fav-bar）。🏠をグラフと地図で同じ位置に出すため */
 function moveFavRotaryTo(slot) {
-  const el = document.getElementById('fav-rotary');
+  const el = document.getElementById('fav-bar');
   if (!el || !slot || el.parentNode === slot) return;
   if (!favRotaryHome) favRotaryHome = { parent: el.parentNode, next: el.nextSibling };
   slot.appendChild(el);
@@ -7195,7 +7291,7 @@ function moveFavRotaryTo(slot) {
   centerActiveChip();
 }
 function restoreFavRotary() {
-  const el = document.getElementById('fav-rotary');
+  const el = document.getElementById('fav-bar');
   if (!el || !favRotaryHome || el.parentNode === favRotaryHome.parent) return;
   favRotaryHome.parent.insertBefore(el, favRotaryHome.next);
   layoutFavRotary();
@@ -8650,8 +8746,20 @@ function renderFavList() {
         <div class="fav-item-name">${f.name}</div>
         <div class="fav-item-coord">${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}</div>
       </div>
+      <button class="fav-home" data-i="${i}" aria-label="自宅にする">🏠</button>
       <button class="fav-delete" data-i="${i}">🗑</button>
     `;
+    // 自宅に指定済みの地点は🏠を点ける。押すと自宅の指定を切り替える
+    const home = loadHome();
+    const isHome = !!(home && sameLoc(home, f));
+    const hb = el.querySelector('.fav-home');
+    hb.classList.toggle('on', isHome);
+    hb.title = isHome ? '自宅の指定を外す' : 'この地点を自宅（🏠）にする';
+    hb.addEventListener('click', e => {
+      e.stopPropagation();
+      saveHome(isHome ? null : f);
+      renderFavList();
+    });
     el.querySelector('.fav-delete').addEventListener('click', e => {
       e.stopPropagation();
       const favs2 = loadFavs();
@@ -9179,6 +9287,10 @@ function showLoading(msg) {
 }
 function hideLoading() {
   document.getElementById('loading-overlay').style.display = 'none';
+  /* ⚠ 地図を開いている間は、取得中の文言を地点名の欄に出している（showLoading）。
+     取り終えたら地点名へ戻す。戻していなかったので「気象データ取得中…」が
+     地点名の欄に残り続けていた（実機のスクリーンショットで「気…」と出ていた） */
+  if (isMapOpen()) setPickedName(state.locationName);
 }
 
 /* ============================================================

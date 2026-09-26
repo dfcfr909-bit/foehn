@@ -171,6 +171,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `centeredChip()` | いま正面にある駒 | 約 2389 |
 | `selectFav(lat, lon, name)` | 駒を選んで地点を切り替える（`releaseFollow` を呼ぶ） | 約 2378 |
 | `toggleFavStar` / `updateFavStar` | ヘッダーの★ | 約 2360 / 2369 |
+| `loadHome` / `saveHome` / `goHome` / `updateHomeButton` | **自宅🏠**（`sotoki_home`。円柱には並べない。v4.105.0） | 約 3109 |
 
 ## 日付バッジ・祝日・ポップアップ
 
@@ -407,7 +408,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `updateMapAttribution()` | **出典表記（消さない）** | 約 5521 |
 | `setMapBase(id)` | ベースの切り替え | 約 5534 |
 | `isOverlayOn` / `overlayOpacity` / `toggleOverlay` / `setOverlayOpacity` | オーバーレイの操作 | 約 5542-5570 |
-| `moveFavRotaryTo(slot)` / `restoreFavRotary()` | **円柱の引っ越し（DOMは1つだけ）** | 約 5592 / 5600 |
+| `moveFavRotaryTo(slot)` / `restoreFavRotary()` | **🏠＋円柱の器（`#fav-bar`）の引っ越し（DOMは1つだけ）** | 約 5592 / 5600 |
 | `toggleLayerPanel` / `closeLayerPanel` / `renderLayerPanel` | レイヤーパネル | 約 5689-5730 |
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |

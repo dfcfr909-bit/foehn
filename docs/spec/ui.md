@@ -4,10 +4,27 @@
 
 ## ヘッダー（48px 1行）
 
-左＝日付バッジ（大きな日付＋選択時刻＋★） / 中＝お気に入り円柱 / 右＝「現在」ボタン。
+左＝日付バッジ（大きな日付＋選択時刻＋★） / 右＝「現在」ボタン。
+**お気に入り円柱は v4.105.0 で最下段（`#fav-bar`）へ移した**（下の節）。
 
 「現在」ボタンは選択が現在から離れたときだけ出る（`updateNowButton()`）。
-出ている間は円柱の枠が狭くなるが、ResizeObserver が寸法を取り直すので破綻しない。
+
+## 最下段のバー（`#fav-bar`）と自宅（🏠）— v4.105.0
+
+画面の最下段（フッターの下）に **🏠＋お気に入り円柱** を1行で置く。
+
+- ⚠⚠ **🏠はグラフと地図で同じ位置に出す**（利用者の要望）。器 `#fav-bar` ごと地図の
+  `#map-fav-slot` へ引っ越す（`moveFavRotaryTo` / `restoreFavRotary`）。
+  **余白はグラフ側 `#fav-bar-slot` と地図側 `#map-bottom` で揃えてある**（左右8px・下 6px＋safe-area）。
+  片方だけ変えると🏠の位置がずれる。検査は `tests/smoke_home.mjs`（390/360px で1px以内）
+- フッターの下の safe-area は `#fav-bar-slot` が持つ（フッターからは外した）
+- **自宅はお気に入りとは別に1地点だけ**（`localStorage` の `sotoki_home`。`loadHome` / `saveHome`）。
+  設定は**お気に入り一覧の各行の🏠**（押すと指定／もう一度で解除）。
+  **未設定で🏠を押すと「いまの地点を自宅にしますか？」と聞く**（`goHome`）
+- **自宅は円柱に並べない**（🏠専用）。いま自宅を見ている間も円柱の先頭に足さない。
+  ⚠ その間は円柱の正面の駒を**「選択中」に見せない**（`favSpunByUser` が立つまで）。
+  回せばその地点へ移る（自宅から抜けられる）
+- 🏠の見た目（`updateHomeButton`）：未設定は薄く、自宅を見ている間は枠を点ける
 
 ## 日付バッジ（`#date-badge`）
 
@@ -50,16 +67,19 @@
 - **`FAV_R` と `FAV_ANGLE` は固定値ではなく `layoutFavRotary()` が枠の広さと駒の幅から決める。**
   隣の駒が正面と重ならない条件 `R·sinθ − (cw/2)cosθ ≧ cw/2` を満たす最小の角度を採る。
   枠が狭いほど半径は小さく角度は大きくなる
+- **v4.105.0：横幅いっぱいの大きい直径にした。** 半径の上限（96px）を外して枠の半分まで、
+  角度の探索は20°から（40°からだと半径を大きくしても片側に2駒しか並ばなかった）。
+  駒の大きさはあまり変えず**文字だけ 12px → 16px**。`FAV_STEP` 54 → 64、`perspective` 300 → 600px
 - 枠幅は日付の文字数で変わるので **ResizeObserver で監視して寸法を取り直す**
-- 枠自体は `flex: 1 1 0` ＋ `margin-left:auto` で、日付と★を置いた残りを右寄せで使う
+- 枠自体は `flex: 1 1 0` で、🏠の右の残りを横幅いっぱいに使う
 - 正面の駒＝選択地点（`.centered`）。回している最中も正面の駒が即座に強調される
 - **地点リストの顔ぶれが変わらない限り DOM を作り直さない**（`favRotaryKey` で判定）
 
 主な関数: `favRotaryItems` / `renderFavRotary` / `layoutFavRotary` /
 `updateFavRotaryTransforms` / `spinToIndex` / `centerActiveChip` / `centeredChip` / `selectFav`
 
-**円柱の DOM は1つだけ。** 地図を開いている間だけ `#map-fav-slot` へ引っ越し
-（`moveFavRotaryTo` / `restoreFavRotary`）、閉じたらヘッダーへ戻す → `map.md`
+**円柱の DOM は1つだけ。** 地図を開いている間だけ🏠ごと（`#fav-bar`）`#map-fav-slot` へ引っ越し
+（`moveFavRotaryTo` / `restoreFavRotary`）、閉じたら最下段へ戻す → `map.md`
 
 ## お気に入り一覧（全画面オーバーレイ）
 

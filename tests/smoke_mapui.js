@@ -1220,14 +1220,14 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(fly.open, '円柱で選んでも地図は開いたまま');
   await page.waitForTimeout(1200);
 
-  // 閉じると円柱はヘッダーへ戻る
+  // 閉じると円柱は元の場所（グラフ画面の最下段 #fav-bar-slot。v4.105.0 でヘッダーから移した）へ戻る
   await page.evaluate(() => closeMap());
   await page.waitForTimeout(300);
   const rotaryHome = await page.evaluate(() => ({
-    inHeader: document.getElementById('header').contains(document.getElementById('fav-rotary')),
+    inSlot: document.getElementById('fav-bar-slot').contains(document.getElementById('fav-rotary')),
     count: document.querySelectorAll('#fav-rotary').length,
   }));
-  ok(rotaryHome.inHeader && rotaryHome.count === 1, '地図を閉じると円柱はヘッダーへ戻る', rotaryHome);
+  ok(rotaryHome.inSlot && rotaryHome.count === 1, '地図を閉じると円柱はグラフ画面の最下段へ戻る', rotaryHome);
   await page.evaluate(() => openMap());
   await page.waitForTimeout(600);
 

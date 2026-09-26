@@ -26,8 +26,12 @@
 開閉は `openMap()` / `closeMap()` / `isMapOpen()`。
 **地点を選んでも地図は閉じない。** 閉じるのは✕を押したときだけ。
 
-**円柱ピッカーの DOM は1つだけ。** 地図を開いている間だけ `#map-fav-slot` へ引っ越す
-（`moveFavRotaryTo` / `restoreFavRotary`）→ `ui.md`
+**円柱ピッカーの DOM は1つだけ。** 地図を開いている間だけ🏠ごと（`#fav-bar`）`#map-fav-slot` へ引っ越す
+（`moveFavRotaryTo` / `restoreFavRotary`）→ `ui.md`。⚠ 🏠をグラフと地図で同じ位置に出すため、
+`#map-bottom` の余白（左右8px・下 6px＋safe-area）はグラフ側の `#fav-bar-slot` と揃えてある
+
+地図を開いている間の「取得中…」は地点名の欄に出る（`showLoading`）。**取り終えたら `hideLoading` が
+地点名へ戻す**（v4.105.0。戻していなかったので「気象データ取得中…」が残り続けていた）
 
 ## レイヤー定義
 

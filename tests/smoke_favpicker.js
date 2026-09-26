@@ -79,15 +79,22 @@ function fakeWeather() {
       favR: FAV_R,
       favAngle: FAV_ANGLE,
       opacities: chips.map(c => Number(c.style.opacity)),
-      // 独立バーは廃止し、ヘッダーに同居させた（省スペース化の確認）
-      favBarGone: document.getElementById('fav-bar') === null,
+      /* v4.105.0: 円柱はヘッダーから**最下段の #fav-bar**（🏠の右）へ移した。
+         横幅いっぱいを使って直径の大きいダイヤルにするため */
+      inBottomBar: !!document.getElementById('fav-bar') && document.getElementById('fav-bar').contains(el),
+      notInHeader: !document.getElementById('header').contains(el),
+      barAtBottom: (() => {
+        const b = document.getElementById('fav-bar').getBoundingClientRect();
+        return window.innerHeight - b.bottom < 20;
+      })(),
       headerH: document.getElementById('header').getBoundingClientRect().height,
-      inHeader: document.getElementById('header').contains(el),
+      maxShownAngle: Math.max(...chips.filter(c => c.style.display !== 'none').map(c => Math.abs(ang(c)))),
+      chipFont: parseFloat(getComputedStyle(chips[0]).fontSize),
       // 日付はヘッダー左上。凡例はスクラバー帯より後ろ（＝下段）に移した
       dateInHeader: document.getElementById('header').contains(document.getElementById('date-badge')),
       legendBelow: !!(document.getElementById('time-scroll').compareDocumentPosition(
         document.getElementById('legend')) & Node.DOCUMENT_POSITION_FOLLOWING),
-      // 円柱は日付＋時刻と★を置いた残りを使い、右端（★の手前）に寄っている
+      // 円柱は🏠の右の残りを横幅いっぱいに使う
       rotaryFrac: el.getBoundingClientRect().width / window.innerWidth,
       rotaryRightGap: window.innerWidth - el.getBoundingClientRect().right,
       // ヘッダーがはみ出していないこと（日付を大きくしたので幅が競合しやすい）
@@ -146,17 +153,19 @@ function fakeWeather() {
     init.count === 4 && init.hasPerspective && init.stagePosition === 'sticky' &&
     init.centered.length === 1 && init.centered[0] === '立山・黒部' &&
     centerAngle < 1 && Math.abs(edgeAngle - init.favAngle) < 1 &&   // 駒1つ=FAV_ANGLEで回る円柱
-    init.hiddenCount >= 1 &&                                 // 裏側/枠外の駒は消えている
+    init.maxShownAngle < 88 &&                               // 裏側の駒は出さない
     init.maxAbsX <= init.favR + 0.5 &&                       // 横の広がりが半径以内
     Math.max(...init.opacities) - Math.min(...init.opacities) > 0.1 &&
-    init.favBarGone && init.inHeader && init.headerH < 56 &&  // ヘッダー同居で省スペース化
+    init.inBottomBar && init.notInHeader && init.barAtBottom && init.headerH < 56 &&  // 最下段へ移した
+    init.favR > 120 &&                                       // 横幅いっぱいの大きい直径（以前は96px止まり）
+    init.chipFont >= 16 &&                                   // 文字を大きく
     init.dateInHeader && init.legendBelow &&                  // 日付は上・凡例は下段
-    init.rotaryFrac > 0.28 && init.headerOverflow === 0 &&    // 残り幅を使い、はみ出さない
+    init.rotaryFrac > 0.7 && init.headerOverflow === 0 &&     // 横幅いっぱい・はみ出さない
     init.versionInLegend && init.versionRightmost &&           // バージョンは下段の右端
     init.starInBadge && init.starRightOfTime && init.nowInHeader &&   // ★は時刻の右、現在はヘッダー
     /^\d+月\d+日\(.\)$/.test(init.dateText) &&               // 日付
     /^\d{2}:00$/.test(init.timeText) &&                       // その隣に選択時刻
-    init.rotaryRightGap < 80 &&                               // 右端寄せ（★＋バージョンの列ぶんだけ空く）
+    init.rotaryRightGap < 30 &&                               // 右端まで使う
     after.centered.length === 1 && after.centered[0] === '槍ヶ岳' &&
     after.locationName === '槍ヶ岳' && Math.abs(after.lat - 36.3417) < 1e-3 &&
     after.domReused && after.count === 4;
