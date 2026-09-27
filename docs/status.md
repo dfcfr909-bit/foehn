@@ -1,4 +1,4 @@
-# 現状（最終更新: 2026-09-27 / v4.126.0）
+# 現状（最終更新: 2026-09-27 / v4.127.0）
 
 セッションを始めたら、まずこのファイルを読む。
 現行仕様は `docs/spec/`（**本体を読む前に `docs/spec/code_map.md`**）。
@@ -15,7 +15,7 @@
   - **Pages は Actions 方式で配信している**（`.github/workflows/pages.yml`）。
     設定画面で「Deploy from a branch」が選べなかったため → `docs/decisions.md`
     `main` にマージすると自動でデプロイされる
-- **本体**: `sotoki_v4.html` 単一ファイル（**12,570行 / トップレベル関数476**（`async function` を含む））。バンドラなし、uPlotは `vendor/` に同梱
+- **本体**: `sotoki_v4.html` 単一ファイル（**12,596行 / トップレベル関数476**（`async function` を含む））。バンドラなし、uPlotは `vendor/` に同梱
   - ⚠ **ファイル名は変えない。** `sw.js`・`index.html`・`manifest`・テスト・`code_map.md` が
     この名前に依存している（55箇所）。リネームするなら独立したPRで
 - **アプリ名は「ナギナビ」/ `NAGI NAV`。** 変えたのはリポジトリ名だけ
