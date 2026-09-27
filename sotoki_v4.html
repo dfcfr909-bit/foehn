@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.129.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.130.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8558,6 +8558,11 @@ function terrainFindCols(G) {
      v4.129.0 から**最も急な上りをたどる**：鞍部から稜線の向きの側の最も高い隣へ出て、そこから上りの流れ先（up）を
      既存の稜線（または頂）に着くまで追う。鞍部から上れば稜線を登るので地形に沿って曲がり、谷は横切れない（必ず上る）。
      DEM の凹凸で斜面へ外れたときの歯止めに、横断すると両側とも BRIDGE_VALLEY_M 以上高い升目（谷の中）に入ったらつながない
+     ⚠ v4.129.0 の実機：谷は止まったが、**斜面の途中や湖岸の鞍部（湖の出口・深さ478m）から、円錐の斜面をそのまま登る線**が残った
+     （線の上は横断すると片側が高く片側が低い＝斜面を斜めに登っている）。鞍部から尾根が無い方向へは上りをたどっても斜面になる。
+     v4.130.0 から**尾根の形**も求める：升目の標高から求めた勾配の向き（8方位に丸めない）と直角に CROSS_M 動いた両側が、
+     どちらも BRIDGE_CREST_M 以上低いこと。満たさない升目が BRIDGE_MISS を超えて続いたらつながない（DEM の凹凸で1〜2升目外れるのは許す）。
+     ⚠ 横断を8方位に丸めた向きで測ると、向きが最大22.5°ずれて斜面の勾配を拾い、本物の尾根でも片側が数m高く出る
    ・帯（地図の塗り）：**沢の帯＝沢筋までの高さ（HAND：流れを下って最初に着く沢筋の升目からの高さ）が設定値以下**、
      **尾根の帯＝稜線からの深さ（流れを上って最初に着く稜線の升目からの深さ）が設定値以下**。
      単純な標高差（半径◯m の中の最高点との差など）ではなく、**流れの経路に沿った相対的な高さ**で決めるので、
@@ -8579,6 +8584,8 @@ const FLOW = {
   FLAT_MIN_M2: 20000,     // 平らな升目のかたまりがこの広さ以上なら「平坦地」（湖面・湿原）。沢・稜線・帯を作らない
   BRIDGE_MAX_M: 1500,     // つなぐ長さの上限（m）。これで着かなければつながない
   BRIDGE_VALLEY_M: 1,     // つなぎの途中で、横断すると両側ともこれ以上高い升目（谷の中）に入ったらつながない
+  BRIDGE_CREST_M: 1,      // つなぎの升目は、勾配と直角に CROSS_M 動いた両側がどちらもこれ以上低い（尾根の形）こと（v4.130.0）
+  BRIDGE_MISS: 2,         // 尾根の形を満たさない升目がこの数を超えて続いたらつながない
   BAND_STEPS: [10, 20, 50, 100],   // 帯の幅の切り替え（m）
 };
 const RIDGE_SRC = { PEAK: 1, DIVIDE: 2, BRIDGE: 3 };   // 稜線の出自：頂・分水界（流域の境＋横断の凸）・鞍部からのつなぎ
@@ -8706,6 +8713,25 @@ function terrainFlow(G, cols) {
     }
     return { q, lows, need, dist: dd * G.cell * (DIST[q] === 1 ? 1 : Math.SQRT2) };
   };
+  /* 尾根の形（v4.130.0）：勾配の向き（中心差分・丸めない）と直角に dd 升目ぶん動いた両側（双線形補間）の低さ（m）。
+     勾配がほぼ無い升目（鞍部・頂の上）や端は null（判定しない） */
+  const bil = (fx, fy) => {
+    const x = Math.floor(fx), y = Math.floor(fy);
+    if (x < 0 || y < 0 || x >= nx - 1 || y >= ny - 1) return NaN;
+    const tx = fx - x, ty = fy - y, n = y * nx + x;
+    return (h[n] * (1 - tx) + h[n + 1] * tx) * (1 - ty) + (h[n + nx] * (1 - tx) + h[n + nx + 1] * tx) * ty;
+  };
+  const crestInfo = n => {
+    const x = n % nx, y = (n - x) / nx;
+    if (x < 1 || y < 1 || x >= nx - 1 || y >= ny - 1) return null;
+    const gx = (h[n + 1] - h[n - 1]) / 2, gy = (h[n + nx] - h[n - nx]) / 2, gl = Math.hypot(gx, gy);
+    if (!(gl > 0.05)) return null;   // 1升目あたり 5cm 未満＝ほぼ平ら（向きが定まらない）
+    const px = -gy / gl, py = gx / gl, lows = [];
+    for (const sg of [1, -1]) lows.push(h[n] - bil(x + sg * px * dd, y + sg * py * dd));
+    if (lows.some(v => v !== v)) return null;
+    return { lows, bear: bearingOf(gx, gy), dist: dd * G.cell };
+  };
+  const notCrest = n => { const ci = crestInfo(n); return !!ci && !(ci.lows[0] >= FLOW.BRIDGE_CREST_M && ci.lows[1] >= FLOW.BRIDGE_CREST_M); };
   const inValley = n => { const ci = crossInfo(n); return !!ci && ci.lows[0] <= -FLOW.BRIDGE_VALLEY_M && ci.lows[1] <= -FLOW.BRIDGE_VALLEY_M; };
   // コルで途切れた稜線をつなぐ：稜線の向きの両側へ、最も急な上りをたどって既存の稜線（または頂）に着くまで（v4.129.0）
   let bridged = 0, bridgeFail = 0;
@@ -8722,10 +8748,14 @@ function terrainFlow(G, cols) {
         const nb = ok(c.cell, q); if (nb >= 0 && h[nb] > hb) { hb = h[nb]; n = nb; }
       }
       if (hb < h[c.cell]) n = -1;   // その側に上りが無い（鞍部ではない）ならつながない
-      for (let st = 0; n >= 0 && st < maxSt; st++) {
+      for (let st = 0, miss = 0; n >= 0 && st < maxSt; st++) {
         if (ridge[n]) { reached++; break; }
         if (flat[n] || inValley(n)) break;
+        miss = notCrest(n) ? miss + 1 : 0;
+        if (miss > FLOW.BRIDGE_MISS) break;   // 尾根の形でない升目が続いた＝斜面を登っている
         path.push(n);
+        const px = n % nx, py = (n - px) / nx;
+        if (px < 1 || py < 1 || px >= nx - 1 || py >= ny - 1) break;   // 解析の範囲の端（その先が見えない。端を頂と取り違えない）
         if (up[n] < 0) { reached++; break; }   // 頂（稜線の条件に届かない小さな頂でも、上り詰めた所で止める）
         n = up[n];
       }
@@ -8755,7 +8785,7 @@ function terrainFlow(G, cols) {
     nRidge++;
   }
   let nFlat = 0; for (let n = 0; n < N; n++) nFlat += flat[n];
-  return { down, up, accD, chan, ridge, ridgeSrc, bridgeCol, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, bridgeFail, crossInfo, area, ms: performance.now() - t0 };
+  return { down, up, accD, chan, ridge, ridgeSrc, bridgeCol, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, bridgeFail, crossInfo, crestInfo, area, ms: performance.now() - t0 };
 }
 // 鞍部が稜線の上か（2升目以内に稜線の升目）。将来の風の解析で「どの稜線のコルか」を引く
 function terrainLinkColsToRidges(G, F, cols) {
@@ -9140,6 +9170,10 @@ function terrainRidgeWhy(G, F, cols, gi) {
   const ci = F.crossInfo(best);
   if (ci) out.push(`　横断：上る向き ${DIR8[[7, 0, 1, 6, 2, 5, 4, 3][ci.q]]}（8方位に丸めた向き）・直角に ${f0(ci.dist)}m で両側が ${ci.lows.map(v => v === v ? v.toFixed(1) : '—').join('m／')}m 低い（必要 ${ci.need.toFixed(1)}m）` +
     `・HAND ${f0(F.hand[best])}m・平ら ${F.flat[best] ? 'はい' : 'いいえ'}`);
+  const cr = F.crestInfo(best);
+  out.push(cr ? `　尾根の形：勾配の向き ${Math.round(cr.bear)}°（丸めない）と直角に ${f0(cr.dist)}m で両側が ${cr.lows.map(v => v.toFixed(1)).join('m／')}m 低い` +
+    `（つなぎは両側とも ${FLOW.BRIDGE_CREST_M}m 以上。${cr.lows[0] >= FLOW.BRIDGE_CREST_M && cr.lows[1] >= FLOW.BRIDGE_CREST_M ? '満たす' : '満たさない'}）`
+    : '　尾根の形：勾配がほぼ無い・端（判定しない）');
   return out;
 }
 function terrainProbeCenter() {

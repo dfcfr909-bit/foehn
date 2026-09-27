@@ -335,6 +335,22 @@ const src = await page.evaluate(() => {
   }
   const order = Uint32Array.from(Array.from({ length: N }, (_, i) => i).sort((a, b) => h[b] - h[a] || a - b));
   const G = { nx, ny, N, h, cell, m: 1, order, inner: { x0: 0, y0: 0, x1: nx, y1: ny }, toLL: n => ({ lat: 36 + Math.floor(n / nx) * 1e-4, lng: 139 + (n % nx) * 1e-4 }) };
+  // 円錐の斜面のこぶ（v4.130.0）：こぶと円錐の間の鞍部から円錐の側に尾根は無い。上りをたどると斜面を登るだけなので、つながない。
+  // 円錐の頂は升目の外（北 600m）に置き、こぶは頂から約 2.7km（男体山の湖岸の鞍部と同じくらいの距離）。
+  // ⚠ 頂から約 600m 以内は円錐の斜面そのものが横断して 1m 以上低い（尾根の形になる）。頂の近くでは斜面と尾根を分けられない
+  {
+    const cn = 80, cN = cn * cn, ch = new Float32Array(cN);
+    for (let y = 0; y < cn; y++) for (let x = 0; x < cn; x++) {
+      const X = x * cell, Y = y * cell;
+      ch[y * cn + x] = Math.round((2600 - 0.35 * Math.hypot(X - 1200, Y + 600) + 90 * Math.exp(-((X - 1200) ** 2 + (Y - 2050) ** 2) / (2 * 110 ** 2))) * 10) / 10;
+    }
+    const cOrder = Uint32Array.from(Array.from({ length: cN }, (_, i) => i).sort((a, b) => ch[b] - ch[a] || a - b));
+    const CG = { nx: cn, ny: cn, N: cN, h: ch, cell, m: 1, order: cOrder, inner: { x0: 0, y0: 0, x1: cn, y1: cn }, toLL: G.toLL };
+    const cc = terrainFindCols(CG).cols;
+    const keep2 = FLOW.CROSS_SLOPE; FLOW.CROSS_SLOPE = 1e9;
+    let CF; try { CF = terrainFlow(CG, cc); } finally { FLOW.CROSS_SLOPE = keep2; }
+    var cone = { cols: cc.filter(c => c.prom >= FLOW.BRIDGE_COL_M).length, bridged: CF.bridged, fail: CF.bridgeFail };
+  }
   const found = terrainFindCols(G).cols.filter(c => c.prom >= FLOW.BRIDGE_COL_M);
   const cols = found.map(c => ({ ...c }));
   if (found[0]) cols.push({ ...found[0], ridge: [0, 1] });   // 向きを谷の向きにした（誤った）鞍部
@@ -343,6 +359,7 @@ const src = await page.evaluate(() => {
   let F;
   try { F = terrainFlow(G, cols); } finally { FLOW.CROSS_SLOPE = keep; }
   out.bridged = F.bridged; out.bridgeFail = F.bridgeFail;
+  out.cone = cone;
   for (let n = 0; n < F.ridge.length; n++) {
     if (!F.ridge[n]) { if (F.ridgeSrc[n]) out.bad++; continue; }
     out.ridge++;
@@ -368,6 +385,8 @@ ok(src.ridge > 0 && src.bad === 0 && src.badCol === 0 && src.peak + src.divide +
   '★稜線の升目はすべて出自（頂・分水界・鞍部からのつなぎ）を持つ', src);
 ok(!src.downhill && !src.valley && src.bridged === 1 && src.bridgeFail === 1,
   '★★鞍部からのつなぎは上りをたどる（鞍部より下がらない・谷を横切らない・向きを誤った鞍部はつながない＝謎の直線を出さない）', src);
+ok(src.cone && src.cone.cols >= 1 && src.cone.bridged === 0, '★★斜面のこぶの鞍部から円錐の斜面を登るつなぎを引かない（尾根の形を求める・v4.130.0）', src.cone);
+ok(/尾根の形：勾配の向き \d+°.*（つなぎは両側とも 1m 以上。満たす）/.test(src.text || ''), '「中心を解析」に尾根の形（丸めない勾配の向きの横断）', src.text);
 // 「中心を解析」の表示にも出る（中心の近くの稜線の升目）
 src.probe = await page.evaluate(() => { terrainProbeCenter(); return windGL.lastMeasure; });
 console.log('出自の説明', src.text);
