@@ -418,8 +418,10 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `WIND_TERRAIN` / `windDemTile` / `windDemAt` | 段階1：地形の高さの風の設定／標高タイル（dem_png・控え16枚）／世界座標の標高 | 約 8129 |
 | `windGLTerrainHeight(g, f)` | **段階1**：格子点の標高で `WindVertical.auto` を引き直した格子（元は変えない。AUTO だけ） | 約 8185 |
 | `TERRAIN_SCALES` / `TERRAIN_AN` / `terrainAn` | **段階2**：地形の構造の抽出の縮尺・しきい値・状態（検証用。風は変えない） | 約 8306 |
-| `terrainAnalyzeScale(sc, view, lat)` / `terrainAnalyze()` | 縮尺ごとにならしてヘッセ行列で谷・尾根・鞍部／縮尺をまたいで鞍部をまとめ明瞭度（高・中・低） | 約 8378 |
-| `terrainDraw()` / `terrainSaddleText(g)` | 谷軸・尾根の線と鞍部の◎・横断角／◎を押したときの説明 | 約 8521 |
+| `terrainAnalyzeScale(sc, view, lat)` / `terrainAnalyze()` | 縮尺ごとにならしてヘッセ行列で谷・尾根（鞍部には使わない）／谷・尾根と鞍部をまとめて解析 | 約 8378 |
+| `COL` / `terrainFindCols(view, lat)` | **鞍部＝峰どうしがつながる点**（union-find・深さ＝prominence・両側の峰・向き。閾値は固定しない） | 約 8440 |
+| `TERRAIN_VERIFY_COLS` / `terrainVerifyCols()` | 検証8地点（実在のコル）を順に回って表にする。Actions は `scripts/verifyCols.mjs` | 約 8640 |
+| `terrainDraw()` / `terrainColText(c)` | 谷軸・尾根の線と鞍部の◎（深さ・横断角）／◎を押したときの説明 | 約 8521 |
 | `terrainProbeCenter()` / `terrainRefresh()` | 地図の中心を全部の縮尺で調べる（検証用）／表示範囲が変わったら解析し直す | 約 8607 |
 | `windGLTerrainText()` / `windGLToggleTerrain()` | 計測表示の谷底・尾根の比べ／「高さ:地形・升目」の切り替え | 約 8576 |
 | `updateWindFlowGL(f)` / `stopWindFlowGL()` | 場が変わったら格子だけ作り直す（粒は撒き直さない）／止める | 約 8334 |
