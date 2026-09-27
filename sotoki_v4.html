@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.125.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.126.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8758,41 +8758,106 @@ const DIR8 = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'
 const dir8 = deg => DIR8[Math.round(deg / 45) % 8];
 
 /* ------ 表示（開発用の重ね）------ */
-/* ------ 尾根・沢の線（ベクトル）：v4.125.0 ------
-   ⚠ 升目（約30m）の画素のまま引き伸ばすと、階段とにじみで「モワッと」する（実機の利用者の声）。
-   沢筋・稜線の升目を**流れの向きでつないだ折れ線**にし、階段を間引いて（Douglas–Peucker）、
-   **2次ベジエ曲線**（折れ線の中点を通り、頂点を制御点にする）で描く。画面の解像度で描くので、ズームしても線はくっきりのまま。
-   ・沢：下る向き（最も急な下り）でつなぐ。上流の沢筋が1本ならそのまま、0本（源頭）か2本以上（合流）で区切る。
-     太さは Strahler の次数（1次の沢どうしが合流すると2次…）で太くする（本流が目立つ）
-   ・稜線：上る向き（最も急な上り）でつなぐ（稜線の升目は稜線に沿って峰へ上る）。区切り方は沢と同じ。
-     太さは沢筋からの高さ（HAND）の大きさで太くする（主稜線が目立つ）
-   ・短い切れ端を描かない：連続した稜線のかたまり（ridgeId）が RIDGE_MIN_M 未満なら描かない（斜面の点線のような切れ端）。
-     沢は MIN_SEG_M 未満の区間で両端がどこにもつながらないものを描かない
-   ・帯（尾根≦◯m・沢≦◯m）は、升目の値（稜線からの深さ・HAND）を**画面の細かさで双線形に補間してから**境目を引く。
-     升目の四角が出ず、輪郭がなめらかになる */
+/* ------ 尾根・沢の線（ベクトル）：v4.125.0〜v4.126.0 ------
+   ⚠ 升目（約30m）の画素のまま引き伸ばすと、階段とにじみで「モワッと」する（v4.124.0・実機の利用者の声）。
+   ⚠ v4.125.0 は折れ線を強く間引いてから中点の2次ベジエで描いたので、**ほぼ直線でカクカク**だった。さらに
+     稜線が2升目幅の所で**平行な二重線**、合流ごとに線を切ったので**ヒゲ**だらけになった（実機）。
+   v4.126.0 から「細くする → つなぐ → ヒゲを刈る → なめらかにする」（手で描く線に近づける）
+   ① 細線化：稜線・沢の升目を1升目幅にする（Zhang–Suen）。二重線が出ない
+   ② つなぐ：8近傍でつながる升目を、分岐点・端点を結ぶ「辺」の網にする（輪も拾う）
+   ③ ヒゲを刈る：端が行き止まりで SPUR_M 未満の辺を落とす（2回）。刈った後は分岐でなくなった所で辺を1本につなぎ直す
+   ④ 格：稜線＝辺の上の沢筋からの高さ（HAND）の最大、沢＝比集水面積の最大。
+     画面で小さすぎるもの（稜線は RIDGE_MIN_RELIEF 未満、沢は VALLEY_MIN_SCA 未満）は描かない
+   ⑤ なめらかに：升目の中心の列を [1,2,1] で SMOOTH_PASS 回ならし（両端は固定＝分岐点でつながったまま）、
+     少しだけ間引いて（Douglas–Peucker・SIMPLIFY_CELLS）、**Catmull–Rom（点を通るなめらかな3次ベジエ）**で描く */
 const VEC = {
-  SIMPLIFY_CELLS: 0.7,    // 間引きの許容（升目の何個分）
-  RIDGE_MIN_M: 300,       // これより短い稜線のかたまりは描かない
-  MIN_SEG_M: 150,         // これより短い孤立した沢の区間は描かない
-  RIDGE_W: [1.2, 3.6],    // 稜線の太さ（CSS px。HAND 0m → 300m 以上）
-  VALLEY_W: [0.9, 3.6],   // 沢の太さ（Strahler 1次 → 5次以上）
-  RIDGE_COLOR: '#8b2a10', VALLEY_COLOR: '#0b5cc5', HALO: 'rgba(255,255,255,0.55)',
+  SPUR_M: 200,            // これより短い行き止まりの枝（ヒゲ）は刈る
+  SMOOTH_PASS: 4,         // [1,2,1] のならしの回数（升目の階段を消す）
+  SIMPLIFY_CELLS: 0.25,   // ならした後の間引きの許容（升目の何個分。小さく＝形を保つ）
+  RIDGE_MIN_RELIEF: 40,   // 沢筋からの高さ（m）がこれ未満の稜線は描かない（斜面の小さな張り出し）
+  VALLEY_MIN_SCA: 8000,   // 比集水面積（m）がこれ未満の沢は描かない
+  RIDGE_W: [1.3, 4],      // 稜線の太さ（CSS px。HAND 40m → 400m 以上）
+  VALLEY_W: [1, 4],       // 沢の太さ（比集水面積 8km → 400km 以上。対数）
+  RIDGE_COLOR: '#8b2a10', VALLEY_COLOR: '#0b5cc5', HALO: 'rgba(255,255,255,0.6)',
   BAND_RES: 2,            // 帯を塗る画素の大きさ（CSS px）
 };
-// 流れの向き（next）でつないだ折れ線に分ける。mask の升目のうち、流れ込む数（inDeg）が1でない所で区切る
-function terrainTrace(G, mask, next) {
-  const { N } = G, inDeg = new Uint8Array(N), segs = [];
-  for (let n = 0; n < N; n++) if (mask[n] && next[n] >= 0 && mask[next[n]]) inDeg[next[n]]++;
-  const done = new Uint8Array(N);
-  for (let n = 0; n < N; n++) {
-    if (!mask[n] || inDeg[n] === 1) continue;
-    const pts = [n];
-    let c = next[n];
-    while (c >= 0 && mask[c]) { pts.push(c); if (inDeg[c] !== 1 || done[c]) break; done[c] = 1; c = next[c]; }
-    done[n] = 1;
-    if (pts.length >= 2) segs.push(pts);
+// ① Zhang–Suen の細線化（mask を1升目幅に。mask は書き換えない）
+function thinMask(G, mask) {
+  const { nx, ny, N } = G, m = mask.slice(), del = [];
+  const at = (x, y) => (x < 0 || y < 0 || x >= nx || y >= ny) ? 0 : m[y * nx + x];
+  let idx = [];
+  for (let n = 0; n < N; n++) if (m[n]) idx.push(n);
+  for (let it = 0; it < 20; it++) {
+    let changed = false;
+    for (const step of [0, 1]) {
+      del.length = 0;
+      for (const n of idx) {
+        if (!m[n]) continue;
+        const x = n % nx, y = (n - x) / nx;
+        const p = [at(x, y - 1), at(x + 1, y - 1), at(x + 1, y), at(x + 1, y + 1), at(x, y + 1), at(x - 1, y + 1), at(x - 1, y), at(x - 1, y - 1)];
+        const B = p.reduce((a, b) => a + b, 0);
+        if (B < 2 || B > 6) continue;
+        let A = 0; for (let i = 0; i < 8; i++) if (!p[i] && p[(i + 1) % 8]) A++;
+        if (A !== 1) continue;
+        if (step === 0 ? (p[0] * p[2] * p[4] || p[2] * p[4] * p[6]) : (p[0] * p[2] * p[6] || p[0] * p[4] * p[6])) continue;
+        del.push(n);
+      }
+      for (const n of del) m[n] = 0;
+      if (del.length) changed = true;
+    }
+    idx = idx.filter(n => m[n]);
+    if (!changed) break;
   }
-  return { segs, inDeg };
+  return m;
+}
+// ② 細線を分岐点・端点を結ぶ辺にする。返り値 [[升目,…], …]
+function skeletonEdges(G, m) {
+  const { nx, ny, N } = G, NB = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+  const nbs = n => { const x = n % nx, y = (n - x) / nx, out = []; for (const [dx, dy] of NB) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < nx && yy < ny && m[yy * nx + xx]) out.push(yy * nx + xx); } return out; };
+  const deg = new Uint8Array(N), cells = [];
+  for (let n = 0; n < N; n++) if (m[n]) { deg[n] = nbs(n).length; cells.push(n); }
+  const used = new Set(), key = (a, b) => a < b ? a * N + b : b * N + a, edges = [];
+  const walk = (a, b) => {
+    const pts = [a, b]; used.add(key(a, b));
+    let prev = a, cur = b;
+    while (deg[cur] === 2) {
+      const nx2 = nbs(cur).find(q => q !== prev && !used.has(key(cur, q)));
+      if (nx2 == null) break;
+      used.add(key(cur, nx2)); pts.push(nx2); prev = cur; cur = nx2;
+    }
+    return pts;
+  };
+  for (const n of cells) if (deg[n] !== 2) for (const q of nbs(n)) if (!used.has(key(n, q))) edges.push(walk(n, q));
+  for (const n of cells) if (deg[n] === 2) for (const q of nbs(n)) if (!used.has(key(n, q))) edges.push(walk(n, q));   // 輪
+  return edges;
+}
+// ③ ヒゲを刈る（行き止まりの短い辺）→ 分岐でなくなった所でつなぎ直す
+function pruneEdges(edges, minCells) {
+  for (let pass = 0; pass < 2; pass++) {
+    const cnt = new Map();
+    for (const e of edges) for (const t of [e[0], e[e.length - 1]]) cnt.set(t, (cnt.get(t) || 0) + 1);
+    edges = edges.filter(e => {
+      const a = cnt.get(e[0]), b = cnt.get(e[e.length - 1]);
+      return !((a === 1 || b === 1) && !(a === 1 && b === 1 && e.length >= minCells) && e.length < minCells);
+    });
+  }
+  // 端点を共有する辺がちょうど2本なら1本につなぐ
+  let merged = true;
+  while (merged) {
+    merged = false;
+    const at = new Map();
+    edges.forEach((e, i) => { for (const t of [e[0], e[e.length - 1]]) { if (!at.has(t)) at.set(t, []); at.get(t).push(i); } });
+    for (const [t, list] of at) {
+      if (list.length !== 2 || list[0] === list[1]) continue;
+      let [a, b] = list.map(i => edges[i]);
+      if (a[a.length - 1] !== t) a = a.slice().reverse();
+      if (b[0] !== t) b = b.slice().reverse();
+      const ab = a.concat(b.slice(1)), [i0, i1] = list;
+      edges = edges.filter((_, i) => i !== i0 && i !== i1); edges.push(ab);
+      merged = true; break;
+    }
+  }
+  return edges;
 }
 // 折れ線の間引き（Douglas–Peucker・升目の座標）
 function dpSimplify(xs, ys, tol) {
@@ -8812,70 +8877,73 @@ function dpSimplify(xs, ys, tol) {
   for (let i = 0; i < n; i++) if (keep[i]) { ox.push(xs[i]); oy.push(ys[i]); }
   return [ox, oy];
 }
+// ⑤ [1,2,1] のならし（両端は固定）→ 間引き
+function smoothPath(pts, nx) {
+  let xs = pts.map(n => n % nx + 0.5), ys = pts.map(n => Math.floor(n / nx) + 0.5);
+  const closed = pts.length > 3 && pts[0] === pts[pts.length - 1];
+  for (let k = 0; k < VEC.SMOOTH_PASS; k++) {
+    const x2 = xs.slice(), y2 = ys.slice();
+    for (let i = 1; i < xs.length - 1; i++) { x2[i] = (xs[i - 1] + 2 * xs[i] + xs[i + 1]) / 4; y2[i] = (ys[i - 1] + 2 * ys[i] + ys[i + 1]) / 4; }
+    if (closed) { const i = 0, j = xs.length - 2; x2[0] = x2[xs.length - 1] = (xs[j] + 2 * xs[i] + xs[1]) / 4; y2[0] = y2[ys.length - 1] = (ys[j] + 2 * ys[i] + ys[1]) / 4; }
+    xs = x2; ys = y2;
+  }
+  return dpSimplify(xs, ys, VEC.SIMPLIFY_CELLS);
+}
 /* 稜線・沢を線（升目の座標の折れ線＋太さ）にする。解析のたびに1回（描くたびには作らない）
-   返り値 { ridges: [{ x:[], y:[], w }], valleys: [...] }（x, y は升目の添字の小数。中心が +0.5） */
+   返り値 { ridges: [{ x:[], y:[], w, relief }], valleys: [{ x, y, w, sca }] }（x, y は升目の添字の小数） */
 function terrainVectorize(G, F) {
-  const t0 = performance.now(), { nx, N, cell } = G, out = { ridges: [], valleys: [] };
-  const toXY = pts => {
-    const xs = pts.map(n => n % nx + 0.5), ys = pts.map(n => Math.floor(n / nx) + 0.5);
-    return dpSimplify(xs, ys, VEC.SIMPLIFY_CELLS);
-  };
-  // 沢：Strahler の次数（高い順＝上流から）
-  const strahler = new Uint8Array(N), maxIn = new Uint8Array(N), cntMax = new Uint8Array(N);
-  for (let oi = 0; oi < G.order.length; oi++) {
-    const c = G.order[oi];
-    if (!F.chan[c]) continue;
-    strahler[c] = maxIn[c] === 0 ? 1 : (cntMax[c] >= 2 ? maxIn[c] + 1 : maxIn[c]);
-    const d = F.down[c];
-    if (d >= 0 && F.chan[d]) {
-      if (strahler[c] > maxIn[d]) { maxIn[d] = strahler[c]; cntMax[d] = 1; } else if (strahler[c] === maxIn[d]) cntMax[d]++;
+  const t0 = performance.now(), { nx, cell } = G, out = { ridges: [], valleys: [] };
+  const minCells = VEC.SPUR_M / cell;
+  let raw = 0, pruned = 0;
+  for (const kind of ['valleys', 'ridges']) {
+    const skel = thinMask(G, kind === 'ridges' ? F.ridge : F.chan);
+    const e0 = skeletonEdges(G, skel), edges = pruneEdges(e0, minCells);
+    raw += e0.length; pruned += e0.length - edges.length;
+    for (const e of edges) {
+      if (e.length < 2) continue;
+      if (kind === 'ridges') {
+        let hmax = 0; for (const n of e) if (F.hand[n] > hmax) hmax = F.hand[n];
+        if (hmax < VEC.RIDGE_MIN_RELIEF) continue;
+        const [x, y] = smoothPath(e, nx);
+        out.ridges.push({ x, y, relief: hmax, w: VEC.RIDGE_W[0] + (VEC.RIDGE_W[1] - VEC.RIDGE_W[0]) * Math.min(1, (hmax - VEC.RIDGE_MIN_RELIEF) / 360) });
+      } else {
+        let amax = 0; for (const n of e) if (F.accD[n] > amax) amax = F.accD[n];
+        const sca = amax * cell;
+        if (sca < VEC.VALLEY_MIN_SCA) continue;
+        const [x, y] = smoothPath(e, nx);
+        out.valleys.push({ x, y, sca, w: VEC.VALLEY_W[0] + (VEC.VALLEY_W[1] - VEC.VALLEY_W[0]) * Math.min(1, Math.log10(sca / VEC.VALLEY_MIN_SCA) / Math.log10(50)) });
+      }
     }
   }
-  const tv = terrainTrace(G, F.chan, F.down);
-  for (const pts of tv.segs) {
-    const first = pts[0], last = pts[pts.length - 1];
-    const isolated = tv.inDeg[first] === 0 && !(F.down[last] >= 0 && F.chan[F.down[last]]) && tv.inDeg[last] <= 1;
-    if (isolated && pts.length * cell < VEC.MIN_SEG_M) continue;
-    let so = 0; for (const n of pts) if (strahler[n] > so) so = strahler[n];
-    const [x, y] = toXY(pts);
-    out.valleys.push({ x, y, w: Math.min(VEC.VALLEY_W[1], VEC.VALLEY_W[0] + (VEC.VALLEY_W[1] - VEC.VALLEY_W[0]) * Math.min(1, (so - 1) / 4)), order: so });
-  }
-  // 稜線：かたまりの大きさで切れ端を落とす
-  const size = new Int32Array(F.nRidge);
-  for (let n = 0; n < N; n++) if (F.ridgeId[n] >= 0) size[F.ridgeId[n]]++;
-  const minCells = VEC.RIDGE_MIN_M / cell;
-  const keep = new Uint8Array(N);
-  for (let n = 0; n < N; n++) if (F.ridge[n] && size[F.ridgeId[n]] >= minCells) keep[n] = 1;
-  const tr = terrainTrace(G, keep, F.up);
-  for (const pts of tr.segs) {
-    let hmax = 0; for (const n of pts) if (F.hand[n] > hmax) hmax = F.hand[n];
-    const [x, y] = toXY(pts);
-    out.ridges.push({ x, y, w: Math.min(VEC.RIDGE_W[1], VEC.RIDGE_W[0] + (VEC.RIDGE_W[1] - VEC.RIDGE_W[0]) * Math.min(1, hmax / 300)), hand: hmax });
-  }
   out.ms = performance.now() - t0;
-  out.dropped = F.nRidge - size.filter(s => s >= minCells).length;
+  out.dropped = pruned;
+  out.raw = raw;
   return out;
 }
-// 折れ線を2次ベジエでなめらかに描く（中点を通り、頂点を制御点にする）
+// Catmull–Rom（点を通る）を3次ベジエにして描く
 function strokeSmooth(ctx, X, Y) {
   const n = X.length;
   ctx.moveTo(X[0], Y[0]);
   if (n === 2) { ctx.lineTo(X[1], Y[1]); return; }
-  for (let i = 1; i < n - 1; i++) ctx.quadraticCurveTo(X[i], Y[i], (X[i] + X[i + 1]) / 2, (Y[i] + Y[i + 1]) / 2);
-  ctx.lineTo(X[n - 1], Y[n - 1]);
+  for (let i = 0; i < n - 1; i++) {
+    const i0 = Math.max(0, i - 1), i2 = i + 1, i3 = Math.min(n - 1, i + 2);
+    ctx.bezierCurveTo(X[i] + (X[i2] - X[i0]) / 6, Y[i] + (Y[i2] - Y[i0]) / 6,
+      X[i2] - (X[i3] - X[i]) / 6, Y[i2] - (Y[i3] - Y[i]) / 6, X[i2], Y[i2]);
+  }
 }
 function terrainDrawLines(ctx, res, v, size) {
-  const G = res.grid, V = res.vec, k = Math.pow(2, v.z - G.zd) * G.m, ox = G.x0 * Math.pow(2, v.z - G.zd) - v.tlx, oy = G.y0 * Math.pow(2, v.z - G.zd) - v.tly;
-  const onScreen = (X, Y) => X.some((x, i) => x > -50 && x < size.x + 50 && Y[i] > -50 && Y[i] < size.y + 50);
+  const G = res.grid, V = res.vec, s = Math.pow(2, v.z - G.zd), k = s * G.m, ox = G.x0 * s - v.tlx, oy = G.y0 * s - v.tly;
+  // ⚠ 頂点ではなく外接矩形で画面と重なるかを見る（間引いた長い線は両端とも画面の外になりうる）
+  const onScreen = (X, Y) => Math.max(...X) > -50 && Math.min(...X) < size.x + 50 && Math.max(...Y) > -50 && Math.min(...Y) < size.y + 50;
   const draw = (list, color) => {
-    const tf = list.map(s => ({ X: s.x.map(x => x * k + ox), Y: s.y.map(y => y * k + oy), w: s.w })).filter(s => onScreen(s.X, s.Y));
+    const tf = list.map(q => ({ X: q.x.map(x => x * k + ox), Y: q.y.map(y => y * k + oy), w: q.w })).filter(q => onScreen(q.X, q.Y));
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     // 先に白い縁取り（地図の上でくっきり見えるように）、細い線から太い線へ
     tf.sort((a, b) => a.w - b.w);
     for (const pass of [0, 1]) {
-      for (const s of tf) {
-        ctx.beginPath(); strokeSmooth(ctx, s.X, s.Y);
-        ctx.strokeStyle = pass ? color : VEC.HALO; ctx.lineWidth = pass ? s.w : s.w + 2;
+      for (const q of tf) {
+        ctx.beginPath(); strokeSmooth(ctx, q.X, q.Y);
+        ctx.strokeStyle = pass ? color : VEC.HALO; ctx.lineWidth = pass ? q.w : q.w + 2;
         ctx.stroke();
       }
     }
@@ -9145,7 +9213,7 @@ function terrainHudText() {
   const b = r.bandStats || {};
   return `<b>地形解析</b> ${r.ms.toFixed(0)}ms${r.loading ? '・読込中' : ''}（升目${Math.round(r.grid.cell)}m・${r.grid.nx}×${r.grid.ny}）` +
     `｜<b>尾根・沢</b> ${r.flow.ms.toFixed(0)}ms 稜線${r.flow.nRidge}本 帯：尾根≦${terrainAn.ridgeBand}m 沢≦${terrainAn.valleyBand}m` +
-    `｜線 ${r.vec.ms.toFixed(0)}ms 稜線${r.vec.ridges.length}本・沢${r.vec.valleys.length}本（切れ端${r.vec.dropped}を省く）` +
+    `｜線 ${r.vec.ms.toFixed(0)}ms 稜線${r.vec.ridges.length}本・沢${r.vec.valleys.length}本（ヒゲ${r.vec.dropped}本を刈る）` +
     `｜<b>鞍部</b> ${r.cols.ms.toFixed(0)}ms ${bins}（≧${terrainAn.showMin}m のうち稜線の上 ${onR}/${shown}）`;
 }
 // 格子の双線形（m/s。北が正）。⚠ 毎コマ粒の数だけ呼ぶので配列を作らない（結果は glU/glV）

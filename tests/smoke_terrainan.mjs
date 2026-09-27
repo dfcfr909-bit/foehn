@@ -267,7 +267,19 @@ ok(crestPts.some(p => p[0] > 1) && crestPts.some(p => p[0] < -1), '★★稜線�
 const valPts = vv.pts.filter(([x, y]) => Math.abs(x) < 0.08 && y > 1 && y < 4);
 ok(valPts.length >= 2, '★★沢の線が鞍部から北へ下る筋を通る', { n: vv.n, val: valPts.length });
 ok(vr.drawn && vr.drawn.ridges > 0 && vr.drawn.valleys > 0, '線を画面に描いた（稜線・沢）', vr.drawn);
-ok(vr.pts.every(p => p[2] >= 1.2 && p[2] <= 3.6) && vv.pts.every(p => p[2] >= 0.9 && p[2] <= 3.6), '線の太さは格（HAND・Strahler 次数）で 1〜3.6px', null);
+ok(vr.pts.every(p => p[2] >= 1.3 && p[2] <= 4) && vv.pts.every(p => p[2] >= 1 && p[2] <= 4), '線の太さは格（沢筋からの高さ・比集水面積）で 1〜4px', null);
+// 二重線にしない：稜線の中ほど（東 1km）を南北に横切る稜線の線は1本だけ
+const cross1 = await page.evaluate(() => {
+  const r = terrainAn.result, G = r.grid, xk = 1, lon = 137.65 + xk / (111.32 * Math.cos(36.57 * Math.PI / 180));
+  const gx = (leafletMap.project([36.57, lon], G.zd).x - G.x0) / G.m;
+  let hits = 0;
+  for (const q of r.vec.ridges) for (let i = 0; i < q.x.length - 1; i++) {
+    if ((q.x[i] - gx) * (q.x[i + 1] - gx) <= 0) { const t = (gx - q.x[i]) / ((q.x[i + 1] - q.x[i]) || 1), y = q.y[i] + (q.y[i + 1] - q.y[i]) * t;
+      const ll = leafletMap.unproject([G.x0 + gx * G.m, G.y0 + y * G.m], G.zd); if (Math.abs(ll.lat - 36.57) * 111.32 < 0.3) hits++; }
+  }
+  return hits;
+});
+ok(cross1 === 1, '★★稜線は二重線にしない（細線化。横切る線は1本）', cross1);
 const flank = await flowAt(1.5, 3, { w: 0.4, h: 0.2 });
 ok(flank.ridge < 0.1, '峰の北の斜面の途中は尾根ではない', flank);
 await page.evaluate(() => { leafletMap.setView([36.57 - 9000 / 111320, 137.65], 13, { animate: false }); });
