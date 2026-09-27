@@ -1,10 +1,11 @@
 /* 風の流れ（実験）の段階2：地形の構造の抽出（v4.122.0）。見ること:
- *   ①鞍部を**鞍部として**見つける（位置・稜線の向き・複数の縮尺で安定して見つかるか・地形明瞭度）
- *   ②横断角：稜線と風の角度（西風なら稜線に沿う＝小さい、南風なら稜線を真横に越える＝90°近く）
- *   ③谷・尾根の線を出す。計測表示に縮尺ごとの時間・鞍部の数
- *   ④⚠ **風は一切変えない**（地形解析を入れても切っても、流している格子・場・矢印は同じ）
- *   ⑤z15 付近でも格子を画面＋余白に絞る（数十万点にしない）
- * 偽の地形：東西 3km に高さ 800m の峰が2つ、間が鞍部（稜線は東西・抜ける向きは南北）
+ *   ①鞍部を「峰どうしがつながる点」として見つける（v4.123.0）：位置・深さ（prominence）・両側の峰・稜線と抜ける向き
+ *   ②**底が平らな鞍部**も見つける（1点の曲率＝ヘッセ行列では拾えなかった型。実在の乗越浄土・別山乗越）
+ *   ③横断角：稜線と風の角度（西風なら稜線に沿う＝小さい、南風なら稜線を真横に越える＝90°近く）
+ *   ④⚠ **風は一切変えない**（地形解析を入れても切っても、流している格子・場は同じ）
+ *   ⑤z15 付近でも格子を画面＋余白に絞る。「中心を解析」「検証8地点」「計測表示を畳む」
+ * 偽の地形：①東西 3km に高さ 800m の峰が2つ（間が鞍部・稜線は東西・抜ける向きは南北）
+ *          ②その 8km 北に、峰2つを高さ 1,350m の**平らな帯**でつないだ鞍部（曲率ほぼ 0）
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -84,7 +85,11 @@ const C_LAT = 36.57, C_LON = 137.65;
 const TERRAIN = (lat, lon) => {
   const x = (lon - C_LON) * 111320 * Math.cos(C_LAT * Math.PI / 180), y = (lat - C_LAT) * 111320;
   const g = (dx, dy) => Math.exp(-(dx * dx + dy * dy) / (2 * 1500 * 1500));
-  return 1000 + 800 * g(x + 3000, y) + 800 * g(x - 3000, y);
+  const g2 = (dx, dy) => Math.exp(-(dx * dx + dy * dy) / (2 * 800 * 800));
+  const base = 1000 + 800 * g(x + 3000, y) + 800 * g(x - 3000, y) + 700 * g2(x + 2000, y - 8000) + 700 * g2(x - 2000, y - 8000);
+  // 平らな帯（東西 3km・南北 400m・高さ 1,350m）＝底が平らな鞍部
+  const flat = Math.abs(x) <= 1500 && Math.abs(y - 8000) <= 200 ? 1350 : -Infinity;
+  return Math.max(base, flat);
 };
 const CRC = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
 const crc32 = buf => { let c = -1; for (const b of buf) c = CRC[(c ^ b) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
@@ -158,27 +163,37 @@ const g0 = await gridSig(), f0 = await fieldSig();
 await page.evaluate(() => terrainToggle());
 await page.waitForTimeout(2500);
 await page.evaluate(() => terrainRefresh());
-const r = await page.evaluate(() => {
-  const res = terrainAn.result;
-  const dist = g => Math.hypot((g.rep.lat - 36.57) * 111320, (g.rep.lon - 137.65) * 111320 * Math.cos(36.57 * Math.PI / 180));
-  const near = res.groups.slice().sort((a, b) => dist(a) - dist(b))[0];
-  return { ms: res.ms, loading: res.loading, scales: res.scales.map(s => s.sc.label), skipped: res.skipped,
-    groups: res.groups.length, markers: terrainAn.markers.length,
-    near: near && { d: dist(near), scales: near.scales, cons: near.scaleConsistency, clarity: near.clarity, score: near.saddleScore,
-      prom: near.prominence, ridgeBear: Math.round(bearingOf(near.rep.ridge[0], near.rep.ridge[1]) % 180), cross: near.cross, h: near.rep.h },
-    draw: terrainAn.drawStats, hud: document.getElementById('wind-hud-text').textContent };
-});
-ok(!r.loading && r.scales.length >= 3, '（前提）複数の縮尺で解析した', r);
-ok(r.near && r.near.d < 400, '★★★鞍部を鞍部として見つける（中心から400m以内）', r.near);
-ok(r.near && Math.abs(r.near.ridgeBear - 90) < 15, '★★稜線の向きは東西（方位90°・峰の並び）', r.near);
-ok(r.near && r.near.scales.length >= 2 && r.near.cons >= 0.5, '★複数の縮尺で同じ鞍部が見つかる（scaleConsistency）', r.near);
-ok(r.near && r.near.prom > 100 && r.near.score > 10, '★prominence・saddleScore が鞍部らしい大きさ', r.near);
-ok(r.near && ['高', '中', '低'].includes(r.near.clarity), '地形明瞭度は高・中・低（％にしない）', r.near);
+const TERRAIN_VERIFY_COLS_NAMES = ['峰の茶屋跡', '常念乗越', '夏沢峠', '八本歯ノコル', '白出のコル', '乗越浄土', '別山乗越', '那須の丸地点'];
+await page.evaluate(n => { window.TERRAIN_VERIFY_COLS_NAMES = n; }, TERRAIN_VERIFY_COLS_NAMES);
+const colAt = (lat, lon) => page.evaluate(([lat, lon]) => {
+  const res = terrainAn.result, near = terrainNearestCols(res, { lat, lon }, 3)[0];
+  if (!near) return { none: true, n: res.cols.cols.length };
+  const c = near.c;
+  return { d: near.d, h: c.h, prom: c.prom, hi: c.peakHi, lo: c.peakLo, edge: c.edge,
+    ridgeBear: Math.round(bearingOf(c.ridge[0], c.ridge[1]) % 180), passBear: Math.round(bearingOf(c.pass[0], c.pass[1]) % 180),
+    cross: (w => w ? terrainCrossAngle(c.ridge, w) : null)(terrainWindAt(c.lat, c.lon)),
+    n: res.cols.cols.length, ms: res.ms, loading: res.loading, cell: res.cols.cell,
+    markers: terrainAn.markers.length, hud: document.getElementById('wind-hud-text').textContent };
+}, [lat, lon]);
+const r = await colAt(36.57, 137.65);
+ok(!r.none && !r.loading, '（前提）鞍部を解析した', r);
+ok(r.d < 150, '★★★鞍部を「峰どうしがつながる点」として見つける（中心から150m以内）', r);
+ok(Math.abs(r.h - 1216) < 25, '鞍部の標高（約1,216m）', r);
+ok(Math.abs(r.prom - 584) < 30, '★★深さ（prominence）＝低い方の峰 − 鞍部（約584m）', r);
+ok(Math.abs(r.hi.h - 1800) < 20 && Math.abs(r.lo.h - 1800) < 20 && Math.abs(r.hi.d - 3000) < 250 && Math.abs(r.lo.d - 3000) < 250,
+  '★★両側の峰（約1,800m・約3km 先）', { hi: r.hi, lo: r.lo });
+ok(!r.edge, '低い方の峰は解析範囲の中（端ではない）', r);
+ok(Math.abs(r.ridgeBear - 90) <= 10, '★稜線の向きは東西（90°）', r);
+ok(r.passBear <= 10 || r.passBear >= 170, '★抜ける向きは南北（0°）', r);
+ok(r.cross != null && r.cross < 20, '★★西風は稜線に沿う（横断角が小さい）', r);
 ok(r.markers > 0, '鞍部の◎を出す', r);
-ok(r.near && r.near.cross != null && r.near.cross < 20, '★★西風は稜線に沿う（横断角が小さい）', r.near);
-ok(/地形解析/.test(r.hud) && /ms/.test(r.hud), '計測表示に地形解析の時間と鞍部の数', r.hud);
-const pop = await page.evaluate(() => { const g = terrainAn.result.groups[0]; return terrainSaddleText(g); });
-ok(/地形明瞭度/.test(pop) && /横断角/.test(pop) && /補正していない/.test(pop) && !/%|％/.test(pop), '★鞍部の説明：明瞭度・横断角・補正していないと書く・％を出さない', pop);
+ok(/鞍部/.test(r.hud) && /≧20m/.test(r.hud), '計測表示に鞍部の数（深さ別）', r.hud);
+const pop = await page.evaluate(() => terrainColText(terrainAn.result.cols.cols[0]));
+ok(/深さ（prominence）/.test(pop) && /高い側の峰/.test(pop) && /低い側の峰/.test(pop) && /横断角/.test(pop) && /補正していない/.test(pop) && !/%|％/.test(pop),
+  '★◎の説明：深さ・両側の峰・横断角・補正していない（％を出さない）', pop);
+// 深さの閾値は固定しない：記録は床（3m）以上、画面は切り替え
+const th = await page.evaluate(() => { const a = []; for (let k = 0; k < COL.SHOW_STEPS.length; k++) { terrainCycleShowMin(); a.push(terrainAn.showMin); } return { a, floor: COL.FLOOR_M }; });
+ok(th.a.length === 7 && th.a.includes(0) && th.a.includes(100) && th.floor <= 5, '★深さの閾値は固定しない（画面で切り替え・記録は雑音の床から）', th);
 
 // ④風は一切変えない
 ok(await gridSig() === g0, '★★★地形解析を入れても流している格子は同じ（風を補正しない）');
@@ -187,19 +202,17 @@ ok(await fieldSig() === f0, '★★★場（buildWindField）も同じ');
 // ②南風（地上10m・180°から）→ 稜線を真横に越える
 await page.evaluate(() => setWindMode('10m'));
 await page.waitForTimeout(1500);
-const cross10 = await page.evaluate(() => {
-  const dist = g => Math.hypot((g.rep.lat - 36.57) * 111320, (g.rep.lon - 137.65) * 111320 * Math.cos(36.57 * Math.PI / 180));
-  const near = terrainAn.result.groups.slice().sort((a, b) => dist(a) - dist(b))[0];
-  return near && near.cross;
-});
+const cross10 = (await colAt(36.57, 137.65)).cross;
 ok(cross10 != null && cross10 > 75, '★★南風は稜線を真横に越える（横断角が90°近く）', cross10);
 await page.evaluate(() => setWindMode('auto'));
 await page.waitForTimeout(1200);
 
 // 中心を解析（丸を付けた地点の検証に使う）
 const probe = await page.evaluate(() => { terrainProbeCenter(); return windGL.lastMeasure; });
-ok(/鞍部/.test(probe) && /saddleScore/.test(probe) && /scaleConsistency/.test(probe) && /横断角/.test(probe), '★「中心を解析」で縮尺ごとの分類・saddleScore・scaleConsistency・横断角', probe);
-ok(/500m: 鞍部|1km: 鞍部|150m: 鞍部/.test(probe), '中心（鞍部）はどこかの縮尺で「鞍部」と出る', probe);
+ok(/DEM標高 \d/.test(probe) && /稜線方向\d+%/.test(probe) && /横断方向\d+%/.test(probe) && /500m: .*標高\d/.test(probe),
+  '★「中心を解析」：DEM標高・縮尺ごとの標高・勾配（稜線方向・横断方向）', probe);
+ok(/鞍部1: \d+m [北東南西]+・標高[\d,]+m・深さ\d+m/.test(probe) && /峰 [\d,]+m\/[\d,]+m先/.test(probe) && /横断角\d+°/.test(probe),
+  '★「中心を解析」：最寄りの鞍部の距離・方位・標高・深さ・両側の峰・横断角', probe);
 
 // 縮尺の切り替え
 const sc = await page.evaluate(() => { const a = []; for (let k = 0; k < 5; k++) { terrainCycleScale(); a.push(terrainAn.scaleSel); } return a; });
@@ -209,6 +222,16 @@ ok(sc.join(',') === 's150,s500,s1k,s2500,auto', '縮尺を順に切り替えら�
 await page.evaluate(() => terrainToggle());
 ok(await page.evaluate(() => terrainAn.markers.length === 0 && (!terrainAn.cv || terrainAn.cv.style.display === 'none')), '地形解析を切れば◎と線が消える');
 ok(await gridSig() === g0, '切った後も流している格子は同じ');
+await page.evaluate(() => terrainToggle());
+
+// ②底が平らな鞍部（曲率ほぼ 0）も見つける
+await page.evaluate(() => leafletMap.setView([36.57 + 8000 / 111320, 137.65], 14, { animate: false }));
+await page.waitForTimeout(3500);
+await page.evaluate(() => terrainRefresh());
+const flat = await colAt(36.57 + 8000 / 111320, 137.65);
+ok(!flat.none && flat.d < 1500 && Math.abs(flat.h - 1350) < 15, '★★★底が平らな鞍部も見つける（平らな帯の上・標高1,350m）', flat);
+ok(Math.abs(flat.prom - 350) < 30 && Math.abs(flat.ridgeBear - 90) <= 15, '★平らな鞍部の深さ（約350m）と稜線の向き（東西）', flat);
+await page.evaluate(() => terrainToggle());
 
 // ⑤z15：格子を画面＋余白に絞る
 await page.evaluate(() => { terrainToggle(); leafletMap.setZoom(15, { animate: false }); });
@@ -217,6 +240,15 @@ const z15 = await page.evaluate(() => ({ nodes: windGL.grid.cols * windGL.grid.r
   ms: windGL.terrain && windGL.terrain.ms, an: terrainAn.result && terrainAn.result.ms, scales: terrainAn.result && terrainAn.result.scales.map(s => s.sc.label + ':' + s.nx * s.ny) }));
 ok(z15.nodes < 40000 && z15.step === 8, '★★z15 でも格子は画面＋余白だけ（8px のまま・数十万点にしない）', z15);
 console.log('参考（ヘッドレス・PC）', JSON.stringify(z15), '/ z13 の解析', r.ms.toFixed(0) + 'ms');
+// 検証8地点：順に回って表にする（偽の地形なので鞍部は無い所が多い。表の形と回り切ることを見る）
+const ver = await page.evaluate(() => terrainVerifyCols());
+const vrows = ver.split('\n');
+ok(vrows.length === 10 && /^地点\t最寄り距離m/.test(vrows[0]) && vrows.slice(1, 9).every((l, i) => l.startsWith(TERRAIN_VERIFY_COLS_NAMES[i])),
+  '★「検証8地点」：8地点を順に回ってタブ区切りの表（コピー可）', vrows.slice(0, 3));
+ok(await page.evaluate(() => windGL.lastMeasure.includes('八本歯ノコル') && windGL.lastMeasure.includes('乗越浄土')), '表は「コピー」で貼り出せる（lastMeasure）');
+// 計測表示を畳む（地図の中心が隠れる。利用者の要望）
+const minv = await page.evaluate(() => { windGLHudMin(); const el = document.getElementById('wind-hud'); const r = { min: el.classList.contains('min'), textHidden: getComputedStyle(document.getElementById('wind-hud-text')).display === 'none', h: el.getBoundingClientRect().height }; windGLHudMin(); return r; });
+ok(minv.min && minv.textHidden && minv.h < 40, '★計測表示を畳める（ボタン1つだけ残す）', minv);
 ok(!errors.length, 'ページ内で例外が出ていない', errors);
 await browser.close();
 if (fails.length) {

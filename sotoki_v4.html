@@ -1376,8 +1376,13 @@ html, body {
 .saddle-mk { transform: translate(-50%, -50%); display: flex; align-items: center; gap: 2px; white-space: nowrap;
   font: 700 11px/1 system-ui, sans-serif; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; }
 .saddle-mk span { font-size: 20px; line-height: 1; }
-.saddle-mk.ch span { color: #c2185b; } .saddle-mk.cm span { color: #e56b9f; } .saddle-mk.cl span { color: #8a8f98; }
-.saddle-mk.cl b { color: #6b7280; font-weight: 500; }
+.saddle-mk span { color: #c2185b; }
+.saddle-mk.edge span { color: #8a8f98; } .saddle-mk.edge b { color: #6b7280; font-weight: 500; }
+/* 計測表示を畳んだとき（地図の中心が見えるように）。ボタン1つだけ残す */
+#wind-hud-min { float: right; margin: 0 0 2px 6px; }
+#wind-hud.min { padding: 2px; background: rgba(0,0,0,.45); }
+#wind-hud.min #wind-hud-text, #wind-hud.min .wh-btns, #wind-hud.min #wind-hud-result { display: none; }
+#wind-hud.min #wind-hud-min { float: none; margin: 0; }
 #map-overlay.terrain-dbg::after { content: '+'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   z-index: 1100; font: 300 34px/1 system-ui; color: #c2185b; pointer-events: none; text-shadow: 0 0 3px #fff; }
 #wind-hud-result { white-space: pre-wrap; word-break: break-all; max-height: 40vh; overflow: auto; }
@@ -2297,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.122.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.123.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8282,26 +8287,30 @@ function windGLTerrainHeight(g, f) {
 }
 
 /* ============================================================
-   段階2：地形の構造の抽出（谷軸・尾根・鞍部）— 検証用（v4.122.0）
+   段階2：地形の構造の抽出（谷軸・尾根・鞍部）— 検証用（v4.122.0〜v4.123.0）
    目的：DEM から「風の流れに効く山地としての谷・尾根・鞍部」を正しく取り出せるかを、実機で確かめる。
-   ⚠⚠ **風は一切変えない。** 風向を谷へ曲げる・鞍部で増速する・狭窄部の加速・判定への反映は、この段階では入れない。
+   ⚠⚠ **風は一切変えない。** 風向を谷へ曲げる・鞍部で増速する・狭窄部の加速・風速の増減・判定への反映は入れない。
        ここで作るのは地形の分類と、鞍部と風の角度の**表示だけ**（計測表示の「地形解析」で入れる開発用の重ね）
-   方法（縮尺ごと）
-   ・縮尺 σ（150m／500m／1km／2.5km）ごとに、σ/3 の升目で標高タイルを平均して並べ、σ のガウスでならす
-     （海・欠測は重みから外して正規化）。画面で σ が MIN_SCREEN_PX 未満の縮尺は解析しない（見えないので）
-   ・ならした面のヘッセ行列（2階微分）の固有値 λ1≦λ2 と固有ベクトル。κ = λσ²（m）で縮尺をそろえる
-       谷：κ2 ≧ T（横切ると下に凸）で κ1 は小さい → 谷軸は λ1 の向き
-       尾根：κ1 ≦ −T（横切ると上に凸）で κ2 は小さい → 尾根筋は λ2 の向き
-       鞍部：κ1 < 0 < κ2（一方は凸・一方は凹）＋周りの8点の高低が4回以上入れ替わる（離散の鞍点）＋勾配が小さい
-     T = REL_T × σ（初期値。実機で詰める）
-   ・鞍部の指標（内部）：saddleScore = √(−κ1·κ2)（m・その縮尺での鞍部の深さの目安）、
-     prominence = 稜線の向きに ±3σ の間の両側の高まりのうち低い方 − 鞍部の高さ（m）、
-     scaleConsistency = 同じ鞍部が見つかった縮尺の数 ÷ 解析した縮尺の数（別の縮尺の鞍部と 1.5σ 以内なら同じ鞍部とみなす）
-   ・画面には「地形明瞭度：高・中・低」だけを出す（⚠「信頼度◯%」は確率と誤解されるので出さない）
-   ・横断角 = 稜線（鞍部の低い方向に並ぶ線）とモデル風の向きの角度。90° で稜線を真横に越える（鞍部を抜ける向き）
-     風は実験の層が流している格子（段階1の地形の高さの風）の値
+
+   谷軸・尾根（ヘッセ行列・複数の縮尺）
+   ・縮尺 σ（150m／500m／1km／2.5km）ごとに、σ/3 の升目で標高タイルを平均し、σ のガウスでならす（欠測は重みから外す）。
+     画面で σ が MIN_SCREEN_PX 未満の縮尺は解析しない
+   ・固有値 λ1≦λ2 を κ = λσ²（m）でそろえ、T = REL_T×σ で分ける
+       谷：κ2 ≧ T で κ1 が小さい → 谷軸は λ1 の向き／尾根：κ1 ≦ −T で κ2 が小さい → 尾根筋は λ2 の向き
+
+   鞍部（v4.123.0 から「峰どうしがつながる点」。⚠ ヘッセ行列は使わない）
+   ・8か所の実在のコルで、1点の曲率で見る方式は構造的に取りこぼした（底が平らな乗越・稜線の曲がり角・非対称なコル）
+   ・解析範囲の標高を高い順に並べ、1点ずつ陸地を足していく（union-find）。別々の峰から広がった陸地が
+     **初めてつながる点**が鞍部。つながる2つの陸地のそれぞれの最高点が「両側の峰」、
+     低い方の峰 − 鞍部 = **prominence（鞍部の深さ）**（山の独立標高の計算と同じ考え方）
+   ・⚠ **深さの閾値は固定しない。** 記録は COL_FLOOR_M（ノイズの床）以上をすべて持ち、画面に出す深さは計測表示で切り替える。
+     実在のコルの分布を見てから決める（利用者の判断）
+   ・⚠ 端で峰が切れる問題：画面の外に COL.MARGIN_KM の余白を取り、鞍部は画面（＋少し）の中だけ採る。
+     低い方の峰が範囲の端にあれば「端」と印を付ける（本当の峰は外にあり、深さは下限の値）
+   ・稜線の向き＝鞍部から ±RIDGE_PROBE_M で「両側とも最も高い」向き、抜ける向き＝「両側とも最も低い」向き
+   ・横断角 = 稜線とモデル風の角度（0〜90°。90° で稜線を真横に越える＝鞍部を抜ける向き）。風は実験の層の格子（段階1）の値
    参考（考え方）：ヘッセ行列による尾根・谷の検出（画像処理の ridge/valley detection）、
-     離散の鞍点の判定（周りの高低の符号の入れ替わりを数える）
+     峰の独立標高（topographic prominence）の計算での鞍部（key col）の求め方
    ============================================================ */
 const TERRAIN_SCALES = [
   { id: 's150', sigma: 150, label: '150m' },
@@ -8315,26 +8324,37 @@ const TERRAIN_AN = {
   MAX_CELLS: 200000,      // 1つの縮尺の升目の上限（超えたら升目を粗くする）
   REL_T: 0.04,            // しきい値 T = 0.04σ（150m→6m・500m→20m・1km→40m・2.5km→100m）。初期値
   MARGIN_SIGMA: 3,        // 画面の外に取る余白（σ の倍数。ガウスの裾）
-  MATCH_SIGMA: 1.5,       // 縮尺をまたいで同じ鞍部とみなす距離（大きい方の σ の倍数）
   DISPLAY_STEP_PX: 26,    // 谷軸・尾根の線を置く間隔（CSS px）
   LINE_PX: 16,            // 線の長さ
-  MAX_SADDLES: 30,        // 画面に出す鞍部の数の上限（saddleScore の大きい順）
+  MAX_COLS_SHOWN: 40,     // 画面に出す鞍部の数の上限（深い順）
 };
-const terrainAn = { on: false, scaleSel: 'auto', result: null, cv: null, ctx: null, markers: [], key: '', timer: 0 };
+// 鞍部（峰どうしがつながる点）
+const COL = {
+  MARGIN_KM: 3,           // 画面の外に取る余白（両側の峰が範囲に入るように）
+  MAX_CELLS: 250000,      // 升目の数の上限（超えたら升目を粗くする。z10 付近）
+  DEM_ZOOM: 12,           // 標高タイルのズーム（約30m の画素）
+  FLOOR_M: 3,             // 記録する深さの床（これ未満は DEM の凹凸の雑音）。⚠ 画面の閾値ではない
+  INNER_PAD_KM: 0.3,      // 鞍部を採る範囲＝画面＋これ
+  RIDGE_PROBE_M: 150,     // 稜線・抜ける向きを調べる距離
+  SHOW_STEPS: [0, 5, 10, 20, 30, 50, 100],   // 画面に出す深さの切り替え（m）。⚠ 未決。検証のため切り替えて見る
+  MAX_KEEP: 4000,
+};
+const terrainAn = { on: false, scaleSel: 'auto', showMin: 20, result: null, cv: null, ctx: null, markers: [], key: '' };
 const demPxM = (z, lat) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
 
 // 標高タイルから、DEM のズーム zd の世界座標 (x0,y0) を起点に m×m 画素ずつ平均した nx×ny の升目
 function terrainDemBlock(zd, x0, y0, m, nx, ny) {
   const h = new Float32Array(nx * ny).fill(NaN);
-  let loading = false, tk = '', td = null;
+  // ⚠ タイルの切り替えは数で比べる（画素ごとに文字列の鍵を作ると z11 で 80ms かかった）
+  let loading = false, ltx = NaN, lty = NaN, td = null;
   for (let b = 0; b < ny; b++) {
     for (let a = 0; a < nx; a++) {
       let sum = 0, cnt = 0;
       for (let j = 0; j < m; j++) {
         const wy = y0 + b * m + j, ty = Math.floor(wy / 256);
         for (let i = 0; i < m; i++) {
-          const wx = x0 + a * m + i, tx = Math.floor(wx / 256), key = tx + ',' + ty;
-          if (key !== tk) { tk = key; td = windDemTile(zd, tx, ty); if (td === undefined) loading = true; }
+          const wx = x0 + a * m + i, tx = Math.floor(wx / 256);
+          if (tx !== ltx || ty !== lty) { ltx = tx; lty = ty; td = windDemTile(zd, tx, ty); if (td === undefined) loading = true; }
           if (!td) continue;
           const q = td[(wy - ty * 256) * 256 + (wx - tx * 256)];
           if (q) { sum += q / 10 - 100; cnt++; }
@@ -8373,8 +8393,13 @@ function terrainGauss(h, nx, ny, sig) {
   }
   return out;
 }
-/* 1つの縮尺を解析する。view = { z, tlx, tly, w, h }（今のズームの世界座標・画面の大きさ）
-   返り値：{ sc, zd, m, x0, y0, nx, ny, p（升目の m）, S, k1, k2, ex, ey（λ1 の向き・東と南）, cls, saddles, ms, loading } */
+// 画面の見え方（今のズームの世界座標）
+function terrainView() {
+  const z = leafletMap.getZoom(), o = leafletMap.getPixelOrigin(), lp = leafletMap.containerPointToLayerPoint([0, 0]), size = leafletMap.getSize();
+  return { z, tlx: o.x + lp.x, tly: o.y + lp.y, w: size.x, h: size.y };
+}
+/* 谷軸・尾根：1つの縮尺を解析する。
+   返り値：{ sc, zd, m, x0, y0, nx, ny, p（升目の m）, S, k1, k2, ex, ey（λ1 の向き・東と南）, gx, gy（勾配・東と南）, cls, ms, loading } */
 function terrainAnalyzeScale(sc, view, lat) {
   const t0 = performance.now();
   const target = sc.sigma / TERRAIN_AN.PX_PER_SIGMA;
@@ -8392,9 +8417,8 @@ function terrainAnalyzeScale(sc, view, lat) {
   const blk = terrainDemBlock(zd, x0, y0, m, nx, ny);
   const S = terrainGauss(blk.h, nx, ny, sig);
   const N = nx * ny, k1 = new Float32Array(N).fill(NaN), k2 = new Float32Array(N).fill(NaN);
-  const ex = new Float32Array(N), ey = new Float32Array(N), cls = new Uint8Array(N), grad = new Float32Array(N);
-  const T = TERRAIN_AN.REL_T * sc.sigma, s2 = sc.sigma * sc.sigma, cand = [];
-  const NB = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+  const ex = new Float32Array(N), ey = new Float32Array(N), gx = new Float32Array(N), gy = new Float32Array(N), cls = new Uint8Array(N);
+  const T = TERRAIN_AN.REL_T * sc.sigma, s2 = sc.sigma * sc.sigma;
   for (let y = 1; y < ny - 1; y++) {
     for (let x = 1; x < nx - 1; x++) {
       const n = y * nx + x, c = S[n], l = S[n - 1], r = S[n + 1], u = S[n - nx], d = S[n + nx];
@@ -8407,88 +8431,112 @@ function terrainAnalyzeScale(sc, view, lat) {
       let vx, vy;
       if (Math.abs(hxy) > 1e-12) { vx = l1 - hyy; vy = hxy; } else if (hxx <= hyy) { vx = 1; vy = 0; } else { vx = 0; vy = 1; }
       const vl = Math.hypot(vx, vy) || 1;
-      ex[n] = vx / vl; ey[n] = vy / vl;
-      const K1 = l1 * s2, K2 = l2 * s2, G = Math.hypot(hx, hy) * sc.sigma;
-      k1[n] = K1; k2[n] = K2; grad[n] = G;
-      if (K1 <= -T / 2 && K2 >= T / 2 && G < T) {
-        // 離散の鞍点：周りの8点の高低が4回以上入れ替わる
-        let ch = 0, prev = 0, first = 0;
-        for (const [dx, dy] of NB) {
-          const sg = Math.sign(S[n + dy * nx + dx] - c);
-          if (!sg) continue;
-          if (!first) first = sg; else if (sg !== prev) ch++;
-          prev = sg;
-        }
-        if (prev && first && prev !== first) ch++;
-        if (ch >= 4) { cls[n] = 3; cand.push(n); continue; }
-      }
+      ex[n] = vx / vl; ey[n] = vy / vl; gx[n] = hx; gy[n] = hy;
+      const K1 = l1 * s2, K2 = l2 * s2;
+      k1[n] = K1; k2[n] = K2;
       if (K1 <= -T && K2 < 0.5 * -K1) cls[n] = 2;        // 尾根
       else if (K2 >= T && K1 > -0.5 * K2) cls[n] = 1;    // 谷
     }
   }
-  // 鞍部：saddleScore の大きい順に、σ 以内の弱い候補を落とす
-  const score = n => Math.sqrt(Math.max(0, -k1[n] * k2[n]));
-  cand.sort((a, b) => score(b) - score(a));
-  const at = (fx, fy) => {   // S の双線形
+  return { sc, zd, m, x0, y0, nx, ny, p, sig, S, k1, k2, ex, ey, gx, gy, cls, T, ms: performance.now() - t0, loading: blk.loading };
+}
+
+/* 鞍部：峰どうしがつながる点（union-find）。
+   返り値：{ cols: [...], zd, m, cell（m）, nx, ny, ms, loading } */
+function terrainFindCols(view, lat) {
+  const t0 = performance.now();
+  const zd = COL.DEM_ZOOM, dpx = demPxM(zd, lat), k = Math.pow(2, zd - view.z), marg = COL.MARGIN_KM * 1000 / dpx;
+  const wx0 = view.tlx * k - marg, wy0 = view.tly * k - marg, wx1 = (view.tlx + view.w) * k + marg, wy1 = (view.tly + view.h) * k + marg;
+  let m = 1, nx = Math.ceil(wx1 - wx0), ny = Math.ceil(wy1 - wy0);
+  if (nx * ny > COL.MAX_CELLS) { m = Math.ceil(Math.sqrt(nx * ny / COL.MAX_CELLS)); nx = Math.ceil((wx1 - wx0) / m); ny = Math.ceil((wy1 - wy0) / m); }
+  const x0 = Math.floor(wx0), y0 = Math.floor(wy0), cell = m * dpx;
+  const { h, loading } = terrainDemBlock(zd, x0, y0, m, nx, ny);
+  const N = nx * ny;
+  // 高い順。⚠ 比較関数つきの sort は 25万点で重い（PC で 100ms 超）ので、0.1m 刻みの数え上げで並べる（O(N)）
+  let nv = 0, hMin = Infinity, hMax = -Infinity;
+  for (let n = 0; n < N; n++) { const v = h[n]; if (v === v) { nv++; if (v < hMin) hMin = v; if (v > hMax) hMax = v; } }
+  const order = new Uint32Array(nv);
+  if (nv) {
+    const B = Math.floor((hMax - hMin) * 10) + 1, cnt = new Uint32Array(B + 1);
+    for (let n = 0; n < N; n++) { const v = h[n]; if (v === v) cnt[B - 1 - Math.floor((v - hMin) * 10)]++; }
+    for (let b = 1; b <= B; b++) cnt[b] += cnt[b - 1];
+    for (let n = N - 1; n >= 0; n--) { const v = h[n]; if (v === v) order[--cnt[B - 1 - Math.floor((v - hMin) * 10)]] = n; }
+  }
+  const parent = new Int32Array(N).fill(-1), peak = new Int32Array(N).fill(-1);
+  const find = a => { let r = a; while (parent[r] !== r) r = parent[r]; while (parent[a] !== r) { const nx2 = parent[a]; parent[a] = r; a = nx2; } return r; };
+  const NB = [-nx - 1, -nx, -nx + 1, -1, 1, nx - 1, nx, nx + 1];
+  const raw = [], roots = [];
+  for (let oi = 0; oi < nv; oi++) {
+    const c = order[oi], cx = c % nx;
+    roots.length = 0;
+    for (let q = 0; q < 8; q++) {
+      const nb = c + NB[q];
+      if (nb < 0 || nb >= N) continue;
+      const bx = nb % nx;
+      if (Math.abs(bx - cx) > 1) continue;         // 左右の端をまたがない
+      if (parent[nb] < 0) continue;                 // まだ陸地になっていない（低い）
+      const r = find(nb);
+      if (!roots.includes(r)) roots.push(r);
+    }
+    if (!roots.length) { parent[c] = c; peak[c] = c; continue; }
+    roots.sort((a, b) => h[peak[b]] - h[peak[a]]);
+    const main = roots[0];
+    parent[c] = main;
+    for (let i = 1; i < roots.length; i++) {
+      const r = roots[i], pa = peak[main], pb = peak[r], prom = h[pb] - h[c];
+      if (prom >= COL.FLOOR_M) raw.push({ c, pa, pb, prom });
+      parent[r] = main;
+    }
+  }
+  // 鞍部は画面（＋少し）の中だけ採る。低い方の峰が範囲の端なら「端」
+  const pad = COL.INNER_PAD_KM * 1000 / dpx / m, ix0 = (view.tlx * k - x0) / m - pad, iy0 = (view.tly * k - y0) / m - pad;
+  const ix1 = ((view.tlx + view.w) * k - x0) / m + pad, iy1 = ((view.tly + view.h) * k - y0) / m + pad;
+  const onEdge = n => { const x = n % nx, y = (n - x) / nx; return x <= 1 || y <= 1 || x >= nx - 2 || y >= ny - 2; };
+  const toLL = n => { const x = n % nx, y = (n - x) / nx; return leafletMap.unproject([x0 + (x + 0.5) * m, y0 + (y + 0.5) * m], zd); };
+  const at = (fx, fy) => {
     const x = Math.floor(fx), y = Math.floor(fy);
     if (x < 0 || y < 0 || x >= nx - 1 || y >= ny - 1) return NaN;
     const tx = fx - x, ty = fy - y, n = y * nx + x;
-    return (S[n] * (1 - tx) + S[n + 1] * tx) * (1 - ty) + (S[n + nx] * (1 - tx) + S[n + nx + 1] * tx) * ty;
+    return (h[n] * (1 - tx) + h[n + 1] * tx) * (1 - ty) + (h[n + nx] * (1 - tx) + h[n + nx + 1] * tx) * ty;
   };
-  const saddles = [], rad = sig;
-  for (const n of cand) {
-    const x = n % nx, y = (n - x) / nx;
-    if (saddles.some(s => Math.hypot(s.cx - x, s.cy - y) < rad)) continue;
-    // λ1 の向き（ex,ey）＝鞍部を抜ける向き（両側が下がる）、その直角＝稜線の向き（両側が上がる）
-    const px = ex[n], py = ey[n], rx = -py, ry = px, c = S[n], L = Math.ceil(3 * sig);
-    let upA = -Infinity, upB = -Infinity, dnA = Infinity, dnB = Infinity;
-    for (let s = 1; s <= L; s++) {
-      upA = Math.max(upA, at(x + rx * s, y + ry * s)); upB = Math.max(upB, at(x - rx * s, y - ry * s));
-      dnA = Math.min(dnA, at(x + px * s, y + py * s)); dnB = Math.min(dnB, at(x - px * s, y - py * s));
+  const dist = (a, b) => { const ax = a % nx, ay = (a - ax) / nx, bx = b % nx, by = (b - bx) / nx; return Math.hypot(ax - bx, ay - by) * cell; };
+  const rp = Math.max(2, COL.RIDGE_PROBE_M / cell);
+  const cols = [];
+  for (const s of raw.sort((a, b) => b.prom - a.prom).slice(0, COL.MAX_KEEP)) {
+    const x = s.c % nx, y = (s.c - x) / nx;
+    if (x < ix0 || y < iy0 || x > ix1 || y > iy1) continue;
+    // 稜線の向き（両側とも最も高い）・抜ける向き（両側とも最も低い）。5° 刻み・欠測は飛ばす
+    let best = -Infinity, worst = Infinity, rd = [1, 0], pd = [0, 1];
+    for (let a = 0; a < 180; a += 5) {
+      const ux = Math.cos(a * Math.PI / 180), uy = Math.sin(a * Math.PI / 180);
+      const p = at(x + ux * rp, y + uy * rp), q = at(x - ux * rp, y - uy * rp);
+      if (p !== p || q !== q) continue;
+      if (Math.min(p, q) > best) { best = Math.min(p, q); rd = [ux, uy]; }
+      if (Math.max(p, q) < worst) { worst = Math.max(p, q); pd = [ux, uy]; }
     }
-    const wx = x0 + (x + 0.5) * m, wy = y0 + (y + 0.5) * m;
-    const ll = leafletMap.unproject([wx, wy], zd);
-    saddles.push({ cx: x, cy: y, scale: sc.id, sigma: sc.sigma, lat: ll.lat, lon: ll.lng, h: c,
-      score: score(n), prominence: Math.min(upA, upB) - c, drop: c - Math.max(dnA, dnB),
-      ridge: [rx, ry], pass: [px, py], k1: k1[n], k2: k2[n] });
+    const ll = toLL(s.c), la = toLL(s.pa), lb = toLL(s.pb);
+    cols.push({ lat: ll.lat, lon: ll.lng, h: h[s.c], prom: s.prom,
+      peakHi: { lat: la.lat, lon: la.lng, h: h[s.pa], d: dist(s.c, s.pa) },
+      peakLo: { lat: lb.lat, lon: lb.lng, h: h[s.pb], d: dist(s.c, s.pb) },
+      edge: onEdge(s.pb), ridge: rd, pass: pd,
+      drop: worst === Infinity ? NaN : h[s.c] - worst, rise: best === -Infinity ? NaN : best - h[s.c] });
   }
-  return { sc, zd, m, x0, y0, nx, ny, p, sig, S, k1, k2, ex, ey, cls, grad, T, saddles,
-    ms: performance.now() - t0, loading: blk.loading };
+  return { cols, zd, m, cell, nx, ny, ms: performance.now() - t0, loading };
 }
-// 画面に合わせて全部の縮尺を解析し、鞍部を縮尺をまたいでまとめる
+
+// 画面に合わせて谷軸・尾根（縮尺ごと）と鞍部を解析する
 function terrainAnalyze() {
-  const t0 = performance.now();
-  const z = leafletMap.getZoom(), o = leafletMap.getPixelOrigin(), lp = leafletMap.containerPointToLayerPoint([0, 0]), size = leafletMap.getSize();
-  const view = { z, tlx: o.x + lp.x, tly: o.y + lp.y, w: size.x, h: size.y };
-  const lat = leafletMap.getCenter().lat, mPerPx = demPxM(z, lat);
+  const t0 = performance.now(), view = terrainView();
+  const lat = leafletMap.getCenter().lat, mPerPx = demPxM(view.z, lat);
   const scales = [], skipped = [];
   for (const sc of TERRAIN_SCALES) {
     if (sc.sigma / mPerPx < TERRAIN_AN.MIN_SCREEN_PX) { skipped.push(sc.label); continue; }
     scales.push(terrainAnalyzeScale(sc, view, lat));
   }
-  // 縮尺をまたいで同じ鞍部をまとめる（1.5σ 以内）
-  const all = scales.flatMap(r => r.saddles), groups = [];
-  const dist = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos(a.lat * Math.PI / 180));
-  for (const s of all.sort((a, b) => b.score / TERRAIN_AN.REL_T / b.sigma - a.score / TERRAIN_AN.REL_T / a.sigma)) {
-    const g = groups.find(g => g.members.some(m => dist(m, s) <= TERRAIN_AN.MATCH_SIGMA * Math.max(m.sigma, s.sigma)));
-    if (g) g.members.push(s); else groups.push({ members: [s] });
-  }
-  for (const g of groups) {
-    const sc = new Set(g.members.map(m => m.scale));
-    g.scales = TERRAIN_SCALES.filter(t => sc.has(t.id)).map(t => t.label);
-    g.scaleConsistency = scales.length ? sc.size / scales.length : 0;
-    // 代表：その縮尺のしきい値に対して最も際立つもの
-    g.rep = g.members.reduce((a, b) => (b.score / b.sigma > a.score / a.sigma ? b : a));
-    g.saddleScore = g.rep.score;
-    g.prominence = Math.max(...g.members.map(m => m.prominence));
-    const ratio = g.rep.prominence / (TERRAIN_AN.REL_T * g.rep.sigma);
-    g.clarity = (scales.length >= 2 && g.scaleConsistency >= 0.66 && ratio >= 2) ? '高'
-      : ((g.scaleConsistency >= 0.5 && ratio >= 1) || ratio >= 3) ? '中' : '低';
-  }
-  groups.sort((a, b) => ({ 高: 0, 中: 1, 低: 2 }[a.clarity] - { 高: 0, 中: 1, 低: 2 }[b.clarity]) || b.scaleConsistency - a.scaleConsistency || b.saddleScore / b.rep.sigma - a.saddleScore / a.rep.sigma);
-  return { view, scales, skipped, groups, ms: performance.now() - t0, loading: scales.some(r => r.loading) };
+  const cols = terrainFindCols(view, lat);
+  return { view, scales, skipped, cols, ms: performance.now() - t0, loading: scales.some(r => r.loading) || cols.loading };
 }
-// 解析の升目の値（縮尺 r・緯度経度）。無ければ null
+// 解析の升目（縮尺 r・緯度経度）。無ければ null
 function terrainCellAt(r, lat, lon) {
   const w = leafletMap.project([lat, lon], r.zd);
   const x = Math.floor((w.x - r.x0) / r.m), y = Math.floor((w.y - r.y0) / r.m);
@@ -8510,6 +8558,10 @@ function terrainCrossAngle(ridge, w) {
   return Math.acos(Math.min(1, Math.abs(ridge[0] * wx + ridge[1] * wy) / wl)) * 180 / Math.PI;
 }
 const bearingOf = (vx, vy) => (Math.atan2(vx, -vy) * 180 / Math.PI + 360) % 360;   // 東・南の成分 → 方位（北=0）
+const geoDist = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos(a.lat * Math.PI / 180));
+const geoBearing = (a, b) => bearingOf((b.lon - a.lon) * Math.cos(a.lat * Math.PI / 180), -(b.lat - a.lat));
+const DIR8 = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+const dir8 = deg => DIR8[Math.round(deg / 45) % 8];
 
 /* ------ 表示（開発用の重ね）------ */
 function terrainAutoScale(res) {
@@ -8560,14 +8612,15 @@ function terrainDraw() {
     }
   }
   ctx.globalAlpha = 1;
-  // 鞍部：◎＋稜線（茶の点線）＋風の向き（黒）＋横断角
-  const shownGroups = res.groups.filter(g => leafletMap.getBounds().contains([g.rep.lat, g.rep.lon])).slice(0, TERRAIN_AN.MAX_SADDLES);
-  for (const g of shownGroups) {
-    const s = g.rep, pt = leafletMap.latLngToContainerPoint([s.lat, s.lon]), w = terrainWindAt(s.lat, s.lon);
-    g.cross = w ? terrainCrossAngle(s.ridge, w) : null;
-    g.wind = w;
+  // 鞍部：◎＋稜線（茶の点線）＋風の向き（黒）＋深さ・横断角。深さは計測表示で切り替える（未決）
+  const b = leafletMap.getBounds();
+  const shown = res.cols.cols.filter(c => c.prom >= terrainAn.showMin && b.contains([c.lat, c.lon])).slice(0, TERRAIN_AN.MAX_COLS_SHOWN);
+  for (const c of shown) {
+    const pt = leafletMap.latLngToContainerPoint([c.lat, c.lon]), w = terrainWindAt(c.lat, c.lon);
+    c.cross = w ? terrainCrossAngle(c.ridge, w) : null;
+    c.wind = w;
     ctx.setLineDash([4, 3]); ctx.strokeStyle = '#a0521b'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(pt.x - s.ridge[0] * 18, pt.y - s.ridge[1] * 18); ctx.lineTo(pt.x + s.ridge[0] * 18, pt.y + s.ridge[1] * 18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pt.x - c.ridge[0] * 18, pt.y - c.ridge[1] * 18); ctx.lineTo(pt.x + c.ridge[0] * 18, pt.y + c.ridge[1] * 18); ctx.stroke();
     ctx.setLineDash([]);
     if (w) {
       const wl = Math.hypot(w[0], w[1]) || 1, vx = w[0] / wl, vy = -w[1] / wl;
@@ -8576,10 +8629,10 @@ function terrainDraw() {
       ctx.lineTo(pt.x + vx * 14 - vy * 4, pt.y + vy * 14 + vx * 4); ctx.moveTo(pt.x + vx * 20, pt.y + vy * 20);
       ctx.lineTo(pt.x + vx * 14 + vy * 4, pt.y + vy * 14 - vx * 4); ctx.stroke();
     }
-    const html = `<div class="saddle-mk c${{ 高: 'h', 中: 'm', 低: 'l' }[g.clarity]}"><span>◎</span>` +
-      `<b>${g.cross != null ? '横断角 ' + Math.round(g.cross) + '°' : '風なし'}</b></div>`;
-    const mk = L.marker([s.lat, s.lon], { pane: 'mapWeather', icon: L.divIcon({ className: 'saddle-icon', html, iconSize: null }) }).addTo(leafletMap);
-    mk.bindPopup(() => `<div class="wind-why">${terrainSaddleText(g)}</div>`, { maxWidth: 300 });
+    const html = `<div class="saddle-mk${c.edge ? ' edge' : ''}"><span>◎</span>` +
+      `<b>深さ${Math.round(c.prom)}m${c.cross != null ? '・横断角' + Math.round(c.cross) + '°' : ''}</b></div>`;
+    const mk = L.marker([c.lat, c.lon], { pane: 'mapWeather', icon: L.divIcon({ className: 'saddle-icon', html, iconSize: null }) }).addTo(leafletMap);
+    mk.bindPopup(() => `<div class="wind-why">${terrainColText(c)}</div>`, { maxWidth: 300 });
     terrainAn.markers.push(mk);
   }
   terrainAn.drawStats = st;
@@ -8589,54 +8642,134 @@ function terrainClearMarkers() {
   for (const m of terrainAn.markers) leafletMap.removeLayer(m);
   terrainAn.markers = [];
 }
-function terrainSaddleText(g) {
-  const s = g.rep, f0 = x => Math.round(x).toLocaleString();
-  const w = g.wind, sd = w ? windSpdDir(w) : null;
+function terrainColText(c) {
+  const f0 = x => (x === x && x != null) ? Math.round(x).toLocaleString() : '—';
+  const w = c.wind || terrainWindAt(c.lat, c.lon), sd = w ? windSpdDir(w) : null;
+  const cross = w ? terrainCrossAngle(c.ridge, w) : null;
   return [
-    `<b>鞍部</b>（地形明瞭度：<b>${g.clarity}</b>）`,
-    `見つかった縮尺：${g.scales.join('・')}（${g.members.length}件・解析した縮尺のうち ${Math.round(g.scaleConsistency * 100) / 100}）`,
-    `saddleScore ${f0(g.saddleScore)}m（${TERRAIN_SCALES.find(t => t.id === s.scale).label}）／prominence ${f0(g.prominence)}m／両側の谷への下り ${f0(s.drop)}m`,
-    `鞍部の標高（ならした面）${f0(s.h)}m`,
-    `稜線の向き ${Math.round(bearingOf(s.ridge[0], s.ridge[1]) % 180)}°／抜ける向き ${Math.round(bearingOf(s.pass[0], s.pass[1]) % 180)}°`,
+    `<b>鞍部</b>（峰どうしがつながる点）${c.edge ? '・<b>端</b>（低い方の峰が解析範囲の端＝深さは下限）' : ''}`,
+    `鞍部の標高 ${f0(c.h)}m／<b>深さ（prominence）${f0(c.prom)}m</b>`,
+    `高い側の峰 ${f0(c.peakHi.h)}m（${f0(c.peakHi.d)}m 先・${dir8(geoBearing(c, c.peakHi))}）`,
+    `低い側の峰 ${f0(c.peakLo.h)}m（${f0(c.peakLo.d)}m 先・${dir8(geoBearing(c, c.peakLo))}）`,
+    `稜線の向き ${Math.round(bearingOf(c.ridge[0], c.ridge[1]) % 180)}°／抜ける向き ${Math.round(bearingOf(c.pass[0], c.pass[1]) % 180)}°` +
+      `（±${COL.RIDGE_PROBE_M}m で 両側の下り ${f0(c.drop)}m・両側の上り ${f0(c.rise)}m）`,
     sd ? `モデル風 ${sd.spd.toFixed(1)}m/s・${windDirName(sd.dir)}（${Math.round(sd.dir)}°から）` : 'モデル風：この地点は無し',
-    g.cross != null ? `<b>横断角 ${Math.round(g.cross)}°</b>（稜線と風の角度。90° で稜線を真横に越える）` : '',
+    cross != null ? `<b>横断角 ${Math.round(cross)}°</b>（稜線と風の角度。90° で稜線を真横に越える）` : '',
     `<small>地形の抽出の検証用。風向・風速は補正していない</small>`,
   ].filter(Boolean).join('<br>');
 }
-// 地図の中心（十字）を全部の縮尺で調べる。丸を付けた鞍部の検証に使う
+// ある地点から近い順の鞍部（深さの床以上すべて）
+function terrainNearestCols(res, p, n) {
+  return res.cols.cols.map(c => ({ c, d: geoDist(p, c) })).sort((a, b) => a.d - b.d).slice(0, n);
+}
+// 地図の中心（十字）を調べる。丸を付けた鞍部の検証に使う
 function terrainProbeCenter() {
   const res = terrainAn.result, out = document.getElementById('wind-hud-result');
   if (!res) { if (out) out.textContent = '地形解析が入っていません'; return; }
-  const c = leafletMap.getCenter(), f0 = x => Math.round(x).toLocaleString(), lines = [];
+  const c = leafletMap.getCenter(), p = { lat: c.lat, lon: c.lng }, f0 = x => (x === x && x != null) ? Math.round(x).toLocaleString() : '—', lines = [];
   lines.push(`中心 ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}（ズーム${leafletMap.getZoom().toFixed(1)}）`);
+  const dem = windDemAt(...(w => [w.x, w.y])(leafletMap.project(c, COL.DEM_ZOOM)), COL.DEM_ZOOM);
+  lines.push(`DEM標高 ${dem == null ? '—' : f0(dem) + 'm'}（z${COL.DEM_ZOOM}・約${f0(demPxM(COL.DEM_ZOOM, c.lat))}m の画素）`);
   const w = terrainWindAt(c.lat, c.lng);
   if (w) { const sd = windSpdDir(w); lines.push(`モデル風 ${sd.spd.toFixed(1)}m/s ${Math.round(sd.dir)}°から`); }
-  const NAME = ['斜面・平坦', '谷', '尾根', '鞍部'];
+  const NAME = ['斜面・平坦', '谷', '尾根'];
   for (const r of res.scales) {
     const n = terrainCellAt(r, c.lat, c.lng);
     if (n == null) { lines.push(`${r.sc.label}: 範囲外・欠測`); continue; }
-    const k1 = r.k1[n], k2 = r.k2[n], saddleLike = k1 < 0 && k2 > 0;
-    const ridge = [-r.ey[n], r.ex[n]], cross = w ? terrainCrossAngle(ridge, w) : null;
-    lines.push(`${r.sc.label}: ${NAME[r.cls[n]]}` + ` κ1 ${f0(k1)} κ2 ${f0(k2)}m（T ${f0(r.T)}）` +
-      (saddleLike ? ` saddleScore ${f0(Math.sqrt(-k1 * k2))}m` : '') + ` 勾配×σ ${f0(r.grad[n])}m` +
-      (saddleLike && cross != null ? ` 横断角 ${Math.round(cross)}°` : ''));
+    // 稜線の向き＝λ2 の向き（λ1 の直角）。勾配をその向きと横切る向きに分ける
+    const rx = -r.ey[n], ry = r.ex[n], gAlong = r.gx[n] * rx + r.gy[n] * ry, gAcross = r.gx[n] * r.ex[n] + r.gy[n] * r.ey[n];
+    lines.push(`${r.sc.label}: ${NAME[r.cls[n]]} 標高${f0(r.S[n])}m κ1 ${f0(r.k1[n])} κ2 ${f0(r.k2[n])}m（T ${f0(r.T)}）` +
+      ` 勾配${(Math.hypot(r.gx[n], r.gy[n]) * 100).toFixed(0)}%（稜線方向${(Math.abs(gAlong) * 100).toFixed(0)}%・横断方向${(Math.abs(gAcross) * 100).toFixed(0)}%）`);
   }
-  // いちばん近い鞍部
-  const dist = g => Math.hypot((g.rep.lat - c.lat) * 111320, (g.rep.lon - c.lng) * 111320 * Math.cos(c.lat * Math.PI / 180));
-  const near = res.groups.slice().sort((a, b) => dist(a) - dist(b))[0];
-  if (near) {
-    const nw = terrainWindAt(near.rep.lat, near.rep.lon), cr = nw ? terrainCrossAngle(near.rep.ridge, nw) : null;
-    lines.push(`近い鞍部 ${f0(dist(near))}m 先：明瞭度${near.clarity}・縮尺 ${near.scales.join('/')}・scaleConsistency ${near.scaleConsistency.toFixed(2)}` +
-      `・saddleScore ${f0(near.saddleScore)}m・prominence ${f0(near.prominence)}m` + (cr != null ? `・横断角 ${Math.round(cr)}°` : ''));
-  } else lines.push('近くに鞍部は見つかっていない');
-  if (res.skipped.length) lines.push(`解析しなかった縮尺（画面で小さすぎる）：${res.skipped.join('・')}`);
+  const near = terrainNearestCols(res, p, 3);
+  if (!near.length) lines.push(`近くに鞍部は見つかっていない（深さ${COL.FLOOR_M}m以上）`);
+  near.forEach(({ c: s, d }, i) => {
+    const sw = terrainWindAt(s.lat, s.lon), cr = sw ? terrainCrossAngle(s.ridge, sw) : null;
+    lines.push(`鞍部${i + 1}: ${f0(d)}m ${dir8(geoBearing(p, s))}・標高${f0(s.h)}m・深さ${f0(s.prom)}m${s.edge ? '（端）' : ''}` +
+      `・峰 ${f0(s.peakHi.h)}m/${f0(s.peakHi.d)}m先・${f0(s.peakLo.h)}m/${f0(s.peakLo.d)}m先` +
+      `・抜ける向き${Math.round(bearingOf(s.pass[0], s.pass[1]) % 180)}°` + (cr != null ? `・横断角${Math.round(cr)}°` : ''));
+  });
+  if (res.skipped.length) lines.push(`谷・尾根を解析しなかった縮尺（画面で小さすぎる）：${res.skipped.join('・')}`);
+  lines.push(`鞍部の解析：升目 約${f0(res.cols.cell)}m・${res.cols.nx}×${res.cols.ny}・${res.cols.ms.toFixed(0)}ms`);
   windGL.lastMeasure = lines.join('\n');
   if (out) out.textContent = windGL.lastMeasure;
 }
+
+/* ------ 検証セット：名前の付いた実在のコル（利用者が実機で「中心を解析」した地点）------
+   ボタン1つで順に回り、最寄りの鞍部を表にする（コピー可）。⚠ 何m以内なら正解、は決めていない（分布を見て決める） */
+const TERRAIN_VERIFY_COLS = [
+  { name: '峰の茶屋跡', lat: 37.13074, lon: 139.96218 },
+  { name: '常念乗越', lat: 36.33341, lon: 137.72752 },
+  { name: '夏沢峠', lat: 36.00605, lon: 138.36480 },
+  { name: '八本歯ノコル', lat: 35.67072, lon: 138.24327 },
+  { name: '白出のコル', lat: 36.29375, lon: 137.64776 },
+  { name: '乗越浄土', lat: 35.78311, lon: 137.80893 },
+  { name: '別山乗越', lat: 36.59645, lon: 137.61014 },
+  { name: '那須の丸地点', lat: 37.15979, lon: 139.96325 },
+];
+const VERIFY_ZOOM = 15;
+function terrainVerifyRow(site, res) {
+  const f0 = x => (x === x && x != null) ? String(Math.round(x)) : '';
+  const p = { lat: site.lat, lon: site.lon };
+  const near = terrainNearestCols(res, p, 50);
+  const n1 = near[0];
+  // 300m 以内でいちばん深い鞍部（最寄りが小さな凹みのときのため）
+  const deep = near.filter(x => x.d <= 300).sort((a, b) => b.c.prom - a.c.prom)[0];
+  const cell = (x, withWind) => {
+    if (!x) return ['', '', '', '', '', '', '', '', '', '', ''];
+    const s = x.c, w = terrainWindAt(s.lat, s.lon), cr = w ? terrainCrossAngle(s.ridge, w) : null;
+    return [f0(x.d), dir8(geoBearing(p, s)), f0(s.h), f0(s.prom) + (s.edge ? '（端）' : ''),
+      `${f0(s.peakHi.h)}/${f0(s.peakHi.d)}`, `${f0(s.peakLo.h)}/${f0(s.peakLo.d)}`,
+      String(Math.round(bearingOf(s.pass[0], s.pass[1]) % 180)), cr != null ? String(Math.round(cr)) : '',
+      w ? `${windSpdDir(w).spd.toFixed(1)}m/s ${Math.round(windSpdDir(w).dir)}°` : '', f0(s.drop), f0(s.rise)];
+  };
+  return [site.name, ...cell(n1), ...(deep && deep !== n1 ? [f0(deep.d), f0(deep.c.prom)] : ['同じ', '']),
+    res.loading ? '読込中あり' : '', `${f0(res.cols.cell)}m`];
+}
+const TERRAIN_VERIFY_HEAD = ['地点', '最寄り距離m', '方位', '鞍部標高m', '深さm', '高い峰m/距離m', '低い峰m/距離m', '抜ける向き°', '横断角°', 'モデル風',
+  '両側の下りm', '両側の上りm', '300m内で最深 距離m', '300m内で最深 深さm', '備考', '升目'];
+function terrainWaitReady(timeoutMs) {
+  return new Promise(resolve => {
+    const t0 = Date.now();
+    const tick = () => {
+      const res = terrainAn.result;
+      const ready = res && !res.loading && terrainAn.key === terrainKey();
+      if (ready || Date.now() - t0 > timeoutMs) return resolve(res);
+      if (terrainAn.on && windGL.running) terrainRefresh();
+      setTimeout(tick, 400);
+    };
+    setTimeout(tick, 600);
+  });
+}
+async function terrainVerifyCols() {
+  const out = document.getElementById('wind-hud-result');
+  if (!isOverlayOn('windFlowGL')) toggleOverlay('windFlowGL');
+  if (!terrainAn.on) terrainToggle();
+  const rows = [TERRAIN_VERIFY_HEAD.join('\t')];
+  for (const [i, site] of TERRAIN_VERIFY_COLS.entries()) {
+    if (out) out.textContent = `検証中 ${i + 1}/${TERRAIN_VERIFY_COLS.length}：${site.name}…`;
+    leafletMap.setView([site.lat, site.lon], VERIFY_ZOOM, { animate: false });
+    let res = await terrainWaitReady(20000);
+    // 風（横断角）が要るので、場が届くまで少し待つ
+    for (let k = 0; k < 20 && !terrainWindAt(site.lat, site.lon); k++) await new Promise(r => setTimeout(r, 500));
+    terrainRefresh(); res = terrainAn.result;
+    rows.push(res ? terrainVerifyRow(site, res).join('\t') : `${site.name}\t解析できず`);
+  }
+  const sel = state.allData && state.allData[state.sliderIndex];
+  rows.push(`（時刻 ${sel ? isoHour(sel.time) : ''}・ズーム${VERIFY_ZOOM}・深さの床${COL.FLOOR_M}m・版 ${(document.getElementById('app-version') || {}).textContent || ''}）`);
+  windGL.lastMeasure = rows.join('\n');
+  if (out) out.textContent = windGL.lastMeasure;
+  return windGL.lastMeasure;
+}
+
 // 解析し直す（表示範囲が変わったとき・標高タイルが届いたとき）。時刻だけなら描き直すだけ
+function terrainKey() {
+  const b = leafletMap.getPixelBounds();
+  return `${leafletMap.getZoom().toFixed(3)}|${b.min.x}|${b.min.y}|${b.max.x}|${b.max.y}`;
+}
 function terrainRefresh() {
   if (!terrainAn.on || !isMapOpen() || !windGL.running) { terrainDraw(); return; }
-  const b = leafletMap.getPixelBounds(), key = `${leafletMap.getZoom().toFixed(3)}|${b.min.x}|${b.min.y}|${b.max.x}|${b.max.y}|${windDem.tiles.size}`;
+  const key = terrainKey();
   if (key !== terrainAn.key || !terrainAn.result || terrainAn.result.loading) {
     terrainAn.key = key;
     terrainAn.result = terrainAnalyze();
@@ -8654,17 +8787,21 @@ function terrainCycleScale() {
   terrainAn.scaleSel = ids[(ids.indexOf(terrainAn.scaleSel) + 1) % ids.length];
   terrainDraw();
 }
+function terrainCycleShowMin() {
+  const s = COL.SHOW_STEPS;
+  terrainAn.showMin = s[(s.indexOf(terrainAn.showMin) + 1) % s.length];
+  terrainDraw();
+}
 function terrainHudText() {
   if (!terrainAn.on) return '';
   const r = terrainAn.result;
   if (!r) return '<b>地形解析</b> 待ち';
-  const cnt = { 高: 0, 中: 0, 低: 0 };
-  r.groups.forEach(g => cnt[g.clarity]++);
-  const per = r.scales.map(x => `${x.sc.label} ${x.ms.toFixed(0)}ms 鞍部${x.saddles.length}`).join('・');
+  const per = r.scales.map(x => `${x.sc.label} ${x.ms.toFixed(0)}ms`).join('・');
+  const cs = r.cols.cols, bins = [5, 10, 20, 50, 100].map(t => `≧${t}m ${cs.filter(c => c.prom >= t).length}`).join(' ');
   const d = terrainAn.drawStats || {};
-  return `<b>地形解析</b> ${r.ms.toFixed(0)}ms${r.loading ? '・読込中' : ''}｜${per || '縮尺なし'}` +
-    `${r.skipped.length ? '｜省略 ' + r.skipped.join('・') : ''}｜鞍部 高${cnt.高} 中${cnt.中} 低${cnt.低}` +
-    `｜線 ${terrainAn.shown || '—'} 谷${d.valley || 0} 尾根${d.ridge || 0}（他の縮尺でも同じ ${d.stable || 0}）`;
+  return `<b>地形解析</b> ${r.ms.toFixed(0)}ms${r.loading ? '・読込中' : ''}｜谷・尾根 ${per || '縮尺なし'}` +
+    `${r.skipped.length ? '（省略 ' + r.skipped.join('・') + '）' : ''}｜線 ${terrainAn.shown || '—'} 谷${d.valley || 0} 尾根${d.ridge || 0}（他の縮尺でも同じ ${d.stable || 0}）` +
+    `｜<b>鞍部</b> ${r.cols.ms.toFixed(0)}ms 升目${Math.round(r.cols.cell)}m ${bins}`;
 }
 // 格子の双線形（m/s。北が正）。⚠ 毎コマ粒の数だけ呼ぶので配列を作らない（結果は glU/glV）
 let glU = 0, glV = 0;
@@ -8964,16 +9101,21 @@ function windGLHud(show) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'wind-hud';
-    el.innerHTML = '<div id="wind-hud-text"></div><div class="wh-btns">' +
+    el.innerHTML = '<button type="button" id="wind-hud-min" onclick="windGLHudMin()">▲隠す</button><div id="wind-hud-text"></div><div class="wh-btns">' +
       '<button type="button" onclick="windGLScaleCount(0.5)">粒½</button>' +
       '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
       '<button type="button" id="wind-hud-terrain" onclick="windGLToggleTerrain()"></button>' +
       '<button type="button" id="wind-hud-tan" onclick="terrainToggle()">地形解析</button>' +
       '<button type="button" id="wind-hud-tscale" onclick="terrainCycleScale()"></button>' +
       '<button type="button" id="wind-hud-probe" onclick="terrainProbeCenter()">中心を解析</button>' +
+      '<button type="button" id="wind-hud-showmin" onclick="terrainCycleShowMin()"></button>' +
+      '<button type="button" id="wind-hud-verify" onclick="terrainVerifyCols()">検証8地点</button>' +
       '<button type="button" onclick="windGLMeasure()">10秒計測</button>' +
       '<button type="button" onclick="windGLCopy()">コピー</button></div><div id="wind-hud-result"></div>';
     (document.getElementById('map-overlay') || document.body).appendChild(el);
+    let min = false;
+    try { min = !!localStorage.getItem('windHudMin'); } catch (e) { /* 既定は開く */ }
+    if (min) { el.classList.add('min'); document.getElementById('wind-hud-min').textContent = '▼計測'; }
   }
   el.classList.remove('hidden');
   windGLHudText();
@@ -8994,6 +9136,9 @@ function windGLHudText() {
   if (ta) ta.classList.toggle('on', terrainAn.on);
   if (ts) { ts.style.display = terrainAn.on ? '' : 'none'; ts.textContent = '縮尺:' + (terrainAn.scaleSel === 'auto' ? '自動' : TERRAIN_SCALES.find(x => x.id === terrainAn.scaleSel).label); }
   if (tp) tp.style.display = terrainAn.on ? '' : 'none';
+  const tm = document.getElementById('wind-hud-showmin'), tv = document.getElementById('wind-hud-verify');
+  if (tm) { tm.style.display = terrainAn.on ? '' : 'none'; tm.textContent = `◎深さ≧${terrainAn.showMin}m`; }
+  if (tv) tv.style.display = terrainAn.on ? '' : 'none';
 }
 // 段階1の比べ（谷底・尾根の平均の風速が 升目の風 → 地形の高さの風 でどう変わったか）
 function windGLTerrainText() {
@@ -9008,6 +9153,14 @@ function windGLToggleTerrain() {
   windGL.terrainOn = !windGL.terrainOn;
   if (lastWindField) updateWindFlowGL(lastWindField);   // 粒は撒き直さない（按分で移る）
   windGLHudText();
+}
+// 計測表示を畳む・開く（地図の中心が隠れて位置を合わせにくい。利用者の要望）
+function windGLHudMin() {
+  const el = document.getElementById('wind-hud');
+  if (!el) return;
+  const min = el.classList.toggle('min');
+  document.getElementById('wind-hud-min').textContent = min ? '▼計測' : '▲隠す';
+  try { localStorage.setItem('windHudMin', min ? '1' : ''); } catch (e) { /* 覚えられなくても動く */ }
 }
 function windGLScaleCount(k) {
   windGL.override = Math.max(500, Math.min(WIND_GL.COUNT_MAX, Math.round(windGLParticleCount() * k)));
