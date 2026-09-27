@@ -1,0 +1,38 @@
+name: 鞍部の検証（実験）
+
+# 風の流れ（実験）の段階2：名前の付いた実在のコル8か所が、DEM 上の鞍部として見つかるかを表にする。
+# アプリの「検証8地点」と同じ関数を、本物の地理院 DEM と Open-Meteo で回す（scripts/verifyCols.mjs）。
+#
+# なぜ Actions で回すか:
+#   開発環境からは国土地理院にも Open-Meteo にも到達できない（山頂座標の検査と同じ制約）。
+# ⚠ 実験のブランチ専用の一時的なワークフロー。PR #104 を main へ入れるときは消すこと。
+#   何もコミットしない。結果はログとサマリーに出るだけ。
+on:
+  push:
+    branches: [claude/wind-particle-animation-poc-rm08b6]
+    paths: ['sotoki_v4.html', 'scripts/verifyCols.mjs', '.github/workflows/verify-cols.yml']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: 依存を取得
+        working-directory: tests
+        run: npm install
+
+      - name: Chromium を用意
+        uses: ./.github/actions/chromium
+
+      - name: 8地点を回す
+        run: node scripts/verifyCols.mjs
