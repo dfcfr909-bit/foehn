@@ -426,6 +426,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `TERRAIN_VERIFY_COLS` / `terrainVerifyCols()` | 検証8地点（実在のコル）を順に回って表にする。Actions は `scripts/verifyCols.mjs` | 約 8640 |
 | `terrainDraw()` / `terrainColText(c)` | 尾根・沢の帯と鞍部の◎（深さ・横断角）／◎を押したときの説明（稜線の上か） | 約 8720 |
 | `terrainProbeCenter()` / `terrainRefresh()` | 地図の中心を全部の縮尺で調べる（検証用）／表示範囲が変わったら解析し直す | 約 8607 |
+| `RIDGE_SRC` / `terrainRidgeWhy(G, F, cols, gi)` | 稜線の出自（頂・分水界・鞍部からのつなぎ）／中心の近くの稜線の升目がなぜ稜線か・横断の高低差（v4.128.0） | 約 9090 |
 | `windGLTerrainText()` / `windGLToggleTerrain()` | 計測表示の谷底・尾根の比べ／「高さ:地形・升目」の切り替え | 約 8576 |
 | `updateWindFlowGL(f)` / `stopWindFlowGL()` | 場が変わったら格子だけ作り直す（粒は撒き直さない）／止める | 約 8334 |
 | `windFlowStat` / `windGLMeasure()` | 計測（FPS・CPU 時間。Canvas 版も）／10秒計測 | 約 8371 |
