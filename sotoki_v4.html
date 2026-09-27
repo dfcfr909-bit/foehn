@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.130.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.131.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8900,7 +8900,19 @@ function thinMask(G, mask) {
 // ② 細線を分岐点・端点を結ぶ辺にする。返り値 [[升目,…], …]
 function skeletonEdges(G, m) {
   const { nx, ny, N } = G, NB = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
-  const nbs = n => { const x = n % nx, y = (n - x) / nx, out = []; for (const [dx, dy] of NB) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < nx && yy < ny && m[yy * nx + xx]) out.push(yy * nx + xx); } return out; };
+  /* ⚠ 斜めのつながりは、同じ2升目が縦横の升目を通してもつながっている（階段の角）なら数えない（v4.131.0）。
+     数えると階段の角ごとに小さな三角（3升目の輪）ができ、そこが分岐点になって線が1〜3升目の辺に細切れになる。
+     拡大するとその三角が**ハシゴ状**に見えた（実機・男体山の火口縁）。縦横を優先すれば、細線は分岐の無い1本の辺になる */
+  const on = (x, y) => x >= 0 && y >= 0 && x < nx && y < ny && m[y * nx + x];
+  const nbs = n => {
+    const x = n % nx, y = (n - x) / nx, out = [];
+    for (const [dx, dy] of NB) {
+      if (!on(x + dx, y + dy)) continue;
+      if (dx && dy && (on(x + dx, y) || on(x, y + dy))) continue;   // 階段の角：縦横で着ける
+      out.push((y + dy) * nx + x + dx);
+    }
+    return out;
+  };
   const deg = new Uint8Array(N), cells = [];
   for (let n = 0; n < N; n++) if (m[n]) { deg[n] = nbs(n).length; cells.push(n); }
   const used = new Set(), key = (a, b) => a < b ? a * N + b : b * N + a, edges = [];

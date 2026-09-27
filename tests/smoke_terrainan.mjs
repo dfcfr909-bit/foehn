@@ -322,6 +322,16 @@ ok(bandW.map(x => x[0]).join(',') === '10,20,50,100' && bandW.every((x, i) => i 
 // 鞍部は稜線の上（つないだ稜線）
 const link = await page.evaluate(() => { const c = terrainNearestCols(terrainAn.result, { lat: 36.57, lon: 137.65 }, 1)[0].c; return { onRidge: c.onRidge, ridgeId: c.ridgeId, bridged: terrainAn.result.flow.bridged, text: terrainColText(c) }; });
 ok(link.onRidge && link.ridgeId >= 0 && /稜線（水の流れから求めた尾根）の上/.test(link.text), '★鞍部は稜線の上（将来の風の解析で「どの稜線のコルか」を引ける）', link);
+// 細線の辺（v4.131.0）：斜めの2〜3升目幅の帯は、細くしたあと分岐の無い1本の辺になる。
+// ⚠ 斜めのつながりを階段の角でも数えると、角ごとの小さな三角で1〜3升目の辺に細切れになり、拡大でハシゴ状に見えた（実機・男体山の火口縁）
+const ladder = await page.evaluate(() => {
+  const nx = 60, ny = 60, N = nx * ny, G = { nx, ny, N }, m = new Uint8Array(N);
+  for (let y = 0; y < ny; y++) for (let x = 5; x < 55; x++) if (Math.abs((y - 10) - (x - 5) * 0.55) < 1.3) m[y * nx + x] = 1;
+  const e = skeletonEdges(G, thinMask(G, m));
+  return { edges: e.length, short: e.filter(a => a.length <= 3).length, len: e.map(a => a.length) };
+});
+ok(ladder.edges === 1 && ladder.short === 0, '★斜めの帯は細くして1本の辺（階段の角で細切れにしない＝ハシゴ状に描かない）', ladder);
+
 // 稜線の出自（謎の直線の切り分け・v4.128.0〜v4.129.0）：稜線の升目はすべて出自（頂・分水界・つなぎ）を持ち、つなぎは鞍部を指す。
 // 小さな偽の升目（30m×80×60）：峰2つ（1,500m・東西に 900m 離す）と、その間の鞍部。分水界の稜線はいったん止め
 // （横断の条件を満たせなくする）、鞍部から峰までをつなぎだけで引かせる。
