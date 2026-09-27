@@ -1362,6 +1362,15 @@ html, body {
 .wind-why { font-size: 12px; line-height: 1.5; }
 /* 風の流れ（粒子）の canvas。Leaflet の pane の中で setPosition（translate）で置くので絶対配置 */
 .wind-flow { position: absolute; left: 0; top: 0; pointer-events: none; }
+/* 風の流れ（実験・WebGL）の計測表示（開発用）。地図の回転に巻き込まれないよう #map-overlay に置く */
+#wind-hud { position: absolute; left: 8px; top: calc(env(safe-area-inset-top, 0px) + 92px); z-index: 1200;
+  max-width: calc(100% - 72px);   /* 右の縦のボタン列を塞がない */ padding: 4px 6px; border-radius: 6px; background: rgba(0,0,0,.62); color: #fff;
+  font: 11px/1.4 ui-monospace, Menlo, monospace; }
+#wind-hud.hidden { display: none; }
+#wind-hud .wh-btns { display: flex; gap: 4px; margin-top: 3px; }
+#wind-hud button { font: inherit; padding: 2px 6px; border: 1px solid rgba(255,255,255,.4); border-radius: 4px; background: rgba(255,255,255,.12); color: #fff; }
+#wind-hud-result { white-space: pre-wrap; word-break: break-all; max-height: 40vh; overflow: auto; }
+#wind-hud-result:empty { display: none; }
 .wind-why small { color: #5b6573; }
 .wind-box.strong b, .wind-box.strong .wind-a { color: var(--c-col); }
 /* 地点のピン。⚠ **タップを一切受けない。**
@@ -2277,7 +2286,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.119.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.120.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6341,6 +6350,10 @@ const MAP_WEATHER = [
      数値を読むのは矢印、流れを掴むのはこちら（役割を分ける） */
   { id: 'windFlow', name: '風の流れ', kind: 'windFlow', opacity: 0.9,
     attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。AUTO／層の切り替えは風向風速と共通' },
+  /* 風の流れ（実験・WebGL）。PoC（v4.120.0・ADR-0013）。Canvas 版と**同じ場**を WebGL で描く。
+     Canvas 版と並べて比べるための層（計測表示つき）。WebGL が使えなければ Canvas 版で流す */
+  { id: 'windFlowGL', name: '風の流れ（実験）', kind: 'windFlowGL', opacity: 0.9,
+    attribution: 'Open-Meteo・国土地理院（地形）', note: 'WebGL で描く試作。パン・ズーム中も流れる。計測表示つき' },
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
     attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
 ];
@@ -6466,7 +6479,7 @@ function applyOverlays() {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
     } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
       addTimedTileLayer(def, item.opacity);
-    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'windFlow' || def.kind === 'areas') {
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
       const layer = L.tileLayer(def.url,
@@ -7623,7 +7636,7 @@ function windModeNote(f) {
   return `${md.label === '10m' ? '地上10m' : lv.label}（手動）${tag}`;
 }
 // 風の層（流れ・矢印）のうち入っているもの。状態の文は入っている行すべてに出す
-const WIND_LAYER_IDS = ['windFlow', 'windArrows'];
+const WIND_LAYER_IDS = ['windFlow', 'windFlowGL', 'windArrows'];
 const windLayersOn = () => WIND_LAYER_IDS.filter(id => isOverlayOn(id));
 const windAnyOn = () => windLayersOn().length > 0;
 function windNote(text) { windLayersOn().forEach(id => setLayerNote(id, text)); }
@@ -7763,7 +7776,7 @@ function placeWindFlowCanvas() {
     windFlow.w = size.x; windFlow.h = size.y; windFlow.dpr = dpr;
   }
   L.DomUtil.setPosition(cv, leafletMap.containerPointToLayerPoint([0, 0]));
-  cv.style.opacity = String(overlayOpacity('windFlow'));
+  cv.style.opacity = String(overlayOpacity(isOverlayOn('windFlow') ? 'windFlow' : 'windFlowGL'));
 }
 // 風速（m/s）→ 1コマの見た目の移動量（CSS px）。正比例（弱い風は遅く見えるのが正しい）
 const windFlowPx = ms => WIND_FLOW.SPEED_PX * ms;
@@ -7817,7 +7830,8 @@ function stopWindFlow() {
 function pauseWindFlow() { if (windFlow.running) stopWindFlow(); }
 // 場が変わったら（動かした・時刻・層・取得）作り直して流す
 function updateWindFlow(f) {
-  if (!f || !isMapOpen() || !isOverlayOn('windFlow') || document.hidden) { stopWindFlow(); return; }
+  // 実験の層（windFlowGL）で WebGL が使えないときも、こちらが代わりに流す（windFlowWanted）
+  if (!f || !isMapOpen() || !windFlowWanted() || document.hidden) { stopWindFlow(); return; }
   placeWindFlowCanvas();
   windFlow.grid = buildFlowGrid(f);
   if (!windFlow.grid.okCount) { stopWindFlow(); return; }
@@ -7835,6 +7849,7 @@ function windFlowFrame(ts) {
   if (!windFlow.running) return;
   windFlow.raf = requestAnimationFrame(windFlowFrame);
   if (ts - windFlow.last < 1000 / WIND_FLOW.FPS - 2) return;
+  const frameMs = windFlow.last ? ts - windFlow.last : 0, t0 = performance.now();   // 計測（WebGL 版と比べるため）
   windFlow.last = ts;
   const { ctx, dpr, grid } = windFlow;
   const W = windFlow.cv.width, H = windFlow.cv.height;
@@ -7876,14 +7891,569 @@ function windFlowFrame(ts) {
     ctx.strokeStyle = WIND_FLOW.COLORS[k][1];
     trace(seg); ctx.stroke();
   });
+  windFlowStat(windFlowStats, performance.now() - t0, frameMs);
 }
 // 画面が隠れたら止める・戻ったら流し直す（電池）
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopWindFlow();
-  else if (isMapOpen() && isOverlayOn('windFlow') && lastWindField) updateWindFlow(lastWindField);
+  if (document.hidden) { stopWindFlow(); stopWindFlowGL(); return; }
+  if (isMapOpen() && windFlowWanted() && lastWindField) updateWindFlow(lastWindField);
+  if (isMapOpen() && isOverlayOn('windFlowGL') && lastWindField) updateWindFlowGL(lastWindField);
 });
 
 let lastWindField = null;   // いま描いている場（粒子と検査が使う）
+
+/* ============================================================
+   風の流れ（実験・WebGL）— PoC（v4.120.0・ADR-0013）
+   目的：Canvas 版（windFlow）と**並べて**、WebGL にすると滑らかさ・粒の数・パン／ズームの追従が
+         どこまで良くなるかを確かめる。⚠ 実験。Canvas 版・矢印は残す（比べられるように）
+   ⚠ 気象を知らない。見るのは統合した U/V の場（buildWindField の返り値を sampleWindField で引く）だけ。
+     場の作り方・判定・AUTO・気圧面・モデルの切り替えには触らない
+   役割分担（方式 C'：描画は GPU、移流は CPU）
+   ・CPU：場を**世界座標**（Web メルカトルの画素・基準ズーム z0）の等間隔の格子に写す（場が変わったときだけ）。
+          粒の位置は世界座標（float64）で持ち、毎コマ格子を双線形で引いて動かす（毎コマ配列を作らない）
+   ・GPU：粒の線分を太さのある四角に広げて描く（インスタンス描画・縁取りも1回で）。
+          尾はフレームバッファ2枚の往復で薄める。地図が動いた分は、前のコマの尾を**ずらして・拡大縮小して**重ねる
+   ・パン：止めない。毎コマ地図の今の位置で描く（Canvas 版は movestart で止めて消していた）
+   ・ピンチ：Leaflet が途中のズームを返すので、そのまま毎コマ描く（尾も倍率ごと写す）
+   ・ズームの演出（ダブルタップ・ホイール等）：Leaflet の画像の重ねと同じく CSS で canvas を拡大縮小し、
+     終わったら尾を新しい倍率へ写して続ける（粒は撒き直さない）
+   ・時刻：粒は撒き直さず、古い場から新しい場へ CROSSFADE_MS かけて按分する
+   ・速さは Canvas 版と同じ**風速に正比例**（v4.118.0）。コマ数でなく経過時間で動かす（重い端末でも遅く見えない）
+   参考にした考え方（コードは写していない。出典は docs/adr/0013-wind-particles-webgl.md）
+   ・mapbox/webgl-wind（ISC）… 尾を画面テクスチャ2枚の往復で薄める・floor で 8bit の消え残りを払う・一定確率の撒き直し
+   ・cambecc/earth（MIT）／leaflet-velocity の windy.js（CSIRO・MIT）… 格子→補間→粒の移流・寿命・色の帯
+   ・Leaflet の ImageOverlay（BSD-2）… ズームの演出に _latLngToNewLayerPoint＋setTransform で合わせる
+   ============================================================ */
+const WIND_GL = {
+  STEP_PX: 8,               // 場を写す格子の間隔（基準ズームの世界座標 px）
+  SPEED_PX_S: WIND_FLOW.SPEED_PX * 30,   // 1 m/s あたり毎秒の見た目の移動量（CSS px）。Canvas 版（30コマ）と同じ見た目の速さ
+  // 粒の数の初期値（PoC は固定）。⚠ 決めるのは windGLParticleCount だけ（端末・FPS に応じて変える形へ育てる所）
+  COUNT_MOBILE: 8000, COUNT_DESKTOP: 20000, COUNT_MAX: 200000,
+  AGE_MIN_S: 1.7, AGE_MAX_S: 3.7,   // 寿命（秒）。Canvas 版の 50〜110 コマ（30コマ／秒）と同じ
+  DROP_PER_S: 0.02,         // 寿命とは別に毎秒この割合を撒き直す（収束する所に粒が溜まらない。webgl-wind の考え方）
+  EDGE: 0.15,               // 寿命の始め・終わりのこの割合で濃さを上げ下げ（撒き直しでチラつかない）
+  FADE_30: WIND_FLOW.FADE,  // 30コマ／秒で1コマに残す尾の濃さ。コマの間隔に合わせて累乗する
+  WIDTH: 1.6,               // 線の太さ（CSS px）
+  HALO: 1.2,                // 縁取りの幅（両側の合計・CSS px）
+  HALO_RGBA: [10 / 255, 20 / 255, 40 / 255, 0.45],
+  HEAD_EXT: 0.35,           // 線の頭を伸ばす量（CSS px）。ほぼ無風の粒も点として見える
+  DPR_MAX: 1.5,             // Canvas 版と同じ（比べるため）
+  CROSSFADE_MS: 400,        // 時刻を変えたときに古い場から新しい場へ移す時間
+  MAX_DT_S: 0.05,           // 1コマで進める時間の上限（隠れた後などに跳ばない）
+  GRID_MAX_NODES: 400000,   // 格子の点の数の上限（大きい画面では間隔を広げる）
+};
+const windGL = {
+  ok: null, reason: '', isGL2: false, cv: null, gl: null, inst: null,
+  progSeg: null, progQuad: null, bufCorner: null, bufIdx: null, bufInst: null, bufQuad: null,
+  tex: [null, null], fbo: null, cur: 0, w: 0, h: 0, dpr: 1,
+  n: 0, px: null, py: null, age: null, life: null, seg: null,
+  grid: null, gridOld: null, fadeT0: 0, fieldKey: '',
+  running: false, raf: 0, lastTs: 0, zooming: false, lastView: null, respawns: 0,
+  timer: null, stats: { frames: 0, t0: 0, fps: 0, cpu: 0, cpuAcc: 0, gpu: null, long: 0, rec: null },
+};
+
+/* 粒の数を決める所（1か所だけ）。PoC は端末の種類で固定値。
+   ⚠ 将来ここを「画面の面積・実測の FPS で増減する」形（adaptive）に育てる。呼ぶ側は数の決め方を知らない
+   ・?windn=数 で上書き（実機で数を振って測るため）。計測表示の「粒½／粒×2」も windGL.override を使う */
+function windGLParticleCount() {
+  if (windGL.override) return windGL.override;
+  const q = +new URLSearchParams(location.search).get('windn');
+  if (q > 0) return Math.min(WIND_GL.COUNT_MAX, Math.round(q));
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  return coarse ? WIND_GL.COUNT_MOBILE : WIND_GL.COUNT_DESKTOP;
+}
+
+/* ------ WebGL の用意（初回だけ。使えなければ ok=false → Canvas 版へ）------ */
+const WIND_GL_SEG_VS = `
+attribute vec2 a_corner;   // x: 0=尾 1=頭、y: -1/+1 = 線の左右
+attribute vec4 a_seg;      // 前の位置 xy・今の位置 zw（CSS px・地図の左上が原点）
+attribute float a_meta;    // 整数部＝色の帯、小数部＝濃さ
+uniform vec2 u_size;       // CSS px
+uniform float u_halfW, u_ext;
+uniform vec3 u_colors[5];
+varying float v_d;
+varying vec4 v_col;
+void main() {
+  vec2 d = a_seg.zw - a_seg.xy;
+  float l = length(d);
+  vec2 t = l > 1e-4 ? d / l : vec2(1.0, 0.0);
+  vec2 nrm = vec2(-t.y, t.x);
+  vec2 p = mix(a_seg.xy, a_seg.zw + t * u_ext, a_corner.x) + nrm * (a_corner.y * u_halfW);
+  gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, 1.0 - p.y / u_size.y * 2.0, 0.0, 1.0);
+  int ci = int(floor(a_meta));
+  v_col = vec4(u_colors[ci], fract(a_meta));
+  v_d = a_corner.y * u_halfW;
+}`;
+const WIND_GL_SEG_FS = `
+precision highp float;     // ⚠ u_halfW は頂点側と共有するので精度を揃える（違うとリンクで落ちる）
+uniform float u_halfW, u_coreHalf;
+uniform vec4 u_halo;
+varying float v_d;
+varying vec4 v_col;
+void main() {
+  float d = abs(v_d);
+  float core = 1.0 - smoothstep(u_coreHalf - 0.5, u_coreHalf + 0.5, d);
+  float edge = 1.0 - smoothstep(u_halfW - 0.7, u_halfW, d);
+  vec4 halo = vec4(u_halo.rgb * u_halo.a, u_halo.a) * edge;
+  gl_FragColor = (vec4(v_col.rgb, 1.0) * core + halo * (1.0 - core)) * v_col.a;   // 乗算済みアルファ
+}`;
+const WIND_GL_QUAD_VS = `
+attribute vec2 a_pos;      // 0..1
+varying vec2 v_pos;
+void main() { v_pos = a_pos; gl_Position = vec4(a_pos * 2.0 - 1.0, 0.0, 1.0); }`;
+/* 前のコマの尾を写す。新しい画素（装置 px）→ 前のコマの画素 = p * u_xf.x + u_xf.zw。
+   ⚠ floor で 8bit の小さい値も必ず減らす（掛け算だけだと丸めで止まって消え残る。Canvas 版の CLEAN_EVERY の代わり） */
+const WIND_GL_QUAD_FS = `
+precision highp float;
+uniform sampler2D u_tex;
+uniform vec2 u_size;       // 装置 px
+uniform vec4 u_xf;
+uniform float u_fade;
+varying vec2 v_pos;
+void main() {
+  vec2 p = vec2(v_pos.x, 1.0 - v_pos.y) * u_size;          // 左上原点
+  vec2 q = p * u_xf.x + u_xf.zw;
+  vec2 uv = vec2(q.x / u_size.x, 1.0 - q.y / u_size.y);
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) { gl_FragColor = vec4(0.0); return; }
+  vec4 c = texture2D(u_tex, uv);
+  gl_FragColor = u_fade < 1.0 ? floor(c * 255.0 * u_fade) / 255.0 : c;
+}`;
+function windGLProgram(gl, vs, fs) {
+  const mk = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  const loc = { p };
+  const na = gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES), nu = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < na; i++) { const a = gl.getActiveAttrib(p, i); loc[a.name] = gl.getAttribLocation(p, a.name); }
+  for (let i = 0; i < nu; i++) { const u = gl.getActiveUniform(p, i); const nm = u.name.replace(/\[0\]$/, ''); loc[nm] = gl.getUniformLocation(p, u.name); }
+  return loc;
+}
+function windGLInit() {
+  if (windGL.ok !== null) return windGL.ok;
+  try {
+    const cv = document.createElement('canvas');
+    // leaflet-zoom-animated … ズームの演出の間だけ Leaflet の CSS の transition が掛かる（タイルと同じ速さで拡大縮小）
+    cv.className = 'wind-flow wind-flow-gl leaflet-zoom-animated';
+    const attr = { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false };
+    let gl = cv.getContext('webgl2', attr), inst = null;
+    if (gl) {
+      windGL.isGL2 = true;
+      inst = { div: (i, d) => gl.vertexAttribDivisor(i, d), draw: (m, c, t, o, n) => gl.drawElementsInstanced(m, c, t, o, n) };
+    } else {
+      gl = cv.getContext('webgl', attr) || cv.getContext('experimental-webgl', attr);
+      if (!gl) throw new Error('この端末・ブラウザでは WebGL が使えません');
+      const ext = gl.getExtension('ANGLE_instanced_arrays');
+      if (!ext) throw new Error('インスタンス描画（ANGLE_instanced_arrays）が使えません');
+      inst = { div: (i, d) => ext.vertexAttribDivisorANGLE(i, d), draw: (m, c, t, o, n) => ext.drawElementsInstancedANGLE(m, c, t, o, n) };
+    }
+    windGL.cv = cv; windGL.gl = gl; windGL.inst = inst;
+    windGL.progSeg = windGLProgram(gl, WIND_GL_SEG_VS, WIND_GL_SEG_FS);
+    windGL.progQuad = windGLProgram(gl, WIND_GL_QUAD_VS, WIND_GL_QUAD_FS);
+    const buf = (target, data) => { const b = gl.createBuffer(); gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); return b; };
+    windGL.bufCorner = buf(gl.ARRAY_BUFFER, new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]));
+    windGL.bufIdx = buf(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 2, 1, 3]));
+    windGL.bufQuad = buf(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]));
+    windGL.bufInst = gl.createBuffer();
+    windGL.fbo = gl.createFramebuffer();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    windGL.renderer = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '';
+    // 描画時間（GPU）の計測。使えるのは一部の環境だけ（多くのブラウザは切ってある）
+    windGL.timerExt = windGL.isGL2 ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+    cv.addEventListener('webglcontextlost', e => {
+      e.preventDefault();
+      windGLFail('WebGL の描画が端末に取り上げられました（コンテキスト喪失）');
+    });
+    leafletMap.getPane('mapWind').appendChild(cv);
+    // ズームの演出（CSS で 0.25 秒かけて拡大縮小）に合わせる。Leaflet の ImageOverlay と同じやり方
+    leafletMap.on('zoomanim', windGLZoomAnim);
+    leafletMap.on('zoomend', () => { windGL.zooming = false; });
+    windGL.ok = true;
+  } catch (e) {
+    windGLFail(e.message);
+  }
+  return windGL.ok;
+}
+// 使えない・途中で失った → Canvas 版で流す（windFlowWanted）。理由は層の行に出す
+function windGLFail(reason) {
+  windGL.ok = false; windGL.reason = reason;
+  stopWindFlowGL();
+  if (windGL.cv && windGL.cv.parentNode) windGL.cv.parentNode.removeChild(windGL.cv);
+  if (typeof isMapOpen === 'function' && isMapOpen() && isOverlayOn('windFlowGL')) refreshWeatherPoints();
+}
+// 実験の層が入っていて WebGL が使えないときは、Canvas 版が代わりに流す
+const windGLFallback = () => isOverlayOn('windFlowGL') && windGL.ok === false;
+const windFlowWanted = () => isOverlayOn('windFlow') || windGLFallback();
+
+/* ------ 場 → 世界座標の格子（場が変わったときだけ。CPU）------
+   Web メルカトルでは緯度は行だけ、経度は列だけで決まるので、unproject は行と列の数だけで済む */
+function buildGLGrid(f, z0) {
+  const latN = f.lat0 + (f.ni - 1) * f.dlat, lonE = f.lon0 + (f.nj - 1) * f.dlon;
+  const tl = leafletMap.project([latN, f.lon0], z0), br = leafletMap.project([f.lat0, lonE], z0);
+  let step = WIND_GL.STEP_PX;
+  const need = ((br.x - tl.x) / step + 1) * ((br.y - tl.y) / step + 1);
+  if (need > WIND_GL.GRID_MAX_NODES) step *= Math.sqrt(need / WIND_GL.GRID_MAX_NODES);
+  const cols = Math.max(2, Math.ceil((br.x - tl.x) / step) + 1), rows = Math.max(2, Math.ceil((br.y - tl.y) / step) + 1);
+  const lats = new Float64Array(rows), lons = new Float64Array(cols);
+  for (let r = 0; r < rows; r++) lats[r] = leafletMap.unproject([tl.x, tl.y + r * step], z0).lat;
+  for (let c = 0; c < cols; c++) lons[c] = leafletMap.unproject([tl.x + c * step, tl.y], z0).lng;
+  const u = new Float32Array(cols * rows), v = new Float32Array(cols * rows), ok = new Uint8Array(cols * rows);
+  let okCount = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const w = sampleWindField(f, lats[r], lons[c]);
+      if (!w) continue;
+      const n = r * cols + c;
+      u[n] = w[0]; v[n] = w[1]; ok[n] = 1; okCount++;
+    }
+  }
+  return { x0: tl.x, y0: tl.y, step, cols, rows, u, v, ok, okCount, z0 };
+}
+// 格子の双線形（m/s。北が正）。⚠ 毎コマ粒の数だけ呼ぶので配列を作らない（結果は glU/glV）
+let glU = 0, glV = 0;
+function glGridSample(g, wx, wy) {
+  const fx = (wx - g.x0) / g.step, fy = (wy - g.y0) / g.step;
+  const c = Math.floor(fx), r = Math.floor(fy);
+  if (c < 0 || r < 0 || c >= g.cols - 1 || r >= g.rows - 1) return false;
+  const tx = fx - c, ty = fy - r, n = r * g.cols + c, s = n + g.cols, ok = g.ok;
+  const a = (1 - tx) * (1 - ty) * ok[n], b = tx * (1 - ty) * ok[n + 1], d = (1 - tx) * ty * ok[s], e = tx * ty * ok[s + 1];
+  const w = a + b + d + e;
+  if (w < 0.5) return false;   // 有効な角が半分未満（無い所を作らない。sampleWindField と同じ決まり）
+  glU = (a * g.u[n] + b * g.u[n + 1] + d * g.u[s] + e * g.u[s + 1]) / w;
+  glV = (a * g.v[n] + b * g.v[n + 1] + d * g.v[s] + e * g.v[s + 1]) / w;
+  return true;
+}
+// 時刻を変えた直後は古い場と新しい場を按分する（粒は撒き直さない）
+function glWindAt(wx, wy, now) {
+  const g = windGL.grid, o = windGL.gridOld;
+  if (!glGridSample(g, wx, wy)) return false;
+  if (!o) return true;
+  const t = (now - windGL.fadeT0) / WIND_GL.CROSSFADE_MS;
+  if (t >= 1) { windGL.gridOld = null; return true; }
+  const u1 = glU, v1 = glV, k = Math.pow(2, o.z0 - g.z0);
+  if (!glGridSample(o, wx * k, wy * k)) { glU = u1; glV = v1; return true; }
+  glU = glU + (u1 - glU) * t; glV = glV + (v1 - glV) * t;
+  return true;
+}
+
+/* ------ 地図の今の見え方 ------
+   tlx/tly … 地図の左上の世界座標（今のズームの px）。s … 基準ズームの世界座標 → 画面 px の倍率 */
+function glView() {
+  const z = leafletMap.getZoom(), o = leafletMap.getPixelOrigin(), lp = leafletMap.containerPointToLayerPoint([0, 0]);
+  return { z, tlx: o.x + lp.x, tly: o.y + lp.y, s: leafletMap.getZoomScale(z, windGL.grid.z0) };
+}
+function placeGLCanvas() {
+  const cv = windGL.cv, size = leafletMap.getSize();
+  const dpr = Math.min(window.devicePixelRatio || 1, WIND_GL.DPR_MAX);
+  if (windGL.w !== size.x || windGL.h !== size.y || windGL.dpr !== dpr) {
+    cv.width = Math.round(size.x * dpr); cv.height = Math.round(size.y * dpr);
+    cv.style.width = size.x + 'px'; cv.style.height = size.y + 'px';
+    windGL.w = size.x; windGL.h = size.y; windGL.dpr = dpr;
+    windGLTrailTextures();
+  }
+  if (!windGL.zooming) L.DomUtil.setPosition(cv, leafletMap.containerPointToLayerPoint([0, 0]));
+  cv.style.opacity = String(overlayOpacity('windFlowGL'));
+}
+// 尾を持つテクスチャ2枚（装置 px・8bit）。大きさが変わったら作り直す（尾は消える）
+function windGLTrailTextures() {
+  const gl = windGL.gl, W = windGL.cv.width, H = windGL.cv.height;
+  for (let k = 0; k < 2; k++) {
+    if (windGL.tex[k]) gl.deleteTexture(windGL.tex[k]);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    windGL.tex[k] = t;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, windGL.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  windGL.lastView = null;
+}
+// ズームの演出の間は CSS で拡大縮小（描かない）。終わったら zoomend → 次のコマで尾を新しい倍率へ写す
+function windGLZoomAnim(e) {
+  if (!windGL.running) return;
+  windGL.zooming = true;
+  const scale = leafletMap.getZoomScale(e.zoom, leafletMap.getZoom());
+  const offset = leafletMap._latLngToNewLayerPoint(leafletMap.containerPointToLatLng([0, 0]), e.zoom, e.center);
+  L.DomUtil.setTransform(windGL.cv, offset, scale);
+}
+
+/* ------ 粒 ------ */
+function windGLAlloc(n) {
+  windGL.n = n;
+  windGL.px = new Float64Array(n); windGL.py = new Float64Array(n);
+  windGL.age = new Float32Array(n); windGL.life = new Float32Array(n);
+  windGL.seg = new Float32Array(n * 5);
+  const v = glView();
+  for (let i = 0; i < n; i++) { windGLSpawn(i, v); windGL.age[i] = Math.random() * windGL.life[i]; }
+}
+// 画面の中で風のある所へ置き直す。見つからなければ life=0（次のコマでまた探す）
+function windGLSpawn(i, v) {
+  windGL.respawns++;
+  for (let k = 0; k < 8; k++) {
+    const wx = (Math.random() * windGL.w + v.tlx) / v.s, wy = (Math.random() * windGL.h + v.tly) / v.s;
+    if (glGridSample(windGL.grid, wx, wy)) {
+      windGL.px[i] = wx; windGL.py[i] = wy; windGL.age[i] = 0;
+      windGL.life[i] = WIND_GL.AGE_MIN_S + Math.random() * (WIND_GL.AGE_MAX_S - WIND_GL.AGE_MIN_S);
+      return true;
+    }
+  }
+  windGL.age[i] = 0; windGL.life[i] = 0;
+  return false;
+}
+// 1コマ分動かして、描く線分（画面の CSS px）を seg に詰める
+function windGLStep(dt, v, now) {
+  const { n, px, py, age, life, seg } = windGL;
+  const k = WIND_GL.SPEED_PX_S * dt / v.s;     // m/s → 基準ズームの世界座標 px
+  const drop = WIND_GL.DROP_PER_S * dt, W = windGL.w, H = windGL.h, M = 16, edge = WIND_GL.EDGE;
+  const lims = WIND_FLOW.COLORS, nc = lims.length;
+  for (let i = 0; i < n; i++) {
+    const o = i * 5;
+    seg[o + 4] = 0;   // 既定は描かない（濃さ 0）
+    if (!(age[i] < life[i]) || Math.random() < drop) { windGLSpawn(i, v); continue; }
+    const x = px[i], y = py[i];
+    if (!glWindAt(x, y, now)) { windGLSpawn(i, v); continue; }
+    const nx = x + glU * k, ny = y - glV * k;
+    const cx0 = x * v.s - v.tlx, cy0 = y * v.s - v.tly, cx1 = nx * v.s - v.tlx, cy1 = ny * v.s - v.tly;
+    // 画面の外（少し余裕を持つ）へ出たら画面の中へ撒き直す（パンで外れた粒もここで戻る）
+    if (cx1 < -M || cy1 < -M || cx1 > W + M || cy1 > H + M) { windGLSpawn(i, v); continue; }
+    const ms = Math.sqrt(glU * glU + glV * glV);
+    // 場の外（まだ取れていない所・風の無い所）へ出たらその場で撒き直す（Canvas 版と同じ決まり。無い所に粒を残さない）
+    if (!glGridSample(windGL.grid, nx, ny)) { windGLSpawn(i, v); continue; }
+    px[i] = nx; py[i] = ny; age[i] += dt;
+    let ci = 0; while (ci < nc - 1 && ms >= lims[ci][0]) ci++;
+    const f = age[i] / life[i];
+    const a = Math.min(1, f / edge, (1 - f) / edge);
+    seg[o] = cx0; seg[o + 1] = cy0; seg[o + 2] = cx1; seg[o + 3] = cy1;
+    seg[o + 4] = ci + Math.max(0, Math.min(0.999, a));
+  }
+}
+
+/* ------ 描く（GPU）------ */
+function windGLRender(v, dt) {
+  const gl = windGL.gl, W = windGL.cv.width, H = windGL.cv.height, dpr = windGL.dpr;
+  const src = windGL.tex[windGL.cur], dst = windGL.tex[1 - windGL.cur];
+  // 前のコマ → 今のコマの画素の写し（パン・ピンチの分だけずらして拡大縮小）
+  const lv = windGL.lastView;
+  let xf = [1, 0, 0, 0];
+  if (lv) {
+    const r = Math.pow(2, lv.z - v.z);
+    xf = [r, 0, (v.tlx * r - lv.tlx) * dpr, (v.tly * r - lv.tly) * dpr];
+  }
+  windGL.lastView = { z: v.z, tlx: v.tlx, tly: v.tly };
+  gl.bindFramebuffer(gl.FRAMEBUFFER, windGL.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, dst, 0);
+  gl.viewport(0, 0, W, H);
+  gl.disable(gl.BLEND);
+  // 1) 前の尾を薄めて写す
+  const q = windGL.progQuad;
+  gl.useProgram(q.p);
+  gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufQuad);
+  gl.enableVertexAttribArray(q.a_pos);
+  gl.vertexAttribPointer(q.a_pos, 2, gl.FLOAT, false, 0, 0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lv ? src : null);
+  gl.uniform1i(q.u_tex, 0);
+  gl.uniform2f(q.u_size, W, H);
+  gl.uniform4f(q.u_xf, xf[0], xf[1], xf[2], xf[3]);
+  gl.uniform1f(q.u_fade, Math.pow(WIND_GL.FADE_30, dt * 30));
+  if (lv) gl.drawArrays(gl.TRIANGLES, 0, 6); else { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+  gl.disableVertexAttribArray(q.a_pos);
+  // 2) 粒の線分（インスタンス描画。1粒＝四角1つ）
+  const s = windGL.progSeg, inst = windGL.inst;
+  gl.useProgram(s.p);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.uniform2f(s.u_size, windGL.w, windGL.h);
+  gl.uniform1f(s.u_halfW, (WIND_GL.WIDTH + WIND_GL.HALO) / 2);
+  gl.uniform1f(s.u_coreHalf, WIND_GL.WIDTH / 2);
+  gl.uniform1f(s.u_ext, WIND_GL.HEAD_EXT);
+  gl.uniform4f(s.u_halo, ...WIND_GL.HALO_RGBA);
+  gl.uniform3fv(s.u_colors, windGL.colors || (windGL.colors = new Float32Array(WIND_FLOW.COLORS.flatMap(([, hex]) =>
+    [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16) / 255)))));
+  gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufCorner);
+  gl.enableVertexAttribArray(s.a_corner);
+  gl.vertexAttribPointer(s.a_corner, 2, gl.FLOAT, false, 0, 0);
+  inst.div(s.a_corner, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufInst);
+  if (windGL.instCap !== windGL.seg.length) { gl.bufferData(gl.ARRAY_BUFFER, windGL.seg.byteLength, gl.DYNAMIC_DRAW); windGL.instCap = windGL.seg.length; }
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, windGL.seg);
+  gl.enableVertexAttribArray(s.a_seg);
+  gl.vertexAttribPointer(s.a_seg, 4, gl.FLOAT, false, 20, 0);
+  inst.div(s.a_seg, 1);
+  gl.enableVertexAttribArray(s.a_meta);
+  gl.vertexAttribPointer(s.a_meta, 1, gl.FLOAT, false, 20, 16);
+  inst.div(s.a_meta, 1);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, windGL.bufIdx);
+  inst.draw(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, windGL.n);
+  inst.div(s.a_seg, 0); inst.div(s.a_meta, 0);
+  gl.disableVertexAttribArray(s.a_corner); gl.disableVertexAttribArray(s.a_seg); gl.disableVertexAttribArray(s.a_meta);
+  gl.disable(gl.BLEND);
+  // 3) 画面へ（そのまま写す）
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(q.p);
+  gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufQuad);
+  gl.enableVertexAttribArray(q.a_pos);
+  gl.vertexAttribPointer(q.a_pos, 2, gl.FLOAT, false, 0, 0);
+  gl.bindTexture(gl.TEXTURE_2D, dst);
+  gl.uniform4f(q.u_xf, 1, 0, 0, 0);
+  gl.uniform1f(q.u_fade, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.disableVertexAttribArray(q.a_pos);
+  windGL.cur = 1 - windGL.cur;
+}
+
+/* ------ 流す・止める ------ */
+function windGLFrame(ts) {
+  if (!windGL.running) return;
+  windGL.raf = requestAnimationFrame(windGLFrame);
+  if (windGL.zooming || !windGL.grid) return;   // ズームの演出の間は CSS に任せる
+  const t0 = performance.now();
+  const dt = windGL.lastTs ? Math.max(0, Math.min(WIND_GL.MAX_DT_S, (ts - windGL.lastTs) / 1000)) : 1 / 60;
+  const frameMs = windGL.lastTs ? ts - windGL.lastTs : 0;
+  windGL.lastTs = ts;
+  placeGLCanvas();
+  const v = glView();
+  windGLStep(dt, v, t0);
+  const tq = windGLTimerBegin();
+  windGLRender(v, dt);
+  windGLTimerEnd(tq);
+  windGL.frameNo = (windGL.frameNo || 0) + 1;   // 検査が「何コマ進んだか」を待つため
+  windFlowStat(windGL.stats, performance.now() - t0, frameMs);
+}
+// 場が変わったら（動かし終わった・時刻・層・取得）格子だけ作り直す。⚠ 粒は撒き直さない
+function updateWindFlowGL(f) {
+  if (!f || !isMapOpen() || !isOverlayOn('windFlowGL') || document.hidden) { stopWindFlowGL(); return; }
+  if (!windGLInit()) { setLayerNote('windFlowGL', `WebGL が使えないため Canvas 版で表示しています（${windGL.reason}）`); return; }
+  const z0 = leafletMap.getZoom();
+  const g = buildGLGrid(f, z0);
+  if (!g.okCount) { stopWindFlowGL(); return; }
+  const prev = windGL.grid, key = f.timeKey + '|' + f.mode;
+  // 基準ズームが変わったら粒の世界座標を新しいズームへ（メルカトルなので倍率を掛けるだけ）
+  if (prev && prev.z0 !== z0 && windGL.px) {
+    const k = Math.pow(2, z0 - prev.z0);
+    for (let i = 0; i < windGL.n; i++) { windGL.px[i] *= k; windGL.py[i] *= k; }
+  }
+  // 時刻・層が変わったときだけ按分する（パンで場が広がっただけなら要らない）
+  windGL.gridOld = prev && windGL.fieldKey && windGL.fieldKey !== key ? prev : null;
+  windGL.fadeT0 = performance.now();
+  windGL.grid = g; windGL.fieldKey = key;
+  placeGLCanvas();
+  const n = windGLParticleCount();
+  if (windGL.n !== n || !windGL.px) windGLAlloc(n);
+  windGLHud(true);
+  if (!windGL.running) {
+    windGL.running = true; windGL.lastTs = 0; windGL.lastView = null;
+    windGL.cv.style.display = '';
+    windGL.raf = requestAnimationFrame(windGLFrame);
+  }
+}
+function stopWindFlowGL() {
+  cancelAnimationFrame(windGL.raf);
+  windGL.raf = 0; windGL.running = false; windGL.zooming = false;
+  windGL.lastView = null; windGL.gridOld = null;
+  if (windGL.cv) windGL.cv.style.display = 'none';   // 尾はテクスチャに残るが見せない（次に流すとき lastView=null で消す）
+  windGLHud(false);
+}
+
+/* ------ 計測（開発用）------
+   ⚠ ヘッドレスの Chromium（SwiftShader＝GPU を CPU で真似る）の FPS は実機の指標にしない。
+   iPhone では計測表示の「10秒計測」で FPS・1%の遅いコマ・CPU 時間を測り、「コピー」で貼り出す */
+function windFlowStat(st, cpuMs, frameMs) {
+  const now = performance.now();
+  if (!st.t0) st.t0 = now;
+  st.frames++; st.cpuAcc += cpuMs;
+  if (frameMs > 34) st.long++;
+  if (st.rec) { st.rec.cpu.push(cpuMs); if (frameMs) st.rec.dt.push(frameMs); }
+  if (now - st.t0 >= 1000) {
+    st.fps = st.frames * 1000 / (now - st.t0); st.cpu = st.cpuAcc / st.frames;
+    st.frames = 0; st.cpuAcc = 0; st.t0 = now; st.longShown = st.long; st.long = 0;
+    windGLHudText();
+  }
+}
+const windFlowStats = { frames: 0, t0: 0, fps: 0, cpu: 0, cpuAcc: 0, long: 0, rec: null };
+// GPU の描画時間（EXT_disjoint_timer_query_webgl2 があるときだけ。10コマに1回）
+function windGLTimerBegin() {
+  const ext = windGL.timerExt, gl = windGL.gl;
+  if (!ext || windGL.pendingQ || (windGL.stats.frames % 10)) return null;
+  const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); return q;
+}
+function windGLTimerEnd(q) {
+  const ext = windGL.timerExt, gl = windGL.gl;
+  if (q) { gl.endQuery(ext.TIME_ELAPSED_EXT); windGL.pendingQ = q; return; }
+  const p = windGL.pendingQ;
+  if (p && gl.getQueryParameter(p, gl.QUERY_RESULT_AVAILABLE)) {
+    if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) windGL.stats.gpu = gl.getQueryParameter(p, gl.QUERY_RESULT) / 1e6;
+    gl.deleteQuery(p); windGL.pendingQ = null;
+  }
+}
+function windGLHud(show) {
+  let el = document.getElementById('wind-hud');
+  if (!show) { if (el) el.classList.add('hidden'); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'wind-hud';
+    el.innerHTML = '<div id="wind-hud-text"></div><div class="wh-btns">' +
+      '<button type="button" onclick="windGLScaleCount(0.5)">粒½</button>' +
+      '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
+      '<button type="button" onclick="windGLMeasure()">10秒計測</button>' +
+      '<button type="button" onclick="windGLCopy()">コピー</button></div><div id="wind-hud-result"></div>';
+    (document.getElementById('map-overlay') || document.body).appendChild(el);
+  }
+  el.classList.remove('hidden');
+  windGLHudText();
+}
+function windGLHudText() {
+  const el = document.getElementById('wind-hud-text');
+  if (!el) return;
+  const g = windGL.stats, c = windFlowStats, f1 = x => (x || 0).toFixed(1);
+  const rows = [`<b>WebGL${windGL.isGL2 ? '2' : '1'}</b> ${windGL.n.toLocaleString()}粒 ${f1(g.fps)}fps CPU ${f1(g.cpu)}ms` +
+    ` GPU ${g.gpu != null ? f1(g.gpu) + 'ms' : '計測不可'} 遅いコマ${g.longShown || 0}`];
+  if (windFlow.running) rows.push(`<b>Canvas</b> ${windFlow.parts.length.toLocaleString()}粒 ${f1(c.fps)}fps CPU ${f1(c.cpu)}ms 遅いコマ${c.longShown || 0}`);
+  el.innerHTML = rows.join('<br>');
+}
+function windGLScaleCount(k) {
+  windGL.override = Math.max(500, Math.min(WIND_GL.COUNT_MAX, Math.round(windGLParticleCount() * k)));
+  if (windGL.grid) windGLAlloc(windGL.override);
+  windGLHudText();
+}
+// 10秒間のコマの間隔と CPU 時間を貯めて要約する（iPhone の実機で測るため）
+function windGLMeasure() {
+  const out = document.getElementById('wind-hud-result');
+  const stats = [windGL.stats, windFlowStats];
+  stats.forEach(s => { s.rec = { cpu: [], dt: [] }; });
+  if (out) out.textContent = '計測中…（10秒。地図を動かしても構いません）';
+  setTimeout(() => {
+    const pct = (a, p) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * p))]; };
+    const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+    const sum = (s, name, n) => {
+      const r = s.rec; s.rec = null;
+      if (!r || !r.dt.length) return null;
+      return `${name} ${n}粒: 平均${(1000 / avg(r.dt)).toFixed(1)}fps・遅い1%${(1000 / pct(r.dt, 0.99)).toFixed(1)}fps・` +
+        `CPU平均${avg(r.cpu).toFixed(2)}ms/p95 ${pct(r.cpu, 0.95).toFixed(2)}ms・コマ${r.dt.length}`;
+    };
+    const lines = [sum(windGL.stats, `WebGL${windGL.isGL2 ? '2' : '1'}`, windGL.n),
+      sum(windFlowStats, 'Canvas', windFlow.parts.length)].filter(Boolean);
+    lines.push(`画面${windGL.w}×${windGL.h} 倍率${windGL.dpr} ズーム${leafletMap.getZoom().toFixed(1)} ${windGL.renderer || ''}`);
+    lines.push(navigator.userAgent);
+    windGL.lastMeasure = lines.join('\n');
+    if (out) out.textContent = windGL.lastMeasure;
+  }, 10000);
+}
+function windGLCopy() {
+  const t = windGL.lastMeasure || (document.getElementById('wind-hud-text') || {}).innerText || '';
+  if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {});
+}
 
 /* ------ 山域・百名山レイヤー（areas.json から描く） ------
    タイルではなく手持ちのデータなので通信ゼロ。ランキングの評価単位そのものを
@@ -8021,8 +8591,10 @@ function refreshWeatherPoints() {
     const f = ensureWindField(bounds);
     if (f && isOverlayOn('windArrows')) drawWindArrows(f, overlayOpacity('windArrows'));
     updateWindFlow(f);
+    updateWindFlowGL(f);
   } else {
     stopWindFlow();
+    stopWindFlowGL();
   }
   updateThunderIcons();
   updateMapTime();
@@ -8249,6 +8821,7 @@ function setOverlayOpacity(id, value) {
   const def = findOverlay(id);
   if (def && (def.kind === 'amedas' || def.kind === 'windArrows')) refreshWeatherPoints();
   if (def && def.kind === 'windFlow' && windFlow.cv) windFlow.cv.style.opacity = String(item.opacity);
+  if (def && def.kind === 'windFlowGL' && windGL.cv) windGL.cv.style.opacity = String(item.opacity);
   const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
   if (label) label.textContent = Math.round(item.opacity * 100) + '%';
 }
@@ -8364,6 +8937,7 @@ function closeMap() {
   dropAllStaleWxLayers();                   // 貼り替え待ちの置き去りを残さない
   releaseThunderScan();                     // 走査用canvasの裏地を手放す
   stopWindFlow();                           // 見ていない間は流さない（電池）
+  stopWindFlowGL();
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
   syncWakeLock();                           // 閉じたら画面の保持も手放す
   paintTileTrouble();                       // 閉じたら取得失敗の帯も畳む
@@ -8444,7 +9018,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow') && on ? windModeChips() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
