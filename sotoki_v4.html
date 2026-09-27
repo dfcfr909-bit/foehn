@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.128.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.129.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8553,6 +8553,11 @@ function terrainFindCols(G) {
      円錐の斜面の横断の高低差は数十cm、実際の稜線は数m〜数十m
    ・⚠ 稜線はコルで途切れやすい（コルの升目は両側の峰へ流れが分かれる）。深さ FLOW.BRIDGE_COL_M 以上の鞍部から、
      稜線の向きの両側へ既存の稜線の升目に着くまでつなぐ（コルは「稜線の上の最低点」なので、稜線が続いているのが正しい姿）
+     ⚠ v4.128.0 まではまっすぐ引いていた。地形を見ないので、浅い鞍部から谷や斜面を横切る1km 超の直線になった
+     （実機・男体山の「謎の直線」。線の上は横断すると両側が 5m 高い＝谷の中だった）。
+     v4.129.0 から**最も急な上りをたどる**：鞍部から稜線の向きの側の最も高い隣へ出て、そこから上りの流れ先（up）を
+     既存の稜線（または頂）に着くまで追う。鞍部から上れば稜線を登るので地形に沿って曲がり、谷は横切れない（必ず上る）。
+     DEM の凹凸で斜面へ外れたときの歯止めに、横断すると両側とも BRIDGE_VALLEY_M 以上高い升目（谷の中）に入ったらつながない
    ・帯（地図の塗り）：**沢の帯＝沢筋までの高さ（HAND：流れを下って最初に着く沢筋の升目からの高さ）が設定値以下**、
      **尾根の帯＝稜線からの深さ（流れを上って最初に着く稜線の升目からの深さ）が設定値以下**。
      単純な標高差（半径◯m の中の最高点との差など）ではなく、**流れの経路に沿った相対的な高さ**で決めるので、
@@ -8573,6 +8578,7 @@ const FLOW = {
   FLAT_TOL_M: 0.15,       // 周りの8升目との標高差がすべてこれ以下の升目を「平ら」とする
   FLAT_MIN_M2: 20000,     // 平らな升目のかたまりがこの広さ以上なら「平坦地」（湖面・湿原）。沢・稜線・帯を作らない
   BRIDGE_MAX_M: 1500,     // つなぐ長さの上限（m）。これで着かなければつながない
+  BRIDGE_VALLEY_M: 1,     // つなぎの途中で、横断すると両側ともこれ以上高い升目（谷の中）に入ったらつながない
   BAND_STEPS: [10, 20, 50, 100],   // 帯の幅の切り替え（m）
 };
 const RIDGE_SRC = { PEAK: 1, DIVIDE: 2, BRIDGE: 3 };   // 稜線の出自：頂・分水界（流域の境＋横断の凸）・鞍部からのつなぎ
@@ -8690,26 +8696,44 @@ function terrainFlow(G, cols) {
       if (basin[nb] >= 0 && basin[nb] !== basin[n] && (h[nb] < hn || (h[nb] === hn && nb > n))) { if (crossLow(n)) { ridge[n] = 1; ridgeSrc[n] = RIDGE_SRC.DIVIDE; } break; }
     }
   }
-  // コルで途切れた稜線をつなぐ（稜線の向きの両側へ、既存の稜線に着くまで）
-  let bridged = 0;
+  /* 横断の高低差：上る向き（8方位）と、その直角に dd 升目動いた両側の低さ（m）・必要な低さ。つなぎの歯止めと「中心を解析」で使う */
+  const crossInfo = n => {
+    const q = uq[n]; if (q < 0) return null;
+    const x = n % nx, y = (n - x) / nx, px = -DY[q], py = DX[q], lows = [];
+    for (const sg of [1, -1]) {
+      const xx = x + sg * px * dd, yy = y + sg * py * dd;
+      lows.push((xx < 0 || yy < 0 || xx >= nx || yy >= ny) ? NaN : h[n] - h[yy * nx + xx]);
+    }
+    return { q, lows, need, dist: dd * G.cell * (DIST[q] === 1 ? 1 : Math.SQRT2) };
+  };
+  const inValley = n => { const ci = crossInfo(n); return !!ci && ci.lows[0] <= -FLOW.BRIDGE_VALLEY_M && ci.lows[1] <= -FLOW.BRIDGE_VALLEY_M; };
+  // コルで途切れた稜線をつなぐ：稜線の向きの両側へ、最も急な上りをたどって既存の稜線（または頂）に着くまで（v4.129.0）
+  let bridged = 0, bridgeFail = 0;
+  const maxSt = Math.round(FLOW.BRIDGE_MAX_M / G.cell);
   for (const [ci, c] of (cols || []).entries()) {
     if (c.prom < FLOW.BRIDGE_COL_M) continue;
-    const x0 = c.cell % nx, y0 = (c.cell - x0) / nx, path = [c.cell];
+    const path = [c.cell];
     let reached = 0;
-    const maxSt = Math.round(FLOW.BRIDGE_MAX_M / G.cell);
     for (const sg of [1, -1]) {
-      for (let st = 1; st <= maxSt; st++) {
-        const x = Math.round(x0 + sg * c.ridge[0] * st), y = Math.round(y0 + sg * c.ridge[1] * st);
-        if (x < 0 || y < 0 || x >= nx || y >= ny) break;
-        const n = y * nx + x;
+      // 稜線の向きの側（向きとの内積が正）の隣のうち、いちばん高い升目へ出る
+      let n = -1, hb = -Infinity;
+      for (let q = 0; q < 8; q++) {
+        if ((DX[q] * c.ridge[0] + DY[q] * c.ridge[1]) * sg <= 0) continue;
+        const nb = ok(c.cell, q); if (nb >= 0 && h[nb] > hb) { hb = h[nb]; n = nb; }
+      }
+      if (hb < h[c.cell]) n = -1;   // その側に上りが無い（鞍部ではない）ならつながない
+      for (let st = 0; n >= 0 && st < maxSt; st++) {
         if (ridge[n]) { reached++; break; }
+        if (flat[n] || inValley(n)) break;
         path.push(n);
+        if (up[n] < 0) { reached++; break; }   // 頂（稜線の条件に届かない小さな頂でも、上り詰めた所で止める）
+        n = up[n];
       }
     }
-    if (reached === 2 && !path.some(n => flat[n])) {
+    if (reached === 2) {
       for (const n of path) if (!ridge[n]) { ridge[n] = 1; ridgeSrc[n] = RIDGE_SRC.BRIDGE; bridgeCol[n] = ci; }
       bridged++;
-    }
+    } else bridgeFail++;
   }
   // 稜線からの深さ：高い順に、最も急な上りで最初に着く稜線の標高を受け継ぐ
   const crest = new Float32Array(N).fill(NaN), below = new Float32Array(N);
@@ -8731,17 +8755,7 @@ function terrainFlow(G, cols) {
     nRidge++;
   }
   let nFlat = 0; for (let n = 0; n < N; n++) nFlat += flat[n];
-  /* 横断の高低差（中心を解析で見る）：上る向き（8方位）と、その直角に dd 升目動いた両側の低さ（m）・必要な低さ */
-  const crossInfo = n => {
-    const q = uq[n]; if (q < 0) return null;
-    const x = n % nx, y = (n - x) / nx, px = -DY[q], py = DX[q], lows = [];
-    for (const sg of [1, -1]) {
-      const xx = x + sg * px * dd, yy = y + sg * py * dd;
-      lows.push((xx < 0 || yy < 0 || xx >= nx || yy >= ny) ? NaN : h[n] - h[yy * nx + xx]);
-    }
-    return { q, lows, need, dist: dd * G.cell * (DIST[q] === 1 ? 1 : Math.SQRT2) };
-  };
-  return { down, up, accD, chan, ridge, ridgeSrc, bridgeCol, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, crossInfo, area, ms: performance.now() - t0 };
+  return { down, up, accD, chan, ridge, ridgeSrc, bridgeCol, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, bridgeFail, crossInfo, area, ms: performance.now() - t0 };
 }
 // 鞍部が稜線の上か（2升目以内に稜線の升目）。将来の風の解析で「どの稜線のコルか」を引く
 function terrainLinkColsToRidges(G, F, cols) {
@@ -9120,7 +9134,7 @@ function terrainRidgeWhy(G, F, cols, gi) {
   const out = [], src = F.ridgeSrc[best];
   if (src === RIDGE_SRC.BRIDGE) {
     const c = cols[F.bridgeCol[best]], ll = G.toLL(best);
-    out.push(`稜線の出自（${where}）：★鞍部からのつなぎ（まっすぐ引いた線）` + (c ? `・鞍部 標高${f0(c.h)}m 深さ${f0(c.prom)}m・${f0(geoDist({ lat: ll.lat, lon: ll.lng }, c))}m 先・向き${Math.round(bearingOf(c.ridge[0], c.ridge[1]) % 180)}°` : ''));
+    out.push(`稜線の出自（${where}）：★鞍部からのつなぎ（最も急な上りをたどった線）` + (c ? `・鞍部 標高${f0(c.h)}m 深さ${f0(c.prom)}m・${f0(geoDist({ lat: ll.lat, lon: ll.lng }, c))}m 先・向き${Math.round(bearingOf(c.ridge[0], c.ridge[1]) % 180)}°` : ''));
   } else if (src === RIDGE_SRC.PEAK) out.push(`稜線の出自（${where}）：頂（周りより高い升目）`);
   else out.push(`稜線の出自（${where}）：分水界（流域 #${F.basin[best]} の境）`);
   const ci = F.crossInfo(best);
