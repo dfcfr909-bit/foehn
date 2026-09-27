@@ -45,6 +45,15 @@ await page.evaluate(() => openMap());
 await page.waitForTimeout(1500);
 const gl = await page.evaluate(() => { toggleOverlay('windFlowGL'); return new Promise(r => setTimeout(() => r({ ok: windGL.ok, reason: windGL.reason }), 3000)); });
 console.log('WebGL:', JSON.stringify(gl));
+/* 地点表（scripts/verifyCols.sites.json）があれば、アプリの8地点の代わりにそれを回す。
+   ⚠ アプリ本体は変えない（TERRAIN_VERIFY_COLS は const の配列なので中身だけ入れ替える）。対照（kind=control）は名前に〔対照〕 */
+const SITES = path.join(ROOT, 'scripts', 'verifyCols.sites.json');
+if (fs.existsSync(SITES)) {
+  const sites = JSON.parse(fs.readFileSync(SITES, 'utf8')).sites
+    .map(s => ({ name: (s.kind === 'control' ? '〔対照〕' : '') + s.name, lat: s.lat, lon: s.lon }));
+  await page.evaluate(list => { TERRAIN_VERIFY_COLS.splice(0, TERRAIN_VERIFY_COLS.length, ...list); }, sites);
+  console.log(`地点表：${sites.length}地点（scripts/verifyCols.sites.json）`);
+}
 const table = await page.evaluate(() => terrainVerifyCols());
 console.log(table);
 if (errors.length) console.log('ページ内の例外:', errors.join(' / '));
@@ -52,7 +61,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   const rows = table.split('\n');
   const md = rows.filter(l => l.includes('\t')).map(l => '| ' + l.split('\t').join(' | ') + ' |');
   md.splice(1, 0, '|' + ' --- |'.repeat(rows[0].split('\t').length));
-  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## 鞍部の検証（8地点）\n\n${md.join('\n')}\n\n${rows.filter(l => !l.includes('\t')).join('\n')}\n`);
+  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## 鞍部の検証\n\n${md.join('\n')}\n\n${rows.filter(l => !l.includes('\t')).join('\n')}\n`);
 }
 await browser.close();
 server.close();

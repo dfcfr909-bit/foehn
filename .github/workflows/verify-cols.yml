@@ -10,7 +10,7 @@ name: 鞍部の検証（実験）
 on:
   push:
     branches: [claude/wind-particle-animation-poc-rm08b6]
-    paths: ['sotoki_v4.html', 'scripts/verifyCols.mjs', '.github/workflows/verify-cols.yml']
+    paths: ['sotoki_v4.html', 'scripts/verifyCols.mjs', 'scripts/verifyCols.sites.json', '.github/workflows/verify-cols.yml']
   workflow_dispatch: {}
 
 permissions:
@@ -34,5 +34,5 @@ jobs:
       - name: Chromium を用意
         uses: ./.github/actions/chromium
 
-      - name: 8地点を回す
+      - name: 地点表を回す
         run: node scripts/verifyCols.mjs
