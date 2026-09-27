@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.131.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.132.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8332,10 +8332,16 @@ const COL = {
   FLOOR_M: 3,             // 記録する深さの床（これ未満は DEM の凹凸の雑音）。⚠ 画面の閾値ではない
   INNER_PAD_KM: 0.3,      // 鞍部を採る範囲＝画面＋これ
   RIDGE_PROBE_M: 150,     // 稜線・抜ける向きを調べる距離
-  SHOW_STEPS: [0, 5, 10, 20, 30, 50, 100],   // 画面に出す深さの切り替え（m）。⚠ 未決。検証のため切り替えて見る
+  SHOW_STEPS: [0, 5, 10, 20, 30, 50, 100],   // 画面に出す深さの切り替え（m）。検証のため切り替えて見る
+  /* 画面に出す深さの既定（m）。v4.132.0 で 20m に確定（利用者の承認・2026-09-28）。
+     Actions「鞍部の検証」（ズーム15・端の鞍部は除く）：名前の付いたコル20のうち 300m 以内に 20m 以上の鞍部があるのは19
+     （外れは千丈乗越 16m＝地形上の鞍部ではない通過点）。名前の付いたコルの最浅は鳥居峠 23m、対照の最深は車山肩 16m。
+     百名山ほか110峰の山頂 150m 以内に 20m 以上が出たのは4峰（燧ヶ岳・岩手山・瑞牆山・恵那山。前3つは実在の鞍部と見る）。
+     ⚠ 上下の余裕は 3〜4m しかない。浅いコル（20〜30m）や肩・台地の対照を見つけたら地点表に足して見直す */
+  SHOW_MIN_M: 20,
   MAX_KEEP: 4000,
 };
-const terrainAn = { on: false, showMin: 20, bands: true, lines: true, ridgeBand: 20, valleyBand: 20, result: null, cv: null, ctx: null, markers: [], key: '' };
+const terrainAn = { on: false, showMin: COL.SHOW_MIN_M, bands: true, lines: true, ridgeBand: 20, valleyBand: 20, result: null, cv: null, ctx: null, markers: [], key: '' };
 const demPxM = (z, lat) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
 
 // 標高タイルから、DEM のズーム zd の世界座標 (x0,y0) を起点に m×m 画素ずつ平均した nx×ny の升目
