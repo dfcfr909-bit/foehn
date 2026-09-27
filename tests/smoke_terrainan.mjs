@@ -322,6 +322,46 @@ ok(bandW.map(x => x[0]).join(',') === '10,20,50,100' && bandW.every((x, i) => i 
 // 鞍部は稜線の上（つないだ稜線）
 const link = await page.evaluate(() => { const c = terrainNearestCols(terrainAn.result, { lat: 36.57, lon: 137.65 }, 1)[0].c; return { onRidge: c.onRidge, ridgeId: c.ridgeId, bridged: terrainAn.result.flow.bridged, text: terrainColText(c) }; });
 ok(link.onRidge && link.ridgeId >= 0 && /稜線（水の流れから求めた尾根）の上/.test(link.text), '★鞍部は稜線の上（将来の風の解析で「どの稜線のコルか」を引ける）', link);
+// 稜線の出自（謎の直線の切り分け・v4.128.0）：稜線の升目はすべて出自（頂・分水界・つなぎ）を持ち、つなぎは鞍部を指す。
+// 偽の地形ではつなぎが既存の稜線と重なって出ないことがあるので、同じ行の稜線2升目の間に仮の鞍部を置いて必ず引かせる
+const src = await page.evaluate(() => {
+  const r = terrainAn.result, G = r.grid, cols = r.cols.cols.slice(), out = { ridge: 0, peak: 0, divide: 0, bridge: 0, bad: 0, badCol: 0 };
+  let F = r.flow;
+  search: for (let y = 2; y < G.ny - 2; y++) {
+    let last = -1;
+    for (let x = 0; x < G.nx; x++) {
+      const n = y * G.nx + x;
+      if (F.flat[n]) { last = -1; continue; }
+      if (!F.ridge[n]) continue;
+      if (last >= 0 && x - last >= 6) {
+        const c = y * G.nx + Math.round((x + last) / 2);
+        cols.push({ cell: c, h: G.h[c], prom: 50, ridge: [1, 0], lat: G.toLL(c).lat, lon: G.toLL(c).lng });
+        break search;
+      }
+      last = x;
+    }
+  }
+  F = terrainFlow(G, cols);
+  for (let n = 0; n < F.ridge.length; n++) {
+    if (!F.ridge[n]) { if (F.ridgeSrc[n]) out.bad++; continue; }
+    out.ridge++;
+    const s = F.ridgeSrc[n];
+    if (s === RIDGE_SRC.PEAK) out.peak++; else if (s === RIDGE_SRC.DIVIDE) out.divide++;
+    else if (s === RIDGE_SRC.BRIDGE) { out.bridge++; if (!cols[F.bridgeCol[n]]) out.badCol++; } else out.bad++;
+  }
+  let bn = -1; for (let n = 0; n < F.ridge.length && bn < 0; n++) if (F.ridgeSrc[n] === RIDGE_SRC.BRIDGE) bn = n;
+  if (bn >= 0) out.text = terrainRidgeWhy(G, F, cols, bn).join('\n');
+  const V = terrainVectorize(G, F);
+  out.vecHasBridge = V.ridges.every(q => q.bridge >= 0 && q.bridge <= 1);
+  return out;
+});
+ok(src.ridge > 0 && src.bad === 0 && src.badCol === 0 && src.peak + src.divide + src.bridge === src.ridge && src.bridge > 0 && src.vecHasBridge,
+  '★稜線の升目はすべて出自（頂・分水界・鞍部からのつなぎ）を持つ', src);
+// 「中心を解析」の表示にも出る（中心の近くの稜線の升目）
+src.probe = await page.evaluate(() => { terrainProbeCenter(); return windGL.lastMeasure; });
+console.log('出自の説明', src.text);
+ok(/稜線の出自/.test(src.probe), '「中心を解析」に稜線の出自の行', src.probe);
+ok(/稜線の出自（中心の升目）：★鞍部からのつなぎ.*深さ50m/.test(src.text || '') && /横断：上る向き [北東南西]+.*必要 [\d.]+m/.test(src.text || ''), '★稜線の出自の説明：鞍部からのつなぎ・横断の高低差', src.text);
 ok(await page.evaluate(() => /尾根・沢/.test(document.getElementById('wind-hud-text').textContent) && /稜線\d+本/.test(document.getElementById('wind-hud-text').textContent)), '計測表示に尾根・沢の時間と稜線の本数');
 ok(await page.evaluate(() => { terrainToggleBands(); terrainToggleLines(); const off = !terrainAn.bands && !terrainAn.lines && !terrainAn.result.drawn || true; terrainToggleBands(); terrainToggleLines(); return off && terrainAn.bands && terrainAn.lines; }), '尾根・沢の線と帯はそれぞれ切り替えられる');
 

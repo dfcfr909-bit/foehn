@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.127.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.128.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8575,6 +8575,7 @@ const FLOW = {
   BRIDGE_MAX_M: 1500,     // つなぐ長さの上限（m）。これで着かなければつながない
   BAND_STEPS: [10, 20, 50, 100],   // 帯の幅の切り替え（m）
 };
+const RIDGE_SRC = { PEAK: 1, DIVIDE: 2, BRIDGE: 3 };   // 稜線の出自：頂・分水界（流域の境＋横断の凸）・鞍部からのつなぎ
 function terrainFlow(G, cols) {
   const t0 = performance.now();
   const { nx, ny, N, h, order } = G, nv = order.length, area = G.cell * G.cell / 1e6;   // 1升目の面積（km²）
@@ -8642,6 +8643,8 @@ function terrainFlow(G, cols) {
   /* ⚠ 比集水面積だけだと、ゆるく長い一様な斜面（火山の裾野・平地）で斜面の長さぶん大きくなり、平行な沢筋が一面に並んだ。
      沢が始まる条件（比集水面積 × 勾配）も求める（Montgomery & Dietrich の考え方の簡略）。急な沢は小さな集水で、ゆるい谷底は大きな集水で沢になる */
   const vMin = FLOW.VALLEY_SCA_M / G.cell, chan = new Uint8Array(N), ridge = new Uint8Array(N);
+  /* 稜線の出自（「謎の直線」の切り分け用・v4.128.0）：RIDGE_SRC の番号。つなぎの升目は bridgeCol に鞍部の番号（cols の添字） */
+  const ridgeSrc = new Uint8Array(N), bridgeCol = new Int32Array(N).fill(-1);
   for (let n = 0; n < N; n++) {
     if (!(accD[n] >= vMin) || h[n] !== h[n] || flat[n]) continue;
     const d2 = down[n], sl = d2 >= 0 ? Math.max(0, h[n] - h[d2]) / (G.cell * (Math.abs(d2 - n) === 1 || Math.abs(d2 - n) === nx ? 1 : Math.SQRT2)) : 0;
@@ -8680,16 +8683,16 @@ function terrainFlow(G, cols) {
   };
   for (let n = 0; n < N; n++) {
     const hn = h[n]; if (hn !== hn || chan[n] || flat[n]) continue;
-    if (up[n] < 0 && down[n] >= 0) { if (hand[n] >= FLOW.RIDGE_HAND_M || hand[n] !== hand[n]) ridge[n] = 1; continue; }   // 頂
+    if (up[n] < 0 && down[n] >= 0) { if (hand[n] >= FLOW.RIDGE_HAND_M || hand[n] !== hand[n]) { ridge[n] = 1; ridgeSrc[n] = RIDGE_SRC.PEAK; } continue; }   // 頂
     if (basin[n] < 0 || !(hand[n] >= FLOW.RIDGE_HAND_M)) continue;
     for (const q of Q4) {
       const nb = ok(n, q); if (nb < 0) continue;
-      if (basin[nb] >= 0 && basin[nb] !== basin[n] && (h[nb] < hn || (h[nb] === hn && nb > n))) { if (crossLow(n)) ridge[n] = 1; break; }
+      if (basin[nb] >= 0 && basin[nb] !== basin[n] && (h[nb] < hn || (h[nb] === hn && nb > n))) { if (crossLow(n)) { ridge[n] = 1; ridgeSrc[n] = RIDGE_SRC.DIVIDE; } break; }
     }
   }
   // コルで途切れた稜線をつなぐ（稜線の向きの両側へ、既存の稜線に着くまで）
   let bridged = 0;
-  for (const c of cols || []) {
+  for (const [ci, c] of (cols || []).entries()) {
     if (c.prom < FLOW.BRIDGE_COL_M) continue;
     const x0 = c.cell % nx, y0 = (c.cell - x0) / nx, path = [c.cell];
     let reached = 0;
@@ -8703,7 +8706,10 @@ function terrainFlow(G, cols) {
         path.push(n);
       }
     }
-    if (reached === 2 && !path.some(n => flat[n])) { for (const n of path) ridge[n] = 1; bridged++; }
+    if (reached === 2 && !path.some(n => flat[n])) {
+      for (const n of path) if (!ridge[n]) { ridge[n] = 1; ridgeSrc[n] = RIDGE_SRC.BRIDGE; bridgeCol[n] = ci; }
+      bridged++;
+    }
   }
   // 稜線からの深さ：高い順に、最も急な上りで最初に着く稜線の標高を受け継ぐ
   const crest = new Float32Array(N).fill(NaN), below = new Float32Array(N);
@@ -8725,7 +8731,17 @@ function terrainFlow(G, cols) {
     nRidge++;
   }
   let nFlat = 0; for (let n = 0; n < N; n++) nFlat += flat[n];
-  return { down, up, accD, chan, ridge, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, area, ms: performance.now() - t0 };
+  /* 横断の高低差（中心を解析で見る）：上る向き（8方位）と、その直角に dd 升目動いた両側の低さ（m）・必要な低さ */
+  const crossInfo = n => {
+    const q = uq[n]; if (q < 0) return null;
+    const x = n % nx, y = (n - x) / nx, px = -DY[q], py = DX[q], lows = [];
+    for (const sg of [1, -1]) {
+      const xx = x + sg * px * dd, yy = y + sg * py * dd;
+      lows.push((xx < 0 || yy < 0 || xx >= nx || yy >= ny) ? NaN : h[n] - h[yy * nx + xx]);
+    }
+    return { q, lows, need, dist: dd * G.cell * (DIST[q] === 1 ? 1 : Math.SQRT2) };
+  };
+  return { down, up, accD, chan, ridge, ridgeSrc, bridgeCol, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, crossInfo, area, ms: performance.now() - t0 };
 }
 // 鞍部が稜線の上か（2升目以内に稜線の升目）。将来の風の解析で「どの稜線のコルか」を引く
 function terrainLinkColsToRidges(G, F, cols) {
@@ -8805,6 +8821,7 @@ const VEC = {
   RIDGE_W: [1.3, 4],      // 稜線の太さ（CSS px。HAND 40m → 400m 以上）
   VALLEY_W: [1, 4],       // 沢の太さ（比集水面積 8km → 400km 以上。対数）
   RIDGE_COLOR: '#8b2a10', VALLEY_COLOR: '#0b5cc5', HALO: 'rgba(255,255,255,0.6)',
+  BRIDGE_DASH: 0.5,       // 升目の半分以上が「鞍部からのつなぎ」の稜線は破線で描く（謎の直線の切り分け用・v4.128.0）
   BAND_RES: 2,            // 帯を塗る画素の大きさ（CSS px）
 };
 // ① Zhang–Suen の細線化（mask を1升目幅に。mask は書き換えない）
@@ -8928,10 +8945,10 @@ function terrainVectorize(G, F) {
     for (const e of edges) {
       if (e.length < 2) continue;
       if (kind === 'ridges') {
-        let hmax = 0; for (const n of e) if (F.hand[n] > hmax) hmax = F.hand[n];
+        let hmax = 0, nb = 0; for (const n of e) { if (F.hand[n] > hmax) hmax = F.hand[n]; if (F.ridgeSrc[n] === RIDGE_SRC.BRIDGE) nb++; }
         if (hmax < VEC.RIDGE_MIN_RELIEF) continue;
         const [x, y] = smoothPath(e, nx);
-        out.ridges.push({ x, y, relief: hmax, w: VEC.RIDGE_W[0] + (VEC.RIDGE_W[1] - VEC.RIDGE_W[0]) * Math.min(1, (hmax - VEC.RIDGE_MIN_RELIEF) / 360) });
+        out.ridges.push({ x, y, relief: hmax, bridge: nb / e.length, w: VEC.RIDGE_W[0] + (VEC.RIDGE_W[1] - VEC.RIDGE_W[0]) * Math.min(1, (hmax - VEC.RIDGE_MIN_RELIEF) / 360) });
       } else {
         let amax = 0; for (const n of e) if (F.accD[n] > amax) amax = F.accD[n];
         const sca = amax * cell;
@@ -8962,7 +8979,7 @@ function terrainDrawLines(ctx, res, v, size) {
   // ⚠ 頂点ではなく外接矩形で画面と重なるかを見る（間引いた長い線は両端とも画面の外になりうる）
   const onScreen = (X, Y) => Math.max(...X) > -50 && Math.min(...X) < size.x + 50 && Math.max(...Y) > -50 && Math.min(...Y) < size.y + 50;
   const draw = (list, color) => {
-    const tf = list.map(q => ({ X: q.x.map(x => x * k + ox), Y: q.y.map(y => y * k + oy), w: q.w })).filter(q => onScreen(q.X, q.Y));
+    const tf = list.map(q => ({ X: q.x.map(x => x * k + ox), Y: q.y.map(y => y * k + oy), w: q.w, dash: q.bridge >= VEC.BRIDGE_DASH })).filter(q => onScreen(q.X, q.Y));
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     // 先に白い縁取り（地図の上でくっきり見えるように）、細い線から太い線へ
     tf.sort((a, b) => a.w - b.w);
@@ -8970,9 +8987,11 @@ function terrainDrawLines(ctx, res, v, size) {
       for (const q of tf) {
         ctx.beginPath(); strokeSmooth(ctx, q.X, q.Y);
         ctx.strokeStyle = pass ? color : VEC.HALO; ctx.lineWidth = pass ? q.w : q.w + 2;
+        ctx.setLineDash(q.dash ? [6, 5] : []);
         ctx.stroke();
       }
     }
+    ctx.setLineDash([]);
     return tf.length;
   };
   return { valleys: draw(V.valleys, VEC.VALLEY_COLOR), ridges: draw(V.ridges, VEC.RIDGE_COLOR) };
@@ -9084,6 +9103,31 @@ function terrainNearestCols(res, p, n) {
   return res.cols.cols.map(c => ({ c, d: geoDist(p, c) })).sort((a, b) => a.d - b.d).slice(0, n);
 }
 // 地図の中心（十字）を調べる。丸を付けた鞍部の検証に使う
+/* 「謎の直線」の切り分け（v4.128.0）：中心から RIDGE_WHY_R 升目以内でいちばん近い稜線の升目について、
+   なぜ稜線になったか（頂／分水界／鞍部からのつなぎ）と、横断の高低差・上る向き・流域を出す。
+   ⚠ 線の上をぴったり押すのは難しいので、近くの稜線の升目を拾う（どこを見たかは距離と方位で示す） */
+const RIDGE_WHY_R = 4;
+function terrainRidgeWhy(G, F, cols, gi) {
+  const { nx, ny } = G, x0 = gi % nx, y0 = (gi - x0) / nx, f0 = x => (x === x && x != null) ? Math.round(x).toLocaleString() : '—';
+  let best = -1, bd = Infinity;
+  for (let dy = -RIDGE_WHY_R; dy <= RIDGE_WHY_R; dy++) for (let dx = -RIDGE_WHY_R; dx <= RIDGE_WHY_R; dx++) {
+    const x = x0 + dx, y = y0 + dy; if (x < 0 || y < 0 || x >= nx || y >= ny) continue;
+    const n = y * nx + x, d = Math.hypot(dx, dy);
+    if (F.ridge[n] && d < bd) { bd = d; best = n; }
+  }
+  if (best < 0) return [`稜線の出自：${f0(RIDGE_WHY_R * G.cell)}m 以内に稜線の升目なし`];
+  const bx = best % nx, by = (best - bx) / nx, where = bd === 0 ? '中心の升目' : `${f0(bd * G.cell)}m ${dir8(bearingOf(bx - x0, by - y0))}の升目`;
+  const out = [], src = F.ridgeSrc[best];
+  if (src === RIDGE_SRC.BRIDGE) {
+    const c = cols[F.bridgeCol[best]], ll = G.toLL(best);
+    out.push(`稜線の出自（${where}）：★鞍部からのつなぎ（まっすぐ引いた線）` + (c ? `・鞍部 標高${f0(c.h)}m 深さ${f0(c.prom)}m・${f0(geoDist({ lat: ll.lat, lon: ll.lng }, c))}m 先・向き${Math.round(bearingOf(c.ridge[0], c.ridge[1]) % 180)}°` : ''));
+  } else if (src === RIDGE_SRC.PEAK) out.push(`稜線の出自（${where}）：頂（周りより高い升目）`);
+  else out.push(`稜線の出自（${where}）：分水界（流域 #${F.basin[best]} の境）`);
+  const ci = F.crossInfo(best);
+  if (ci) out.push(`　横断：上る向き ${DIR8[[7, 0, 1, 6, 2, 5, 4, 3][ci.q]]}（8方位に丸めた向き）・直角に ${f0(ci.dist)}m で両側が ${ci.lows.map(v => v === v ? v.toFixed(1) : '—').join('m／')}m 低い（必要 ${ci.need.toFixed(1)}m）` +
+    `・HAND ${f0(F.hand[best])}m・平ら ${F.flat[best] ? 'はい' : 'いいえ'}`);
+  return out;
+}
 function terrainProbeCenter() {
   const res = terrainAn.result, out = document.getElementById('wind-hud-result');
   if (!res) { if (out) out.textContent = '地形解析が入っていません'; return; }
@@ -9100,6 +9144,7 @@ function terrainProbeCenter() {
     lines.push(`流れ：${kind}・沢筋からの高さ（HAND）${f0(F.hand[gi])}m・稜線からの深さ ${f0(F.below[gi])}m` +
       `・比集水面積 ${f0(F.accD[gi] * G.cell)}m（沢筋 ${FLOW.VALLEY_SCA_M}m 以上）・流域 #${F.basin[gi]}` +
       (F.ridge[gi] ? `・稜線 #${F.ridgeId[gi]}` : '') + `（升目 約${f0(G.cell)}m）`);
+    lines.push(...terrainRidgeWhy(G, F, res.cols.cols, gi));
   }
   // 縮尺ごとのヘッセ行列（参考。尾根・沢の判定にはもう使わない）
   const view = terrainView(), mPerPx = demPxM(view.z, c.lat), scales = [], skipped = [];
