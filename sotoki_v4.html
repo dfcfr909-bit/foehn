@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.126.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.127.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8570,6 +8570,8 @@ const FLOW = {
   CROSS_M: 60,            // 稜線の横断の高低差を見る距離（m。升目2つ以上）
   CROSS_SLOPE: 0.05,      // 稜線：上る向きと直角に CROSS_M 動くと、両側とも これ×距離 以上低い（初期値。3m／60m）
   BRIDGE_COL_M: 10,       // この深さ以上の鞍部は、稜線の向きに両側の稜線までつなぐ
+  FLAT_TOL_M: 0.15,       // 周りの8升目との標高差がすべてこれ以下の升目を「平ら」とする
+  FLAT_MIN_M2: 20000,     // 平らな升目のかたまりがこの広さ以上なら「平坦地」（湖面・湿原）。沢・稜線・帯を作らない
   BRIDGE_MAX_M: 1500,     // つなぐ長さの上限（m）。これで着かなければつながない
   BAND_STEPS: [10, 20, 50, 100],   // 帯の幅の切り替え（m）
 };
@@ -8599,6 +8601,29 @@ function terrainFlow(G, cols) {
       if (-sl > bu) { bu = -sl; up[c] = nb; uq[c] = q; }
     }
   }
+  /* 平坦地（湖面・湿原など）：⚠ 並びで後ろの隣へ流す決まりは、広い平らな面では**升目の番号順の直線**に沿って流れを作り、
+     偽の沢・偽の流域の境（湖岸から斜面を登る直線の稜線）・湖面を四角く塗る帯を生んだ（実機・中禅寺湖）。
+     まとまった広さの平らな面は、流れは通す（湖を抜けて出口の沢へ）が、沢・稜線・帯は作らない */
+  const flat = new Uint8Array(N);
+  {
+    const isFlat = new Uint8Array(N);
+    for (let n = 0; n < N; n++) {
+      const hn = h[n]; if (hn !== hn) continue;
+      let f = 1;
+      for (let q = 0; q < 8 && f; q++) { const nb = ok(n, q); if (nb >= 0 && Math.abs(h[nb] - hn) > FLOW.FLAT_TOL_M) f = 0; }
+      isFlat[n] = f;
+    }
+    const minCells = FLOW.FLAT_MIN_M2 / (G.cell * G.cell), seen = new Uint8Array(N), st = [], comp = [];
+    for (let s0 = 0; s0 < N; s0++) {
+      if (!isFlat[s0] || seen[s0]) continue;
+      st.length = 0; comp.length = 0; st.push(s0); seen[s0] = 1;
+      while (st.length) {
+        const c = st.pop(); comp.push(c);
+        for (let q = 0; q < 8; q++) { const nb = ok(c, q); if (nb >= 0 && isFlat[nb] && !seen[nb]) { seen[nb] = 1; st.push(nb); } }
+      }
+      if (comp.length >= minCells) for (const c of comp) flat[c] = 1;
+    }
+  }
   // 多方向流の集水（升目の数・下り）：高い順に、勾配×等高線の長さで低い隣へ分けて渡す
   const accD = new Float32Array(N), wq = new Float32Array(8), nq = new Int32Array(8);
   for (let oi = 0; oi < nv; oi++) {
@@ -8618,14 +8643,14 @@ function terrainFlow(G, cols) {
      沢が始まる条件（比集水面積 × 勾配）も求める（Montgomery & Dietrich の考え方の簡略）。急な沢は小さな集水で、ゆるい谷底は大きな集水で沢になる */
   const vMin = FLOW.VALLEY_SCA_M / G.cell, chan = new Uint8Array(N), ridge = new Uint8Array(N);
   for (let n = 0; n < N; n++) {
-    if (!(accD[n] >= vMin) || h[n] !== h[n]) continue;
+    if (!(accD[n] >= vMin) || h[n] !== h[n] || flat[n]) continue;
     const d2 = down[n], sl = d2 >= 0 ? Math.max(0, h[n] - h[d2]) / (G.cell * (Math.abs(d2 - n) === 1 || Math.abs(d2 - n) === nx ? 1 : Math.SQRT2)) : 0;
     if (accD[n] * G.cell * sl >= FLOW.VALLEY_POWER) chan[n] = 1;
   }
   // HAND（沢筋までの高さ）：低い順に、流れ先の「着く沢筋の標高」を受け継ぐ
   const drain = new Float32Array(N).fill(NaN), hand = new Float32Array(N);
   for (let oi = nv - 1; oi >= 0; oi--) { const c = order[oi]; drain[c] = chan[c] ? h[c] : (down[c] >= 0 ? drain[down[c]] : NaN); }
-  for (let n = 0; n < N; n++) hand[n] = h[n] - drain[n];
+  for (let n = 0; n < N; n++) hand[n] = flat[n] ? NaN : h[n] - drain[n];
   // 沢筋を合流点ごとの区間（link）に分ける：上流の沢筋がちょうど1本なら同じ区間、0本（源頭）か2本以上（合流）なら新しい区間
   const upCnt = new Uint8Array(N), link = new Int32Array(N).fill(-1);
   for (let n = 0; n < N; n++) if (chan[n] && down[n] >= 0 && chan[down[n]]) upCnt[down[n]]++;
@@ -8654,7 +8679,7 @@ function terrainFlow(G, cols) {
     return true;
   };
   for (let n = 0; n < N; n++) {
-    const hn = h[n]; if (hn !== hn || chan[n]) continue;
+    const hn = h[n]; if (hn !== hn || chan[n] || flat[n]) continue;
     if (up[n] < 0 && down[n] >= 0) { if (hand[n] >= FLOW.RIDGE_HAND_M || hand[n] !== hand[n]) ridge[n] = 1; continue; }   // 頂
     if (basin[n] < 0 || !(hand[n] >= FLOW.RIDGE_HAND_M)) continue;
     for (const q of Q4) {
@@ -8678,12 +8703,12 @@ function terrainFlow(G, cols) {
         path.push(n);
       }
     }
-    if (reached === 2) { for (const n of path) ridge[n] = 1; bridged++; }
+    if (reached === 2 && !path.some(n => flat[n])) { for (const n of path) ridge[n] = 1; bridged++; }
   }
   // 稜線からの深さ：高い順に、最も急な上りで最初に着く稜線の標高を受け継ぐ
   const crest = new Float32Array(N).fill(NaN), below = new Float32Array(N);
   for (let oi = 0; oi < nv; oi++) { const c = order[oi]; crest[c] = ridge[c] ? h[c] : (up[c] >= 0 ? crest[up[c]] : NaN); }
-  for (let n = 0; n < N; n++) below[n] = crest[n] - h[n];
+  for (let n = 0; n < N; n++) below[n] = flat[n] ? NaN : crest[n] - h[n];
   // 連続した稜線に番号を振る（8近傍）。将来の風の遮蔽で「どの稜線の陰か」を引くため
   const ridgeId = new Int32Array(N).fill(-1), stack = new Int32Array(N);
   let nRidge = 0;
@@ -8699,7 +8724,8 @@ function terrainFlow(G, cols) {
     }
     nRidge++;
   }
-  return { down, up, accD, chan, ridge, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, area, ms: performance.now() - t0 };
+  let nFlat = 0; for (let n = 0; n < N; n++) nFlat += flat[n];
+  return { down, up, accD, chan, ridge, flat, nFlat, hand, below, basin, link, nLink, ridgeId, nRidge, bridged, area, ms: performance.now() - t0 };
 }
 // 鞍部が稜線の上か（2升目以内に稜線の升目）。将来の風の解析で「どの稜線のコルか」を引く
 function terrainLinkColsToRidges(G, F, cols) {

@@ -99,6 +99,8 @@ const TERRAIN = (lat, lon) => {
   const flat = Math.abs(x) <= 1500 && Math.abs(y - 8000) <= 200 ? 1350 : -Infinity;
   // ③なめらかな円錐（男体山の形）：9km 南・高さ 1,200m・半径 3km（勾配 0.4）
   const r = Math.hypot(x, y + 9000), cone = r < 3000 ? 1000 + 1200 * (1 - r / 3000) : -Infinity;
+  // ④湖（平らな面）：東 2.5km・南 2.5km・半径 700m・標高 1,080m ちょうど（v4.127.0。湖面に偽の直線の沢・稜線・帯を作らない）
+  if (Math.hypot(x - 2500, y + 2500) < 700) return 1080;
   return Math.max(Math.abs(y) < 5000 ? ridgeH : -Infinity, plain, y > 5000 ? peaks2 : -Infinity, flat, cone);
 };
 const CRC = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
@@ -280,6 +282,12 @@ const cross1 = await page.evaluate(() => {
   return hits;
 });
 ok(cross1 === 1, '★★稜線は二重線にしない（細線化。横切る線は1本）', cross1);
+// ④湖（平坦地）：沢・稜線・帯を作らない・線を引かない
+const lake = await flowAt(-2.5, 2.5, { test: 1, r0: 0, r1: 0.55 });
+ok(lake.n > 50 && lake.ridge === 0 && lake.chan === 0 && lake.rband === 0 && lake.vband === 0, '★★★湖面（平坦地）に沢・稜線・帯を作らない（偽の直線を出さない）', lake);
+const lakeVec = [...(await vecPts('ridges')).pts, ...(await vecPts('valleys')).pts].filter(([x, y]) => Math.hypot(x - 2.5, y + 2.5) < 0.5);
+ok(lakeVec.length === 0, '★★湖面の上に線を引かない', lakeVec.slice(0, 4));
+ok(await page.evaluate(() => terrainAn.result.flow.nFlat > 50), '平坦地を見分けている（升目の数）');
 const flank = await flowAt(1.5, 3, { w: 0.4, h: 0.2 });
 ok(flank.ridge < 0.1, '峰の北の斜面の途中は尾根ではない', flank);
 await page.evaluate(() => { leafletMap.setView([36.57 - 9000 / 111320, 137.65], 13, { animate: false }); });
