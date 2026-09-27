@@ -2286,7 +2286,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.120.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.121.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7949,6 +7949,7 @@ const windGL = {
   n: 0, px: null, py: null, age: null, life: null, seg: null,
   grid: null, gridOld: null, fadeT0: 0, fieldKey: '',
   running: false, raf: 0, lastTs: 0, zooming: false, lastView: null, respawns: 0,
+  terrainOn: true, terrain: null,   // 段階1：格子点の標高で引き直す（既定 ON。計測表示の「高さ」で升目に戻せる）
   timer: null, stats: { frames: 0, t0: 0, fps: 0, cpu: 0, cpuAcc: 0, gpu: null, long: 0, rec: null },
 };
 
@@ -8112,7 +8113,146 @@ function buildGLGrid(f, z0) {
       u[n] = w[0]; v[n] = w[1]; ok[n] = 1; okCount++;
     }
   }
-  return { x0: tl.x, y0: tl.y, step, cols, rows, u, v, ok, okCount, z0 };
+  return { x0: tl.x, y0: tl.y, step, cols, rows, u, v, ok, okCount, z0, lats, lons };
+}
+
+/* ------ 段階1：地形に沿った高さの風（v4.121.0・実験の層だけ）------
+   いま（AUTO）：升目（約11km）ごとの基準標高 z_ref（稜線の高さ）の風を、升目の中のどこにも塗っている。
+     → 谷底にも稜線の強い風が塗られる（実機で「谷のような所だけ緑に抜ける」と見えたのはこの升目の値）
+   段階1：WebGL の格子点（8px）ごとに**その地点の DEM の標高**で、既存の WindVertical.auto を引き直す。
+     → 谷底は地上10m風寄り、尾根は上空寄り。すべてモデルの値の按分で、**向きを作ったり速さを足したりはしない**
+   ⚠ 描画（実験の層）だけ。場（buildWindField）・矢印・ポップアップ・判定は升目の z_ref のまま
+   ⚠ AUTO だけ。手動の層（10m/925…）には掛けない（その層そのものを見せるモード）
+   速さのため、升目の格子点ごとに「高さ→風」の表を TABLE_DZ おきに作り（WindVertical.auto をそのまま呼ぶ）、
+   格子点では表を引く。auto は高さについて区分的に線形なので、表の線形補間で十分（面の高さの前後 TABLE_DZ の中だけずれる）
+   DEM は地理院の標高タイル（dem_png・readDemElevation と同じ取得先）。表示ズームより2段粗いタイル（格子の間隔の半分ほどの画素） */
+const WIND_TERRAIN = {
+  TABLE_DZ: 25,            // 高さ→風の表の刻み（m）
+  DEM_BELOW: 2,            // 表示ズームより何段粗い DEM を読むか（8px の格子 ≒ 2画素）
+  DEM_ZOOM_MIN: 6, DEM_ZOOM_MAX: 12,
+  TILE_MAX: 16,            // DEM タイルの控え（1枚 256×256×4byte＝256KB。⚠ iOS のメモリ。雷の走査で落ちた前例）
+  VALLEY_M: 150,           // 集計の「谷底」：基準標高よりこれ以上低い格子点
+};
+const windDem = { tiles: new Map(), cv: null, ctx: null, timer: 0 };
+// DEM タイル1枚。返り値 Float32Array（欠測は NaN）／null（無い・読めない）／undefined（読み込み中）
+function windDemTile(z, x, y) {
+  const key = `${z}/${x}/${y}`;
+  const t = windDem.tiles.get(key);
+  if (t) {
+    if (t.data !== undefined) { windDem.tiles.delete(key); windDem.tiles.set(key, t); }   // 使った順に並べ直す（LRU）
+    return t.data;
+  }
+  const rec = { data: undefined };
+  windDem.tiles.set(key, rec);
+  const done = d => {
+    rec.data = d;
+    // 古いものから捨てる（読み込み中は捨てない）
+    for (const [k, v] of windDem.tiles) {
+      if (windDem.tiles.size <= WIND_TERRAIN.TILE_MAX) break;
+      if (v.data !== undefined && k !== key) windDem.tiles.delete(k);
+    }
+    // 届いたら描き直す（続けて届くのでまとめる）。粒は撒き直さない
+    clearTimeout(windDem.timer);
+    windDem.timer = setTimeout(() => { if (windGL.running && lastWindField) updateWindFlowGL(lastWindField); }, 150);
+  };
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      // ⚠ 走査用の canvas は使い回す（毎回作ると iOS でメモリが溜まる）
+      if (!windDem.cv) { windDem.cv = document.createElement('canvas'); windDem.cv.width = windDem.cv.height = 256; windDem.ctx = windDem.cv.getContext('2d', { willReadFrequently: true }); }
+      windDem.ctx.clearRect(0, 0, 256, 256);
+      windDem.ctx.drawImage(img, 0, 0);
+      const px = windDem.ctx.getImageData(0, 0, 256, 256).data, d = new Float32Array(65536);
+      for (let k = 0; k < 65536; k++) { const h = decodeDemPixel(px[k * 4], px[k * 4 + 1], px[k * 4 + 2]); d[k] = h == null ? NaN : h; }
+      done(d);
+    } catch (e) { done(null); }   // CORS 等で読めなくても流れは止めない（升目の風のまま）
+  };
+  img.onerror = () => done(null);   // 海の上はタイルが無い（404）
+  img.src = DEM_TILE_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  return undefined;
+}
+// 世界座標（DEM のズームの px）の標高
+function windDemAt(wx, wy, dz) {
+  const tx = Math.floor(wx / 256), ty = Math.floor(wy / 256);
+  const d = windDemTile(dz, tx, ty);
+  if (!d) return d;
+  const h = d[Math.min(255, Math.floor(wy - ty * 256)) * 256 + Math.min(255, Math.floor(wx - tx * 256))];
+  return isNaN(h) ? null : h;
+}
+/* 格子（buildGLGrid の返り値）を、格子点の標高で引き直した格子にする。元の格子は変えない。
+   返り値 { grid, applied, loading, ms, stats } */
+function windGLTerrainHeight(g, f) {
+  const t0 = performance.now();
+  const dz = Math.max(WIND_TERRAIN.DEM_ZOOM_MIN, Math.min(WIND_TERRAIN.DEM_ZOOM_MAX, Math.floor(g.z0) - WIND_TERRAIN.DEM_BELOW));
+  const k = Math.pow(2, dz - g.z0), N = g.cols * g.rows, zl = new Float32Array(N).fill(NaN);
+  let loading = false, zMin = Infinity, zMax = -Infinity;
+  for (let r = 0; r < g.rows; r++) {
+    for (let c = 0; c < g.cols; c++) {
+      const n = r * g.cols + c;
+      if (!g.ok[n]) continue;
+      const h = windDemAt((g.x0 + c * g.step) * k, (g.y0 + r * g.step) * k, dz);
+      if (h === undefined) { loading = true; continue; }
+      if (h == null) continue;
+      zl[n] = h; if (h < zMin) zMin = h; if (h > zMax) zMax = h;
+    }
+  }
+  if (!(zMax >= zMin)) return { grid: g, applied: false, loading, ms: performance.now() - t0, stats: null };
+  // 升目の格子点ごとの「高さ→風」の表（使う点だけ作る）
+  const dZ = WIND_TERRAIN.TABLE_DZ, zt0 = Math.floor(zMin / dZ) * dZ, nz = Math.max(2, Math.ceil((zMax - zt0) / dZ) + 2);
+  const cellAt = new Map();
+  for (const c of f.cells) cellAt.set(((c.i - f.i0) / f.k) * f.nj + (c.j - f.j0) / f.k, c);
+  const tables = new Map();
+  const table = m => {
+    if (tables.has(m)) return tables.get(m);
+    const c = cellAt.get(m);
+    let tb = null;
+    if (c && c.res && c.res.col) {
+      tb = { u: new Float32Array(nz), v: new Float32Array(nz), ok: new Uint8Array(nz) };
+      for (let q = 0; q < nz; q++) {
+        const res = WindVertical.auto(c.res.col, zt0 + q * dZ, c.zModel);
+        if (res.w) { tb.u[q] = res.w[0]; tb.v[q] = res.w[1]; tb.ok[q] = 1; }
+      }
+    }
+    tables.set(m, tb);
+    return tb;
+  };
+  const u = g.u.slice(), v = g.v.slice();
+  const st = { valley: { n: 0, z: 0, zRef: 0, s0: 0, s1: 0 }, ridge: { n: 0, z: 0, zRef: 0, s0: 0, s1: 0 }, all: { n: 0, s0: 0, s1: 0 } };
+  for (let r = 0; r < g.rows; r++) {
+    const y = (g.lats[r] - f.lat0) / f.dlat, i = Math.floor(y), fy = y - i;
+    if (i < 0 || i >= f.ni) continue;
+    for (let c = 0; c < g.cols; c++) {
+      const n = r * g.cols + c, h = zl[n];
+      if (isNaN(h)) continue;
+      const x = (g.lons[c] - f.lon0) / f.dlon, j = Math.floor(x), fx = x - j;
+      if (j < 0 || j >= f.nj) continue;
+      const q = Math.min(nz - 2, Math.max(0, (h - zt0) / dZ)), q0 = Math.floor(q), fq = q - q0;
+      let su = 0, sv = 0, sw = 0;
+      for (let e = 0; e < 4; e++) {
+        const di = e >> 1, dj = e & 1, ii = i + di, jj = j + dj;
+        if (ii >= f.ni || jj >= f.nj) continue;
+        const tb = table(ii * f.nj + jj);
+        if (!tb || !tb.ok[q0] || !tb.ok[q0 + 1]) continue;
+        const wt = (di ? fy : 1 - fy) * (dj ? fx : 1 - fx);
+        su += wt * (tb.u[q0] + (tb.u[q0 + 1] - tb.u[q0]) * fq);
+        sv += wt * (tb.v[q0] + (tb.v[q0 + 1] - tb.v[q0]) * fq);
+        sw += wt;
+      }
+      if (sw < 0.5) continue;   // 引けない所は升目の風のまま（無い所を作らない）
+      u[n] = su / sw; v[n] = sv / sw;
+      // 比べるための集計：谷底（基準標高より VALLEY_M 以上低い）と尾根（基準標高より高い）
+      const zRef = zRefAt(f.i0 + Math.round(y) * f.k, f.j0 + Math.round(x) * f.k);
+      const s0 = Math.hypot(g.u[n], g.v[n]), s1 = Math.hypot(u[n], v[n]);
+      st.all.n++; st.all.s0 += s0; st.all.s1 += s1;
+      if (zRef == null) continue;
+      const b = h < zRef - WIND_TERRAIN.VALLEY_M ? st.valley : h > zRef ? st.ridge : null;
+      if (b) { b.n++; b.z += h; b.zRef += zRef; b.s0 += s0; b.s1 += s1; }
+    }
+  }
+  for (const b of [st.valley, st.ridge, st.all]) if (b.n) for (const key of ['z', 'zRef', 's0', 's1']) if (key in b) b[key] /= b.n;
+  st.tables = tables.size; st.dz = dz;
+  return { grid: { ...g, u, v, terrain: true }, applied: true, loading, ms: performance.now() - t0, stats: st };
 }
 // 格子の双線形（m/s。北が正）。⚠ 毎コマ粒の数だけ呼ぶので配列を作らない（結果は glU/glV）
 let glU = 0, glV = 0;
@@ -8336,9 +8476,15 @@ function updateWindFlowGL(f) {
   if (!f || !isMapOpen() || !isOverlayOn('windFlowGL') || document.hidden) { stopWindFlowGL(); return; }
   if (!windGLInit()) { setLayerNote('windFlowGL', `WebGL が使えないため Canvas 版で表示しています（${windGL.reason}）`); return; }
   const z0 = leafletMap.getZoom();
-  const g = buildGLGrid(f, z0);
+  let g = buildGLGrid(f, z0);
   if (!g.okCount) { stopWindFlowGL(); return; }
-  const prev = windGL.grid, key = f.timeKey + '|' + f.mode;
+  // 段階1：格子点の標高で引き直す（AUTO だけ・切り替えは計測表示の「高さ」）。場・矢印・判定は升目のまま
+  windGL.terrain = null;
+  if (windGL.terrainOn && f.mode === 'auto') {
+    windGL.terrain = windGLTerrainHeight(g, f);
+    g = windGL.terrain.grid;
+  }
+  const prev = windGL.grid, key = f.timeKey + '|' + f.mode + '|' + (g.terrain ? 't' : 'c');
   // 基準ズームが変わったら粒の世界座標を新しいズームへ（メルカトルなので倍率を掛けるだけ）
   if (prev && prev.z0 !== z0 && windGL.px) {
     const k = Math.pow(2, z0 - prev.z0);
@@ -8406,6 +8552,7 @@ function windGLHud(show) {
     el.innerHTML = '<div id="wind-hud-text"></div><div class="wh-btns">' +
       '<button type="button" onclick="windGLScaleCount(0.5)">粒½</button>' +
       '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
+      '<button type="button" id="wind-hud-terrain" onclick="windGLToggleTerrain()"></button>' +
       '<button type="button" onclick="windGLMeasure()">10秒計測</button>' +
       '<button type="button" onclick="windGLCopy()">コピー</button></div><div id="wind-hud-result"></div>';
     (document.getElementById('map-overlay') || document.body).appendChild(el);
@@ -8420,7 +8567,24 @@ function windGLHudText() {
   const rows = [`<b>WebGL${windGL.isGL2 ? '2' : '1'}</b> ${windGL.n.toLocaleString()}粒 ${f1(g.fps)}fps CPU ${f1(g.cpu)}ms` +
     ` GPU ${g.gpu != null ? f1(g.gpu) + 'ms' : '計測不可'} 遅いコマ${g.longShown || 0}`];
   if (windFlow.running) rows.push(`<b>Canvas</b> ${windFlow.parts.length.toLocaleString()}粒 ${f1(c.fps)}fps CPU ${f1(c.cpu)}ms 遅いコマ${c.longShown || 0}`);
+  rows.push(windGLTerrainText());
   el.innerHTML = rows.join('<br>');
+  const b = document.getElementById('wind-hud-terrain');
+  if (b) b.textContent = windGL.terrainOn ? '高さ:地形' : '高さ:升目';
+}
+// 段階1の比べ（谷底・尾根の平均の風速が 升目の風 → 地形の高さの風 でどう変わったか）
+function windGLTerrainText() {
+  const t = windGL.terrain, f0 = x => Math.round(x).toLocaleString(), f1 = x => x.toFixed(1);
+  if (!windGL.terrainOn) return '<b>高さ</b> 升目（基準標高）の風';
+  if (!lastWindField || lastWindField.mode !== 'auto') return '<b>高さ</b> 地形（AUTO のときだけ。いまは手動の層）';
+  if (!t || !t.applied) return `<b>高さ</b> 地形：標高タイル${t && t.loading ? 'を読み込み中' : 'が無い'}（升目の風のまま）`;
+  const s = t.stats, b = (name, x) => x.n ? `${name}${x.n}点 ${f1(x.s0)}→${f1(x.s1)}m/s（標高${f0(x.z)}／基準${f0(x.zRef)}m）` : `${name}なし`;
+  return `<b>高さ</b> 地形 ${f1(t.ms)}ms${t.loading ? '・読込中' : ''}｜${b('谷底', s.valley)}｜${b('尾根', s.ridge)}`;
+}
+function windGLToggleTerrain() {
+  windGL.terrainOn = !windGL.terrainOn;
+  if (lastWindField) updateWindFlowGL(lastWindField);   // 粒は撒き直さない（按分で移る）
+  windGLHudText();
 }
 function windGLScaleCount(k) {
   windGL.override = Math.max(500, Math.min(WIND_GL.COUNT_MAX, Math.round(windGLParticleCount() * k)));
@@ -8444,6 +8608,9 @@ function windGLMeasure() {
     };
     const lines = [sum(windGL.stats, `WebGL${windGL.isGL2 ? '2' : '1'}`, windGL.n),
       sum(windFlowStats, 'Canvas', windFlow.parts.length)].filter(Boolean);
+    lines.push(windGLTerrainText().replace(/<[^>]+>/g, ''));
+    if (performance.memory) lines.push(`JSヒープ ${(performance.memory.usedJSHeapSize / 1048576).toFixed(0)}MB`);
+    lines.push(`標高タイルの控え ${windDem.tiles.size}枚（約${(windDem.tiles.size * 0.25).toFixed(1)}MB）`);
     lines.push(`画面${windGL.w}×${windGL.h} 倍率${windGL.dpr} ズーム${leafletMap.getZoom().toFixed(1)} ${windGL.renderer || ''}`);
     lines.push(navigator.userAgent);
     windGL.lastMeasure = lines.join('\n');
