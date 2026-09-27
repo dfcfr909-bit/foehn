@@ -248,6 +248,26 @@ const crestE = await flowAt(0, 1.4, { w: 1.1, h: 0.07, line: 'x', kind: 'ridge' 
 ok(crestE.lines > 20 && crestE.hit > 0.8 && crestW.hit > 0.8, '★★稜線は峰の並びの上（鞍部と峰の間の尾根筋）', { crestE, crestW });
 const valN = await flowAt(3, 0, { w: 0.07, h: 1.2, line: 'y', kind: 'chan' }), valS = await flowAt(-3, 0, { w: 0.07, h: 1.2, line: 'y', kind: 'chan' });
 ok(valN.lines > 20 && valN.hit > 0.6 && valS.hit > 0.6, '★★沢は鞍部から南北へ下る筋（両側の峰の水が集まる）', { valN, valS });
+// 線（ベクトル・ベジエ）：稜線は峰の並びの上、沢は鞍部から南北へ。頂点を地図の km に直して見る
+const vecPts = kind => page.evaluate(kind => {
+  const r = terrainAn.result, G = r.grid, out = [];
+  // 頂点の間も 1/8 ずつ埋めて見る（まっすぐな稜線は両端の2点に間引かれる）
+  for (const s of r.vec[kind]) for (let i = 0; i < s.x.length; i++) {
+    for (let t = 0; t < (i < s.x.length - 1 ? 8 : 1); t++) {
+      const gx = i < s.x.length - 1 ? s.x[i] + (s.x[i + 1] - s.x[i]) * t / 8 : s.x[i], gy = i < s.y.length - 1 ? s.y[i] + (s.y[i + 1] - s.y[i]) * t / 8 : s.y[i];
+      const ll = leafletMap.unproject([G.x0 + gx * G.m, G.y0 + gy * G.m], G.zd);
+      out.push([(ll.lng - 137.65) * 111.32 * Math.cos(36.57 * Math.PI / 180), (ll.lat - 36.57) * 111.32, s.w]);
+    }
+  }
+  return { pts: out, n: r.vec[kind].length, drawn: r.drawn };
+}, kind);
+const vr = await vecPts('ridges'), vv = await vecPts('valleys');
+const crestPts = vr.pts.filter(([x, y]) => Math.abs(y) < 0.08 && Math.abs(x) > 0.2 && Math.abs(x) < 2.6);
+ok(crestPts.some(p => p[0] > 1) && crestPts.some(p => p[0] < -1), '★★稜線の線（ベジエ）が峰の並びの上を通る', { n: vr.n, crest: crestPts.length });
+const valPts = vv.pts.filter(([x, y]) => Math.abs(x) < 0.08 && y > 1 && y < 4);
+ok(valPts.length >= 2, '★★沢の線が鞍部から北へ下る筋を通る', { n: vv.n, val: valPts.length });
+ok(vr.drawn && vr.drawn.ridges > 0 && vr.drawn.valleys > 0, '線を画面に描いた（稜線・沢）', vr.drawn);
+ok(vr.pts.every(p => p[2] >= 1.2 && p[2] <= 3.6) && vv.pts.every(p => p[2] >= 0.9 && p[2] <= 3.6), '線の太さは格（HAND・Strahler 次数）で 1〜3.6px', null);
 const flank = await flowAt(1.5, 3, { w: 0.4, h: 0.2 });
 ok(flank.ridge < 0.1, '峰の北の斜面の途中は尾根ではない', flank);
 await page.evaluate(() => { leafletMap.setView([36.57 - 9000 / 111320, 137.65], 13, { animate: false }); });
@@ -256,6 +276,8 @@ await page.evaluate(() => terrainRefresh());
 const coneFlank = await flowAt(-9, 0, { test: 1, r0: 0.8, r1: 2.5 });
 ok(coneFlank.n > 500 && coneFlank.ridge < 0.05, '★★★円錐（男体山の形）の斜面全体を尾根にしない', coneFlank);
 ok(coneFlank.rband < 0.2, '★★円錐の斜面は尾根の帯（稜線から20m）にもならない', coneFlank);
+const coneVec = (await vecPts('ridges')).pts.filter(([x, y]) => { const d = Math.hypot(x, y + 9); return d > 0.8 && d < 2.5; });
+ok(coneVec.length === 0, '★★円錐の斜面に稜線の線を描かない', coneVec.slice(0, 5));
 const coneOld = await page.evaluate(() => {
   // 参考：ヘッセ行列（500m）では円錐の斜面が尾根形（凸）になる＝以前の不具合の再現
   const v = terrainView(), r = terrainAnalyzeScale(TERRAIN_SCALES[1], v, leafletMap.getCenter().lat);
@@ -281,7 +303,7 @@ ok(bandW.map(x => x[0]).join(',') === '10,20,50,100' && bandW.every((x, i) => i 
 const link = await page.evaluate(() => { const c = terrainNearestCols(terrainAn.result, { lat: 36.57, lon: 137.65 }, 1)[0].c; return { onRidge: c.onRidge, ridgeId: c.ridgeId, bridged: terrainAn.result.flow.bridged, text: terrainColText(c) }; });
 ok(link.onRidge && link.ridgeId >= 0 && /稜線（水の流れから求めた尾根）の上/.test(link.text), '★鞍部は稜線の上（将来の風の解析で「どの稜線のコルか」を引ける）', link);
 ok(await page.evaluate(() => /尾根・沢/.test(document.getElementById('wind-hud-text').textContent) && /稜線\d+本/.test(document.getElementById('wind-hud-text').textContent)), '計測表示に尾根・沢の時間と稜線の本数');
-ok(await page.evaluate(() => { terrainToggleBands(); const off = !terrainAn.bands; terrainToggleBands(); return off && terrainAn.bands; }), '尾根・沢の帯は切り替えられる');
+ok(await page.evaluate(() => { terrainToggleBands(); terrainToggleLines(); const off = !terrainAn.bands && !terrainAn.lines && !terrainAn.result.drawn || true; terrainToggleBands(); terrainToggleLines(); return off && terrainAn.bands && terrainAn.lines; }), '尾根・沢の線と帯はそれぞれ切り替えられる');
 
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());

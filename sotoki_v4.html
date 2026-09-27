@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.124.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.125.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8335,7 +8335,7 @@ const COL = {
   SHOW_STEPS: [0, 5, 10, 20, 30, 50, 100],   // 画面に出す深さの切り替え（m）。⚠ 未決。検証のため切り替えて見る
   MAX_KEEP: 4000,
 };
-const terrainAn = { on: false, showMin: 20, bands: true, ridgeBand: 20, valleyBand: 20, result: null, cv: null, ctx: null, markers: [], key: '' };
+const terrainAn = { on: false, showMin: 20, bands: true, lines: true, ridgeBand: 20, valleyBand: 20, result: null, cv: null, ctx: null, markers: [], key: '' };
 const demPxM = (z, lat) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
 
 // 標高タイルから、DEM のズーム zd の世界座標 (x0,y0) を起点に m×m 画素ずつ平均した nx×ny の升目
@@ -8565,6 +8565,7 @@ function terrainFindCols(G) {
      逆さにした地形の集水で稜線を取る定石 */
 const FLOW = {
   VALLEY_SCA_M: 5000,     // 沢筋とみなす比集水面積（m）。初期値（一様な斜面の長さより十分大きく）
+  VALLEY_POWER: 1500,     // さらに 比集水面積 × 勾配 がこれ以上（沢が始まる条件。ゆるい長い斜面・裾野に平行な筋を並べない）
   RIDGE_HAND_M: 15,       // 分水界のうち、沢筋からこれ以上高い所を稜線とする（合流のそばの小さな境を落とす）
   CROSS_M: 60,            // 稜線の横断の高低差を見る距離（m。升目2つ以上）
   CROSS_SLOPE: 0.05,      // 稜線：上る向きと直角に CROSS_M 動くと、両側とも これ×距離 以上低い（初期値。3m／60m）
@@ -8613,8 +8614,14 @@ function terrainFlow(G, cols) {
     for (let i = 0; i < k; i++) accD[nq[i]] += accD[c] * wq[i] / tot;
   }
   // 沢筋：比集水面積（m）＝升目の数 × 升目の面積 ÷ 升目の幅
+  /* ⚠ 比集水面積だけだと、ゆるく長い一様な斜面（火山の裾野・平地）で斜面の長さぶん大きくなり、平行な沢筋が一面に並んだ。
+     沢が始まる条件（比集水面積 × 勾配）も求める（Montgomery & Dietrich の考え方の簡略）。急な沢は小さな集水で、ゆるい谷底は大きな集水で沢になる */
   const vMin = FLOW.VALLEY_SCA_M / G.cell, chan = new Uint8Array(N), ridge = new Uint8Array(N);
-  for (let n = 0; n < N; n++) if (accD[n] >= vMin && h[n] === h[n]) chan[n] = 1;
+  for (let n = 0; n < N; n++) {
+    if (!(accD[n] >= vMin) || h[n] !== h[n]) continue;
+    const d2 = down[n], sl = d2 >= 0 ? Math.max(0, h[n] - h[d2]) / (G.cell * (Math.abs(d2 - n) === 1 || Math.abs(d2 - n) === nx ? 1 : Math.SQRT2)) : 0;
+    if (accD[n] * G.cell * sl >= FLOW.VALLEY_POWER) chan[n] = 1;
+  }
   // HAND（沢筋までの高さ）：低い順に、流れ先の「着く沢筋の標高」を受け継ぐ
   const drain = new Float32Array(N).fill(NaN), hand = new Float32Array(N);
   for (let oi = nv - 1; oi >= 0; oi--) { const c = order[oi]; drain[c] = chan[c] ? h[c] : (down[c] >= 0 ? drain[down[c]] : NaN); }
@@ -8719,7 +8726,8 @@ function terrainAnalyze() {
   const cols = terrainFindCols(grid);
   const flow = terrainFlow(grid, cols.cols);
   terrainLinkColsToRidges(grid, flow, cols.cols);
-  return { view, lat, grid, cols, flow, ms: performance.now() - t0, loading: grid.loading };
+  const vec = terrainVectorize(grid, flow);
+  return { view, lat, grid, cols, flow, vec, ms: performance.now() - t0, loading: grid.loading };
 }
 
 // 解析の升目（縮尺 r・緯度経度）。無ければ null
@@ -8750,34 +8758,164 @@ const DIR8 = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'
 const dir8 = deg => DIR8[Math.round(deg / 45) % 8];
 
 /* ------ 表示（開発用の重ね）------ */
-/* 尾根・沢の帯を描く（共通の升目を1枚の画像にして引き伸ばす。升目の数だけの画素なので軽い）
-   尾根：芯（稜線の升目）＝濃い赤茶、帯（稜線からの深さ ≦ 設定値）＝赤茶を深さに応じて薄く
-   沢：芯（沢筋の升目）＝濃い青、帯（沢筋からの高さ HAND ≦ 設定値）＝水色を高さに応じて薄く
-   両方に入る升目は、設定値に対して近い方（割合の小さい方）の色 */
-const BAND_COLORS = { ridgeCore: [122, 34, 10], ridge: [196, 84, 40], valleyCore: [8, 72, 160], valley: [40, 150, 220] };
-function terrainBandImage(res) {
-  const G = res.grid, F = res.flow, key = `${terrainAn.ridgeBand}|${terrainAn.valleyBand}`;
-  if (res.bandImg && res.bandKey === key) return res.bandImg;
-  const cv = res.bandImg || document.createElement('canvas');
-  cv.width = G.nx; cv.height = G.ny;
-  const cx = cv.getContext('2d'), img = cx.createImageData(G.nx, G.ny), d = img.data;
-  const R = terrainAn.ridgeBand, V = terrainAn.valleyBand, st = { ridgeCore: 0, ridge: 0, valleyCore: 0, valley: 0 };
-  for (let n = 0; n < G.N; n++) {
-    let col = null, a = 0;
-    if (F.chan[n]) { col = BAND_COLORS.valleyCore; a = 0.85; st.valleyCore++; }
-    else if (F.ridge[n]) { col = BAND_COLORS.ridgeCore; a = 0.85; st.ridgeCore++; }
-    else {
-      const fr = F.below[n] / R, fv = F.hand[n] / V;   // NaN（流れ先なし）は比較が偽になり塗らない
-      if (fr <= 1 && !(fv < fr)) { col = BAND_COLORS.ridge; a = 0.15 + 0.4 * (1 - fr); st.ridge++; }
-      else if (fv <= 1) { col = BAND_COLORS.valley; a = 0.15 + 0.4 * (1 - fv); st.valley++; }
+/* ------ 尾根・沢の線（ベクトル）：v4.125.0 ------
+   ⚠ 升目（約30m）の画素のまま引き伸ばすと、階段とにじみで「モワッと」する（実機の利用者の声）。
+   沢筋・稜線の升目を**流れの向きでつないだ折れ線**にし、階段を間引いて（Douglas–Peucker）、
+   **2次ベジエ曲線**（折れ線の中点を通り、頂点を制御点にする）で描く。画面の解像度で描くので、ズームしても線はくっきりのまま。
+   ・沢：下る向き（最も急な下り）でつなぐ。上流の沢筋が1本ならそのまま、0本（源頭）か2本以上（合流）で区切る。
+     太さは Strahler の次数（1次の沢どうしが合流すると2次…）で太くする（本流が目立つ）
+   ・稜線：上る向き（最も急な上り）でつなぐ（稜線の升目は稜線に沿って峰へ上る）。区切り方は沢と同じ。
+     太さは沢筋からの高さ（HAND）の大きさで太くする（主稜線が目立つ）
+   ・短い切れ端を描かない：連続した稜線のかたまり（ridgeId）が RIDGE_MIN_M 未満なら描かない（斜面の点線のような切れ端）。
+     沢は MIN_SEG_M 未満の区間で両端がどこにもつながらないものを描かない
+   ・帯（尾根≦◯m・沢≦◯m）は、升目の値（稜線からの深さ・HAND）を**画面の細かさで双線形に補間してから**境目を引く。
+     升目の四角が出ず、輪郭がなめらかになる */
+const VEC = {
+  SIMPLIFY_CELLS: 0.7,    // 間引きの許容（升目の何個分）
+  RIDGE_MIN_M: 300,       // これより短い稜線のかたまりは描かない
+  MIN_SEG_M: 150,         // これより短い孤立した沢の区間は描かない
+  RIDGE_W: [1.2, 3.6],    // 稜線の太さ（CSS px。HAND 0m → 300m 以上）
+  VALLEY_W: [0.9, 3.6],   // 沢の太さ（Strahler 1次 → 5次以上）
+  RIDGE_COLOR: '#8b2a10', VALLEY_COLOR: '#0b5cc5', HALO: 'rgba(255,255,255,0.55)',
+  BAND_RES: 2,            // 帯を塗る画素の大きさ（CSS px）
+};
+// 流れの向き（next）でつないだ折れ線に分ける。mask の升目のうち、流れ込む数（inDeg）が1でない所で区切る
+function terrainTrace(G, mask, next) {
+  const { N } = G, inDeg = new Uint8Array(N), segs = [];
+  for (let n = 0; n < N; n++) if (mask[n] && next[n] >= 0 && mask[next[n]]) inDeg[next[n]]++;
+  const done = new Uint8Array(N);
+  for (let n = 0; n < N; n++) {
+    if (!mask[n] || inDeg[n] === 1) continue;
+    const pts = [n];
+    let c = next[n];
+    while (c >= 0 && mask[c]) { pts.push(c); if (inDeg[c] !== 1 || done[c]) break; done[c] = 1; c = next[c]; }
+    done[n] = 1;
+    if (pts.length >= 2) segs.push(pts);
+  }
+  return { segs, inDeg };
+}
+// 折れ線の間引き（Douglas–Peucker・升目の座標）
+function dpSimplify(xs, ys, tol) {
+  const n = xs.length, keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+  const st = [[0, n - 1]];
+  while (st.length) {
+    const [a, b] = st.pop();
+    let best = -1, bd = tol;
+    const dx = xs[b] - xs[a], dy = ys[b] - ys[a], L = Math.hypot(dx, dy) || 1;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs(dy * (xs[i] - xs[a]) - dx * (ys[i] - ys[a])) / L;
+      if (d > bd) { bd = d; best = i; }
     }
-    if (!col) continue;
-    const o = n * 4;
-    d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = Math.round(a * 255);
+    if (best >= 0) { keep[best] = 1; st.push([a, best], [best, b]); }
+  }
+  const ox = [], oy = [];
+  for (let i = 0; i < n; i++) if (keep[i]) { ox.push(xs[i]); oy.push(ys[i]); }
+  return [ox, oy];
+}
+/* 稜線・沢を線（升目の座標の折れ線＋太さ）にする。解析のたびに1回（描くたびには作らない）
+   返り値 { ridges: [{ x:[], y:[], w }], valleys: [...] }（x, y は升目の添字の小数。中心が +0.5） */
+function terrainVectorize(G, F) {
+  const t0 = performance.now(), { nx, N, cell } = G, out = { ridges: [], valleys: [] };
+  const toXY = pts => {
+    const xs = pts.map(n => n % nx + 0.5), ys = pts.map(n => Math.floor(n / nx) + 0.5);
+    return dpSimplify(xs, ys, VEC.SIMPLIFY_CELLS);
+  };
+  // 沢：Strahler の次数（高い順＝上流から）
+  const strahler = new Uint8Array(N), maxIn = new Uint8Array(N), cntMax = new Uint8Array(N);
+  for (let oi = 0; oi < G.order.length; oi++) {
+    const c = G.order[oi];
+    if (!F.chan[c]) continue;
+    strahler[c] = maxIn[c] === 0 ? 1 : (cntMax[c] >= 2 ? maxIn[c] + 1 : maxIn[c]);
+    const d = F.down[c];
+    if (d >= 0 && F.chan[d]) {
+      if (strahler[c] > maxIn[d]) { maxIn[d] = strahler[c]; cntMax[d] = 1; } else if (strahler[c] === maxIn[d]) cntMax[d]++;
+    }
+  }
+  const tv = terrainTrace(G, F.chan, F.down);
+  for (const pts of tv.segs) {
+    const first = pts[0], last = pts[pts.length - 1];
+    const isolated = tv.inDeg[first] === 0 && !(F.down[last] >= 0 && F.chan[F.down[last]]) && tv.inDeg[last] <= 1;
+    if (isolated && pts.length * cell < VEC.MIN_SEG_M) continue;
+    let so = 0; for (const n of pts) if (strahler[n] > so) so = strahler[n];
+    const [x, y] = toXY(pts);
+    out.valleys.push({ x, y, w: Math.min(VEC.VALLEY_W[1], VEC.VALLEY_W[0] + (VEC.VALLEY_W[1] - VEC.VALLEY_W[0]) * Math.min(1, (so - 1) / 4)), order: so });
+  }
+  // 稜線：かたまりの大きさで切れ端を落とす
+  const size = new Int32Array(F.nRidge);
+  for (let n = 0; n < N; n++) if (F.ridgeId[n] >= 0) size[F.ridgeId[n]]++;
+  const minCells = VEC.RIDGE_MIN_M / cell;
+  const keep = new Uint8Array(N);
+  for (let n = 0; n < N; n++) if (F.ridge[n] && size[F.ridgeId[n]] >= minCells) keep[n] = 1;
+  const tr = terrainTrace(G, keep, F.up);
+  for (const pts of tr.segs) {
+    let hmax = 0; for (const n of pts) if (F.hand[n] > hmax) hmax = F.hand[n];
+    const [x, y] = toXY(pts);
+    out.ridges.push({ x, y, w: Math.min(VEC.RIDGE_W[1], VEC.RIDGE_W[0] + (VEC.RIDGE_W[1] - VEC.RIDGE_W[0]) * Math.min(1, hmax / 300)), hand: hmax });
+  }
+  out.ms = performance.now() - t0;
+  out.dropped = F.nRidge - size.filter(s => s >= minCells).length;
+  return out;
+}
+// 折れ線を2次ベジエでなめらかに描く（中点を通り、頂点を制御点にする）
+function strokeSmooth(ctx, X, Y) {
+  const n = X.length;
+  ctx.moveTo(X[0], Y[0]);
+  if (n === 2) { ctx.lineTo(X[1], Y[1]); return; }
+  for (let i = 1; i < n - 1; i++) ctx.quadraticCurveTo(X[i], Y[i], (X[i] + X[i + 1]) / 2, (Y[i] + Y[i + 1]) / 2);
+  ctx.lineTo(X[n - 1], Y[n - 1]);
+}
+function terrainDrawLines(ctx, res, v, size) {
+  const G = res.grid, V = res.vec, k = Math.pow(2, v.z - G.zd) * G.m, ox = G.x0 * Math.pow(2, v.z - G.zd) - v.tlx, oy = G.y0 * Math.pow(2, v.z - G.zd) - v.tly;
+  const onScreen = (X, Y) => X.some((x, i) => x > -50 && x < size.x + 50 && Y[i] > -50 && Y[i] < size.y + 50);
+  const draw = (list, color) => {
+    const tf = list.map(s => ({ X: s.x.map(x => x * k + ox), Y: s.y.map(y => y * k + oy), w: s.w })).filter(s => onScreen(s.X, s.Y));
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // 先に白い縁取り（地図の上でくっきり見えるように）、細い線から太い線へ
+    tf.sort((a, b) => a.w - b.w);
+    for (const pass of [0, 1]) {
+      for (const s of tf) {
+        ctx.beginPath(); strokeSmooth(ctx, s.X, s.Y);
+        ctx.strokeStyle = pass ? color : VEC.HALO; ctx.lineWidth = pass ? s.w : s.w + 2;
+        ctx.stroke();
+      }
+    }
+    return tf.length;
+  };
+  return { valleys: draw(V.valleys, VEC.VALLEY_COLOR), ridges: draw(V.ridges, VEC.RIDGE_COLOR) };
+}
+/* 帯：升目の値（稜線からの深さ・HAND）を画面の細かさ（BAND_RES px）で双線形に補間してから境目を引く（四角が出ない） */
+const BAND_COLORS = { ridge: [196, 84, 40], valley: [40, 150, 220] };
+function terrainDrawBands(ctx, res, v, size) {
+  const G = res.grid, F = res.flow, s = VEC.BAND_RES, W = Math.ceil(size.x / s), H = Math.ceil(size.y / s);
+  if (!terrainAn.bandCv) terrainAn.bandCv = document.createElement('canvas');
+  const cv = terrainAn.bandCv; cv.width = W; cv.height = H;
+  const cx = cv.getContext('2d'), img = cx.createImageData(W, H), d = img.data;
+  const k = Math.pow(2, G.zd - v.z) / G.m, R = terrainAn.ridgeBand, Vb = terrainAn.valleyBand, st = { ridge: 0, valley: 0 };
+  const bil = (A, fx, fy) => {
+    const x = Math.floor(fx), y = Math.floor(fy);
+    if (x < 0 || y < 0 || x >= G.nx - 1 || y >= G.ny - 1) return NaN;
+    const tx = fx - x, ty = fy - y, n = y * G.nx + x;
+    const a = A[n], b = A[n + 1], c = A[n + G.nx], e = A[n + G.nx + 1];
+    if (a !== a || b !== b || c !== c || e !== e) return Math.min(a, b, c, e);   // 欠けは近い値（NaN は比較で落ちる）
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + e * tx) * ty;
+  };
+  for (let py = 0; py < H; py++) {
+    const fy = ((v.tly + (py + 0.5) * s) * k - G.y0 / G.m) - 0.5;
+    for (let px = 0; px < W; px++) {
+      const fx = ((v.tlx + (px + 0.5) * s) * k - G.x0 / G.m) - 0.5;
+      const fr = bil(F.below, fx, fy) / R, fv = bil(F.hand, fx, fy) / Vb;
+      let col = null, a = 0;
+      if (fr <= 1 && !(fv < fr)) { col = BAND_COLORS.ridge; a = 0.1 + 0.35 * (1 - fr); st.ridge++; }
+      else if (fv <= 1) { col = BAND_COLORS.valley; a = 0.1 + 0.35 * (1 - fv); st.valley++; }
+      if (!col) continue;
+      const o = (py * W + px) * 4;
+      d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = Math.round(a * 255);
+    }
   }
   cx.putImageData(img, 0, 0);
-  res.bandImg = cv; res.bandKey = key; res.bandStats = st;
-  return cv;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(cv, 0, 0, W * s, H * s);
+  res.bandStats = st;
 }
 function terrainDraw() {
   const res = terrainAn.result;
@@ -8796,12 +8934,10 @@ function terrainDraw() {
   L.DomUtil.setPosition(cv, leafletMap.containerPointToLayerPoint([0, 0]));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, size.x, size.y);
-  // 尾根・沢の帯（共通の升目の画像を、今の見え方に合わせて引き伸ばす）
-  if (terrainAn.bands) {
-    const G = res.grid, v = terrainView(), k = Math.pow(2, v.z - G.zd);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(terrainBandImage(res), G.x0 * k - v.tlx, G.y0 * k - v.tly, G.nx * G.m * k, G.ny * G.m * k);
-  }
+  // 尾根・沢：帯（なめらかな境目）→ 線（ベジエ）の順
+  const v = terrainView();
+  if (terrainAn.bands) terrainDrawBands(ctx, res, v, size);
+  if (terrainAn.lines) res.drawn = terrainDrawLines(ctx, res, v, size);
   ctx.globalAlpha = 1;
   // 鞍部：◎＋稜線（茶の点線）＋風の向き（黒）＋深さ・横断角。深さは計測表示で切り替える（未決）
   const b = leafletMap.getBounds();
@@ -8994,6 +9130,7 @@ function terrainCycleBand(kind) {
   terrainDraw();
 }
 function terrainToggleBands() { terrainAn.bands = !terrainAn.bands; terrainDraw(); }
+function terrainToggleLines() { terrainAn.lines = !terrainAn.lines; terrainDraw(); }
 function terrainCycleShowMin() {
   const s = COL.SHOW_STEPS;
   terrainAn.showMin = s[(s.indexOf(terrainAn.showMin) + 1) % s.length];
@@ -9008,7 +9145,7 @@ function terrainHudText() {
   const b = r.bandStats || {};
   return `<b>地形解析</b> ${r.ms.toFixed(0)}ms${r.loading ? '・読込中' : ''}（升目${Math.round(r.grid.cell)}m・${r.grid.nx}×${r.grid.ny}）` +
     `｜<b>尾根・沢</b> ${r.flow.ms.toFixed(0)}ms 稜線${r.flow.nRidge}本 帯：尾根≦${terrainAn.ridgeBand}m 沢≦${terrainAn.valleyBand}m` +
-    `（芯 尾根${b.ridgeCore || 0}・沢${b.valleyCore || 0}）` +
+    `｜線 ${r.vec.ms.toFixed(0)}ms 稜線${r.vec.ridges.length}本・沢${r.vec.valleys.length}本（切れ端${r.vec.dropped}を省く）` +
     `｜<b>鞍部</b> ${r.cols.ms.toFixed(0)}ms ${bins}（≧${terrainAn.showMin}m のうち稜線の上 ${onR}/${shown}）`;
 }
 // 格子の双線形（m/s。北が正）。⚠ 毎コマ粒の数だけ呼ぶので配列を作らない（結果は glU/glV）
@@ -9314,7 +9451,8 @@ function windGLHud(show) {
       '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
       '<button type="button" id="wind-hud-terrain" onclick="windGLToggleTerrain()"></button>' +
       '<button type="button" id="wind-hud-tan" onclick="terrainToggle()">地形解析</button>' +
-      '<button type="button" id="wind-hud-bands" onclick="terrainToggleBands()">尾根・沢</button>' +
+      '<button type="button" id="wind-hud-lines" onclick="terrainToggleLines()">線</button>' +
+      '<button type="button" id="wind-hud-bands" onclick="terrainToggleBands()">帯</button>' +
       '<button type="button" id="wind-hud-rband" onclick="terrainCycleBand(\'ridge\')"></button>' +
       '<button type="button" id="wind-hud-vband" onclick="terrainCycleBand(\'valley\')"></button>' +
       '<button type="button" id="wind-hud-probe" onclick="terrainProbeCenter()">中心を解析</button>' +
@@ -9346,6 +9484,8 @@ function windGLHudText() {
   if (ta) ta.classList.toggle('on', terrainAn.on);
   const tb = document.getElementById('wind-hud-bands'), tr = document.getElementById('wind-hud-rband'), tvb = document.getElementById('wind-hud-vband');
   if (tb) { tb.style.display = terrainAn.on ? '' : 'none'; tb.classList.toggle('on', terrainAn.bands); }
+  const tl = document.getElementById('wind-hud-lines');
+  if (tl) { tl.style.display = terrainAn.on ? '' : 'none'; tl.classList.toggle('on', terrainAn.lines); }
   if (tr) { tr.style.display = terrainAn.on && terrainAn.bands ? '' : 'none'; tr.textContent = `尾根≦${terrainAn.ridgeBand}m`; }
   if (tvb) { tvb.style.display = terrainAn.on && terrainAn.bands ? '' : 'none'; tvb.textContent = `沢≦${terrainAn.valleyBand}m`; }
   if (tp) tp.style.display = terrainAn.on ? '' : 'none';
