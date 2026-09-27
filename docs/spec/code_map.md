@@ -415,6 +415,9 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `buildGLGrid(f, z0)` / `glGridSample(g, wx, wy)` / `glWindAt` | 場を世界座標の格子に写す／双線形（配列を作らない）／時刻を変えた直後の按分 | 約 8094 |
 | `glView()` / `windGLZoomAnim(e)` | 地図の今の見え方（左上の世界座標・倍率）／ズームの演出を CSS で合わせる | 約 8145 |
 | `windGLStep(dt, v, now)` / `windGLRender(v, dt)` / `windGLFrame(ts)` | 移流（CPU）／尾を写して薄める→線分→画面（GPU）／1コマ | 約 8214 |
+| `WIND_TERRAIN` / `windDemTile` / `windDemAt` | 段階1：地形の高さの風の設定／標高タイル（dem_png・控え16枚）／世界座標の標高 | 約 8129 |
+| `windGLTerrainHeight(g, f)` | **段階1**：格子点の標高で `WindVertical.auto` を引き直した格子（元は変えない。AUTO だけ） | 約 8185 |
+| `windGLTerrainText()` / `windGLToggleTerrain()` | 計測表示の谷底・尾根の比べ／「高さ:地形・升目」の切り替え | 約 8576 |
 | `updateWindFlowGL(f)` / `stopWindFlowGL()` | 場が変わったら格子だけ作り直す（粒は撒き直さない）／止める | 約 8334 |
 | `windFlowStat` / `windGLMeasure()` | 計測（FPS・CPU 時間。Canvas 版も）／10秒計測 | 約 8371 |
 | `updateMapTime()` / `setMapTime(idx)` | **地図のタイムスライダー**（風の層があるときだけ出す・グラフと同じ選択時刻を動かして風を描き直す） | 約 8050 |
