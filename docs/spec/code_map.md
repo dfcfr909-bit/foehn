@@ -408,6 +408,15 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `buildFlowGrid(f)` / `flowAt(g, x, y)` | 場を画面の速度の格子に写す／粒の位置の速度 | 約 7740 |
 | `updateWindFlow(f)` / `stopWindFlow()` / `pauseWindFlow()` | 流す・止める（動かしている間・閉じた・隠れた） | 約 7780 |
 | `windFlowFrame(ts)` | 1コマ（薄める→色ごとにまとめて描く。30コマ／秒） | 約 7800 |
+| `WIND_GL` / `windGL` | 風の流れ（実験・WebGL・ADR-0013）の設定と状態 | 約 7927 |
+| `windGLParticleCount()` | **粒の数を決める1か所**（PoC は 8,000／20,000 固定。adaptive へ育てる所） | 約 7958 |
+| `windGLInit()` / `windGLFail(reason)` | WebGL の用意（webgl2→webgl＋instanced）／使えなければ Canvas 版へ | 約 8037 |
+| `windFlowWanted()` | Canvas 版を流すか（`windFlow` が入っている、または実験の層で WebGL が使えない） | 約 8090 |
+| `buildGLGrid(f, z0)` / `glGridSample(g, wx, wy)` / `glWindAt` | 場を世界座標の格子に写す／双線形（配列を作らない）／時刻を変えた直後の按分 | 約 8094 |
+| `glView()` / `windGLZoomAnim(e)` | 地図の今の見え方（左上の世界座標・倍率）／ズームの演出を CSS で合わせる | 約 8145 |
+| `windGLStep(dt, v, now)` / `windGLRender(v, dt)` / `windGLFrame(ts)` | 移流（CPU）／尾を写して薄める→線分→画面（GPU）／1コマ | 約 8214 |
+| `updateWindFlowGL(f)` / `stopWindFlowGL()` | 場が変わったら格子だけ作り直す（粒は撒き直さない）／止める | 約 8334 |
+| `windFlowStat` / `windGLMeasure()` | 計測（FPS・CPU 時間。Canvas 版も）／10秒計測 | 約 8371 |
 | `updateMapTime()` / `setMapTime(idx)` | **地図のタイムスライダー**（風の層があるときだけ出す・グラフと同じ選択時刻を動かして風を描き直す） | 約 8050 |
 | `drawWindArrows(f, opacity)` | 場の格子点に矢印（向きは風向+180°）。推定値は点線・地中は「地中」 | 約 7500 |
 | `loadPressureGrid(bounds)` | 画面を9×9に割った海面気圧を1リクエストで（#26） | 約 5626 |
