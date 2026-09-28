@@ -97,7 +97,9 @@ async function osm(s, halfM) {
   const dLat = halfM / 110574, dLon = halfM / (111320 * Math.cos(s.lat * Math.PI / 180));
   const bb = `${s.lat - dLat},${s.lon - dLon},${s.lat + dLat},${s.lon + dLon}`;
   const q = `[out:json][timeout:90];(way["waterway"~"^(stream|river)$"](${bb});way["natural"~"^(ridge|arete)$"](${bb});node["natural"~"^(saddle|peak)$"](${bb}););out geom;`;
-  for (const ep of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+  const EPS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  for (let round = 0; round < 2; round++) for (const ep of EPS) {   // ⚠ 1回目の実行で 504 が続いた。間を置いてもう1周
+    if (round) await new Promise(z => setTimeout(z, 10000));
     try {
       const res = await fetch(ep, { method: 'POST', headers: { 'user-agent': UA, 'content-type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) });
       if (!res.ok) { console.log(`OSM ${ep} ${res.status}`); continue; }
@@ -329,7 +331,10 @@ await page.evaluate(() => {
       let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
       image = btoa(s);
     }
-    return { cell, nx, N, nv, used, filled, tFetch, tFlow, cand, chan, image, bridged: F.bridged };
+    // 標高の欠け（10m おきに間引いた点）。欠けの近くは評価から外す（細かい DEM の配信が無い所を「不一致」に数えない）
+    const holes = [], hk = Math.max(1, Math.round(10 / cell));
+    for (let y = 0; y < ny; y += hk) for (let x = 0; x < nx; x += hk) if (h[y * nx + x] !== h[y * nx + x]) holes.push(toE(y * nx + x));
+    return { cell, nx, N, nv, used, filled, tFetch, tFlow, cand, chan, holes, image, bridged: F.bridged };
   };
 });
 
@@ -421,32 +426,39 @@ for (const site of SITES) {
     const rows = rs.filter(x => E.id === 'S' || x.run.boxM >= 4000);
     if (!rows.length) continue;
     const area = (2 * E.half / 1000) ** 2;
+    const finest = rows.filter(x => x.run.id !== '5m-s').sort((a, b) => a.r.cell - b.r.cell)[0];
+    // 欠けの近く（30m 以内）は、比べる2つのどちらかにあれば外す。箱の外も欠けとみなす
+    for (const x of rows) x.Hh = hashOf(x.r.holes);
+    const okAt = (p, ...xs) => xs.every(x => Math.abs(p[0]) <= x.run.boxM / 2 - 150 && Math.abs(p[1]) <= x.run.boxM / 2 - 150 && !near(x.Hh, p, 30));
+    const validFrac = x => { let a = 0, b = 0; for (let yy = -E.half; yy <= E.half; yy += 20) for (let xx = -E.half; xx <= E.half; xx += 20) { b++; if (okAt([xx, yy], x)) a++; } return a / b; };
     const streams = O.streams.filter(p => inSq(p, E.half)), Hs = hashOf(streams);
     const marks = [...O.saddles, ...O.peaks].map(x => x.p).filter(p => inSq(p, E.half));
     const sadd = O.saddles.map(x => x.p).filter(p => inSq(p, E.half));
     out(`### ${E.label}（OSM：沢の点 ${streams.length}・鞍部 ${sadd.length}・鞍部＋山頂 ${marks.length}）\n`);
     // 沢
     out('**沢**（OSM の沢との一致。精度＝検出した沢の升目のうち OSM の沢から d 以内、再現＝OSM の沢の点のうち検出した沢から d 以内）\n');
-    out('| DEM | 升目 | 沢の密度 km/km² | 精度 30m | 精度 60m | 再現 30m | 再現 60m | terrainFlow |');
-    out('|---|---|---|---|---|---|---|---|');
+    out('| DEM | 升目 | 沢の密度 km/km² | 精度 30m | 精度 60m | 再現 30m | 再現 60m | 値のある範囲 | terrainFlow |');
+    out('|---|---|---|---|---|---|---|---|---|');
     for (const x of rows) {
-      const ch = x.r.chan.filter(p => inSq(p, E.half)), Hc = hashOf(ch);
-      out(`| ${x.run.id} | ${fmt(x.r.cell, 1)}m | ${fmt(ch.length * x.r.cell / 1000 / area, 1)} | ${pct(frac(ch, Hs, 30))} | ${pct(frac(ch, Hs, 60))} | ${pct(frac(streams, Hc, 30))} | ${pct(frac(streams, Hc, 60))} | ${fmt(x.r.tFlow)}ms（${x.r.N}升目） |`);
+      const ch = x.r.chan.filter(p => inSq(p, E.half)), Hc = hashOf(ch), st = streams.filter(p => okAt(p, x));
+      out(`| ${x.run.id} | ${fmt(x.r.cell, 1)}m | ${fmt(ch.length * x.r.cell / 1000 / area, 1)} | ${pct(frac(ch, Hs, 30))} | ${pct(frac(ch, Hs, 60))} | ${pct(frac(st, Hc, 30))} | ${pct(frac(st, Hc, 60))} | ${pct(validFrac(x))} | ${fmt(x.r.tFlow)}ms（${x.r.N}升目） |`);
     }
     // 稜線
     out('\n**稜線**（密度＝稜線の升目×升目の幅。鞍部・山頂に稜線が d 以内に来る割合。細かい DEM との一致＝同じ方式でいちばん細かい DEM の稜線から 30m 以内の割合）\n');
-    const finest = rows.filter(x => x.run.id !== '5m-s').sort((a, b) => a.r.cell - b.r.cell)[0];
-    out(`（いちばん細かい DEM：${finest.run.id}）\n`);
-    out('| DEM | 方式 | 密度 km/km² | 鞍部 30m | 鞍部 60m | 鞍部＋山頂 60m | 細かい DEM と一致（精度） | 細かい DEM を拾う（再現） |');
-    out('|---|---|---|---|---|---|---|---|');
+    out(`（いちばん細かい DEM：${finest.run.id}。一致は両方に値がある所だけで数える。「同じ方式」＝その方式で細かい DEM を回した稜線、「現行」＝細かい DEM を現行の条件で回した稜線＝方式どうしで同じ相手）\n`);
+    out('| DEM | 方式 | 密度 km/km² | 鞍部 30m | 鞍部 60m | 鞍部＋山頂 60m | 同じ方式：精度 | 同じ方式：再現 | 現行：精度 | 現行：再現 |');
+    out('|---|---|---|---|---|---|---|---|---|---|');
+    const curM = METHODS.find(q => q.id === 'cur');
+    const refCur = finest.r.cand.filter(c => curM.pick(c) && inSq(c, E.half));
     const sel = ['cur', 'ci30_25', 'ci60_10', 'ci60_25', 'ci60_40', 'ci120_25', 'none'];
     for (const mid of sel) {
       const M = METHODS.find(q => q.id === mid);
       const ref = finest.r.cand.filter(c => M.pick(c) && inSq(c, E.half)), Href = hashOf(ref);
       for (const x of rows) {
         const rp = x.r.cand.filter(c => M.pick(c) && inSq(c, E.half)), Hr = hashOf(rp);
-        const same = x === finest;
-        out(`| ${x.run.id} | ${M.label} | ${fmt(rp.length * x.r.cell / 1000 / area, 1)} | ${pct(frac(sadd, Hr, 30))} | ${pct(frac(sadd, Hr, 60))} | ${pct(frac(marks, Hr, 60))} | ${same ? '—' : pct(frac(rp, Href, 30))} | ${same ? '—' : pct(frac(ref, Hr, 30))} |`);
+        const same = x === finest, rpV = rp.filter(p => okAt(p, x, finest)), refV = ref.filter(p => okAt(p, x, finest)), curV = refCur.filter(p => okAt(p, x, finest));
+        const Hc = hashOf(refCur);
+        out(`| ${x.run.id} | ${M.label} | ${fmt(rp.length * x.r.cell / 1000 / area, 1)} | ${pct(frac(sadd, Hr, 30))} | ${pct(frac(sadd, Hr, 60))} | ${pct(frac(marks, Hr, 60))} | ${same ? '—' : pct(frac(rpV, Href, 30))} | ${same ? '—' : pct(frac(refV, Hr, 30))} | ${pct(frac(rpV, Hc, 30))} | ${pct(frac(curV, Hr, 30))} |`);
       }
     }
     out('');
