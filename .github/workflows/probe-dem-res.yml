@@ -1,0 +1,45 @@
+name: DEM の解像度と尾根・沢（実験）
+
+# 30m／10m／5m／1m の DEM で、尾根・沢の判定（terrainFlow）の現行の条件と CI（収束指数）を比べる（scripts/probeDemRes.mjs）。
+# なぜ Actions で回すか: 開発環境からは国土地理院にも OSM にも到達できない（鞍部の検証と同じ制約）。
+# 何もコミットしない。結果はサマリーと artifact（画像・表）に出るだけ。
+# 実験用：この実験のブランチへの push と手動実行だけで動く。判断が済んだら消すか手動実行だけにする。
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [claude/dem-resolution-probe]
+    paths:
+      - scripts/probeDemRes.mjs
+      - .github/workflows/probe-dem-res.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: 依存を取得
+        working-directory: tests
+        run: npm install
+
+      - name: Chromium を用意
+        uses: ./.github/actions/chromium
+
+      - name: 比べる
+        run: node scripts/probeDemRes.mjs
+
+      - name: 画像と表を残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dem-res
+          path: out/dem-res/
+          if-no-files-found: warn
