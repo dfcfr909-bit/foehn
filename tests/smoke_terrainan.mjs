@@ -405,6 +405,94 @@ ok(/稜線の出自（中心の升目）：★鞍部からのつなぎ（最も�
 ok(await page.evaluate(() => /尾根・沢/.test(document.getElementById('wind-hud-text').textContent) && /稜線\d+本/.test(document.getElementById('wind-hud-text').textContent)), '計測表示に尾根・沢の時間と稜線の本数');
 ok(await page.evaluate(() => { terrainToggleBands(); terrainToggleLines(); const off = !terrainAn.bands && !terrainAn.lines && !terrainAn.result.drawn || true; terrainToggleBands(); terrainToggleLines(); return off && terrainAn.bands && terrainAn.lines; }), '尾根・沢の線と帯はそれぞれ切り替えられる');
 
+// ⑦段階3a：風下の遮蔽（v4.133.0・実験・既定は切）。粒の見せ方だけ。場・矢印・判定は変えない
+// Sx の単体：南北に走る尾根（高さ 200m）を東向きの風が越える。風下（尾根の東）は隠れ、風上（西）と平地は隠れない
+const sx = await page.evaluate(() => {
+  const nx = 100, ny = 40, cell = 30, h = new Float32Array(nx * ny);
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) h[y * nx + x] = 1000 + 200 * Math.exp(-(((x - 50) * cell) ** 2) / (2 * 60 ** 2));
+  const G = { nx, ny, h, cell };
+  const at = x => terrainSx(G, x, 20, 1, 0);
+  return { lee: at(54), leeFar: at(62), wind: at(44), flat: at(10), crest: at(50), noWind: terrainSx(G, 54, 20, 0, 0),
+    f: [shelterFactor(-5), shelterFactor(WIND_SHELTER.SX_LO_DEG), shelterFactor(11), shelterFactor(WIND_SHELTER.SX_HI_DEG), shelterFactor(60)] };
+});
+ok(sx.lee > 10 && sx.leeFar > 2 && sx.wind <= 0 && Math.abs(sx.flat) < 0.5 && sx.crest <= 0 && sx.noWind !== sx.noWind,
+  '★Sx：尾根の風下は正（隠れる）・風上と平地と稜線の上は0以下', sx);
+ok(sx.f[0] === 1 && sx.f[1] === 1 && sx.f[2] < 1 && sx.f[2] > 0.3 && Math.abs(sx.f[3] - 0.3) < 1e-9 && Math.abs(sx.f[4] - 0.3) < 1e-9,
+  '★遮蔽の倍率：Sx 2°以下で1・20°以上で0.3・間はなめらか（実験のパラメータ WIND_SHELTER）', sx.f);
+// 層で：既定は切 → 入れると粒の格子だけ倍率が掛かる → 場・矢印の値は同じ → 手動の層には掛けない → 切れば元どおり
+const sh = await page.evaluate(() => {
+  const out = { defaultOff: windGL.shelterOn === false && !windGL.shelterRes && !windGL.grid.fac };
+  const g0 = windGL.grid, field0 = JSON.stringify(lastWindField.cells.slice(0, 20).map(c => c.res && c.res.w));
+  const c = leafletMap.getCenter(), s0 = sampleWindField ? JSON.stringify(sampleWindField(lastWindField, c.lat, c.lng)) : '';
+  windGLToggleShelter();
+  const r = windGL.shelterRes, g1 = windGL.grid;
+  out.on = windGL.shelterOn; out.applied = !!(r && r.applied); out.stats = r && r.stats;
+  let bad = 0, n = 0, fmin = 1;
+  for (let k = 0; k < g1.u.length; k++) {
+    if (!g0.ok[k]) continue;
+    const F = r.fac[k]; n++;
+    if (!(F >= WIND_SHELTER.F_MIN - 1e-6 && F <= WIND_COL.MAX + 1e-6)) bad++;
+    if (Math.abs(g1.u[k] - g0.u[k] * F) > 1e-4 || Math.abs(g1.v[k] - g0.v[k] * F) > 1e-4) bad++;
+    if (Math.abs(r.fac[k] - r.shelter[k] * r.col[k]) > 1e-5 || !(r.col[k] >= 1 && r.col[k] <= WIND_COL.MAX + 1e-6)) bad++;
+    if (F < fmin) fmin = F;
+  }
+  out.n = n; out.bad = bad; out.fmin = fmin;
+  out.fieldSame = JSON.stringify(lastWindField.cells.slice(0, 20).map(c => c.res && c.res.w)) === field0 &&
+    (sampleWindField ? JSON.stringify(sampleWindField(lastWindField, c.lat, c.lng)) : '') === s0;
+  out.probe = windShelterProbeLines().join('\n');
+  out.hud = document.getElementById('wind-hud-text').textContent;
+  out.btn = document.getElementById('wind-hud-shelter').textContent;
+  // 手動の層（850）には掛けない
+  updateWindFlowGL(Object.assign({}, lastWindField, { mode: '850' }));
+  out.manual = !windGL.shelterRes && !windGL.grid.fac && /手動/.test(windShelterProbeLines()[0]);
+  updateWindFlowGL(Object.assign({}, lastWindField, { mode: 'auto' }));
+  // 切れば元の格子（段階1まで）と同じ
+  windGLToggleShelter();
+  const g2 = windGL.grid;
+  let diff = 0; for (let k = 0; k < g2.u.length; k++) if (g2.u[k] !== g0.u[k] || g2.v[k] !== g0.v[k]) diff++;
+  out.offSame = !windGL.shelterOn && !g2.fac && diff === 0;
+  return out;
+});
+ok(sh.defaultOff, '★補正は既定で切（粒の格子に倍率が無い）', sh);
+ok(sh.on && sh.applied && sh.n > 100 && sh.bad === 0, '★補正を入れると粒の格子の u・v に最終倍率（遮蔽 0.3〜1 × コル 1〜1.3）が掛かる', sh);
+ok(sh.fieldSame, '★★補正を入れても場（buildWindField の値）・sampleWindField（矢印・ポップアップの元）は変わらない', sh);
+ok(sh.manual, '★手動の層には補正を掛けない', sh);
+ok(sh.offSame, '★補正を切れば粒の格子は元どおり（段階1まで）', sh);
+ok(/Sx -?[\d.]+°/.test(sh.probe) && /遮蔽倍率 [\d.]+/.test(sh.probe) && /コル加速倍率 [\d.]+/.test(sh.probe) && /最終倍率 [\d.]+/.test(sh.probe) && /コル：/.test(sh.probe),
+  '★「補正を調べる」：Sx・遮蔽倍率・コル加速倍率・最終倍率', sh.probe);
+ok(/補正.*遮蔽.*点.*コル \d+か所.*最終倍率 平均/.test(sh.hud) && sh.btn === '補正:遮蔽・コル', '計測表示に補正の集計（遮蔽された割合・倍率の平均と最小）', sh.hud);
+console.log('段階3a（偽の地形）：', JSON.stringify(sh.stats), '最小倍率', sh.fmin);
+// ⑧段階3b：コルの加速（v4.134.0・実験のパラメータ WIND_COL）。倍率の形
+const cb = await page.evaluate(() => ({
+  full: colBoostFactor(90, 0, 100), half: colBoostFactor(90, 0, 25), deep: colBoostFactor(90, 0, 600), real: colBoostFactor(72, 137, 47),
+  along: colBoostFactor(20, 0, 600), atMin: colBoostFactor(WIND_COL.MIN_CROSS_DEG, 0, 600), shallow: colBoostFactor(90, 0, windColMinDepth() - 1),
+  mid: colBoostFactor(90, 100, 100), out: colBoostFactor(90, WIND_COL.RADIUS_M, 100), deg60: colBoostFactor(60, 0, 200), minDepth: windColMinDepth(),
+}));
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+ok(near(cb.full, 1.3) && near(cb.half, 1.15) && near(cb.deep, 1.3) && cb.along === 1 && cb.atMin > 1 && cb.shallow === 1 &&
+  near(cb.mid, 1 + 0.3 * (1 - 1 / 9)) && cb.out === 1 && cb.real > 1.2 && cb.real < 1.22 && near(cb.deg60, 1 + 0.3 * Math.sin(Math.PI / 3)) && cb.minDepth === 20,
+  '★コル加速倍率（v4.135.0 案C：深さ基準50m・半径300m・減衰1乗）：真横で深いほど大きく上限1.3・稜線に沿う風と浅い鞍部と半径の外は1・深さの下限は◎の既定（20m）・実機の例（深さ47m・72°・137m）で約1.21', cb);
+// 層で：偽の地形の東西の稜線の鞍部（中心）。南風（稜線を真横に越える）なら鞍部の周りが速く、西風（稜線に沿う）なら変わらない
+const cl = await page.evaluate(() => {
+  if (!windGL.shelterOn) windGLToggleShelter();
+  const base = windGL.terrain ? windGL.terrain.grid : windGL.grid;   // 段階1の後・補正の前
+  const run = (u0, v0) => {
+    const g = { ...base, u: base.u.map(() => u0), v: base.v.map(() => v0), fac: undefined };
+    const r = windGLShelter(g), c = leafletMap.project(leafletMap.getCenter(), g.z0);
+    const n = Math.round((c.y - g.y0) / g.step) * g.cols + Math.round((c.x - g.x0) / g.step);
+    let far = 0; for (let k = 0; k < r.col.length; k++) if (r.col[k] > 1 && r.colOf[k] < 0) far++;
+    return { atCol: r.col[n], fac: r.fac[n], shelter: r.shelter[n], colsUsed: r.stats.colsUsed, boosted: r.stats.boosted, max: r.stats.facMax, orphan: far,
+      cross: r.colInfo.map(i => Math.round(i.cross)) };
+  };
+  const out = { south: run(0, 10), west: run(10, 0) };
+  windGLToggleShelter();
+  return out;
+});
+ok(cl.south.atCol > 1.2 && cl.south.atCol <= 1.3 + 1e-6 && cl.south.colsUsed >= 1 && cl.south.orphan === 0 && cl.south.max <= 1.3 + 1e-6,
+  '★★南風（稜線を真横に越える）：鞍部の周りのコル加速倍率が 1.2〜1.3', cl.south);
+ok(cl.west.atCol === 1, '★★西風（稜線に沿う）：鞍部でも加速しない', cl.west);
+console.log('段階3b（偽の地形・中心の鞍部）：南風', JSON.stringify(cl.south), '／西風', JSON.stringify(cl.west));
+
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());
 ok(await page.evaluate(() => terrainAn.markers.length === 0 && (!terrainAn.cv || terrainAn.cv.style.display === 'none')), '地形解析を切れば◎と線が消える');
