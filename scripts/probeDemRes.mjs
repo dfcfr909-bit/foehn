@@ -434,7 +434,8 @@ for (const site of SITES) {
     const streams = O.streams.filter(p => inSq(p, E.half)), Hs = hashOf(streams);
     const marks = [...O.saddles, ...O.peaks].map(x => x.p).filter(p => inSq(p, E.half));
     const sadd = O.saddles.map(x => x.p).filter(p => inSq(p, E.half));
-    out(`### ${E.label}（OSM：沢の点 ${streams.length}・鞍部 ${sadd.length}・鞍部＋山頂 ${marks.length}）\n`);
+    const oRidge = O.ridges.filter(p => inSq(p, E.half));   // OSM の尾根線（ridge/arete）。方式にも解像度にも寄らない唯一の独立した正解
+    out(`### ${E.label}（OSM：沢の点 ${streams.length}・鞍部 ${sadd.length}・鞍部＋山頂 ${marks.length}・尾根線の点 ${oRidge.length}）\n`);
     // 沢
     out('**沢**（OSM の沢との一致。精度＝検出した沢の升目のうち OSM の沢から d 以内、再現＝OSM の沢の点のうち検出した沢から d 以内）\n');
     out('| DEM | 升目 | 沢の密度 km/km² | 精度 30m | 精度 60m | 再現 30m | 再現 60m | 値のある範囲 | terrainFlow |');
@@ -446,8 +447,8 @@ for (const site of SITES) {
     // 稜線
     out('\n**稜線**（密度＝稜線の升目×升目の幅。鞍部・山頂に稜線が d 以内に来る割合。細かい DEM との一致＝同じ方式でいちばん細かい DEM の稜線から 30m 以内の割合）\n');
     out(`（いちばん細かい DEM：${finest.run.id}。一致は両方に値がある所だけで数える。「同じ方式」＝その方式で細かい DEM を回した稜線、「現行」＝細かい DEM を現行の条件で回した稜線＝方式どうしで同じ相手）\n`);
-    out('| DEM | 方式 | 密度 km/km² | 鞍部 30m | 鞍部 60m | 鞍部＋山頂 60m | 同じ方式：精度 | 同じ方式：再現 | 現行：精度 | 現行：再現 |');
-    out('|---|---|---|---|---|---|---|---|---|---|');
+    out('| DEM | 方式 | 密度 km/km² | 鞍部 30m | 鞍部 60m | 鞍部＋山頂 60m | 同じ方式：精度 | 同じ方式：再現 | 現行：精度 | 現行：再現 | OSM尾根線 30m | OSM尾根線 60m |');
+    out('|---|---|---|---|---|---|---|---|---|---|---|---|');
     const curM = METHODS.find(q => q.id === 'cur');
     const refCur = finest.r.cand.filter(c => curM.pick(c) && inSq(c, E.half));
     const sel = ['cur', 'ci30_25', 'ci60_10', 'ci60_25', 'ci60_40', 'ci120_25', 'none'];
@@ -458,7 +459,7 @@ for (const site of SITES) {
         const rp = x.r.cand.filter(c => M.pick(c) && inSq(c, E.half)), Hr = hashOf(rp);
         const same = x === finest, rpV = rp.filter(p => okAt(p, x, finest)), refV = ref.filter(p => okAt(p, x, finest)), curV = refCur.filter(p => okAt(p, x, finest));
         const Hc = hashOf(refCur);
-        out(`| ${x.run.id} | ${M.label} | ${fmt(rp.length * x.r.cell / 1000 / area, 1)} | ${pct(frac(sadd, Hr, 30))} | ${pct(frac(sadd, Hr, 60))} | ${pct(frac(marks, Hr, 60))} | ${same ? '—' : pct(frac(rpV, Href, 30))} | ${same ? '—' : pct(frac(refV, Hr, 30))} | ${pct(frac(rpV, Hc, 30))} | ${pct(frac(curV, Hr, 30))} |`);
+        out(`| ${x.run.id} | ${M.label} | ${fmt(rp.length * x.r.cell / 1000 / area, 1)} | ${pct(frac(sadd, Hr, 30))} | ${pct(frac(sadd, Hr, 60))} | ${pct(frac(marks, Hr, 60))} | ${same ? '—' : pct(frac(rpV, Href, 30))} | ${same ? '—' : pct(frac(refV, Hr, 30))} | ${pct(frac(rpV, Hc, 30))} | ${pct(frac(curV, Hr, 30))} | ${pct(frac(oRidge.filter(p => okAt(p, x)), Hr, 30))} | ${pct(frac(oRidge.filter(p => okAt(p, x)), Hr, 60))} |`);
       }
     }
     out('');
