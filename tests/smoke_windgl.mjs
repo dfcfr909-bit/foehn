@@ -110,6 +110,15 @@ await page.evaluate(() => openMap());
 await page.waitForTimeout(600);
 await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 10, { animate: false }); toggleOverlay('windFlowGL'); });
 await page.waitForTimeout(2200);
+// v4.141.0（ADR-0014）：計測表示は既定で切。設定（色・補正・高さ・粒・背景・計測表示）は「風の流れ」の行に出る
+const set0 = await page.evaluate(() => ({ hud: !!document.getElementById('wind-hud') && !document.getElementById('wind-hud').classList.contains('hidden'),
+  name: MAP_WEATHER.find(o => o.id === 'windFlowGL').name,
+  ids: ['wind-hud-color', 'wind-hud-shelter', 'wind-hud-terrain', 'wind-sl-count', 'wind-sl-bg', 'wind-set-hud'].filter(id => document.querySelector('#layer-weather #' + id)).length,
+  btnsInHud: !!document.querySelector('#wind-hud #wind-hud-color') }));
+ok(!set0.hud && set0.name === '風の流れ' && set0.ids === 6 && !set0.btnsInHud, '★計測表示は既定で切・設定は「風の流れ」の行に', set0);
+await page.evaluate(() => windGLSetHud(true));
+const setHud = await page.evaluate(() => ({ on: !document.getElementById('wind-hud').classList.contains('hidden'), saved: windPref.get('hud') }));
+ok(setHud.on && setHud.saved === 1, '★「計測表示」を入れると出る・端末に覚える', setHud);
 const painted = () => page.evaluate(() => {
   const gl = windGL.gl, W = windGL.cv.width, H = windGL.cv.height;
   gl.bindFramebuffer(gl.FRAMEBUFFER, windGL.fbo);
@@ -139,13 +148,13 @@ const frames = n => page.evaluate(k => new Promise(r => {
 }), n);
 const a = await snap();
 ok(a.ok === true && a.running, '★WebGL で流れている', a);
-ok(a.n === 20000, '★粒の数の初期値（PC 20,000）', a.n);
+ok(a.n === 10000, '★粒の数の初期値（PC 10,000）', a.n);
 ok(a.alive > a.n * 0.9, '粒のほとんどが場の中にいる', a);
 ok(a.off === 0, '★★場の無い所を流れている粒が無い', a);
 ok(!a.canvasRunning, 'Canvas 版は入れていないので流さない（別の層）', a);
 ok(a.dpr <= 1.5 && a.cvW <= Math.ceil(a.cssW * 1.5) + 1, 'canvas の倍率は1.5で頭打ち（Canvas 版と同じ）', a);
 ok(a.hud, '計測表示を出す', a);
-ok(a.chips === 1 && /AUTO/.test(a.status), '実験の行にも AUTO／層の切り替えと状態の文', a);
+ok(a.chips === 1 && /AUTO/.test(a.status), '風の流れの行に AUTO／層の切り替えと状態の文', a);
 ok(await painted() > 2000, '★★尾のテクスチャに軌跡が描かれている');
 ok(await page.evaluate(() => /WebGL/.test(document.getElementById('wind-hud-text').textContent)), '計測表示に WebGL の行');
 
@@ -284,6 +293,30 @@ ok(/WebGL が使えない/.test(fb.status) && /Canvas/.test(fb.status), '★使�
 ok(await p4.evaluate(() => { toggleOverlay('windFlowGL'); return !windFlow.running; }), '実験の層を切れば代わりの Canvas 版も止める');
 await ctx2.close();
 ok(!errors2.length, '（別の端末）ページ内で例外が出ていない', errors2);
+
+// v4.141.0（ADR-0014）：前の版で Canvas 版の「風の流れ」を入れていた人は WebGL 版へ移す。色・補正・高さ・計測表示は端末に覚えた値で始まる
+const ctx3 = await browser.newContext({ viewport: { width: 390, height: 800 } });
+const p5 = await ctx3.newPage();
+p5.on('pageerror', e => errors2.push(e.message));
+await p5.route('**/*', routeAll);
+await p5.addInitScript(() => {
+  localStorage.setItem('sotoki_last', JSON.stringify({ lat: 36.57, lon: 137.65, name: 'テスト地点' }));
+  localStorage.setItem('sotoki.map.overlays', JSON.stringify([{ id: 'windFlow', opacity: 0.7 }]));
+  localStorage.setItem('windGL.color', '0'); localStorage.setItem('windGL.shelter', '1'); localStorage.setItem('windGL.terrain', '0'); localStorage.setItem('windGL.hud', '0');
+});
+await p5.goto('https://sotoki.test/');
+await p5.waitForTimeout(1200);
+await p5.evaluate(() => openMap());
+await p5.waitForTimeout(600);
+await p5.evaluate(() => leafletMap.setView([36.57, 137.65], 10, { animate: false }));
+await p5.waitForTimeout(2200);
+const mig = await p5.evaluate(() => ({ gl: isOverlayOn('windFlowGL'), cv: isOverlayOn('windFlow'), op: overlayOpacity('windFlowGL'),
+  running: windGL.running, canvas: windFlow.running, color: windGL.colorMode, shelter: windGL.shelterOn, terrain: windGL.terrainOn,
+  hud: !!document.getElementById('wind-hud') && !document.getElementById('wind-hud').classList.contains('hidden'),
+  chip: (document.getElementById('wind-hud-color') || {}).textContent }));
+ok(mig.gl && !mig.cv && Math.abs(mig.op - 0.7) < 1e-9 && mig.running && !mig.canvas, '★★Canvas 版を入れていた人は WebGL 版の「風の流れ」へ移す（透過率も引き継ぐ）', mig);
+ok(mig.color === 'particle' && mig.shelter === true && mig.terrain === false && !mig.hud && mig.chip === '色:粒', '★色・補正・高さ・計測表示は端末に覚えた値で始まる', mig);
+await ctx3.close();
 
 await browser.close();
 if (fails.length) {

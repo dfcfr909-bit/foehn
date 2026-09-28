@@ -1370,10 +1370,14 @@ html, body {
 #wind-hud .wh-btns { display: flex; gap: 4px; margin-top: 3px; }
 #wind-hud button { font: inherit; padding: 2px 6px; border: 1px solid rgba(255,255,255,.4); border-radius: 4px; background: rgba(255,255,255,.12); color: #fff; }
 #wind-hud .wh-btns { flex-wrap: wrap; }
-#wind-hud .wh-sl { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }
-#wind-hud .wh-sl label { display: flex; align-items: center; gap: 4px; }
-#wind-hud .wh-sl input[type=range] { width: 120px; }
-#wind-hud.min .wh-sl { display: none; }
+/* 風の流れの設定（レイヤー一覧の行の下・v4.141.0） */
+.wind-set .amedas-el { min-height: 36px; padding: 0 10px; }
+.wind-set-sl { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 0 0 8px 30px;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700; color: var(--text2); }
+.wind-set-sl label { display: flex; align-items: center; gap: 6px; }
+.wind-set-sl input[type=range] { width: 130px; }
+.wind-set-btns { display: flex; gap: 4px; }
+.wind-set-btns .amedas-el { min-height: 32px; padding: 0 8px; }
 #wind-hud button.on { background: rgba(255,255,255,.45); color: #000; }
 /* 段階2の地形解析（検証用）：鞍部の◎と横断角。地図の中心の十字は「中心を解析」の狙い */
 .saddle-icon { background: none; border: none; }
@@ -2306,7 +2310,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.140.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.141.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6368,12 +6372,14 @@ const MAP_WEATHER = [
      leaflet-velocity は使わない（依存を増やさない。粒子は自前で描く予定） */
   /* 風の流れ（粒子）。矢印と**同じ場**（AUTO／層の切り替えも共通）を粒子で流す。
      数値を読むのは矢印、流れを掴むのはこちら（役割を分ける） */
-  { id: 'windFlow', name: '風の流れ', kind: 'windFlow', opacity: 0.9,
+  /* ⚠ v4.141.0（ADR-0014）から Canvas 版は**予備**。レイヤー一覧には出さない（hidden）。WebGL が使えない端末で windFlowGL の代わりに流す。
+     前の版で windFlow を入れていた人は、読み込み時に windFlowGL へ移す（loadMapPrefs） */
+  { id: 'windFlow', name: '風の流れ（Canvas・予備）', kind: 'windFlow', opacity: 0.9, hidden: true,
     attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。AUTO／層の切り替えは風向風速と共通' },
-  /* 風の流れ（実験・WebGL）。PoC（v4.120.0・ADR-0013）。Canvas 版と**同じ場**を WebGL で描く。
-     Canvas 版と並べて比べるための層（計測表示つき）。WebGL が使えなければ Canvas 版で流す */
-  { id: 'windFlowGL', name: '風の流れ（実験）', kind: 'windFlowGL', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: 'WebGL で描く試作。パン・ズーム中も流れる。計測表示つき' },
+  /* 風の流れ（WebGL）。v4.120.0 の PoC（ADR-0013）を v4.141.0 で正式に（ADR-0014）。矢印と**同じ場**を WebGL で描く。
+     設定（色・補正・高さ・粒・背景・計測表示）はこの行の下に出す（windFlowSettings）。WebGL が使えなければ Canvas 版で流す */
+  { id: 'windFlowGL', name: '風の流れ', kind: 'windFlowGL', opacity: 0.9,
+    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。パン・ズーム中も流れる。AUTO／層の切り替えは風向風速と共通' },
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
     attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
 ];
@@ -6404,6 +6410,12 @@ function loadMapPrefs() {
         const o = Number(item.opacity);
         overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? o : def.opacity });
       }
+    }
+    // v4.141.0：Canvas 版の「風の流れ」は予備になった（一覧に出ない）。入れていた人は WebGL 版へ移す
+    const wf = overlays.findIndex(x => x.id === 'windFlow');
+    if (wf >= 0) {
+      if (overlays.some(x => x.id === 'windFlowGL')) overlays.splice(wf, 1);
+      else overlays[wf] = { id: 'windFlowGL', opacity: overlays[wf].opacity };
     }
   } catch (e) { /* 壊れていたらオーバーレイなし */ }
   let amedasElement = AMEDAS_ELEMENT_DEFAULT;
@@ -7948,7 +7960,7 @@ const WIND_GL = {
   STEP_PX: 8,               // 場を写す格子の間隔（基準ズームの世界座標 px）
   SPEED_PX_S: WIND_FLOW.SPEED_PX * 30,   // 1 m/s あたり毎秒の見た目の移動量（CSS px）。Canvas 版（30コマ）と同じ見た目の速さ
   // 粒の数の初期値（PoC は固定）。⚠ 決めるのは windGLParticleCount だけ（端末・FPS に応じて変える形へ育てる所）
-  COUNT_MOBILE: 8000, COUNT_DESKTOP: 20000, COUNT_MAX: 200000,
+  COUNT_MOBILE: 8000, COUNT_DESKTOP: 10000, COUNT_MAX: 200000,   // PC の既定は v4.141.0 で 2万→1万（利用者の上限 10,000 に合わせる）
   AGE_MIN_S: 1.7, AGE_MAX_S: 3.7,   // 寿命（秒）。Canvas 版の 50〜110 コマ（30コマ／秒）と同じ
   DROP_PER_S: 0.02,         // 寿命とは別に毎秒この割合を撒き直す（収束する所に粒が溜まらない。webgl-wind の考え方）
   EDGE: 0.15,               // 寿命の始め・終わりのこの割合で濃さを上げ下げ（撒き直しでチラつかない）
@@ -7971,6 +7983,7 @@ const windGL = {
   grid: null, gridOld: null, fadeT0: 0, fieldKey: '',
   running: false, raf: 0, lastTs: 0, zooming: false, lastView: null, respawns: 0,
   colorMode: 'bg', bgTex: null, bgGrid: null, bgData: null,   // 色:背景（既定）／色:粒（v4.138.0）
+  hudOn: false,   // 計測表示（開発用・既定は切・v4.141.0）。色・補正・高さ・計測表示は windGLInit で端末に覚えた値を読む
   shelterOn: false, shelterRes: null, shelterG: null,   // 段階3a：風下の遮蔽（既定は切・粒の見せ方だけ）
   terrainOn: true, terrain: null,   // 段階1：格子点の標高で引き直す（既定 ON。計測表示の「高さ」で升目に戻せる）
   timer: null, stats: { frames: 0, t0: 0, fps: 0, cpu: 0, cpuAcc: 0, gpu: null, long: 0, rec: null },
@@ -8153,6 +8166,12 @@ function windGLProgram(gl, vs, fs) {
 }
 function windGLInit() {
   if (windGL.ok !== null) return windGL.ok;
+  // 端末に覚えた切り替え（v4.141.0）。覚えていなければ既定（色:背景・補正:切・高さ:地形・計測表示:切）
+  const pc = windPref.get('color'), ps = windPref.get('shelter'), pt = windPref.get('terrain'), ph = windPref.get('hud');
+  if (pc != null) windGL.colorMode = pc ? 'bg' : 'particle';
+  if (ps != null) windGL.shelterOn = !!ps;
+  if (pt != null) windGL.terrainOn = !!pt;
+  if (ph != null) windGL.hudOn = !!ph;
   try {
     const cv = document.createElement('canvas');
     // leaflet-zoom-animated … ズームの演出の間だけ Leaflet の CSS の transition が掛かる（タイルと同じ速さで拡大縮小）
@@ -9975,19 +9994,14 @@ function windGLTimerEnd(q) {
     gl.deleteQuery(p); windGL.pendingQ = null;
   }
 }
+/* 計測表示（開発用）。v4.141.0 から「風の流れ」の行の「計測表示」を入れたときだけ出す（既定は切・端末に覚える） */
 function windGLHud(show) {
   let el = document.getElementById('wind-hud');
-  if (!show) { if (el) el.classList.add('hidden'); return; }
+  if (!show || !windGL.hudOn) { if (el) el.classList.add('hidden'); return; }
   if (!el) {
     el = document.createElement('div');
     el.id = 'wind-hud';
     el.innerHTML = '<button type="button" id="wind-hud-min" onclick="windGLHudMin()">▲隠す</button><div id="wind-hud-text"></div><div class="wh-btns">' +
-      '<button type="button" onclick="windGLScaleCount(0.25)">粒¼</button>' +
-      '<button type="button" onclick="windGLScaleCount(0.5)">粒½</button>' +
-      '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
-      '<button type="button" id="wind-hud-terrain" onclick="windGLToggleTerrain()"></button>' +
-      '<button type="button" id="wind-hud-color" onclick="windGLToggleColor()"></button>' +
-      '<button type="button" id="wind-hud-shelter" onclick="windGLToggleShelter()"></button>' +
       '<button type="button" id="wind-hud-sprobe" onclick="windShelterProbe()">補正を調べる</button>' +
       '<button type="button" id="wind-hud-tan" onclick="terrainToggle()">地形解析</button>' +
       '<button type="button" id="wind-hud-lines" onclick="terrainToggleLines()">線</button>' +
@@ -9999,8 +10013,6 @@ function windGLHud(show) {
       '<button type="button" id="wind-hud-verify" onclick="terrainVerifyCols()">検証8地点</button>' +
       '<button type="button" onclick="windGLMeasure()">10秒計測</button>' +
       '<button type="button" onclick="windGLCopy()">コピー</button></div>' +
-      '<div class="wh-sl"><label>粒 <input type="range" id="wind-sl-count" oninput="windGLSetCount(WIND_COUNT_STEPS[this.value])"> <span id="wind-sl-count-v"></span></label>' +
-      '<label>背景 <input type="range" id="wind-sl-bg" oninput="windGLSetBgAlpha(this.value)"> <span id="wind-sl-bg-v"></span></label></div>' +
       '<div id="wind-hud-result"></div>';
     (document.getElementById('map-overlay') || document.body).appendChild(el);
     let min = false;
@@ -10010,7 +10022,27 @@ function windGLHud(show) {
   el.classList.remove('hidden');
   windGLHudText();
 }
+// 「風の流れ」の行の設定の見た目（v4.141.0）。計測表示が無くても呼ぶ
+function windFlowSettingsSync() {
+  const b = document.getElementById('wind-hud-terrain');
+  if (b) { b.textContent = windGL.terrainOn ? '高さ:地形' : '高さ:升目'; b.classList.toggle('active', windGL.terrainOn); }
+  const slc = document.getElementById('wind-sl-count'), slb = document.getElementById('wind-sl-bg');
+  if (slc) {
+    if (document.activeElement !== slc) slc.value = windCountIndex(windGL.n || windGLParticleCount());
+    document.getElementById('wind-sl-count-v').textContent = (windGL.n || windGLParticleCount()).toLocaleString();
+  }
+  if (slb) {
+    if (document.activeElement !== slb) slb.value = windBgAlpha();
+    document.getElementById('wind-sl-bg-v').textContent = windBgAlpha().toFixed(2);
+    slb.disabled = windGL.colorMode !== 'bg';
+  }
+  const bc = document.getElementById('wind-hud-color');
+  if (bc) { bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒'; bc.classList.toggle('active', windGL.colorMode === 'bg'); }
+  const bs = document.getElementById('wind-hud-shelter');
+  if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('active', windGL.shelterOn); }
+}
 function windGLHudText() {
+  windFlowSettingsSync();
   const el = document.getElementById('wind-hud-text');
   if (!el) return;
   const g = windGL.stats, c = windFlowStats, f1 = x => (x || 0).toFixed(1);
@@ -10024,24 +10056,7 @@ function windGLHudText() {
     : `<b>色</b> 粒＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}`);
   if (terrainAn.on) rows.push(terrainHudText());
   el.innerHTML = rows.join('<br>');
-  const b = document.getElementById('wind-hud-terrain');
-  if (b) b.textContent = windGL.terrainOn ? '高さ:地形' : '高さ:升目';
-  const slc = document.getElementById('wind-sl-count'), slb = document.getElementById('wind-sl-bg');
-  if (slc) {
-    Object.assign(slc, { min: 0, max: WIND_COUNT_STEPS.length - 1, step: 1 });
-    if (document.activeElement !== slc) slc.value = windCountIndex(windGL.n || windGLParticleCount());
-    document.getElementById('wind-sl-count-v').textContent = (windGL.n || windGLParticleCount()).toLocaleString();
-  }
-  if (slb) {
-    Object.assign(slb, { min: WIND_SLIDER.ALPHA_MIN, max: WIND_SLIDER.ALPHA_MAX, step: WIND_SLIDER.ALPHA_STEP });
-    if (document.activeElement !== slb) slb.value = windBgAlpha();
-    document.getElementById('wind-sl-bg-v').textContent = windBgAlpha().toFixed(2);
-    slb.disabled = windGL.colorMode !== 'bg';
-  }
-  const bc = document.getElementById('wind-hud-color');
-  if (bc) bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒';
-  const bs = document.getElementById('wind-hud-shelter'), bp = document.getElementById('wind-hud-sprobe');
-  if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('on', windGL.shelterOn); }
+  const bp = document.getElementById('wind-hud-sprobe');
   if (bp) bp.style.display = windGL.shelterOn ? '' : 'none';
   const ta = document.getElementById('wind-hud-tan'), tp = document.getElementById('wind-hud-probe');
   if (ta) ta.classList.toggle('on', terrainAn.on);
@@ -10075,19 +10090,27 @@ function windShelterHudText() {
   return `<b>補正</b> 遮蔽・コル（推定・Sx 風上${P.DMAX_M}m）${w.ms.toFixed(0)}ms${w.loading ? '・読込中' : ''}｜遮蔽 ${s.sheltered}/${s.n}点（${Math.round(100 * s.sheltered / Math.max(1, s.n))}%）` +
     `｜コル ${s.colsUsed}か所・加速 ${s.boosted}点・向き ${s.turned}点（最大${s.turnMax.toFixed(0)}°）｜最終倍率 平均${s.facMean.toFixed(2)} 最小${s.facMin.toFixed(2)} 最大${s.facMax.toFixed(2)}`;
 }
+function windGLSetHud(on) {
+  windGL.hudOn = !!on; windPref.set('hud', on ? 1 : 0);
+  if (!on && typeof terrainAn !== 'undefined' && terrainAn.on) terrainToggle();   // 地形解析の重ねも一緒に消す
+  windGLHud(windGL.running);
+}
 function windGLToggleColor() {
   windGL.colorMode = windGL.colorMode === 'bg' ? 'particle' : 'bg';
+  windPref.set('color', windGL.colorMode === 'bg' ? 1 : 0);
   if (windGL.colorMode === 'bg' && windGL.grid) windGLBgTexture(windGL.grid);
   windGL.lastView = null;   // 尾を消して描き直す（色の混ざった尾を残さない）
   windGLHudText();
 }
 function windGLToggleShelter() {
   windGL.shelterOn = !windGL.shelterOn;
+  windPref.set('shelter', windGL.shelterOn ? 1 : 0);
   if (lastWindField) updateWindFlowGL(lastWindField);   // 粒は撒き直さない（按分で移る）
   windGLHudText();
 }
 function windGLToggleTerrain() {
   windGL.terrainOn = !windGL.terrainOn;
+  windPref.set('terrain', windGL.terrainOn ? 1 : 0);
   if (lastWindField) updateWindFlowGL(lastWindField);   // 粒は撒き直さない（按分で移る）
   windGLHudText();
 }
@@ -10671,6 +10694,22 @@ function windModeChips() {
              onclick="setWindMode('${m.id}')">${m.label}</button>`).join('') + `</div>`;
 }
 
+/* 風の流れの設定（v4.141.0・ADR-0014：計測表示から「風の流れ」の行へ移した）。色・補正・高さ・粒・背景・計測表示。
+   どれも端末に覚える（windPref）。⚠ 要素の id は計測表示にあったときのまま（wind-hud-*・wind-sl-*。windGLHudText が同じ id で書き換える） */
+function windFlowSettings() {
+  const chip = (id, on, label, fn) => `<button type="button" id="${id}" class="amedas-el${on ? ' active' : ''}" onclick="${fn}">${label}</button>`;
+  const n = windGL.n || windGLParticleCount(), a = windBgAlpha();
+  return `<div class="amedas-els wind-set">` +
+    chip('wind-hud-color', windGL.colorMode === 'bg', windGL.colorMode === 'bg' ? '色:背景' : '色:粒', 'windGLToggleColor()') +
+    chip('wind-hud-shelter', windGL.shelterOn, windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切', 'windGLToggleShelter()') +
+    chip('wind-hud-terrain', windGL.terrainOn, windGL.terrainOn ? '高さ:地形' : '高さ:升目', 'windGLToggleTerrain()') +
+    `</div><div class="wind-set-sl">` +
+    `<label>粒 <input type="range" id="wind-sl-count" min="0" max="${WIND_COUNT_STEPS.length - 1}" step="1" value="${windCountIndex(n)}" oninput="windGLSetCount(WIND_COUNT_STEPS[this.value])"> <span id="wind-sl-count-v">${n.toLocaleString()}</span></label>` +
+    `<span class="wind-set-btns"><button type="button" class="amedas-el" onclick="windGLScaleCount(0.25)">粒¼</button><button type="button" class="amedas-el" onclick="windGLScaleCount(0.5)">粒½</button><button type="button" class="amedas-el" onclick="windGLScaleCount(2)">粒×2</button></span>` +
+    `<label>背景 <input type="range" id="wind-sl-bg" min="${WIND_SLIDER.ALPHA_MIN}" max="${WIND_SLIDER.ALPHA_MAX}" step="${WIND_SLIDER.ALPHA_STEP}" value="${a}" ${windGL.colorMode === 'bg' ? '' : 'disabled'} oninput="windGLSetBgAlpha(this.value)"> <span id="wind-sl-bg-v">${a.toFixed(2)}</span></label>` +
+    `<label class="wind-set-hud"><input type="checkbox" id="wind-set-hud" ${windGL.hudOn ? 'checked' : ''} onchange="windGLSetHud(this.checked)"> 計測表示（開発用）</label>` +
+    `</div>`;
+}
 function renderLayerPanel() {
   const baseWrap = document.getElementById('layer-bases');
   const ovWrap = document.getElementById('layer-overlays');
@@ -10694,7 +10733,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
@@ -10706,7 +10745,7 @@ function renderLayerPanel() {
   ovWrap.innerHTML = usableOverlays().map(row).join('');
 
   const wxWrap = document.getElementById('layer-weather');
-  if (wxWrap) wxWrap.innerHTML = usableWeather().map(row).join('');
+  if (wxWrap) wxWrap.innerHTML = usableWeather().filter(o => !o.hidden).map(row).join('');   // hidden … 予備の層（Canvas 版の風の流れ）
   updateMapAttribution();
 }
 

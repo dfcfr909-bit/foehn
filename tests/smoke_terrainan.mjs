@@ -167,7 +167,7 @@ await page.waitForTimeout(1200);
 
 await page.evaluate(() => openMap());
 await page.waitForTimeout(600);
-await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 13, { animate: false }); windGL.override = 1000; toggleOverlay('windFlowGL'); });
+await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 13, { animate: false }); windGL.override = 1000; toggleOverlay('windFlowGL'); windGLSetHud(true); });
 await page.waitForTimeout(2500);
 const gridSig = () => page.evaluate(() => { const g = windGL.grid; let s = 0; for (let n = 0; n < g.u.length; n += 7) s += g.u[n] * 3 + g.v[n]; return s.toFixed(4) + ':' + g.cols + 'x' + g.rows; });
 const fieldSig = () => page.evaluate(() => Array.from(lastWindField.u).join(',') + '|' + Array.from(lastWindField.v).join(','));
@@ -567,7 +567,7 @@ ok(bgc.part === 'particle' && bgc.btn === '色:粒' && bgc.glErr === 0, '「色:
 const sl = await page.evaluate(() => {
   const c = document.getElementById('wind-sl-count'), b = document.getElementById('wind-sl-bg'), keep = windGL.override;
   const out = { has: !!c && !!b, cMax: +c.max, bMin: +b.min, bMax: +b.max, steps: WIND_COUNT_STEPS.join(','),
-    quarter: [...document.querySelectorAll('#wind-hud button')].some(x => x.textContent === '粒¼') };
+    quarter: [...document.querySelectorAll('#layer-weather button')].some(x => x.textContent === '粒¼') };
   c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
   out.idx = +c.value;
   c.value = 2; c.dispatchEvent(new Event('input')); out.n300 = windGL.n;
@@ -586,7 +586,7 @@ const sl = await page.evaluate(() => {
   return out;
 });
 ok(sl.has && sl.steps === '100,200,300,400,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000,9500,10000' &&
-  sl.cMax === 23 && sl.bMin === 0.1 && sl.bMax === 0.9 && sl.quarter, '★計測表示に粒の数（100〜10,000・500 までは 100 刻み・以降 500 刻み）と背景の濃さ（0.1〜0.9）のスライダー・粒¼', sl);
+  sl.cMax === 23 && sl.bMin === 0.1 && sl.bMax === 0.9 && sl.quarter, '★「風の流れ」の行に粒の数（100〜10,000・500 までは 100 刻み・以降 500 刻み）と背景の濃さ（0.1〜0.9）のスライダー・粒¼', sl);
 ok(sl.n === 3000 && sl.savedN === 3000 && sl.labelN === '3,000' && sl.n300 === 300, '★粒のスライダーで粒の数が変わり、端末に覚える', sl);
 ok(Math.abs(sl.alpha - 0.7) < 1e-9 && sl.texA === Math.round(255 * 0.7) && sl.labelB === '0.70', '★背景のスライダーで背景の濃さが変わり、端末に覚える', sl);
 ok(Math.abs(sl.clampB - 0.9) < 1e-9 && sl.clampN === 100 && sl.clampHi === 10000 && sl.q === 1000 && Math.abs(sl.reset - 0.45) < 1e-9, 'スライダーの値は範囲（100〜10,000）に収める・粒¼で1/4・覚えた値が無ければ既定', sl);
