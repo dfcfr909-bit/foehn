@@ -6,12 +6,9 @@ name: 鞍部の検証（実験）
 #
 # なぜ Actions で回すか:
 #   開発環境からは国土地理院にも Open-Meteo にも到達できない（山頂座標の検査と同じ制約）。
-# ⚠ 実験のブランチ専用の一時的なワークフロー。PR #104 を main へ入れるときは消すこと。
-#   何もコミットしない。結果はログとサマリーに出るだけ。
+# v4.141.0（ADR-0014）：push では動かさず**手動実行だけ**にした（消さない。地点を足して鞍部の深さの閾値を見直すときに使う）。
+#   Actions の画面から「Run workflow」で、選んだブランチの sotoki_v4.html を回す。何もコミットしない。結果はログとサマリーに出るだけ。
 on:
-  push:
-    branches: [claude/wind-particle-animation-poc-rm08b6, claude/fix-mysterious-ridgelines-zjabc9]
-    paths: ['sotoki_v4.html', 'scripts/verifyCols.mjs', 'scripts/verifyCols.sites.json', '.github/workflows/verify-cols.yml']
   workflow_dispatch: {}
 
 permissions:

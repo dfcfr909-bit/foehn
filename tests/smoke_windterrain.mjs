@@ -123,7 +123,7 @@ await page.waitForTimeout(1200);
 
 await page.evaluate(() => openMap());
 await page.waitForTimeout(600);
-await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 10, { animate: false }); windGL.override = 2000; toggleOverlay('windFlowGL'); });
+await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 10, { animate: false }); windGL.override = 2000; toggleOverlay('windFlowGL'); windGLSetHud(true); });
 await page.waitForTimeout(3000);
 // 格子点を標高で分けて速さを見る
 const nodes = () => page.evaluate(() => {
@@ -197,7 +197,7 @@ await p4.goto('https://sotoki.test/');
 await p4.waitForTimeout(1200);
 await p4.evaluate(() => openMap());
 await p4.waitForTimeout(600);
-await p4.evaluate(() => { leafletMap.setView([36.57, 137.65], 10, { animate: false }); windGL.override = 1000; toggleOverlay('windFlowGL'); });
+await p4.evaluate(() => { leafletMap.setView([36.57, 137.65], 10, { animate: false }); windGL.override = 1000; toggleOverlay('windFlowGL'); windGLSetHud(true); });
 await p4.waitForTimeout(3000);
 const sea = await p4.evaluate(() => ({ applied: !!(windGL.terrain && windGL.terrain.applied), running: windGL.running,
   text: windGLTerrainText() }));
