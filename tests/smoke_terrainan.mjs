@@ -492,6 +492,41 @@ ok(cl.south.atCol > 1.2 && cl.south.atCol <= 1.3 + 1e-6 && cl.south.colsUsed >= 
   '★★南風（稜線を真横に越える）：鞍部の周りのコル加速倍率が 1.2〜1.3', cl.south);
 ok(cl.west.atCol === 1, '★★西風（稜線に沿う）：鞍部でも加速しない', cl.west);
 console.log('段階3b（偽の地形・中心の鞍部）：南風', JSON.stringify(cl.south), '／西風', JSON.stringify(cl.west));
+// ⑨段階3c-①：コルで気流が集まる見え方（v4.136.0）。南風（北へ吹く）が東西の稜線の鞍部を越える：
+//   風上（南側）は軸（南北）へ寄せる＝軸の西の点は東へ、東の点は西へ。風下（北側）は少し広げる。速さは変えない（回転だけ）。上限30°。西風（稜線に沿う）は回さない
+const cv = await page.evaluate(() => {
+  if (!windGL.shelterOn) windGLToggleShelter();
+  const base = windGL.terrain ? windGL.terrain.grid : windGL.grid;
+  const run = (u0, v0) => {
+    const g = { ...base, u: base.u.map(() => u0), v: base.v.map(() => v0), fac: undefined };
+    const r = windGLShelter(g), k = Math.pow(2, r.G.zd - g.z0), out = { turned: r.stats.turned, turnMax: r.stats.turnMax, bad: 0, wIn: 0, wOut: 0, lIn: 0, lOut: 0, speedBad: 0 };
+    for (let n = 0; n < r.turn.length; n++) {
+      const ti = r.turnOf[n]; if (ti < 0 || !r.turn[n]) continue;
+      const info = r.colInfo[ti], cc = n % g.cols, rr = (n - cc) / g.cols;
+      const fx = ((g.x0 + cc * g.step) * k - r.G.x0) / r.G.m - 0.5, fy = ((g.y0 + rr * g.step) * k - r.G.y0) / r.G.m - 0.5;
+      const dx = fx - info.cx, dy = fy - info.cy;
+      if (Math.abs(r.turn[n]) > WIND_CONV.MAX_TURN_DEG + 1e-6) out.bad++;
+      const sp0 = Math.hypot(g.u[n], g.v[n]) * r.fac[n], sp1 = Math.hypot(r.grid.u[n], r.grid.v[n]);
+      if (Math.abs(sp0 - sp1) > 1e-3) out.speedBad++;
+      if (Math.abs(dx) < 1) continue;
+      const inward = Math.sign(r.grid.u[n]) === -Math.sign(dx), lee = (dx * info.axis[0] + dy * info.axis[1]) > 0;
+      if (lee) inward ? out.lIn++ : out.lOut++; else inward ? out.wIn++ : out.wOut++;
+    }
+    out.probe = null;
+    return out;
+  };
+  const res = { south: run(0, 10), west: run(10, 0) };
+  res.probe = windShelterProbeLines().join('\n');
+  windGLToggleShelter();
+  return res;
+});
+ok(cv.south.turned > 0 && cv.south.bad === 0 && cv.south.turnMax <= 30 + 1e-6 && cv.south.speedBad === 0,
+  '★向きの補正：上限30°以内・速さは変えない（回転だけ）', cv.south);
+ok(cv.south.wIn > 0 && cv.south.wOut === 0 && cv.south.lOut > 0 && cv.south.lIn === 0,
+  '★★南風：風上は軸へ寄せ（漏斗）、風下は広げる', cv.south);
+ok(cv.west.turned === 0, '★★西風（稜線に沿う）：向きも変えない', cv.west);
+ok(/向きの補正：/.test(cv.probe), '「補正を調べる」に向きの補正の行', cv.probe);
+console.log('段階3c-①（偽の地形）：南風', JSON.stringify(cv.south));
 
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());
