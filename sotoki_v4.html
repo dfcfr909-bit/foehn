@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.134.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.135.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8300,7 +8300,9 @@ function windGLTerrainHeight(g, f) {
    段階3b：コルの加速（v4.134.0〜。3a の実機確認の後に足した・利用者の条件）
      深さ WIND_COL.MIN_DEPTH（＝◎の既定 COL.SHOW_MIN_M・20m）以上の鞍部（端は除く）で、風が稜線を横切る角（横断角）が
      MIN_CROSS_DEG 以上のときだけ、鞍部から RADIUS_M 以内の格子点を速くする。
-     倍率 = 1 + GAIN × sin(横断角) × min(1, 深さ／DEPTH_REF_M) × 減衰（中心1 → 半径で0。(1−(d/R)²)²）。上限 MAX。
+     倍率 = 1 + GAIN × sin(横断角) × min(1, 深さ／DEPTH_REF_M) × 減衰（中心1 → 半径で0。1−(d/R)²）。上限 MAX。
+     ⚠ v4.135.0（利用者の選択・案C）：実機で深さ47m・横断角72°のコルの137m 先が 1.04 倍と弱すぎたので、
+       深さの基準 100→50m・半径 200→300m・減衰を2乗→1乗にした（上限 1.3 と GAIN 0.3 は据え置き）
      複数の鞍部が重なる所はいちばん大きい倍率を使う（足し合わせない）。稜線に沿う風（横断角が小さい）は加速しない
    最終倍率 = 遮蔽倍率 × コル加速倍率 */
 const WIND_SHELTER = {   // ⚠ 実験のパラメータ（仮の初期値・未検証）
@@ -8312,9 +8314,9 @@ const WIND_SHELTER = {   // ⚠ 実験のパラメータ（仮の初期値・未
 const WIND_COL = {       // ⚠ 実験のパラメータ（仮の初期値・未検証）。1.3倍などを物理的に正しい値として扱わない
   MIN_DEPTH_M: null,     // 対象にする鞍部の深さの下限（m）。null＝◎の既定（COL.SHOW_MIN_M）に合わせる
   MIN_CROSS_DEG: 30,     // 横断角がこれ未満（稜線に沿う風）は加速しない
-  RADIUS_M: 200,         // 鞍部からこの距離まで効かせる（中心で最大・端で0）
+  RADIUS_M: 300,         // 鞍部からこの距離まで効かせる（中心で最大・端で0）。v4.135.0 で 200→300（実機で効く範囲が狭すぎた）
   GAIN: 0.3,             // 真横（90°）に越え、深さ DEPTH_REF_M 以上のときの増し分
-  DEPTH_REF_M: 100,      // この深さで増し分が最大になる
+  DEPTH_REF_M: 50,       // この深さで増し分が最大になる。v4.135.0 で 100→50（深さ47m のコルで増し分が半分以下だった）
   MAX: 1.3,              // コル加速倍率の上限
 };
 const windColMinDepth = () => WIND_COL.MIN_DEPTH_M != null ? WIND_COL.MIN_DEPTH_M : COL.SHOW_MIN_M;
@@ -8322,7 +8324,7 @@ const windColMinDepth = () => WIND_COL.MIN_DEPTH_M != null ? WIND_COL.MIN_DEPTH_
 function colBoostFactor(crossDeg, distM, depthM) {
   const P = WIND_COL;
   if (!(crossDeg >= P.MIN_CROSS_DEG) || !(depthM >= windColMinDepth()) || !(distM < P.RADIUS_M)) return 1;
-  const q = distM / P.RADIUS_M, fall = (1 - q * q) * (1 - q * q);
+  const q = distM / P.RADIUS_M, fall = 1 - q * q;   // v4.135.0 で2乗をやめた（コルのごく近くしか効かなかった）
   const b = 1 + P.GAIN * Math.sin(crossDeg * Math.PI / 180) * Math.min(1, depthM / P.DEPTH_REF_M) * fall;
   return Math.min(P.MAX, b);
 }

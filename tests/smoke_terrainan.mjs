@@ -464,14 +464,14 @@ ok(/補正.*遮蔽.*点.*コル \d+か所.*最終倍率 平均/.test(sh.hud) && 
 console.log('段階3a（偽の地形）：', JSON.stringify(sh.stats), '最小倍率', sh.fmin);
 // ⑧段階3b：コルの加速（v4.134.0・実験のパラメータ WIND_COL）。倍率の形
 const cb = await page.evaluate(() => ({
-  full: colBoostFactor(90, 0, 100), half: colBoostFactor(90, 0, 50), deep: colBoostFactor(90, 0, 600),
+  full: colBoostFactor(90, 0, 100), half: colBoostFactor(90, 0, 25), deep: colBoostFactor(90, 0, 600), real: colBoostFactor(72, 137, 47),
   along: colBoostFactor(20, 0, 600), atMin: colBoostFactor(WIND_COL.MIN_CROSS_DEG, 0, 600), shallow: colBoostFactor(90, 0, windColMinDepth() - 1),
   mid: colBoostFactor(90, 100, 100), out: colBoostFactor(90, WIND_COL.RADIUS_M, 100), deg60: colBoostFactor(60, 0, 200), minDepth: windColMinDepth(),
 }));
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 ok(near(cb.full, 1.3) && near(cb.half, 1.15) && near(cb.deep, 1.3) && cb.along === 1 && cb.atMin > 1 && cb.shallow === 1 &&
-  near(cb.mid, 1 + 0.3 * 0.75 * 0.75) && cb.out === 1 && near(cb.deg60, 1 + 0.3 * Math.sin(Math.PI / 3)) && cb.minDepth === 20,
-  '★コル加速倍率：真横で深いほど大きく上限1.3・稜線に沿う風と浅い鞍部と半径の外は1・深さの下限は◎の既定（20m）', cb);
+  near(cb.mid, 1 + 0.3 * (1 - 1 / 9)) && cb.out === 1 && cb.real > 1.2 && cb.real < 1.22 && near(cb.deg60, 1 + 0.3 * Math.sin(Math.PI / 3)) && cb.minDepth === 20,
+  '★コル加速倍率（v4.135.0 案C：深さ基準50m・半径300m・減衰1乗）：真横で深いほど大きく上限1.3・稜線に沿う風と浅い鞍部と半径の外は1・深さの下限は◎の既定（20m）・実機の例（深さ47m・72°・137m）で約1.21', cb);
 // 層で：偽の地形の東西の稜線の鞍部（中心）。南風（稜線を真横に越える）なら鞍部の周りが速く、西風（稜線に沿う）なら変わらない
 const cl = await page.evaluate(() => {
   if (!windGL.shelterOn) windGLToggleShelter();
