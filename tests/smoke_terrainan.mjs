@@ -566,23 +566,43 @@ ok(bgc.part === 'particle' && bgc.btn === '色:粒' && bgc.glErr === 0, '「色:
 // ⑪計測表示のスライダー（v4.139.0）：粒の数と背景の濃さを別々に変えられ、端末に覚える
 const sl = await page.evaluate(() => {
   const c = document.getElementById('wind-sl-count'), b = document.getElementById('wind-sl-bg'), keep = windGL.override;
-  const out = { has: !!c && !!b, cMax: +c.max, bMin: +b.min, bMax: +b.max };
-  c.value = 3000; c.dispatchEvent(new Event('input'));
+  const out = { has: !!c && !!b, cMax: +c.max, bMin: +b.min, bMax: +b.max, steps: WIND_COUNT_STEPS.join(','),
+    quarter: [...document.querySelectorAll('#wind-hud button')].some(x => x.textContent === '粒¼') };
+  c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
+  out.idx = +c.value;
+  c.value = 2; c.dispatchEvent(new Event('input')); out.n300 = windGL.n;
+  c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
   out.n = windGL.n; out.savedN = windPref.get('count'); out.labelN = document.getElementById('wind-sl-count-v').textContent;
   b.value = 0.7; b.dispatchEvent(new Event('input'));
   out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex(x => x) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
   windGLSetBgAlpha(9); out.clampB = windBgAlpha();
   windGLSetCount(10); out.clampN = windGL.n;
+  windGLSetCount(50000); out.clampHi = windGL.n;
+  windGLSetCount(4000); windGLScaleCount(0.25); out.q = windGL.n;
   // 片付け：覚えた値を消して元の粒の数へ
   localStorage.removeItem('windGL.count'); localStorage.removeItem('windGL.bgAlpha');
   windGL.override = keep; windGLAlloc(keep); windGLBgTexture(windGL.grid);
   out.reset = windBgAlpha();
   return out;
 });
-ok(sl.has && sl.cMax === 20000 && sl.bMin === 0.1 && sl.bMax === 0.9, '★計測表示に粒の数（〜2万）と背景の濃さ（0.1〜0.9）のスライダー', sl);
-ok(sl.n === 3000 && sl.savedN === 3000 && sl.labelN === '3,000', '★粒のスライダーで粒の数が変わり、端末に覚える', sl);
+ok(sl.has && sl.steps === '100,200,300,400,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000,9500,10000' &&
+  sl.cMax === 23 && sl.bMin === 0.1 && sl.bMax === 0.9 && sl.quarter, '★計測表示に粒の数（100〜10,000・500 までは 100 刻み・以降 500 刻み）と背景の濃さ（0.1〜0.9）のスライダー・粒¼', sl);
+ok(sl.n === 3000 && sl.savedN === 3000 && sl.labelN === '3,000' && sl.n300 === 300, '★粒のスライダーで粒の数が変わり、端末に覚える', sl);
 ok(Math.abs(sl.alpha - 0.7) < 1e-9 && sl.texA === Math.round(255 * 0.7) && sl.labelB === '0.70', '★背景のスライダーで背景の濃さが変わり、端末に覚える', sl);
-ok(Math.abs(sl.clampB - 0.9) < 1e-9 && sl.clampN === 500 && Math.abs(sl.reset - 0.45) < 1e-9, 'スライダーの値は範囲に収める・覚えた値が無ければ既定', sl);
+ok(Math.abs(sl.clampB - 0.9) < 1e-9 && sl.clampN === 100 && sl.clampHi === 10000 && sl.q === 1000 && Math.abs(sl.reset - 0.45) < 1e-9, 'スライダーの値は範囲（100〜10,000）に収める・粒¼で1/4・覚えた値が無ければ既定', sl);
+// 粒の色（v4.140.0）：見た目の粒の速さで、背景と同じ付け方（帯の中ほどで整数・間は線形）。a_meta の整数部は 0〜64
+const pc = await page.evaluate(() => {
+  const out = { pos: [windSpeedPos(0), windSpeedPos(1.5), windSpeedPos(3.25), windSpeedPos(21), windSpeedPos(99)] };
+  windGLToggleColor();   // 色:粒
+  windGLStep(0.016, glView(), performance.now());
+  let bad = 0, drawn = 0;
+  for (let i = 0; i < windGL.n; i++) { const m = windGL.seg[i * 5 + 4]; if (!m) continue; drawn++; const q = Math.floor(m); if (q < 0 || q > 64) bad++; }
+  windGLRender(glView(), 0.016); out.glErr = windGL.gl.getError();
+  out.hud = document.getElementById('wind-hud-text').textContent;
+  windGLToggleColor();
+  return { ...out, bad, drawn };
+});
+ok(pc.pos.join(',') === '0,0,0.5,4,4' && pc.drawn > 0 && pc.bad === 0 && pc.glErr === 0 && /色 粒＝/.test(pc.hud), '★色:粒 の粒の色は見た目の速さ（背景と同じなめらかな付け方）', pc);
 if (process.env.SHOT) { await page.evaluate(() => windGLHudMin()); await page.waitForTimeout(1500); await page.screenshot({ path: process.env.SHOT }); await page.evaluate(() => windGLHudMin()); if (process.env.SHOT2) await page.screenshot({ path: process.env.SHOT2 }); }
 
 // 切れば消える・風も元のまま

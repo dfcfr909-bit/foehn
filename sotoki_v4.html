@@ -2306,7 +2306,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.139.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.140.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7989,7 +7989,7 @@ function windGLParticleCount() {
   const q = +new URLSearchParams(location.search).get('windn');
   if (q > 0) return Math.min(WIND_GL.COUNT_MAX, Math.round(q));
   const saved = windPref.get('count');
-  if (saved > 0) return Math.max(WIND_SLIDER.COUNT_MIN, Math.min(WIND_GL.COUNT_MAX, Math.round(saved)));
+  if (saved > 0) return Math.max(WIND_SLIDER.COUNT_MIN, Math.min(WIND_SLIDER.COUNT_MAX, Math.round(saved)));
   const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   return coarse ? WIND_GL.COUNT_MOBILE : WIND_GL.COUNT_DESKTOP;
 }
@@ -7998,7 +7998,7 @@ function windGLParticleCount() {
 const WIND_GL_SEG_VS = `
 attribute vec2 a_corner;   // x: 0=尾 1=頭、y: -1/+1 = 線の左右
 attribute vec4 a_seg;      // 前の位置 xy・今の位置 zw（CSS px・地図の左上が原点）
-attribute float a_meta;    // 整数部＝色の帯、小数部＝濃さ
+attribute float a_meta;    // 整数部＝色の位置×16（0〜64）、小数部＝濃さ
 uniform vec2 u_size;       // CSS px
 uniform float u_halfW, u_ext;
 uniform vec3 u_colors[5];
@@ -8012,9 +8012,12 @@ void main() {
   vec2 nrm = vec2(-t.y, t.x);
   vec2 p = mix(a_seg.xy, a_seg.zw + t * u_ext, a_corner.x) + nrm * (a_corner.y * u_halfW);
   gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, 1.0 - p.y / u_size.y * 2.0, 0.0, 1.0);
-  int ci = int(floor(a_meta));
-  // 色:背景（v4.138.0）のときは粒を白に（u_mono=1）。色:粒のときは風速の帯の色
-  v_col = vec4(mix(u_colors[ci], vec3(1.0), u_mono), fract(a_meta));
+  // a_meta = 色の位置（0〜4 を 1/16 刻み・整数化して ×16）＋濃さ（小数）。帯の色の間をなめらかにつなぐ（背景の windBgRGB と同じ付け方・v4.140.0）
+  float cpos = floor(a_meta) / 16.0;   // ⚠ t は線の向きで使っているので別の名前
+  int i0 = int(floor(cpos)), i1 = int(min(floor(cpos) + 1.0, 4.0));
+  vec3 rgb = mix(u_colors[i0], u_colors[i1], fract(cpos));
+  // 色:背景（v4.138.0）のときは粒を白に（u_mono=1）
+  v_col = vec4(mix(rgb, vec3(1.0), u_mono), fract(a_meta));
   v_d = a_corner.y * u_halfW;
 }`;
 const WIND_GL_SEG_FS = `
@@ -8062,14 +8065,17 @@ const WIND_BG = {
   MID: [1.5, 5, 9.5, 15, 21],   // WIND_FLOW.COLORS の各帯の色を置く風速（m/s・帯の中ほど）
 };
 // 計測表示のスライダー（v4.139.0・利用者の要望「粒の数多すぎ、背景薄めに感じる。スライダーで別々に調整」）
-const WIND_SLIDER = { COUNT_MIN: 500, COUNT_MAX: 20000, COUNT_STEP: 500,   // 粒のスライダーは 2万まで（内部の上限 COUNT_MAX は URL の windn 用）
-  ALPHA_MIN: 0.1, ALPHA_MAX: 0.9, ALPHA_STEP: 0.05 };
+/* 粒のスライダー（v4.140.0 利用者の指定）：100〜10,000。500 までは 100 刻み、500 からは 500 刻み（段の並びを添字で動かす）。
+   内部の上限 COUNT_MAX（20万）は URL の windn 用 */
+const WIND_SLIDER = { COUNT_MIN: 100, COUNT_MAX: 10000, ALPHA_MIN: 0.1, ALPHA_MAX: 0.9, ALPHA_STEP: 0.05 };
+const WIND_COUNT_STEPS = [100, 200, 300, 400, ...Array.from({ length: 20 }, (_, i) => 500 * (i + 1))];   // 100…400, 500, 1000 … 10000
+const windCountIndex = n => WIND_COUNT_STEPS.reduce((b, v, i) => Math.abs(v - n) < Math.abs(WIND_COUNT_STEPS[b] - n) ? i : b, 0);
 function windBgAlpha() {
   const a = windPref.get('bgAlpha');
   return a >= WIND_SLIDER.ALPHA_MIN && a <= WIND_SLIDER.ALPHA_MAX ? a : WIND_BG.ALPHA;
 }
 function windGLSetCount(n) {
-  n = Math.max(WIND_SLIDER.COUNT_MIN, Math.min(WIND_GL.COUNT_MAX, Math.round(+n)));
+  n = Math.max(WIND_SLIDER.COUNT_MIN, Math.min(WIND_SLIDER.COUNT_MAX, Math.round(+n)));
   windGL.override = n; windPref.set('count', n);
   if (windGL.grid) windGLAlloc(n);
   windGLHudText();
@@ -8079,6 +8085,13 @@ function windGLSetBgAlpha(a) {
   windPref.set('bgAlpha', a);
   if (windGL.colorMode === 'bg' && windGL.grid) windGLBgTexture(windGL.grid);
   windGLHudText();
+}
+// 風速 → 色の位置（0〜4。帯の中ほど WIND_BG.MID で整数・間は線形）。粒の色と背景の色で同じものを使う
+function windSpeedPos(ms) {
+  const M = WIND_BG.MID;
+  if (!(ms > M[0])) return 0;
+  for (let i = 1; i < M.length; i++) if (ms <= M[i]) return i - 1 + (ms - M[i - 1]) / (M[i] - M[i - 1]);
+  return M.length - 1;
 }
 // 風速 → 背景の色 [r, g, b]（0〜255）
 function windBgRGB(ms) {
@@ -9747,7 +9760,6 @@ function windGLStep(dt, v, now) {
   const { n, px, py, age, life, seg } = windGL;
   const k = WIND_GL.SPEED_PX_S * dt / v.s;     // m/s → 基準ズームの世界座標 px
   const drop = WIND_GL.DROP_PER_S * dt, W = windGL.w, H = windGL.h, M = 16, edge = WIND_GL.EDGE;
-  const lims = WIND_FLOW.COLORS, nc = lims.length;
   for (let i = 0; i < n; i++) {
     const o = i * 5;
     seg[o + 4] = 0;   // 既定は描かない（濃さ 0）
@@ -9758,15 +9770,15 @@ function windGLStep(dt, v, now) {
     const cx0 = x * v.s - v.tlx, cy0 = y * v.s - v.tly, cx1 = nx * v.s - v.tlx, cy1 = ny * v.s - v.tly;
     // 画面の外（少し余裕を持つ）へ出たら画面の中へ撒き直す（パンで外れた粒もここで戻る）
     if (cx1 < -M || cy1 < -M || cx1 > W + M || cy1 > H + M) { windGLSpawn(i, v); continue; }
-    const ms = Math.sqrt(glU * glU + glV * glV) / (glF > 0.05 ? glF : 1);   // 色:粒 のときの色は補正前の風速（段階3a）
+    const ms = Math.sqrt(glU * glU + glV * glV);   // 色は見た目の粒の速さ（補正込み。背景と同じ・v4.140.0 利用者の要望）
     // 場の外（まだ取れていない所・風の無い所）へ出たらその場で撒き直す（Canvas 版と同じ決まり。無い所に粒を残さない）
     if (!glGridSample(windGL.grid, nx, ny)) { windGLSpawn(i, v); continue; }
     px[i] = nx; py[i] = ny; age[i] += dt;
-    let ci = 0; while (ci < nc - 1 && ms >= lims[ci][0]) ci++;
+    const cq = Math.round(windSpeedPos(ms) * 16);   // 色の位置（0〜4）を 1/16 刻みで
     const f = age[i] / life[i];
     const a = Math.min(1, f / edge, (1 - f) / edge);
     seg[o] = cx0; seg[o + 1] = cy0; seg[o + 2] = cx1; seg[o + 3] = cy1;
-    seg[o + 4] = ci + Math.max(0, Math.min(0.999, a));
+    seg[o + 4] = cq + Math.max(0, Math.min(0.999, a));
   }
 }
 
@@ -9970,6 +9982,7 @@ function windGLHud(show) {
     el = document.createElement('div');
     el.id = 'wind-hud';
     el.innerHTML = '<button type="button" id="wind-hud-min" onclick="windGLHudMin()">▲隠す</button><div id="wind-hud-text"></div><div class="wh-btns">' +
+      '<button type="button" onclick="windGLScaleCount(0.25)">粒¼</button>' +
       '<button type="button" onclick="windGLScaleCount(0.5)">粒½</button>' +
       '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
       '<button type="button" id="wind-hud-terrain" onclick="windGLToggleTerrain()"></button>' +
@@ -9986,7 +9999,7 @@ function windGLHud(show) {
       '<button type="button" id="wind-hud-verify" onclick="terrainVerifyCols()">検証8地点</button>' +
       '<button type="button" onclick="windGLMeasure()">10秒計測</button>' +
       '<button type="button" onclick="windGLCopy()">コピー</button></div>' +
-      '<div class="wh-sl"><label>粒 <input type="range" id="wind-sl-count" oninput="windGLSetCount(this.value)"> <span id="wind-sl-count-v"></span></label>' +
+      '<div class="wh-sl"><label>粒 <input type="range" id="wind-sl-count" oninput="windGLSetCount(WIND_COUNT_STEPS[this.value])"> <span id="wind-sl-count-v"></span></label>' +
       '<label>背景 <input type="range" id="wind-sl-bg" oninput="windGLSetBgAlpha(this.value)"> <span id="wind-sl-bg-v"></span></label></div>' +
       '<div id="wind-hud-result"></div>';
     (document.getElementById('map-overlay') || document.body).appendChild(el);
@@ -10008,15 +10021,15 @@ function windGLHudText() {
   rows.push(windShelterHudText());
   rows.push(windGL.colorMode === 'bg'
     ? `<b>色</b> 背景＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}・粒は白・濃さ${windBgAlpha().toFixed(2)}`
-    : '<b>色</b> 粒＝モデルの風速（補正前）');
+    : `<b>色</b> 粒＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}`);
   if (terrainAn.on) rows.push(terrainHudText());
   el.innerHTML = rows.join('<br>');
   const b = document.getElementById('wind-hud-terrain');
   if (b) b.textContent = windGL.terrainOn ? '高さ:地形' : '高さ:升目';
   const slc = document.getElementById('wind-sl-count'), slb = document.getElementById('wind-sl-bg');
   if (slc) {
-    Object.assign(slc, { min: WIND_SLIDER.COUNT_MIN, max: WIND_SLIDER.COUNT_MAX, step: WIND_SLIDER.COUNT_STEP });
-    if (document.activeElement !== slc) slc.value = windGL.n || windGLParticleCount();
+    Object.assign(slc, { min: 0, max: WIND_COUNT_STEPS.length - 1, step: 1 });
+    if (document.activeElement !== slc) slc.value = windCountIndex(windGL.n || windGLParticleCount());
     document.getElementById('wind-sl-count-v').textContent = (windGL.n || windGLParticleCount()).toLocaleString();
   }
   if (slb) {
@@ -10086,7 +10099,7 @@ function windGLHudMin() {
   document.getElementById('wind-hud-min').textContent = min ? '▼計測' : '▲隠す';
   try { localStorage.setItem('windHudMin', min ? '1' : ''); } catch (e) { /* 覚えられなくても動く */ }
 }
-function windGLScaleCount(k) { windGLSetCount(windGLParticleCount() * k); }   // 粒½・粒×2（スライダーと同じ値を動かす・覚える）
+function windGLScaleCount(k) { windGLSetCount(windGLParticleCount() * k); }   // 粒¼・粒½・粒×2（スライダーと同じ値を動かす・覚える。100〜10,000 に収める）
 // 10秒間のコマの間隔と CPU 時間を貯めて要約する（iPhone の実機で測るため）
 function windGLMeasure() {
   const out = document.getElementById('wind-hud-result');
