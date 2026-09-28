@@ -527,40 +527,43 @@ ok(cv.south.wIn > 0 && cv.south.wOut === 0 && cv.south.lOut > 0 && cv.south.lIn 
 ok(cv.west.turned === 0, '★★西風（稜線に沿う）：向きも変えない', cv.west);
 ok(/向きの補正：/.test(cv.probe), '「補正を調べる」に向きの補正の行', cv.probe);
 console.log('段階3c-①（偽の地形）：南風', JSON.stringify(cv.south));
-// ⑩段階3c-②：コルで加速した粒の縁取り（v4.137.0・案b）。色（風速の帯）は変えず、縁取りの段（a_meta の 16 の位）だけ
-const gw = await page.evaluate(() => {
-  const out = { lv: [glowLevel(1), glowLevel(1.04), glowLevel(1.05), glowLevel(1.2), glowLevel(WIND_COL.MAX), glowLevel(2)], ok: windGL.ok };
-  if (!windGL.shelterOn) windGLToggleShelter();
-  const base = windGL.terrain ? windGL.terrain.grid : windGL.grid;
-  const g = { ...base, u: base.u.map(() => 0), v: base.v.map(() => 10), fac: undefined, boost: undefined };
-  const r = windGLShelter(g), keep = windGL.grid;
-  out.boostArr = !!r.grid.boost && r.grid.boost === r.col;
-  // 粒を鞍部の上に並べて1コマ進める
-  const info = r.colInfo[0], k = Math.pow(2, r.G.zd - g.z0);
-  const wx = (r.G.x0 + (info.cx + 0.5) * r.G.m) / k, wy = (r.G.y0 + (info.cy + 0.5) * r.G.m) / k;
-  const step = grid => {
-    windGL.grid = grid; windGL.gridOld = null;
-    for (let i = 0; i < windGL.n; i++) { windGL.px[i] = wx + (i % 7 - 3) * 2; windGL.py[i] = wy + (Math.floor(i / 7) % 7 - 3) * 2; windGL.age[i] = 1; windGL.life[i] = 1e9; }
-    windGLStep(0.016, glView(), performance.now());
-    let glow = 0, badColor = 0, drawn = 0;
-    for (let i = 0; i < windGL.n; i++) {
-      const m = windGL.seg[i * 5 + 4]; if (!m) continue;
-      drawn++;
-      const gl = Math.floor(m / 16), ci = Math.floor(m - gl * 16);
-      if (gl > 0) glow++;
-      if (ci < 0 || ci >= WIND_FLOW.COLORS.length) badColor++;
+// ⑩色:背景（v4.138.0・利用者の選択）：背景を粒の格子の速さで塗り、粒は白。補正を入れていれば補正後の速さ（見た目の粒の速さ）
+const bgc = await page.evaluate(() => {
+  const C = WIND_FLOW.COLORS.map(([, hex]) => [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16))), eq = (a, b) => a.join() === b.join();
+  const out = { def: windGL.colorMode, stops: WIND_BG.MID.every((m, i) => eq(windBgRGB(m), C[i])) && eq(windBgRGB(0), C[0]) && eq(windBgRGB(99), C[4]),
+    mid: windBgRGB((WIND_BG.MID[1] + WIND_BG.MID[2]) / 2) };
+  // 格子の各点の色が「その点の格子の速さ」の色（乗算済み）と一致するか
+  const check = () => {
+    const g = windGL.bgGrid, d = windGL.bgData, A = WIND_BG.ALPHA; let bad = 0, n = 0;
+    for (let k = 0; k < g.u.length; k += 37) {
+      if (!g.ok[k]) continue; n++;
+      const c = windBgRGB(Math.hypot(g.u[k], g.v[k]));
+      if (Math.abs(d[k * 4] - Math.round(c[0] * A)) > 1 || Math.abs(d[k * 4 + 3] - Math.round(255 * A)) > 1) bad++;
     }
-    return { glow, badColor, drawn };
+    return { n, bad, same: g === windGL.grid };
   };
-  out.on = step(r.grid);
-  out.off = step(g);   // 補正の無い格子（boost が無い）
-  windGL.grid = keep;
+  out.off = check();
+  windGLToggleShelter();                       // 補正を入れる → 背景は補正後の格子で塗り直される
+  out.on = check(); out.onFac = !!windGL.bgGrid.fac;
+  out.hudOn = document.getElementById('wind-hud-text').textContent;
   windGLToggleShelter();
+  // 色:粒 に切り替えると背景は描かない・粒は帯の色（u_mono=0）
+  windGLToggleColor();
+  out.part = windGL.colorMode; out.btn = document.getElementById('wind-hud-color').textContent;
+  windGLToggleColor();
+  out.back = windGL.colorMode;
+  // 1コマ描いて WebGL のエラーが無いこと
+  windGLRender(glView(), 0.016);
+  out.glErr = windGL.gl.getError();
   return out;
 });
-ok(gw.lv.join(',') === '0,0,1,4,7,7' && gw.ok, '★縁取りの段：コル加速倍率 1.05 未満は0・上限で7（シェーダーも通る）', gw);
-ok(gw.boostArr && gw.on.drawn > 0 && gw.on.glow > 0 && gw.on.badColor === 0, '★★コルで加速した粒は縁取りの段を持つ（色の帯の番号はそのまま）', gw.on);
-ok(gw.off.drawn > 0 && gw.off.glow === 0, '★補正の無い格子では縁取りは従来どおり', gw.off);
+ok(bgc.def === 'bg' && bgc.back === 'bg', '★色は既定で背景（Windy 型・粒は白）', bgc);
+ok(bgc.stops && bgc.mid.every((c, k) => c >= 0 && c <= 255), '★背景の色：帯の中ほどで帯の色・間はなめらか', bgc);
+ok(bgc.off.n > 10 && bgc.off.bad === 0 && bgc.off.same, '★背景＝粒の格子の速さの色（補正なし）', bgc.off);
+ok(bgc.on.n > 10 && bgc.on.bad === 0 && bgc.on.same && bgc.onFac && /見た目の粒の速さ（補正込みの推定/.test(bgc.hudOn),
+  '★★補正を入れると背景は補正後の速さ（見た目の粒の速さ）で塗り直し、計測表示にそう明記', bgc);
+ok(bgc.part === 'particle' && bgc.btn === '色:粒' && bgc.glErr === 0, '「色:粒」に戻せる・描画で WebGL のエラーが無い', bgc);
+if (process.env.SHOT) { await page.evaluate(() => windGLHudMin()); await page.waitForTimeout(1500); await page.screenshot({ path: process.env.SHOT }); await page.evaluate(() => windGLHudMin()); }
 
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());

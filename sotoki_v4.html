@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.137.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.138.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7966,6 +7966,7 @@ const windGL = {
   n: 0, px: null, py: null, age: null, life: null, seg: null,
   grid: null, gridOld: null, fadeT0: 0, fieldKey: '',
   running: false, raf: 0, lastTs: 0, zooming: false, lastView: null, respawns: 0,
+  colorMode: 'bg', bgTex: null, bgGrid: null, bgData: null,   // 色:背景（既定）／色:粒（v4.138.0）
   shelterOn: false, shelterRes: null, shelterG: null,   // 段階3a：風下の遮蔽（既定は切・粒の見せ方だけ）
   terrainOn: true, terrain: null,   // 段階1：格子点の標高で引き直す（既定 ON。計測表示の「高さ」で升目に戻せる）
   timer: null, stats: { frames: 0, t0: 0, fps: 0, cpu: 0, cpuAcc: 0, gpu: null, long: 0, rec: null },
@@ -7986,13 +7987,13 @@ function windGLParticleCount() {
 const WIND_GL_SEG_VS = `
 attribute vec2 a_corner;   // x: 0=尾 1=頭、y: -1/+1 = 線の左右
 attribute vec4 a_seg;      // 前の位置 xy・今の位置 zw（CSS px・地図の左上が原点）
-attribute float a_meta;    // 整数部＝色の帯、小数部＝濃さ、＋16×縁取りの段（段階3c-②）
+attribute float a_meta;    // 整数部＝色の帯、小数部＝濃さ
 uniform vec2 u_size;       // CSS px
 uniform float u_halfW, u_ext;
 uniform vec3 u_colors[5];
+uniform float u_mono;      // 1 … 粒を白に（色:背景）
 varying float v_d;
 varying vec4 v_col;
-varying float v_glow;      // 段階3c-②：コルで加速した粒の縁取りの明るさ（0〜1）
 void main() {
   vec2 d = a_seg.zw - a_seg.xy;
   float l = length(d);
@@ -8000,26 +8001,22 @@ void main() {
   vec2 nrm = vec2(-t.y, t.x);
   vec2 p = mix(a_seg.xy, a_seg.zw + t * u_ext, a_corner.x) + nrm * (a_corner.y * u_halfW);
   gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, 1.0 - p.y / u_size.y * 2.0, 0.0, 1.0);
-  // a_meta = 色の番号 + 濃さ（0〜0.999）+ 16 × 縁取りの段（0〜7）
-  float gl = floor(a_meta / 16.0), m = a_meta - gl * 16.0;
-  int ci = int(floor(m));
-  v_col = vec4(u_colors[ci], fract(m));
-  v_glow = gl / 7.0;
+  int ci = int(floor(a_meta));
+  // 色:背景（v4.138.0）のときは粒を白に（u_mono=1）。色:粒のときは風速の帯の色
+  v_col = vec4(mix(u_colors[ci], vec3(1.0), u_mono), fract(a_meta));
   v_d = a_corner.y * u_halfW;
 }`;
 const WIND_GL_SEG_FS = `
 precision highp float;     // ⚠ u_halfW は頂点側と共有するので精度を揃える（違うとリンクで落ちる）
 uniform float u_halfW, u_coreHalf;
-uniform vec4 u_halo, u_glow;
+uniform vec4 u_halo;
 varying float v_d;
 varying vec4 v_col;
-varying float v_glow;
 void main() {
   float d = abs(v_d);
   float core = 1.0 - smoothstep(u_coreHalf - 0.5, u_coreHalf + 0.5, d);
   float edge = 1.0 - smoothstep(u_halfW - 0.7, u_halfW, d);
-  vec4 hc = mix(u_halo, u_glow, v_glow);   // 段階3c-②：加速した粒ほど縁取りを明るく（色＝風速は変えない）
-  vec4 halo = vec4(hc.rgb * hc.a, hc.a) * edge;
+  vec4 halo = vec4(u_halo.rgb * u_halo.a, u_halo.a) * edge;
   gl_FragColor = (vec4(v_col.rgb, 1.0) * core + halo * (1.0 - core)) * v_col.a;   // 乗算済みアルファ
 }`;
 const WIND_GL_QUAD_VS = `
@@ -8043,6 +8040,58 @@ void main() {
   vec4 c = texture2D(u_tex, uv);
   gl_FragColor = u_fade < 1.0 ? floor(c * 255.0 * u_fade) / 255.0 : c;
 }`;
+/* ------ 色:背景（v4.138.0・利用者の選択）------
+   Windy のように、**背景を粒と同じ格子の速さで塗り、粒は白**にする。粒の格子（補正を入れていれば補正後）の速さ＝見た目の粒の速さで塗るので、
+   背景の色と粒の動きがいつも一致する。⚠ **補正を入れているときの色は「表示用の推定の速さ」**（モデルの風速ではない。利用者の判断：自分しか使わない）。
+   矢印・ポップアップ・ABC評価・Canvas 版の色はモデルの風速のまま。
+   格子と同じ世界座標の小さなテクスチャ（1格子点＝1テクセル・双線形）を、毎コマ四角1枚で描く（地図を動かしても粒と一緒に動く）。
+   塗り直すのは格子が変わったとき（時刻・表示範囲・補正の切り替え）だけ。色は WIND_FLOW.COLORS の帯の中ほどを結んでなめらかにつなぐ */
+const WIND_BG = {
+  ALPHA: 0.45,           // 背景の濃さ（地形図が見える程度。⚠ 実機で調整）
+  MID: [1.5, 5, 9.5, 15, 21],   // WIND_FLOW.COLORS の各帯の色を置く風速（m/s・帯の中ほど）
+};
+// 風速 → 背景の色 [r, g, b]（0〜255）
+function windBgRGB(ms) {
+  const M = WIND_BG.MID, C = windBgRGB.cols || (windBgRGB.cols = WIND_FLOW.COLORS.map(([, hex]) => [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16))));
+  if (!(ms > M[0])) return C[0].slice();
+  for (let i = 1; i < M.length; i++) {
+    if (ms <= M[i]) { const t = (ms - M[i - 1]) / (M[i] - M[i - 1]); return C[i].map((c, k) => Math.round(C[i - 1][k] + (c - C[i - 1][k]) * t)); }
+  }
+  return C[C.length - 1].slice();
+}
+// 格子 → 背景のテクスチャ（乗算済みアルファ）。返り値の data は検査用
+function windGLBgTexture(g) {
+  const gl = windGL.gl, n = g.cols * g.rows, data = new Uint8Array(n * 4), A = WIND_BG.ALPHA;
+  for (let k = 0; k < n; k++) {
+    if (!g.ok[k]) continue;
+    const c = windBgRGB(Math.hypot(g.u[k], g.v[k]));
+    data[k * 4] = Math.round(c[0] * A); data[k * 4 + 1] = Math.round(c[1] * A); data[k * 4 + 2] = Math.round(c[2] * A); data[k * 4 + 3] = Math.round(255 * A);
+  }
+  if (!windGL.bgTex) windGL.bgTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, windGL.bgTex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, g.cols, g.rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  windGL.bgGrid = g; windGL.bgData = data;
+}
+const WIND_GL_BG_VS = `
+attribute vec2 a_pos;      // 0..1
+uniform vec4 u_rect;       // 格子の四隅（CSS px・左上 x, y・右下 x, y）。テクセルの中心が格子点に来るよう半歩外まで
+uniform vec2 u_size;       // CSS px
+varying vec2 v_uv;
+void main() {
+  v_uv = a_pos;
+  vec2 p = mix(u_rect.xy, u_rect.zw, a_pos);
+  gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, 1.0 - p.y / u_size.y * 2.0, 0.0, 1.0);
+}`;
+const WIND_GL_BG_FS = `
+precision mediump float;
+uniform sampler2D u_tex;
+varying vec2 v_uv;
+void main() { gl_FragColor = texture2D(u_tex, v_uv); }`;
 function windGLProgram(gl, vs, fs) {
   const mk = (type, src) => {
     const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -8080,6 +8129,7 @@ function windGLInit() {
     windGL.cv = cv; windGL.gl = gl; windGL.inst = inst;
     windGL.progSeg = windGLProgram(gl, WIND_GL_SEG_VS, WIND_GL_SEG_FS);
     windGL.progQuad = windGLProgram(gl, WIND_GL_QUAD_VS, WIND_GL_QUAD_FS);
+    windGL.progBg = windGLProgram(gl, WIND_GL_BG_VS, WIND_GL_BG_FS);
     const buf = (target, data) => { const b = gl.createBuffer(); gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); return b; };
     windGL.bufCorner = buf(gl.ARRAY_BUFFER, new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]));
     windGL.bufIdx = buf(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 2, 1, 3]));
@@ -8335,15 +8385,6 @@ const WIND_CONV = {      // ⚠ 実験のパラメータ（仮の初期値・未
   PULL: 1,               // 横のずれが半径と同じとき、軸から 45° 内側（atan 1）を目標にする
   LEE_RATIO: 0.5,        // 風下で広げる強さ（風上で寄せる強さに対する比）
 };
-/* 段階3c-②：コルで加速した粒の縁取りを明るくする（v4.137.0・利用者の選択 案b）。
-   ⚠ 粒の**色は補正前の風速のまま**（色＝モデルの風速を偽らない）。縁取りだけを、コル加速倍率に応じて暗い紺 → 明るい白へ寄せる。
-   補正を切っている・手動の層・加速の無い所では従来どおり（縁取りの段 0） */
-const WIND_GLOW = {      // ⚠ 実験のパラメータ（仮の初期値）
-  MIN_BOOST: 1.05,       // コル加速倍率がこれ以上の粒だけ明るくする
-  RGBA: [1, 1, 1, 0.9],  // いちばん加速した粒の縁取り（上限 WIND_COL.MAX で最も明るい）
-};
-// コル加速倍率 → 縁取りの段（0〜7）
-const glowLevel = b => !(b >= WIND_GLOW.MIN_BOOST) ? 0 : Math.max(1, Math.min(7, Math.round(7 * (b - WIND_GLOW.MIN_BOOST) / Math.max(1e-6, WIND_COL.MAX - WIND_GLOW.MIN_BOOST))));
 // 東・南の成分で、a から b へ回す角度（度・時計回りが正）
 const turnDeg = (ax, ay, bx, by) => Math.atan2(ax * by - ay * bx, ax * bx + ay * by) * 180 / Math.PI;
 const windColMinDepth = () => WIND_COL.MIN_DEPTH_M != null ? WIND_COL.MIN_DEPTH_M : COL.SHOW_MIN_M;
@@ -8469,7 +8510,7 @@ function windGLShelter(g) {
     }
   }
   st.facMean = st.n ? st.facSum / st.n : 1;
-  return { grid: { ...g, u, v, fac, boost: col, shelter: true }, applied: st.n > 0, loading: !!G.loading, ms: performance.now() - t0, sx, shelter, col, colOf, colInfo, turn, turnOf, G, fac, stats: st };
+  return { grid: { ...g, u, v, fac, shelter: true }, applied: st.n > 0, loading: !!G.loading, ms: performance.now() - t0, sx, shelter, col, colOf, colInfo, turn, turnOf, G, fac, stats: st };
 }
 // 地図の中心に近い格子点の Sx・倍率（「中心を解析」と「補正を調べる」で出す）
 function windShelterProbeLines() {
@@ -8484,7 +8525,7 @@ function windShelterProbeLines() {
   const P = WIND_SHELTER, C = WIND_COL, out = [];
   const sxText = w.sx[n] === w.sx[n] ? `Sx ${w.sx[n].toFixed(1)}°（風上 ${P.DMAX_M}m まで）` : `Sx 求まらず（標高が無い・風が無い${w.loading ? '・標高タイルを読み込み中' : ''}）`;
   out.push(`風の補正（中心の格子点・粒の見せ方だけの推定）：${sxText}・遮蔽倍率 ${f2(w.shelter[n])}（${P.SX_LO_DEG}°以下で1・${P.SX_HI_DEG}°以上で${P.F_MIN}）` +
-    `・コル加速倍率 ${f2(w.col[n])}・最終倍率 ${f2(w.fac[n])}・縁取りの段 ${glowLevel(w.col[n])}/7（${WIND_GLOW.MIN_BOOST}倍以上で明るく）`);
+    `・コル加速倍率 ${f2(w.col[n])}・最終倍率 ${f2(w.fac[n])}`);
   const ci = w.colOf[n], info = ci >= 0 ? w.colInfo[ci] : null;
   if (info) {
     const G = w.G, cx = ((p.x * Math.pow(2, G.zd - g.z0)) - G.x0) / G.m - 0.5, cy = ((p.y * Math.pow(2, G.zd - g.z0)) - G.y0) / G.m - 0.5;
@@ -9572,7 +9613,7 @@ function terrainHudText() {
 }
 // 格子の双線形（m/s。北が正）。⚠ 毎コマ粒の数だけ呼ぶので配列を作らない（結果は glU/glV）
 // glF … 段階3a の補正の倍率（補正の無い格子は 1）。粒の**色は補正前の風速**で決める（色＝モデルの風速を偽らない。動きだけ補正）
-let glU = 0, glV = 0, glF = 1, glB = 1;   // glB … コル加速倍率（段階3c-② の縁取り）
+let glU = 0, glV = 0, glF = 1;
 function glGridSample(g, wx, wy) {
   const fx = (wx - g.x0) / g.step, fy = (wy - g.y0) / g.step;
   const c = Math.floor(fx), r = Math.floor(fy);
@@ -9583,9 +9624,8 @@ function glGridSample(g, wx, wy) {
   if (w < 0.5) return false;   // 有効な角が半分未満（無い所を作らない。sampleWindField と同じ決まり）
   glU = (a * g.u[n] + b * g.u[n + 1] + d * g.u[s] + e * g.u[s + 1]) / w;
   glV = (a * g.v[n] + b * g.v[n + 1] + d * g.v[s] + e * g.v[s + 1]) / w;
-  const F = g.fac, B = g.boost;
+  const F = g.fac;
   glF = F ? (a * F[n] + b * F[n + 1] + d * F[s] + e * F[s + 1]) / w : 1;
-  glB = B ? (a * B[n] + b * B[n + 1] + d * B[s] + e * B[s + 1]) / w : 1;
   return true;
 }
 // 時刻を変えた直後は古い場と新しい場を按分する（粒は撒き直さない）
@@ -9688,8 +9728,7 @@ function windGLStep(dt, v, now) {
     const cx0 = x * v.s - v.tlx, cy0 = y * v.s - v.tly, cx1 = nx * v.s - v.tlx, cy1 = ny * v.s - v.tly;
     // 画面の外（少し余裕を持つ）へ出たら画面の中へ撒き直す（パンで外れた粒もここで戻る）
     if (cx1 < -M || cy1 < -M || cx1 > W + M || cy1 > H + M) { windGLSpawn(i, v); continue; }
-    const ms = Math.sqrt(glU * glU + glV * glV) / (glF > 0.05 ? glF : 1);   // 色は補正前の風速（段階3a）
-    const glow = glowLevel(glB);   // 段階3c-②（次の glGridSample で glB が上書きされる前に取る）
+    const ms = Math.sqrt(glU * glU + glV * glV) / (glF > 0.05 ? glF : 1);   // 色:粒 のときの色は補正前の風速（段階3a）
     // 場の外（まだ取れていない所・風の無い所）へ出たらその場で撒き直す（Canvas 版と同じ決まり。無い所に粒を残さない）
     if (!glGridSample(windGL.grid, nx, ny)) { windGLSpawn(i, v); continue; }
     px[i] = nx; py[i] = ny; age[i] += dt;
@@ -9697,7 +9736,7 @@ function windGLStep(dt, v, now) {
     const f = age[i] / life[i];
     const a = Math.min(1, f / edge, (1 - f) / edge);
     seg[o] = cx0; seg[o + 1] = cy0; seg[o + 2] = cx1; seg[o + 3] = cy1;
-    seg[o + 4] = ci + Math.max(0, Math.min(0.999, a)) + 16 * glow;
+    seg[o + 4] = ci + Math.max(0, Math.min(0.999, a));
   }
 }
 
@@ -9740,7 +9779,7 @@ function windGLRender(v, dt) {
   gl.uniform1f(s.u_coreHalf, WIND_GL.WIDTH / 2);
   gl.uniform1f(s.u_ext, WIND_GL.HEAD_EXT);
   gl.uniform4f(s.u_halo, ...WIND_GL.HALO_RGBA);
-  gl.uniform4f(s.u_glow, ...WIND_GLOW.RGBA);
+  gl.uniform1f(s.u_mono, windGL.colorMode === 'bg' ? 1 : 0);
   gl.uniform3fv(s.u_colors, windGL.colors || (windGL.colors = new Float32Array(WIND_FLOW.COLORS.flatMap(([, hex]) =>
     [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16) / 255)))));
   gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufCorner);
@@ -9761,9 +9800,27 @@ function windGLRender(v, dt) {
   inst.div(s.a_seg, 0); inst.div(s.a_meta, 0);
   gl.disableVertexAttribArray(s.a_corner); gl.disableVertexAttribArray(s.a_seg); gl.disableVertexAttribArray(s.a_meta);
   gl.disable(gl.BLEND);
-  // 3) 画面へ（そのまま写す）
+  // 3) 画面へ：色:背景 なら先に背景（格子の速さの色）を敷き、その上に尾を重ねる（どちらも乗算済みアルファ）
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  const bg = windGL.colorMode === 'bg' && windGL.bgTex && windGL.bgGrid;
+  if (bg) {
+    const b = windGL.progBg, g = windGL.bgGrid, h = g.step / 2;
+    gl.useProgram(b.p);
+    gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufQuad);
+    gl.enableVertexAttribArray(b.a_pos);
+    gl.vertexAttribPointer(b.a_pos, 2, gl.FLOAT, false, 0, 0);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, windGL.bgTex);
+    gl.uniform1i(b.u_tex, 0);
+    gl.uniform2f(b.u_size, windGL.w, windGL.h);
+    const sx = x => x * v.s - v.tlx, sy = y => y * v.s - v.tly;
+    gl.uniform4f(b.u_rect, sx(g.x0 - h), sy(g.y0 - h), sx(g.x0 + (g.cols - 1) * g.step + h), sy(g.y0 + (g.rows - 1) * g.step + h));
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.disableVertexAttribArray(b.a_pos);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  }
   gl.useProgram(q.p);
   gl.bindBuffer(gl.ARRAY_BUFFER, windGL.bufQuad);
   gl.enableVertexAttribArray(q.a_pos);
@@ -9773,6 +9830,7 @@ function windGLRender(v, dt) {
   gl.uniform1f(q.u_fade, 1);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.disableVertexAttribArray(q.a_pos);
+  gl.disable(gl.BLEND);
   windGL.cur = 1 - windGL.cur;
 }
 
@@ -9823,6 +9881,7 @@ function updateWindFlowGL(f) {
   windGL.gridOld = prev && windGL.fieldKey && windGL.fieldKey !== key ? prev : null;
   windGL.fadeT0 = performance.now();
   windGL.grid = g; windGL.fieldKey = key;
+  if (windGL.colorMode === 'bg') windGLBgTexture(g);   // 色:背景（格子が変わったときだけ塗り直す）
   placeGLCanvas();
   const n = windGLParticleCount();
   if (windGL.n !== n || !windGL.px) windGLAlloc(n);
@@ -9884,6 +9943,7 @@ function windGLHud(show) {
       '<button type="button" onclick="windGLScaleCount(0.5)">粒½</button>' +
       '<button type="button" onclick="windGLScaleCount(2)">粒×2</button>' +
       '<button type="button" id="wind-hud-terrain" onclick="windGLToggleTerrain()"></button>' +
+      '<button type="button" id="wind-hud-color" onclick="windGLToggleColor()"></button>' +
       '<button type="button" id="wind-hud-shelter" onclick="windGLToggleShelter()"></button>' +
       '<button type="button" id="wind-hud-sprobe" onclick="windShelterProbe()">補正を調べる</button>' +
       '<button type="button" id="wind-hud-tan" onclick="terrainToggle()">地形解析</button>' +
@@ -9913,10 +9973,15 @@ function windGLHudText() {
   if (windFlow.running) rows.push(`<b>Canvas</b> ${windFlow.parts.length.toLocaleString()}粒 ${f1(c.fps)}fps CPU ${f1(c.cpu)}ms 遅いコマ${c.longShown || 0}`);
   rows.push(windGLTerrainText());
   rows.push(windShelterHudText());
+  rows.push(windGL.colorMode === 'bg'
+    ? `<b>色</b> 背景＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}・粒は白・濃さ${WIND_BG.ALPHA}`
+    : '<b>色</b> 粒＝モデルの風速（補正前）');
   if (terrainAn.on) rows.push(terrainHudText());
   el.innerHTML = rows.join('<br>');
   const b = document.getElementById('wind-hud-terrain');
   if (b) b.textContent = windGL.terrainOn ? '高さ:地形' : '高さ:升目';
+  const bc = document.getElementById('wind-hud-color');
+  if (bc) bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒';
   const bs = document.getElementById('wind-hud-shelter'), bp = document.getElementById('wind-hud-sprobe');
   if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('on', windGL.shelterOn); }
   if (bp) bp.style.display = windGL.shelterOn ? '' : 'none';
@@ -9951,6 +10016,12 @@ function windShelterHudText() {
   const s = w.stats;
   return `<b>補正</b> 遮蔽・コル（推定・Sx 風上${P.DMAX_M}m）${w.ms.toFixed(0)}ms${w.loading ? '・読込中' : ''}｜遮蔽 ${s.sheltered}/${s.n}点（${Math.round(100 * s.sheltered / Math.max(1, s.n))}%）` +
     `｜コル ${s.colsUsed}か所・加速 ${s.boosted}点・向き ${s.turned}点（最大${s.turnMax.toFixed(0)}°）｜最終倍率 平均${s.facMean.toFixed(2)} 最小${s.facMin.toFixed(2)} 最大${s.facMax.toFixed(2)}`;
+}
+function windGLToggleColor() {
+  windGL.colorMode = windGL.colorMode === 'bg' ? 'particle' : 'bg';
+  if (windGL.colorMode === 'bg' && windGL.grid) windGLBgTexture(windGL.grid);
+  windGL.lastView = null;   // 尾を消して描き直す（色の混ざった尾を残さない）
+  windGLHudText();
 }
 function windGLToggleShelter() {
   windGL.shelterOn = !windGL.shelterOn;
