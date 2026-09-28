@@ -418,6 +418,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `WIND_TERRAIN` / `windDemTile` / `windDemAt` | 段階1：地形の高さの風の設定／標高タイル（dem_png・控え16枚）／世界座標の標高 | 約 8129 |
 | `windGLTerrainHeight(g, f)` | **段階1**：格子点の標高で `WindVertical.auto` を引き直した格子（元は変えない。AUTO だけ） | 約 8185 |
 | `WIND_SHELTER` / `shelterFactor` / `terrainSx` / `windGLShelter(g)` | **段階3a**：風下の遮蔽（Sx → 倍率。粒の格子だけ・既定は切・AUTO だけ）／`windShelterProbeLines`・`windGLToggleShelter` | 約 8300 |
+| `WIND_COL` / `colBoostFactor` / `windColMinDepth` | **段階3b**：コルの加速（横断角・深さ・距離 → 倍率・上限1.3。`windGLShelter` の中で遮蔽と掛け合わせる） | 約 8300 |
 | `TERRAIN_SCALES` / `TERRAIN_AN` / `terrainAn` | **段階2**：地形の構造の抽出の縮尺・しきい値・状態（検証用。風は変えない） | 約 8306 |
 | `terrainAnalyzeScale(sc, view, lat)` / `terrainAnalyze()` | 縮尺ごとのヘッセ行列（「中心を解析」の参考だけ）／共通の升目→鞍部→尾根・沢 | 約 8403 |
 | `terrainDemGrid(view, lat)` / `terrainGridIndex` | **共通の地形の升目**（z12・画面＋3km・高い順の並び）。鞍部・尾根・沢・将来の風の遮蔽が共有 | 約 8450 |
