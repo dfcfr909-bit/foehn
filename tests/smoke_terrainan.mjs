@@ -527,6 +527,40 @@ ok(cv.south.wIn > 0 && cv.south.wOut === 0 && cv.south.lOut > 0 && cv.south.lIn 
 ok(cv.west.turned === 0, '★★西風（稜線に沿う）：向きも変えない', cv.west);
 ok(/向きの補正：/.test(cv.probe), '「補正を調べる」に向きの補正の行', cv.probe);
 console.log('段階3c-①（偽の地形）：南風', JSON.stringify(cv.south));
+// ⑩段階3c-②：コルで加速した粒の縁取り（v4.137.0・案b）。色（風速の帯）は変えず、縁取りの段（a_meta の 16 の位）だけ
+const gw = await page.evaluate(() => {
+  const out = { lv: [glowLevel(1), glowLevel(1.04), glowLevel(1.05), glowLevel(1.2), glowLevel(WIND_COL.MAX), glowLevel(2)], ok: windGL.ok };
+  if (!windGL.shelterOn) windGLToggleShelter();
+  const base = windGL.terrain ? windGL.terrain.grid : windGL.grid;
+  const g = { ...base, u: base.u.map(() => 0), v: base.v.map(() => 10), fac: undefined, boost: undefined };
+  const r = windGLShelter(g), keep = windGL.grid;
+  out.boostArr = !!r.grid.boost && r.grid.boost === r.col;
+  // 粒を鞍部の上に並べて1コマ進める
+  const info = r.colInfo[0], k = Math.pow(2, r.G.zd - g.z0);
+  const wx = (r.G.x0 + (info.cx + 0.5) * r.G.m) / k, wy = (r.G.y0 + (info.cy + 0.5) * r.G.m) / k;
+  const step = grid => {
+    windGL.grid = grid; windGL.gridOld = null;
+    for (let i = 0; i < windGL.n; i++) { windGL.px[i] = wx + (i % 7 - 3) * 2; windGL.py[i] = wy + (Math.floor(i / 7) % 7 - 3) * 2; windGL.age[i] = 1; windGL.life[i] = 1e9; }
+    windGLStep(0.016, glView(), performance.now());
+    let glow = 0, badColor = 0, drawn = 0;
+    for (let i = 0; i < windGL.n; i++) {
+      const m = windGL.seg[i * 5 + 4]; if (!m) continue;
+      drawn++;
+      const gl = Math.floor(m / 16), ci = Math.floor(m - gl * 16);
+      if (gl > 0) glow++;
+      if (ci < 0 || ci >= WIND_FLOW.COLORS.length) badColor++;
+    }
+    return { glow, badColor, drawn };
+  };
+  out.on = step(r.grid);
+  out.off = step(g);   // 補正の無い格子（boost が無い）
+  windGL.grid = keep;
+  windGLToggleShelter();
+  return out;
+});
+ok(gw.lv.join(',') === '0,0,1,4,7,7' && gw.ok, '★縁取りの段：コル加速倍率 1.05 未満は0・上限で7（シェーダーも通る）', gw);
+ok(gw.boostArr && gw.on.drawn > 0 && gw.on.glow > 0 && gw.on.badColor === 0, '★★コルで加速した粒は縁取りの段を持つ（色の帯の番号はそのまま）', gw.on);
+ok(gw.off.drawn > 0 && gw.off.glow === 0, '★補正の無い格子では縁取りは従来どおり', gw.off);
 
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());
