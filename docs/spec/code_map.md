@@ -418,7 +418,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `WIND_TERRAIN` / `windDemTile` / `windDemAt` | 段階1：地形の高さの風の設定／標高タイル（dem_png・控え16枚）／世界座標の標高 | 約 8129 |
 | `windGLTerrainHeight(g, f)` | **段階1**：格子点の標高で `WindVertical.auto` を引き直した格子（元は変えない。AUTO だけ） | 約 8185 |
 | `WIND_SHELTER` / `shelterFactor` / `terrainSx` / `windGLShelter(g)` | **段階3a**：風下の遮蔽（Sx → 倍率。粒の格子だけ・既定は切・AUTO だけ）／`windShelterProbeLines`・`windGLToggleShelter` | 約 8300 |
-| `WIND_GLOW` / `glowLevel` | **段階3c-②**：コルで加速した粒の縁取りを明るく（色は変えない。`a_meta` の 16 の位） | 約 8300 |
+| `WIND_BG` / `windBgRGB` / `windGLBgTexture(g)` / `windGLToggleColor` | **色:背景**（v4.138.0）：粒の格子の速さで背景を塗り粒は白（Windy 型・既定）。`WIND_GL_BG_VS/FS` | 約 8045 |
 | `WIND_CONV` / `turnDeg` | **段階3c-①**：コルで気流を寄せる向きの補正（上限30°・速さは変えない。`windGLShelter` の中） | 約 8300 |
 | `WIND_COL` / `colBoostFactor` / `windColMinDepth` | **段階3b**：コルの加速（横断角・深さ・距離 → 倍率・上限1.3。`windGLShelter` の中で遮蔽と掛け合わせる） | 約 8300 |
 | `TERRAIN_SCALES` / `TERRAIN_AN` / `terrainAn` | **段階2**：地形の構造の抽出の縮尺・しきい値・状態（検証用。風は変えない） | 約 8306 |
