@@ -492,6 +492,118 @@ ok(cl.south.atCol > 1.2 && cl.south.atCol <= 1.3 + 1e-6 && cl.south.colsUsed >= 
   '★★南風（稜線を真横に越える）：鞍部の周りのコル加速倍率が 1.2〜1.3', cl.south);
 ok(cl.west.atCol === 1, '★★西風（稜線に沿う）：鞍部でも加速しない', cl.west);
 console.log('段階3b（偽の地形・中心の鞍部）：南風', JSON.stringify(cl.south), '／西風', JSON.stringify(cl.west));
+// ⑨段階3c-①：コルで気流が集まる見え方（v4.136.0）。南風（北へ吹く）が東西の稜線の鞍部を越える：
+//   風上（南側）は軸（南北）へ寄せる＝軸の西の点は東へ、東の点は西へ。風下（北側）は少し広げる。速さは変えない（回転だけ）。上限30°。西風（稜線に沿う）は回さない
+const cv = await page.evaluate(() => {
+  if (!windGL.shelterOn) windGLToggleShelter();
+  const base = windGL.terrain ? windGL.terrain.grid : windGL.grid;
+  const run = (u0, v0) => {
+    const g = { ...base, u: base.u.map(() => u0), v: base.v.map(() => v0), fac: undefined };
+    const r = windGLShelter(g), k = Math.pow(2, r.G.zd - g.z0), out = { turned: r.stats.turned, turnMax: r.stats.turnMax, bad: 0, wIn: 0, wOut: 0, lIn: 0, lOut: 0, speedBad: 0 };
+    for (let n = 0; n < r.turn.length; n++) {
+      const ti = r.turnOf[n]; if (ti < 0 || !r.turn[n]) continue;
+      const info = r.colInfo[ti], cc = n % g.cols, rr = (n - cc) / g.cols;
+      const fx = ((g.x0 + cc * g.step) * k - r.G.x0) / r.G.m - 0.5, fy = ((g.y0 + rr * g.step) * k - r.G.y0) / r.G.m - 0.5;
+      const dx = fx - info.cx, dy = fy - info.cy;
+      if (Math.abs(r.turn[n]) > WIND_CONV.MAX_TURN_DEG + 1e-6) out.bad++;
+      const sp0 = Math.hypot(g.u[n], g.v[n]) * r.fac[n], sp1 = Math.hypot(r.grid.u[n], r.grid.v[n]);
+      if (Math.abs(sp0 - sp1) > 1e-3) out.speedBad++;
+      if (Math.abs(dx) < 1) continue;
+      const inward = Math.sign(r.grid.u[n]) === -Math.sign(dx), lee = (dx * info.axis[0] + dy * info.axis[1]) > 0;
+      if (lee) inward ? out.lIn++ : out.lOut++; else inward ? out.wIn++ : out.wOut++;
+    }
+    out.probe = null;
+    return out;
+  };
+  const res = { south: run(0, 10), west: run(10, 0) };
+  res.probe = windShelterProbeLines().join('\n');
+  windGLToggleShelter();
+  return res;
+});
+ok(cv.south.turned > 0 && cv.south.bad === 0 && cv.south.turnMax <= 30 + 1e-6 && cv.south.speedBad === 0,
+  '★向きの補正：上限30°以内・速さは変えない（回転だけ）', cv.south);
+ok(cv.south.wIn > 0 && cv.south.wOut === 0 && cv.south.lOut > 0 && cv.south.lIn === 0,
+  '★★南風：風上は軸へ寄せ（漏斗）、風下は広げる', cv.south);
+ok(cv.west.turned === 0, '★★西風（稜線に沿う）：向きも変えない', cv.west);
+ok(/向きの補正：/.test(cv.probe), '「補正を調べる」に向きの補正の行', cv.probe);
+console.log('段階3c-①（偽の地形）：南風', JSON.stringify(cv.south));
+// ⑩色:背景（v4.138.0・利用者の選択）：背景を粒の格子の速さで塗り、粒は白。補正を入れていれば補正後の速さ（見た目の粒の速さ）
+const bgc = await page.evaluate(() => {
+  const C = WIND_FLOW.COLORS.map(([, hex]) => [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16))), eq = (a, b) => a.join() === b.join();
+  const out = { def: windGL.colorMode, stops: WIND_BG.MID.every((m, i) => eq(windBgRGB(m), C[i])) && eq(windBgRGB(0), C[0]) && eq(windBgRGB(99), C[4]),
+    mid: windBgRGB((WIND_BG.MID[1] + WIND_BG.MID[2]) / 2) };
+  // 格子の各点の色が「その点の格子の速さ」の色（乗算済み）と一致するか
+  const check = () => {
+    const g = windGL.bgGrid, d = windGL.bgData, A = WIND_BG.ALPHA; let bad = 0, n = 0;
+    for (let k = 0; k < g.u.length; k += 37) {
+      if (!g.ok[k]) continue; n++;
+      const c = windBgRGB(Math.hypot(g.u[k], g.v[k]));
+      if (Math.abs(d[k * 4] - Math.round(c[0] * A)) > 1 || Math.abs(d[k * 4 + 3] - Math.round(255 * A)) > 1) bad++;
+    }
+    return { n, bad, same: g === windGL.grid };
+  };
+  out.off = check();
+  windGLToggleShelter();                       // 補正を入れる → 背景は補正後の格子で塗り直される
+  out.on = check(); out.onFac = !!windGL.bgGrid.fac;
+  out.hudOn = document.getElementById('wind-hud-text').textContent;
+  windGLToggleShelter();
+  // 色:粒 に切り替えると背景は描かない・粒は帯の色（u_mono=0）
+  windGLToggleColor();
+  out.part = windGL.colorMode; out.btn = document.getElementById('wind-hud-color').textContent;
+  windGLToggleColor();
+  out.back = windGL.colorMode;
+  // 1コマ描いて WebGL のエラーが無いこと
+  windGLRender(glView(), 0.016);
+  out.glErr = windGL.gl.getError();
+  return out;
+});
+ok(bgc.def === 'bg' && bgc.back === 'bg', '★色は既定で背景（Windy 型・粒は白）', bgc);
+ok(bgc.stops && bgc.mid.every((c, k) => c >= 0 && c <= 255), '★背景の色：帯の中ほどで帯の色・間はなめらか', bgc);
+ok(bgc.off.n > 10 && bgc.off.bad === 0 && bgc.off.same, '★背景＝粒の格子の速さの色（補正なし）', bgc.off);
+ok(bgc.on.n > 10 && bgc.on.bad === 0 && bgc.on.same && bgc.onFac && /見た目の粒の速さ（補正込みの推定/.test(bgc.hudOn),
+  '★★補正を入れると背景は補正後の速さ（見た目の粒の速さ）で塗り直し、計測表示にそう明記', bgc);
+ok(bgc.part === 'particle' && bgc.btn === '色:粒' && bgc.glErr === 0, '「色:粒」に戻せる・描画で WebGL のエラーが無い', bgc);
+// ⑪計測表示のスライダー（v4.139.0）：粒の数と背景の濃さを別々に変えられ、端末に覚える
+const sl = await page.evaluate(() => {
+  const c = document.getElementById('wind-sl-count'), b = document.getElementById('wind-sl-bg'), keep = windGL.override;
+  const out = { has: !!c && !!b, cMax: +c.max, bMin: +b.min, bMax: +b.max, steps: WIND_COUNT_STEPS.join(','),
+    quarter: [...document.querySelectorAll('#wind-hud button')].some(x => x.textContent === '粒¼') };
+  c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
+  out.idx = +c.value;
+  c.value = 2; c.dispatchEvent(new Event('input')); out.n300 = windGL.n;
+  c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
+  out.n = windGL.n; out.savedN = windPref.get('count'); out.labelN = document.getElementById('wind-sl-count-v').textContent;
+  b.value = 0.7; b.dispatchEvent(new Event('input'));
+  out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex(x => x) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
+  windGLSetBgAlpha(9); out.clampB = windBgAlpha();
+  windGLSetCount(10); out.clampN = windGL.n;
+  windGLSetCount(50000); out.clampHi = windGL.n;
+  windGLSetCount(4000); windGLScaleCount(0.25); out.q = windGL.n;
+  // 片付け：覚えた値を消して元の粒の数へ
+  localStorage.removeItem('windGL.count'); localStorage.removeItem('windGL.bgAlpha');
+  windGL.override = keep; windGLAlloc(keep); windGLBgTexture(windGL.grid);
+  out.reset = windBgAlpha();
+  return out;
+});
+ok(sl.has && sl.steps === '100,200,300,400,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000,9500,10000' &&
+  sl.cMax === 23 && sl.bMin === 0.1 && sl.bMax === 0.9 && sl.quarter, '★計測表示に粒の数（100〜10,000・500 までは 100 刻み・以降 500 刻み）と背景の濃さ（0.1〜0.9）のスライダー・粒¼', sl);
+ok(sl.n === 3000 && sl.savedN === 3000 && sl.labelN === '3,000' && sl.n300 === 300, '★粒のスライダーで粒の数が変わり、端末に覚える', sl);
+ok(Math.abs(sl.alpha - 0.7) < 1e-9 && sl.texA === Math.round(255 * 0.7) && sl.labelB === '0.70', '★背景のスライダーで背景の濃さが変わり、端末に覚える', sl);
+ok(Math.abs(sl.clampB - 0.9) < 1e-9 && sl.clampN === 100 && sl.clampHi === 10000 && sl.q === 1000 && Math.abs(sl.reset - 0.45) < 1e-9, 'スライダーの値は範囲（100〜10,000）に収める・粒¼で1/4・覚えた値が無ければ既定', sl);
+// 粒の色（v4.140.0）：見た目の粒の速さで、背景と同じ付け方（帯の中ほどで整数・間は線形）。a_meta の整数部は 0〜64
+const pc = await page.evaluate(() => {
+  const out = { pos: [windSpeedPos(0), windSpeedPos(1.5), windSpeedPos(3.25), windSpeedPos(21), windSpeedPos(99)] };
+  windGLToggleColor();   // 色:粒
+  windGLStep(0.016, glView(), performance.now());
+  let bad = 0, drawn = 0;
+  for (let i = 0; i < windGL.n; i++) { const m = windGL.seg[i * 5 + 4]; if (!m) continue; drawn++; const q = Math.floor(m); if (q < 0 || q > 64) bad++; }
+  windGLRender(glView(), 0.016); out.glErr = windGL.gl.getError();
+  out.hud = document.getElementById('wind-hud-text').textContent;
+  windGLToggleColor();
+  return { ...out, bad, drawn };
+});
+ok(pc.pos.join(',') === '0,0,0.5,4,4' && pc.drawn > 0 && pc.bad === 0 && pc.glErr === 0 && /色 粒＝/.test(pc.hud), '★色:粒 の粒の色は見た目の速さ（背景と同じなめらかな付け方）', pc);
+if (process.env.SHOT) { await page.evaluate(() => windGLHudMin()); await page.waitForTimeout(1500); await page.screenshot({ path: process.env.SHOT }); await page.evaluate(() => windGLHudMin()); if (process.env.SHOT2) await page.screenshot({ path: process.env.SHOT2 }); }
 
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());
