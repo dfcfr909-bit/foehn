@@ -408,6 +408,34 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `buildFlowGrid(f)` / `flowAt(g, x, y)` | 場を画面の速度の格子に写す／粒の位置の速度 | 約 7740 |
 | `updateWindFlow(f)` / `stopWindFlow()` / `pauseWindFlow()` | 流す・止める（動かしている間・閉じた・隠れた） | 約 7780 |
 | `windFlowFrame(ts)` | 1コマ（薄める→色ごとにまとめて描く。30コマ／秒） | 約 7800 |
+| `WIND_GL` / `windGL` | 風の流れ（実験・WebGL・ADR-0013）の設定と状態 | 約 7927 |
+| `windGLParticleCount()` | **粒の数を決める1か所**（PoC は 8,000／20,000 固定。adaptive へ育てる所） | 約 7958 |
+| `windGLInit()` / `windGLFail(reason)` | WebGL の用意（webgl2→webgl＋instanced）／使えなければ Canvas 版へ | 約 8037 |
+| `windFlowWanted()` | Canvas 版を流すか（`windFlow` が入っている、または実験の層で WebGL が使えない） | 約 8090 |
+| `buildGLGrid(f, z0)` / `glGridSample(g, wx, wy)` / `glWindAt` | 場を世界座標の格子に写す／双線形（配列を作らない）／時刻を変えた直後の按分 | 約 8094 |
+| `glView()` / `windGLZoomAnim(e)` | 地図の今の見え方（左上の世界座標・倍率）／ズームの演出を CSS で合わせる | 約 8145 |
+| `windGLStep(dt, v, now)` / `windGLRender(v, dt)` / `windGLFrame(ts)` | 移流（CPU）／尾を写して薄める→線分→画面（GPU）／1コマ | 約 8214 |
+| `WIND_TERRAIN` / `windDemTile` / `windDemAt` | 段階1：地形の高さの風の設定／標高タイル（dem_png・控え16枚）／世界座標の標高 | 約 8129 |
+| `windGLTerrainHeight(g, f)` | **段階1**：格子点の標高で `WindVertical.auto` を引き直した格子（元は変えない。AUTO だけ） | 約 8185 |
+| `WIND_SHELTER` / `shelterFactor` / `terrainSx` / `windGLShelter(g)` | **段階3a**：風下の遮蔽（Sx → 倍率。粒の格子だけ・既定は切・AUTO だけ）／`windShelterProbeLines`・`windGLToggleShelter` | 約 8300 |
+| `windFlowSettings()` / `windFlowSettingsSync()` / `windGLSetHud(on)` | 「風の流れ」の行の設定（v4.141.0・ADR-0014）／見た目の更新／計測表示（開発用）の入切 | 約 10680 |
+| `WIND_SLIDER` / `windPref` / `windGLSetCount` / `windGLSetBgAlpha` / `windBgAlpha` | 計測表示のスライダー（粒の数・背景の濃さ。端末に覚える・v4.139.0） | 約 8045 |
+| `WIND_BG` / `windBgRGB` / `windGLBgTexture(g)` / `windGLToggleColor` | **色:背景**（v4.138.0）：粒の格子の速さで背景を塗り粒は白（Windy 型・既定）。`WIND_GL_BG_VS/FS` | 約 8045 |
+| `WIND_CONV` / `turnDeg` | **段階3c-①**：コルで気流を寄せる向きの補正（上限30°・速さは変えない。`windGLShelter` の中） | 約 8300 |
+| `WIND_COL` / `colBoostFactor` / `windColMinDepth` | **段階3b**：コルの加速（横断角・深さ・距離 → 倍率・上限1.3。`windGLShelter` の中で遮蔽と掛け合わせる） | 約 8300 |
+| `TERRAIN_SCALES` / `TERRAIN_AN` / `terrainAn` | **段階2**：地形の構造の抽出の縮尺・しきい値・状態（検証用。風は変えない） | 約 8306 |
+| `terrainAnalyzeScale(sc, view, lat)` / `terrainAnalyze()` | 縮尺ごとのヘッセ行列（「中心を解析」の参考だけ）／共通の升目→鞍部→尾根・沢 | 約 8403 |
+| `terrainDemGrid(view, lat)` / `terrainGridIndex` | **共通の地形の升目**（z12・画面＋3km・高い順の並び）。鞍部・尾根・沢・将来の風の遮蔽が共有 | 約 8450 |
+| `COL` / `terrainFindCols(G)` | **鞍部＝峰どうしがつながる点**（union-find・深さ＝prominence・両側の峰・向き。閾値は固定しない） | 約 8490 |
+| `FLOW` / `terrainFlow(G, cols)` / `terrainLinkColsToRidges` | **尾根・沢＝水の流れ**（多方向流の比集水面積で沢筋・分水界＋横断で稜線・HAND・稜線からの深さ・稜線の番号）／鞍部が稜線の上か | 約 8570 |
+| `terrainBandImage(res)` / `terrainCycleBand(kind)` | 尾根・沢の帯を1枚の画像に（尾根≦◯m・沢≦◯m） | 約 8690 |
+| `TERRAIN_VERIFY_COLS` / `terrainVerifyCols()` | 検証8地点（実在のコル）を順に回って表にする。Actions は `scripts/verifyCols.mjs` | 約 8640 |
+| `terrainDraw()` / `terrainColText(c)` | 尾根・沢の帯と鞍部の◎（深さ・横断角）／◎を押したときの説明（稜線の上か） | 約 8720 |
+| `terrainProbeCenter()` / `terrainRefresh()` | 地図の中心を全部の縮尺で調べる（検証用）／表示範囲が変わったら解析し直す | 約 8607 |
+| `RIDGE_SRC` / `terrainRidgeWhy(G, F, cols, gi)` | 稜線の出自（頂・分水界・鞍部からのつなぎ）／中心の近くの稜線の升目がなぜ稜線か・横断の高低差（v4.128.0） | 約 9090 |
+| `windGLTerrainText()` / `windGLToggleTerrain()` | 計測表示の谷底・尾根の比べ／「高さ:地形・升目」の切り替え | 約 8576 |
+| `updateWindFlowGL(f)` / `stopWindFlowGL()` | 場が変わったら格子だけ作り直す（粒は撒き直さない）／止める | 約 8334 |
+| `windFlowStat` / `windGLMeasure()` | 計測（FPS・CPU 時間。Canvas 版も）／10秒計測 | 約 8371 |
 | `updateMapTime()` / `setMapTime(idx)` | **地図のタイムスライダー**（風の層があるときだけ出す・グラフと同じ選択時刻を動かして風を描き直す） | 約 8050 |
 | `drawWindArrows(f, opacity)` | 場の格子点に矢印（向きは風向+180°）。推定値は点線・地中は「地中」 | 約 7500 |
 | `loadPressureGrid(bounds)` | 画面を9×9に割った海面気圧を1リクエストで（#26） | 約 5626 |

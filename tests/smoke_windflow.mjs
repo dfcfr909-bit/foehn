@@ -133,8 +133,10 @@ ok(a.painted > 500, '★★canvas に軌跡が描かれている', a);
 ok(a.off === 0, '★★場の無い所を流れている粒が無い', a);
 ok(a.dpr <= 1.5 && a.cvW <= Math.ceil(a.cssW * 1.5) + 1, '★iPhone の負荷：canvas の倍率は1.5で頭打ち', a);
 ok(a.arrows === 0, '流れだけ入れたときは矢印を出さない', a);
-ok(a.chips === 1, '流れの行にも AUTO／層の切り替え', a);
-ok(/AUTO/.test(a.status), '流れの行にも状態の文', a.status);
+// v4.141.0（ADR-0014）：Canvas 版は予備になり、レイヤー一覧に行を出さない（WebGL が使えない端末で WebGL 版の代わりに流す）
+ok(a.chips === 0 && a.status === '', 'Canvas 版（予備）の行は一覧に出ない（AUTO の切り替えも出ない）', a);
+ok(await page.evaluate(() => !document.querySelector('.layer-status[data-id="windFlow"]') && !!document.querySelector('.layer-status[data-id="windFlowGL"]')),
+  '★レイヤー一覧には「風の流れ」（WebGL 版）だけが出る');
 
 // ⑤風向：この偽データの AUTO（850/800 の按分）は 270°/280° から＝東へ流れる
 const dir = await page.evaluate(() => {

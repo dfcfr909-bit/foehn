@@ -1,0 +1,36 @@
+name: 鞍部の検証（実験）
+
+# 風の流れ（実験）の段階2：名前の付いた実在のコル8か所が、DEM 上の鞍部として見つかるかを表にする。
+# v4.131.0〜 既定は「深さの閾値の検証」（コル・対照と百名山ほか110峰の山頂を同じ測り方で回す）。旧来の表は --table
+# アプリの「検証8地点」と同じ関数を、本物の地理院 DEM と Open-Meteo で回す（scripts/verifyCols.mjs）。
+#
+# なぜ Actions で回すか:
+#   開発環境からは国土地理院にも Open-Meteo にも到達できない（山頂座標の検査と同じ制約）。
+# v4.141.0（ADR-0014）：push では動かさず**手動実行だけ**にした（消さない。地点を足して鞍部の深さの閾値を見直すときに使う）。
+#   Actions の画面から「Run workflow」で、選んだブランチの sotoki_v4.html を回す。何もコミットしない。結果はログとサマリーに出るだけ。
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   # 深さの閾値の検証は 133 地点（コル・対照・山頂110）を回す
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: 依存を取得
+        working-directory: tests
+        run: npm install
+
+      - name: Chromium を用意
+        uses: ./.github/actions/chromium
+
+      - name: 地点表を回す
+        run: node scripts/verifyCols.mjs
