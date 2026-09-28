@@ -563,7 +563,27 @@ ok(bgc.off.n > 10 && bgc.off.bad === 0 && bgc.off.same, '★背景＝粒の格�
 ok(bgc.on.n > 10 && bgc.on.bad === 0 && bgc.on.same && bgc.onFac && /見た目の粒の速さ（補正込みの推定/.test(bgc.hudOn),
   '★★補正を入れると背景は補正後の速さ（見た目の粒の速さ）で塗り直し、計測表示にそう明記', bgc);
 ok(bgc.part === 'particle' && bgc.btn === '色:粒' && bgc.glErr === 0, '「色:粒」に戻せる・描画で WebGL のエラーが無い', bgc);
-if (process.env.SHOT) { await page.evaluate(() => windGLHudMin()); await page.waitForTimeout(1500); await page.screenshot({ path: process.env.SHOT }); await page.evaluate(() => windGLHudMin()); }
+// ⑪計測表示のスライダー（v4.139.0）：粒の数と背景の濃さを別々に変えられ、端末に覚える
+const sl = await page.evaluate(() => {
+  const c = document.getElementById('wind-sl-count'), b = document.getElementById('wind-sl-bg'), keep = windGL.override;
+  const out = { has: !!c && !!b, cMax: +c.max, bMin: +b.min, bMax: +b.max };
+  c.value = 3000; c.dispatchEvent(new Event('input'));
+  out.n = windGL.n; out.savedN = windPref.get('count'); out.labelN = document.getElementById('wind-sl-count-v').textContent;
+  b.value = 0.7; b.dispatchEvent(new Event('input'));
+  out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex(x => x) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
+  windGLSetBgAlpha(9); out.clampB = windBgAlpha();
+  windGLSetCount(10); out.clampN = windGL.n;
+  // 片付け：覚えた値を消して元の粒の数へ
+  localStorage.removeItem('windGL.count'); localStorage.removeItem('windGL.bgAlpha');
+  windGL.override = keep; windGLAlloc(keep); windGLBgTexture(windGL.grid);
+  out.reset = windBgAlpha();
+  return out;
+});
+ok(sl.has && sl.cMax === 20000 && sl.bMin === 0.1 && sl.bMax === 0.9, '★計測表示に粒の数（〜2万）と背景の濃さ（0.1〜0.9）のスライダー', sl);
+ok(sl.n === 3000 && sl.savedN === 3000 && sl.labelN === '3,000', '★粒のスライダーで粒の数が変わり、端末に覚える', sl);
+ok(Math.abs(sl.alpha - 0.7) < 1e-9 && sl.texA === Math.round(255 * 0.7) && sl.labelB === '0.70', '★背景のスライダーで背景の濃さが変わり、端末に覚える', sl);
+ok(Math.abs(sl.clampB - 0.9) < 1e-9 && sl.clampN === 500 && Math.abs(sl.reset - 0.45) < 1e-9, 'スライダーの値は範囲に収める・覚えた値が無ければ既定', sl);
+if (process.env.SHOT) { await page.evaluate(() => windGLHudMin()); await page.waitForTimeout(1500); await page.screenshot({ path: process.env.SHOT }); await page.evaluate(() => windGLHudMin()); if (process.env.SHOT2) await page.screenshot({ path: process.env.SHOT2 }); }
 
 // 切れば消える・風も元のまま
 await page.evaluate(() => terrainToggle());
