@@ -2302,7 +2302,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.133.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.134.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8297,13 +8297,35 @@ function windGLTerrainHeight(g, f) {
    倍率：Sx ≦ SX_LO_DEG で 1（変えない）、SX_HI_DEG 以上で F_MIN。その間はなめらかにつなぐ（smoothstep）。
      風にさらされた稜線で速くする処理は入れない（稜線の風は段階1で高い面の風になっている。二重に数えない）
    地形は段階2と同じ共通の升目（terrainDemGrid・z12 約30m）。DEM は読み直さない。風向は時刻で変わるので時刻ごとに引き直す
-   3b（コルの加速）は 3a の実機確認の後に足す。倍率の枠（windGLShelter の col＝コル加速倍率）だけ用意して 1 にしておく */
+   段階3b：コルの加速（v4.134.0〜。3a の実機確認の後に足した・利用者の条件）
+     深さ WIND_COL.MIN_DEPTH（＝◎の既定 COL.SHOW_MIN_M・20m）以上の鞍部（端は除く）で、風が稜線を横切る角（横断角）が
+     MIN_CROSS_DEG 以上のときだけ、鞍部から RADIUS_M 以内の格子点を速くする。
+     倍率 = 1 + GAIN × sin(横断角) × min(1, 深さ／DEPTH_REF_M) × 減衰（中心1 → 半径で0。(1−(d/R)²)²）。上限 MAX。
+     複数の鞍部が重なる所はいちばん大きい倍率を使う（足し合わせない）。稜線に沿う風（横断角が小さい）は加速しない
+   最終倍率 = 遮蔽倍率 × コル加速倍率 */
 const WIND_SHELTER = {   // ⚠ 実験のパラメータ（仮の初期値・未検証）
   DMAX_M: 300,           // 風上を見る距離（m）
   SX_LO_DEG: 2,          // これ以下の Sx は遮蔽なし（倍率 1）
   SX_HI_DEG: 20,         // これ以上の Sx で倍率 F_MIN
   F_MIN: 0.3,            // いちばん隠れた所の倍率
 };
+const WIND_COL = {       // ⚠ 実験のパラメータ（仮の初期値・未検証）。1.3倍などを物理的に正しい値として扱わない
+  MIN_DEPTH_M: null,     // 対象にする鞍部の深さの下限（m）。null＝◎の既定（COL.SHOW_MIN_M）に合わせる
+  MIN_CROSS_DEG: 30,     // 横断角がこれ未満（稜線に沿う風）は加速しない
+  RADIUS_M: 200,         // 鞍部からこの距離まで効かせる（中心で最大・端で0）
+  GAIN: 0.3,             // 真横（90°）に越え、深さ DEPTH_REF_M 以上のときの増し分
+  DEPTH_REF_M: 100,      // この深さで増し分が最大になる
+  MAX: 1.3,              // コル加速倍率の上限
+};
+const windColMinDepth = () => WIND_COL.MIN_DEPTH_M != null ? WIND_COL.MIN_DEPTH_M : COL.SHOW_MIN_M;
+// 1つの鞍部のコル加速倍率（横断角・度、鞍部からの距離・m、深さ・m）
+function colBoostFactor(crossDeg, distM, depthM) {
+  const P = WIND_COL;
+  if (!(crossDeg >= P.MIN_CROSS_DEG) || !(depthM >= windColMinDepth()) || !(distM < P.RADIUS_M)) return 1;
+  const q = distM / P.RADIUS_M, fall = (1 - q * q) * (1 - q * q);
+  const b = 1 + P.GAIN * Math.sin(crossDeg * Math.PI / 180) * Math.min(1, depthM / P.DEPTH_REF_M) * fall;
+  return Math.min(P.MAX, b);
+}
 // Sx（度）→ 遮蔽の倍率
 function shelterFactor(sx) {
   const P = WIND_SHELTER;
@@ -8334,37 +8356,68 @@ function terrainSx(G, fx, fy, ux, uy) {
   return best === -90 ? NaN : best;
 }
 // 遮蔽に使う共通の地形の升目（地形解析と同じ画面なら使い回す。読み込み中は作り直す）
+// 返り値 { G, cols }（cols … 鞍部。3b のコルの加速に使う。地形解析が同じ画面を解析済みならそれを使う）
 function windShelterGrid() {
   const key = terrainKey();
-  if (typeof terrainAn !== 'undefined' && terrainAn.result && terrainAn.key === key && !terrainAn.result.loading) return terrainAn.result.grid;
-  if (windGL.shelterG && windGL.shelterG.key === key && !windGL.shelterG.G.loading) return windGL.shelterG.G;
+  if (typeof terrainAn !== 'undefined' && terrainAn.result && terrainAn.key === key && !terrainAn.result.loading)
+    return { G: terrainAn.result.grid, cols: terrainAn.result.cols.cols };
+  if (windGL.shelterG && windGL.shelterG.key === key && !windGL.shelterG.G.loading) return windGL.shelterG;
   const G = terrainDemGrid(terrainView(), leafletMap.getCenter().lat);
-  windGL.shelterG = { key, G };
-  return G;
+  windGL.shelterG = { key, G, cols: terrainFindCols(G).cols };
+  return windGL.shelterG;
 }
 /* 格子（段階1の後）に遮蔽の倍率を掛けた格子を返す。元の格子は変えない。
    返り値 { grid, applied, loading, ms, sx, shelter, col, fac, stats }（sx … 度・NaN＝求まらない、shelter/col/fac … 倍率） */
 function windGLShelter(g) {
-  const t0 = performance.now(), G = windShelterGrid(), N = g.cols * g.rows;
+  const t0 = performance.now(), { G, cols } = windShelterGrid(), N = g.cols * g.rows;
   const k = Math.pow(2, G.zd - g.z0);
   const sx = new Float32Array(N).fill(NaN), shelter = new Float32Array(N).fill(1), col = new Float32Array(N).fill(1), fac = new Float32Array(N).fill(1);
+  const colOf = new Int32Array(N).fill(-1);   // いちばん効いた鞍部（colInfo の添字）
   const u = g.u.slice(), v = g.v.slice();
-  const st = { n: 0, sheltered: 0, facSum: 0, facMin: 1 };
+  const st = { n: 0, sheltered: 0, facSum: 0, facMin: 1, facMax: 1, boosted: 0, colsUsed: 0 };
+  // 3b：コルの加速。鞍部ごとに、その場所の風（補正前の格子）で横断角を求め、半径の中の格子点に倍率を置く（重なりは大きい方）
+  const colInfo = [];
+  for (const c of cols || []) {
+    if (c.edge || !(c.prom >= windColMinDepth())) continue;
+    const cx = c.cell % G.nx, cy = (c.cell - cx) / G.nx;
+    const wx = (G.x0 + (cx + 0.5) * G.m) / k, wy = (G.y0 + (cy + 0.5) * G.m) / k;   // 鞍部の世界座標（基準ズーム）
+    if (!glGridSample(g, wx, wy)) continue;
+    const cross = terrainCrossAngle(c.ridge, [glU, glV]);
+    if (cross == null || !(cross >= WIND_COL.MIN_CROSS_DEG)) continue;
+    const ci = colInfo.length;
+    colInfo.push({ c, cross, cx, cy });
+    const R = WIND_COL.RADIUS_M / G.cell;   // 升目の数
+    const c0 = Math.max(0, Math.floor((wx - R * G.m / k - g.x0) / g.step)), c1 = Math.min(g.cols - 1, Math.ceil((wx + R * G.m / k - g.x0) / g.step));
+    const r0 = Math.max(0, Math.floor((wy - R * G.m / k - g.y0) / g.step)), r1 = Math.min(g.rows - 1, Math.ceil((wy + R * G.m / k - g.y0) / g.step));
+    let used = false;
+    for (let r = r0; r <= r1; r++) for (let cc = c0; cc <= c1; cc++) {
+      const n = r * g.cols + cc;
+      if (!g.ok[n]) continue;
+      const fx = ((g.x0 + cc * g.step) * k - G.x0) / G.m - 0.5, fy = ((g.y0 + r * g.step) * k - G.y0) / G.m - 0.5;
+      const b = colBoostFactor(cross, Math.hypot(fx - cx, fy - cy) * G.cell, c.prom);
+      if (b > col[n]) { col[n] = b; colOf[n] = ci; used = true; }
+    }
+    if (used) st.colsUsed++;
+  }
   for (let r = 0; r < g.rows; r++) {
     for (let c = 0; c < g.cols; c++) {
       const n = r * g.cols + c;
       if (!g.ok[n]) continue;
       const fx = ((g.x0 + c * g.step) * k - G.x0) / G.m - 0.5, fy = ((g.y0 + r * g.step) * k - G.y0) / G.m - 0.5;
       const a = terrainSx(G, fx, fy, g.u[n], -g.v[n]);   // 風の吹く向き：東＝u、南＝−v
-      if (a !== a) continue;
-      sx[n] = a; shelter[n] = shelterFactor(a);
+      if (a === a) { sx[n] = a; shelter[n] = shelterFactor(a); }
+      else if (col[n] === 1) continue;   // Sx が求まらず、コルの加速も無い点は触らない
       fac[n] = shelter[n] * col[n];
       u[n] *= fac[n]; v[n] *= fac[n];
-      st.n++; st.facSum += fac[n]; if (fac[n] < 1) st.sheltered++; if (fac[n] < st.facMin) st.facMin = fac[n];
+      st.n++; st.facSum += fac[n];
+      if (shelter[n] < 1) st.sheltered++;
+      if (col[n] > 1) st.boosted++;
+      if (fac[n] < st.facMin) st.facMin = fac[n];
+      if (fac[n] > st.facMax) st.facMax = fac[n];
     }
   }
   st.facMean = st.n ? st.facSum / st.n : 1;
-  return { grid: { ...g, u, v, fac, shelter: true }, applied: st.n > 0, loading: !!G.loading, ms: performance.now() - t0, sx, shelter, col, fac, stats: st };
+  return { grid: { ...g, u, v, fac, shelter: true }, applied: st.n > 0, loading: !!G.loading, ms: performance.now() - t0, sx, shelter, col, colOf, colInfo, G, fac, stats: st };
 }
 // 地図の中心に近い格子点の Sx・倍率（「中心を解析」と「補正を調べる」で出す）
 function windShelterProbeLines() {
@@ -8375,11 +8428,18 @@ function windShelterProbeLines() {
   const c = leafletMap.getCenter(), p = leafletMap.project(c, g.z0);
   const cc = Math.round((p.x - g.x0) / g.step), rr = Math.round((p.y - g.y0) / g.step);
   if (cc < 0 || rr < 0 || cc >= g.cols || rr >= g.rows) return ['風の補正：中心が格子の外'];
-  const n = rr * g.cols + cc, f2 = x => x.toFixed(2);
-  if (w.sx[n] !== w.sx[n]) return [`風の補正：中心の格子点で Sx が求まらない（標高が無い・風が無い${w.loading ? '・標高タイルを読み込み中' : ''}）`];
-  const P = WIND_SHELTER;
-  return [`風の補正（中心の格子点・粒の見せ方だけ）：Sx ${w.sx[n].toFixed(1)}°（風上 ${P.DMAX_M}m まで）` +
-    `・遮蔽倍率 ${f2(w.shelter[n])}（${P.SX_LO_DEG}°以下で1・${P.SX_HI_DEG}°以上で${P.F_MIN}）・コル加速倍率 ${f2(w.col[n])}（3b は未実装）・最終倍率 ${f2(w.fac[n])}`];
+  const n = rr * g.cols + cc, f2 = x => x.toFixed(2), f0 = x => Math.round(x).toLocaleString();
+  const P = WIND_SHELTER, C = WIND_COL, out = [];
+  const sxText = w.sx[n] === w.sx[n] ? `Sx ${w.sx[n].toFixed(1)}°（風上 ${P.DMAX_M}m まで）` : `Sx 求まらず（標高が無い・風が無い${w.loading ? '・標高タイルを読み込み中' : ''}）`;
+  out.push(`風の補正（中心の格子点・粒の見せ方だけの推定）：${sxText}・遮蔽倍率 ${f2(w.shelter[n])}（${P.SX_LO_DEG}°以下で1・${P.SX_HI_DEG}°以上で${P.F_MIN}）` +
+    `・コル加速倍率 ${f2(w.col[n])}・最終倍率 ${f2(w.fac[n])}`);
+  const ci = w.colOf[n], info = ci >= 0 ? w.colInfo[ci] : null;
+  if (info) {
+    const G = w.G, cx = ((p.x * Math.pow(2, G.zd - g.z0)) - G.x0) / G.m - 0.5, cy = ((p.y * Math.pow(2, G.zd - g.z0)) - G.y0) / G.m - 0.5;
+    out.push(`　コル：深さ${f0(info.c.prom)}m・標高${f0(info.c.h)}m・横断角${Math.round(info.cross)}°・中心から約${f0(Math.hypot(cx - info.cx, cy - info.cy) * G.cell)}m` +
+      `（深さ${windColMinDepth()}m以上・横断角${C.MIN_CROSS_DEG}°以上・半径${C.RADIUS_M}m・上限${C.MAX}倍）`);
+  } else out.push(`　コル：半径${C.RADIUS_M}m 以内に対象の鞍部なし（深さ${windColMinDepth()}m以上・横断角${C.MIN_CROSS_DEG}°以上）`);
+  return out;
 }
 function windShelterProbe() {
   const out = document.getElementById('wind-hud-result');
@@ -9800,7 +9860,7 @@ function windGLHudText() {
   const b = document.getElementById('wind-hud-terrain');
   if (b) b.textContent = windGL.terrainOn ? '高さ:地形' : '高さ:升目';
   const bs = document.getElementById('wind-hud-shelter'), bp = document.getElementById('wind-hud-sprobe');
-  if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽' : '補正:切'; bs.classList.toggle('on', windGL.shelterOn); }
+  if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('on', windGL.shelterOn); }
   if (bp) bp.style.display = windGL.shelterOn ? '' : 'none';
   const ta = document.getElementById('wind-hud-tan'), tp = document.getElementById('wind-hud-probe');
   if (ta) ta.classList.toggle('on', terrainAn.on);
@@ -9828,11 +9888,11 @@ function windGLTerrainText() {
 function windShelterHudText() {
   const w = windGL.shelterRes, P = WIND_SHELTER;
   if (!windGL.shelterOn) return '<b>補正</b> 切（粒の見せ方だけの推定。入れても場・矢印・判定は変わらない）';
-  if (windGL.fieldMode !== 'auto') return '<b>補正</b> 遮蔽（AUTO のときだけ。いまは手動の層なので掛けていない）';
-  if (!w || !w.applied) return `<b>補正</b> 遮蔽：地形${w && w.loading ? 'を読み込み中' : 'が無い'}（倍率1のまま）`;
+  if (windGL.fieldMode !== 'auto') return '<b>補正</b> 遮蔽・コル（AUTO のときだけ。いまは手動の層なので掛けていない）';
+  if (!w || !w.applied) return `<b>補正</b> 遮蔽・コル：地形${w && w.loading ? 'を読み込み中' : 'が無い'}（倍率1のまま）`;
   const s = w.stats;
-  return `<b>補正</b> 遮蔽（推定・Sx 風上${P.DMAX_M}m）${w.ms.toFixed(0)}ms${w.loading ? '・読込中' : ''}｜遮蔽 ${s.sheltered}/${s.n}点（${Math.round(100 * s.sheltered / Math.max(1, s.n))}%）` +
-    `・倍率 平均${s.facMean.toFixed(2)} 最小${s.facMin.toFixed(2)}`;
+  return `<b>補正</b> 遮蔽・コル（推定・Sx 風上${P.DMAX_M}m）${w.ms.toFixed(0)}ms${w.loading ? '・読込中' : ''}｜遮蔽 ${s.sheltered}/${s.n}点（${Math.round(100 * s.sheltered / Math.max(1, s.n))}%）` +
+    `｜コル ${s.colsUsed}か所・加速 ${s.boosted}点｜最終倍率 平均${s.facMean.toFixed(2)} 最小${s.facMin.toFixed(2)} 最大${s.facMax.toFixed(2)}`;
 }
 function windGLToggleShelter() {
   windGL.shelterOn = !windGL.shelterOn;
