@@ -2320,7 +2320,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.144.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.145.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2710,7 +2710,7 @@ function windModelPhases(h, len) {
    trace.kind: 'level'（選んだ層そのもの）/ 'interp'（上下の層から山頂高度へ補間）/
                'ground'（地上10m。山頂が最下層より低い・標高不明＝もともと地上風の地点）/
                'missing'（風データなし） */
-function summitWindAt(h, i, src, model) {
+function summitWindAt(h, i, src, model, method) {
   const at = name => (h[name] && h[name][i] != null) ? h[name][i] : null;
   if (!src || src.kind !== 'level') {
     const spd = at('windspeed_10m');
@@ -2720,7 +2720,9 @@ function summitWindAt(h, i, src, model) {
   const lv = p => ({ hPa: p, spd: at(`wind_speed_${p}hPa`), dir: at(`wind_direction_${p}hPa`),
     z: at(`geopotential_height_${p}hPa`) });
   const own = lv(src.hPa);
-  if (own.spd != null) {
+  /* method === 'gh'（JMA 以外）は固定表の最寄り層を使わず、常に下の按分へ進む。
+     JMA（'table'）は従来どおり：選んだ層に値があればその層そのもの */
+  if (method !== 'gh' && own.spd != null) {
     return { spd: own.spd, dir: own.dir, trace: { kind: 'level', hPa: src.hPa, z: own.z, model } };
   }
   // 選んだ層がこの時刻に無い。高さの分かる実在の層で、山頂高度を上下から挟む
@@ -2737,8 +2739,8 @@ function summitWindAt(h, i, src, model) {
       return {
         spd: Math.hypot(u, v),
         dir: (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360,
-        trace: { kind: 'interp', hPa: src.hPa, model,
-          lo: { hPa: a.hPa, z: a.z }, hi: { hPa: b.hPa, z: b.z }, w },
+        trace: Object.assign({ kind: 'interp', hPa: src.hPa, model,
+          lo: { hPa: a.hPa, z: a.z }, hi: { hPa: b.hPa, z: b.z }, w }, method === 'gh' ? { by: 'gh' } : {}),
       };
     }
   }
@@ -2762,6 +2764,8 @@ function windTraceLabel(d, src) {
   if (t.kind === 'missing') return `風データなし${m}`;
   if (t.kind === 'ground') return windSourceLabel(src);
   const top = `${Math.round(src.summitM)}m`;
+  // by:'gh'（JMA 以外）は「層が無い」わけではなく、もともと按分で作る。「無し→」とは言わない
+  if (t.kind === 'interp' && t.by === 'gh') return `${top}（${t.lo.hPa}/${t.hi.hPa}hPaから按分${m}）`;
   if (t.kind === 'interp') return `${top}（${t.hPa}hPa無し→${t.lo.hPa}/${t.hi.hPa}hPaから按分${m}）`;
   return `${top}${m ? `（${t.model}）` : ''}`;
 }
@@ -2977,14 +2981,19 @@ function setWxSource(info) {
    ・キーは内部の名前。`id` が Open-Meteo の `models=` に渡す値
    ・`phases: 'jma'` … MSM／移行／GSM の判別（windModelPhases）を使うモデル。**JMA 専用**で、他のモデルに当てはめない。
      他のモデルは全時刻を `short`（モデル名）とする
+   ・`windMethod` … 山頂高度の風の作り方（段階 B-2・ADR-0015）。
+     'table' … 固定表（WIND_LEVELS）で最寄りの層をそのまま使い、無い時刻だけ gh で按分する（**JMA の現行そのまま＝回帰なし**）。
+     'gh' … **常に**、山頂高度を挟む上下の層を、その時刻の気圧面の高さ（gh）で按分する。
+       JMA 以外は地中の層（山頂より下）の外挿値がモデルごとにばらばらで（燧ヶ岳 800hPa：JMA 8.1／GFS 3.2／ICON 4.1m/s）、
+       固定表の最寄り層をそのまま使うと GFS/ICON が JMA の約半分になる。2026-09-30 の実測（6峰×4モデル）は decisions.md
    ⚠ 選べるのは要件（docs/requirements_model_switch.md）で決めた4つだけ。
      ecmwf_ifs（9km）は気圧面の風が無く山頂の風を作れない／ecmwf_aifs025 は地上の列が空 → 入れない
    ⚠ 地図の風（fetchWindColumns）とランキングは JMA 固定のまま（ADR-0015 の決定 4）。ここは通さない */
 const FORECAST_MODELS = {
-  jma:   { id: 'jma_seamless',  label: '気象庁',        short: 'JMA',   phases: 'jma' },
-  gfs:   { id: 'gfs_seamless',  label: 'GFS（米国）',    short: 'GFS',   phases: null },
-  icon:  { id: 'icon_seamless', label: 'ICON（ドイツ）', short: 'ICON',  phases: null },
-  ecmwf: { id: 'ecmwf_ifs025',  label: 'ECMWF（欧州）',  short: 'ECMWF', phases: null },
+  jma:   { id: 'jma_seamless',  label: '気象庁',        short: 'JMA',   phases: 'jma', windMethod: 'table' },
+  gfs:   { id: 'gfs_seamless',  label: 'GFS（米国）',    short: 'GFS',   phases: null,  windMethod: 'gh' },
+  icon:  { id: 'icon_seamless', label: 'ICON（ドイツ）', short: 'ICON',  phases: null,  windMethod: 'gh' },
+  ecmwf: { id: 'ecmwf_ifs025',  label: 'ECMWF（欧州）',  short: 'ECMWF', phases: null,  windMethod: 'gh' },
 };
 const DEFAULT_MODEL = 'jma';
 // 知らないキーは既定に落とす（壊れた値で URL に変な models= を出さない）
@@ -3263,7 +3272,7 @@ function processData(json, windSrc, modelKey) {
   for (let i = 0; i < len; i++) {
     const dt = new Date(h.time[i]);
     const pres6 = i >= 6 ? (h.surface_pressure[i] - h.surface_pressure[i-6]) : 0;
-    const sw = summitWindAt(h, i, windSrc, phases[i]);
+    const sw = summitWindAt(h, i, windSrc, phases[i], fm.windMethod);
     data.push({
       time: dt,
       temp: h.temperature_2m[i],
