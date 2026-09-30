@@ -1,0 +1,160 @@
+<!doctype html>
+<!--
+  試作（栃木北部）の閲覧ページ・第3版（沢筋からの高さ HAND の絞り込み・拡大率による段の自動切り替え）。本番アプリとは別。
+  ⚠ 私的利用・ローカル確認のみ。事前計算データ（out/tiles_v3/）は .gitignore 対象で、コミット・公開しない。
+     測量法の手続きを国土地理院に確認中のため、公開サイトでは配信しない。
+  起動（experiments/landmark/pilot で）: python serve_local.py  → http://localhost:8000/viewer_v3.html
+  背景は地理院タイル（標準地図・陰影起伏図）をリアルタイムで読み込む。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>尾根・沢の試作 第3版（ローカル確認）</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #panel { position: absolute; z-index: 1000; top: 8px; right: 8px; background: rgba(255,255,255,.96); border-radius: 8px;
+           padding: 8px 10px; font-size: 13px; line-height: 1.65; box-shadow: 0 1px 4px rgba(0,0,0,.3); max-width: 300px;
+           max-height: calc(100% - 70px); overflow: auto; }
+  #panel label { display: block; }
+  #panel select, #panel input[type=number] { font-size: 13px; }
+  #panel select { max-width: 100%; }
+  #panel .sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 4px; }
+  #panel details summary { cursor: pointer; font-weight: bold; }
+  #panel fieldset { border: 1px solid #ccc; border-radius: 6px; margin: 6px 0; padding: 4px 8px; }
+  #panel legend { font-weight: bold; font-size: 12px; }
+  .off { opacity: .45; pointer-events: none; }
+  #note { position: absolute; z-index: 1000; left: 8px; bottom: 22px; background: rgba(255,248,220,.95); border: 1px solid #d9b44a;
+          border-radius: 6px; padding: 4px 8px; font-size: 12px; max-width: calc(100% - 16px); }
+  #status, #zoominfo { color: #555; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <details open>
+    <summary>重ねる線</summary>
+    <label><input type="radio" name="bg" value="std" checked> 背景：標準地図</label>
+    <label><input type="radio" name="bg" value="hill"> 背景：陰影起伏図</label>
+    <fieldset>
+      <legend>切り替え方</legend>
+      <label><input type="radio" name="mode" value="auto" checked> 拡大率で自動</label>
+      <label><input type="radio" name="mode" value="manual"> 手動</label>
+    </fieldset>
+    <fieldset id="autoBox">
+      <legend>自動（ズームで段を切り替え）</legend>
+      <label>広域：ズーム <input type="number" id="zb" min="8" max="16" value="12" style="width:3.2em"> 以下</label>
+      <label>尾根 <select id="wideRidge"></select></label>
+      <label>沢 <select id="wideValley"><option value="valley_1e7" selected>A_out≧1,000万m²</option><option value="valley_1e6">A_out≧100万m²</option><option value="">出さない</option></select></label>
+      <label style="margin-top:4px">拡大：それより上</label>
+      <label>尾根 <select id="nearRidge"></select></label>
+      <label>沢 <select id="nearValley"><option value="valley_1e6" selected>A_out≧100万m²</option><option value="valley_1e7">A_out≧1,000万m²</option><option value="">出さない</option></select></label>
+      <div id="zoominfo"></div>
+    </fieldset>
+    <fieldset id="manualBox" class="off">
+      <legend>手動</legend>
+      <label>尾根 <select id="manRidge"></select></label>
+      <label><input type="checkbox" id="manV7" checked><span class="sw" style="border-color:#0b3d91;border-top-width:4px"></span>沢 A_out≧1,000万m²</label>
+      <label><input type="checkbox" id="manV6"><span class="sw" style="border-color:#1a73e8"></span>沢 A_out≧100万m²</label>
+    </fieldset>
+    <label><input type="checkbox" id="prod"><span class="sw" style="border-color:#7b1fa2;border-top-style:dashed"></span>比較：現行 terrainFlow の尾根</label>
+    <div id="status">読み込み中…</div>
+  </details>
+</div>
+<div id="note">地形からの推定・参考値（LANDMARK の試作）。地理院タイル（標高タイル）を加工して作成。ローカル確認用・非公開</div>
+<script>
+// 尾根の選択肢（層の名前 → 表示名）。HAND＝沢筋からの高さ（勾配の条件を外した沢筋。p は本番どおりの沢筋）
+const RIDGES = [
+  ['ridge_r60_a1e6_h40', '起伏≧60m＋A_spread≧100万m²＋HAND≧40m'],
+  ['ridge_r60_a3e5_h40', '起伏≧60m＋A_spread≧30万m²＋HAND≧40m'],
+  ['ridge_r60_a1e6_h20', '起伏≧60m＋100万m²＋HAND≧20m'],
+  ['ridge_r60_a3e5_h20', '起伏≧60m＋30万m²＋HAND≧20m'],
+  ['ridge_a1e6_h40', '100万m²＋HAND≧40m（起伏の条件なし）'],
+  ['ridge_a3e5_h40', '30万m²＋HAND≧40m（起伏の条件なし）'],
+  ['ridge_r60_a1e6_h40p', '起伏≧60m＋100万m²＋HAND≧40m（本番の沢筋）'],
+  ['ridge_r60_a3e5_h40p', '起伏≧60m＋30万m²＋HAND≧40m（本番の沢筋）'],
+  ['ridge_r60_a1e6', '起伏≧60m＋100万m²（HAND なし・第2版）'],
+  ['ridge_r60_a3e5', '起伏≧60m＋30万m²（HAND なし・第2版）'],
+  ['', '尾根を出さない'],
+];
+const DEF = { wideRidge: 'ridge_r60_a1e6_h40', nearRidge: 'ridge_r60_a3e5_h40', manRidge: 'ridge_r60_a1e6_h40' };
+for (const id of ['wideRidge', 'nearRidge', 'manRidge']) {
+  const s = document.getElementById(id);
+  for (const [v, t] of RIDGES) { const o = document.createElement('option'); o.value = v; o.textContent = t; if (v === DEF[id]) o.selected = true; s.appendChild(o); }
+}
+const RIDGE = { color: '#b3261e', weight: 1.8 };
+const STYLE = { valley_1e7: { color: '#0b3d91', weight: 3 }, valley_1e6: { color: '#1a73e8', weight: 2 }, prod_ridge: { color: '#7b1fa2', weight: 1.8, dashArray: '5 4' } };
+RIDGES.forEach(([v]) => { if (v) STYLE[v] = RIDGE; });
+const GSI = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">地理院タイル</a>';
+const bgs = {
+  std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { maxZoom: 18, attribution: GSI + '（標準地図）' }),
+  hill: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png', { maxZoom: 18, maxNativeZoom: 16, attribution: GSI + '（陰影起伏図）' }),
+};
+const map = L.map('map', { preferCanvas: true }).setView([36.95, 139.7], 11);
+bgs.std.addTo(map);
+map.attributionControl.addAttribution('尾根・沢：地理院タイル（標高タイル）を加工して作成（LANDMARK・試作・参考値）');
+document.querySelectorAll('input[name=bg]').forEach(r => r.addEventListener('change', () => { Object.values(bgs).forEach(l => map.removeLayer(l)); bgs[r.value].addTo(map); }));
+
+const renderer = L.canvas({ padding: 0.5 });
+const groups = {};
+Object.keys(STYLE).forEach(k => { groups[k] = L.layerGroup(); });
+const $ = id => document.getElementById(id);
+function wanted() {
+  const on = new Set();
+  if ($('prod').checked) on.add('prod_ridge');
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  if (mode === 'auto') {
+    const zb = Number($('zb').value) || 12, wide = map.getZoom() <= zb;
+    [wide ? $('wideRidge').value : $('nearRidge').value, wide ? $('wideValley').value : $('nearValley').value].forEach(v => v && on.add(v));
+    $('zoominfo').textContent = `いまのズーム ${map.getZoom()}：${wide ? '広域' : '拡大'}の段`;
+  } else {
+    if ($('manRidge').value) on.add($('manRidge').value);
+    if ($('manV7').checked) on.add('valley_1e7');
+    if ($('manV6').checked) on.add('valley_1e6');
+  }
+  $('autoBox').classList.toggle('off', mode !== 'auto'); $('manualBox').classList.toggle('off', mode !== 'manual');
+  return on;
+}
+const ORDER = ['valley_1e6', 'valley_1e7', 'prod_ridge'];
+function sync() {
+  const on = wanted();
+  for (const [k, g] of Object.entries(groups)) { if (on.has(k)) { if (!map.hasLayer(g)) g.addTo(map); } else map.removeLayer(g); }
+  // 尾根を上に（沢・現行の尾根の上に描く）
+  for (const k of Object.keys(groups)) if (k.startsWith('ridge_') && map.hasLayer(groups[k])) groups[k].eachLayer(l => l.bringToFront());
+}
+document.querySelectorAll('#panel input, #panel select').forEach(el => el.addEventListener('change', sync));
+$('zb').addEventListener('input', sync);
+map.on('zoomend', sync);
+
+(async () => {
+  const st = $('status');
+  try {
+    const idx = await (await fetch('out/tiles_v3/index.json')).json();
+    const b = idx.bbox;
+    L.rectangle([[b.lat0, b.lon0], [b.lat1, b.lon1]], { color: '#555', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(map);
+    map.fitBounds([[b.lat0, b.lon0], [b.lat1, b.lon1]]);
+    let n = 0;
+    for (const [x, y] of idx.tiles) {
+      const t = await (await fetch(`out/tiles_v3/${idx.z}/${x}/${y}.json`)).json();
+      for (const [name, lines] of Object.entries(t.layers)) {
+        if (!groups[name]) continue;
+        for (const f of lines) {
+          const ll = [];
+          for (let i = 0; i < f.length; i += 2) ll.push([f[i + 1], f[i]]);
+          L.polyline(ll, { ...STYLE[name], renderer, interactive: false }).addTo(groups[name]);
+          n++;
+        }
+      }
+    }
+    sync();
+    st.textContent = `タイル ${idx.tiles.length} 枚・線 ${n} 本`;
+  } catch (e) {
+    st.textContent = '読み込めない：out/tiles_v3/ が無いか、ファイルを直接開いている（ローカルサーバーで開く）。' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
