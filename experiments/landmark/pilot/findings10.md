@@ -151,7 +151,7 @@ node --max-old-space-size=8192 pilot/exportHand.mjs
 .venv/Scripts/python.exe pilot/check_viewer_v3.py
 ```
 
-## 一時停止（利用者の判断で、CS立体図・CI を先に進める）
+## 一時停止（利用者の判断で、栃木県レーザーDEMによる CS立体図・CI を experiments/relief/ で先に進める）
 
 LANDMARK の尾根・沢の線は、この findings10 と `viewer_v3.html` の状態で止める。追加の作業はしない。先に、標高タイルからブラウザでその場で計算する CS立体図・CI（収束指数）を `experiments/relief/` で試す。
 
