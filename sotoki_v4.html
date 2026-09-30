@@ -650,6 +650,13 @@ html, body {
   white-space: nowrap;
 }
 #pop-windsrc:empty { display: none; }
+/* 予報モデル。⚠ 行を増やすとそのまま窓の高さになるので、但し書きと同じ小ささにとどめる */
+#pop-model {
+  font-size: 10px;
+  color: rgba(255,255,255,0.55);
+  white-space: nowrap;
+}
+#pop-model:empty { display: none; }
 .pop-v { font-size: 15px; font-weight: 700; font-family: var(--font-display); }
 .pop-sub { font-size: 10px; color: rgba(255,255,255,0.7); }
 #pop-rain { font-weight: 700; color: #8fd0ff; }
@@ -2284,6 +2291,9 @@ html, body {
            黙って地上風に戻るのがこの件でいちばん危ない失敗の仕方。
            ただし値ではなく但し書きなので、行の中ではなく最下段に小さく置く -->
       <div id="pop-windsrc"></div>
+      <!-- 予報モデル（MSM／移行／GSM）。風の但し書きとは別の行にしてある（風の行の文言は
+           テストが見ているので触らない） -->
+      <div id="pop-model"></div>
     </div>
   </div>
 
@@ -2310,7 +2320,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.141.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.142.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -3232,6 +3242,7 @@ function processData(json, windSrc) {
       wind: sw.spd,
       wdir: sw.dir,
       windTrace: sw.trace,                          // どの風を使ったか（層・高さ・モデル・補間）
+      model: phases[i],                             // その時刻の予報モデル 'MSM'/'移行'/'GSM'/null（帯とポップアップ用）
       windMissing: sw.trace.kind === 'missing',     // ⚠ true なら判定不能（gradeOf）
       wind10: h.windspeed_10m[i],   // 地上10m風。参考用に残す（判定には使わない）
       gust: aheadHour(h.windgusts_10m, i),   // 突風(m/s)。これも直前1時間の最大なので1つ先
@@ -4052,6 +4063,8 @@ function updatePopup() {
   const wsEl = document.getElementById('pop-windsrc');
   // 選んだ層が無くて補間した時刻・データなしの時刻は、その時刻ごとに言う
   if (wsEl) wsEl.textContent = `@${windTraceLabel(d, state.windSource)}`;
+  const mdEl = document.getElementById('pop-model');
+  if (mdEl) mdEl.textContent = `モデル：${d.model === '移行' ? 'MSM→GSM移行' : (d.model || '不明')}`;
   // 突風は取得できたときのみ出す。⚠ 行ではなく風の行の中に畳んである
   const gustRow = document.getElementById('pop-gust-row');
   if (d.gust != null) {
@@ -4207,7 +4220,13 @@ function niceRange(vals, pad, minSpan, padFrac) {
 }
 const PADDING_L     = 36;   // 左軸の幅。単位を2段組みにしたぶん詰めてある
 const PADDING_R     = 32;   // 右軸（高度km等）の目盛りを読める幅を確保
-const SKY_TOP_PAD   = 46;   // 気温パネル上部。日付ラベル＋天気アイコンを重ねずに置く高さ
+/* 予報モデルの帯（v4.142.0）。気温パネルの最上端に置く細い帯。**いま見ている時刻の予報が
+   どのモデルか**（MSM／移行／GSM）を、チャートと同じ横軸で常時出す。
+   ⚠ 帯のぶんだけ上の余白を広げてある（下の SKY_TOP_PAD に足す）。日付ラベルと天気アイコンは
+     帯の下へ MODEL_BAND_H ずらして描く（drawTempOverlay）。ガターは SKY_TOP_PAD を共有するので
+     気温の目盛りは自動で揃う。 */
+const MODEL_BAND_H  = 12;
+const SKY_TOP_PAD   = 46 + MODEL_BAND_H;   // 気温パネル上部。予報モデルの帯＋日付ラベル＋天気アイコンを重ねずに置く高さ
 /* 気温パネルの下端に置く「体感温度の帯」の高さ。
    ⚠ **判定に効いているのは気温ではなく体感温度**なのに、体感は画面のどこにも
    描かれていなかった。帯を消す（＝グラフだけで判定の理由が読める）ための最後の1つ。
@@ -5338,12 +5357,61 @@ function drawFreezingLine(u) {
   ctx.restore();
 }
 
+/* 予報モデルの帯（v4.142.0）。data[i].model を横につなげて塗る。
+   ・MSM＝青／移行（MSM と GSM の混合。どちらのモデルの値とも一致しない）＝橙／GSM＝灰紫／不明＝薄灰
+   ・文字は各日の正午の位置に出す（チャートは全期間の幅で横に流れるので、どこを見ても
+     画面のどこかに名前が入るように）。正午が無い短い区間（移行は約5時間）は区間の中央に出す
+   ⚠ **風の判別に準ずる。** 切り替え時刻は 900/800hPa の風が null になる時刻で見ている
+     （windModelPhases）。気温・降水・雲が同じ時刻で切り替わるかは未確認 → docs/spec/chart.md */
+const MODEL_BAND_STYLE = {
+  'MSM': { col: '#2f6fd0', txt: '#ffffff', label: 'MSM' },
+  '移行': { col: '#e0a020', txt: '#3a2a00', label: '移行' },   // 区間は約5時間で狭い。全文は窓（pop-model）が言う
+  'GSM': { col: '#7d7aa8', txt: '#ffffff', label: 'GSM（粗い）' },
+  '?':   { col: '#d5dae2', txt: '#5a6572', label: 'モデル不明' },
+};
+function modelBandSegments(data) {
+  const segs = [];
+  for (let i = 0; i < data.length; i++) {
+    const m = data[i].model || '?';
+    const last = segs[segs.length - 1];
+    if (last && last.m === m) last.end = i; else segs.push({ m, start: i, end: i });
+  }
+  return segs;
+}
+function drawModelBand(u, pr) {
+  const ctx = u.ctx, data = state.allData;
+  const bh = MODEL_BAND_H * pr;
+  ctx.save();
+  ctx.font = `bold ${9 * pr}px 'Noto Sans JP', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const sg of modelBandSegments(data)) {
+    const st = MODEL_BAND_STYLE[sg.m];
+    const x0 = u.valToPos(sg.start - 0.5, 'x', true);
+    const x1 = u.valToPos(sg.end + 0.5, 'x', true);
+    ctx.fillStyle = st.col;
+    ctx.fillRect(x0, 0, x1 - x0, bh);
+    // 区間の境目に細い白線（隣の色と混ざらないように）
+    if (sg.start > 0) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x0 - 0.5 * pr, 0, pr, bh); }
+    ctx.fillStyle = st.txt;
+    let drawn = false;
+    for (let i = sg.start; i <= sg.end; i++) {
+      if (data[i].time.getHours() !== 12) continue;
+      ctx.fillText(st.label, u.valToPos(i, 'x', true), bh / 2 + 0.5 * pr);
+      drawn = true;
+    }
+    if (!drawn && x1 - x0 > 48 * pr) ctx.fillText(st.label, (x0 + x1) / 2, bh / 2 + 0.5 * pr);
+  }
+  ctx.restore();
+}
+
 function drawTempOverlay(u) {
   const ctx = u.ctx;
   const pr = canvasRatio(u);
   const data = state.allData;
   const H = ctx.canvas.height;
   drawFeelBand(u, pr);
+  drawModelBand(u, pr);
   ctx.save();
   // 日付ヘッダー（正午位置に配置）
   ctx.textAlign = 'center';
@@ -5354,7 +5422,7 @@ function drawTempOverlay(u) {
     const dow = ['日','月','火','水','木','金','土'][t.getDay()];
     ctx.font = `bold ${11 * pr}px 'Noto Sans JP', sans-serif`;
     ctx.fillStyle = 'rgba(0,0,0,0.72)';
-    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}（${dow}）`, x, 12 * pr);   // アイコンの上
+    ctx.fillText(`${t.getMonth() + 1}/${t.getDate()}（${dow}）`, x, (12 + MODEL_BAND_H) * pr);   // アイコンの上
   }
   // 天気アイコン（2hごと）。
   // 絵文字は色を変えられないので、背景（昼夜シェーディングや気温の塗り）に紛れないよう
@@ -5362,7 +5430,7 @@ function drawTempOverlay(u) {
   // 2時間間隔なので隣との中心間距離は pxPerHourVal*2。接しないギリギリまで大きくする。
   // 記号は自前で描くので（drawWeatherGlyph）、丸の中心にきっちり合う
   const icoR = Math.max(9, pxPerHourVal - 0.6) * pr;   // 座布団の半径
-  const icoCY = 16 * pr + icoR;                        // 丸の中心y（日付ラベルの下）
+  const icoCY = (16 + MODEL_BAND_H) * pr + icoR;       // 丸の中心y（日付ラベルの下）
   for (let i = 0; i < data.length; i++) {
     if (data[i].time.getHours() % 2 !== 0) continue;
     const ix = u.valToPos(i, 'x', true);
