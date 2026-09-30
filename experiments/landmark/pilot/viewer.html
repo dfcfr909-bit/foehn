@@ -1,0 +1,112 @@
+<!doctype html>
+<!--
+  試作（栃木北部）のローカル閲覧ページ（本番アプリとは別）。
+  ⚠ 私的利用・ローカル確認のみ。事前計算データ（out/tiles/）は .gitignore 対象で、コミット・公開しない。
+     測量法の手続きを国土地理院に確認中のため、公開サイトでは配信しない。
+  起動（experiments/landmark/pilot で）: python -m http.server 8000 --bind 0.0.0.0  → http://localhost:8000/viewer.html
+  背景は地理院タイル（標準地図・陰影起伏図）をリアルタイムで読み込む。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>尾根線の試作（ローカル確認）</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #panel { position: absolute; z-index: 1000; top: 8px; right: 8px; background: rgba(255,255,255,.95); border-radius: 8px;
+           padding: 8px 10px; font-size: 13px; line-height: 1.7; box-shadow: 0 1px 4px rgba(0,0,0,.3); max-width: 260px; }
+  #panel h1 { font-size: 13px; margin: 0 0 4px; }
+  #panel label { display: block; white-space: nowrap; }
+  #panel .sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 4px; }
+  #panel details summary { cursor: pointer; }
+  #note { position: absolute; z-index: 1000; left: 8px; bottom: 22px; background: rgba(255,248,220,.95); border: 1px solid #d9b44a;
+          border-radius: 6px; padding: 4px 8px; font-size: 12px; max-width: calc(100% - 16px); }
+  #status { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <details open>
+    <summary><b>重ねる線</b></summary>
+    <label><input type="radio" name="bg" value="std" checked> 背景：標準地図</label>
+    <label><input type="radio" name="bg" value="hill"> 背景：陰影起伏図</label>
+    <hr>
+    <label><input type="checkbox" data-layer="ridge_pruned" checked><span class="sw" style="border-color:#b3261e"></span>尾根（ヒゲ刈り有）</label>
+    <label><input type="checkbox" data-layer="ridge_raw"><span class="sw" style="border-color:#e8710a"></span>尾根（ヒゲ刈り無）</label>
+    <label><input type="checkbox" data-layer="valley_1e7" checked><span class="sw" style="border-color:#0b3d91;border-top-width:4px"></span>沢 A_out≧1,000万m²</label>
+    <label><input type="checkbox" data-layer="valley_1e6"><span class="sw" style="border-color:#1a73e8"></span>沢 A_out≧100万m²</label>
+    <label><input type="checkbox" data-layer="valley_1e5"><span class="sw" style="border-color:#7fb3ff;border-top-width:2px"></span>沢 A_out≧10万m²</label>
+    <label><input type="checkbox" data-layer="prod_ridge"><span class="sw" style="border-color:#7b1fa2;border-top-style:dashed"></span>比較：現行 terrainFlow の尾根</label>
+    <div id="status">読み込み中…</div>
+  </details>
+</div>
+<div id="note">地形からの推定・参考値（LANDMARK の試作）。地理院タイル（標高タイル）を加工して作成。ローカル確認用・非公開</div>
+<script>
+// 描く層の見た目（色・太さ・破線）
+const STYLE = {
+  ridge_pruned: { color: '#b3261e', weight: 2.2 },
+  ridge_raw: { color: '#e8710a', weight: 1.4 },
+  valley_1e7: { color: '#0b3d91', weight: 3 },
+  valley_1e6: { color: '#1a73e8', weight: 2 },
+  valley_1e5: { color: '#7fb3ff', weight: 1.2 },
+  prod_ridge: { color: '#7b1fa2', weight: 1.8, dashArray: '5 4' },
+};
+const ORDER = ['valley_1e5', 'valley_1e6', 'valley_1e7', 'prod_ridge', 'ridge_raw', 'ridge_pruned'];   // 下から描く順
+const GSI = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">地理院タイル</a>';
+const bgs = {
+  std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { maxZoom: 18, attribution: GSI + '（標準地図）' }),
+  hill: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png', { maxZoom: 16, maxNativeZoom: 16, attribution: GSI + '（陰影起伏図）' }),
+};
+const map = L.map('map', { preferCanvas: true }).setView([36.95, 139.7], 11);
+bgs.std.addTo(map);
+map.attributionControl.addAttribution('尾根・沢：地理院タイル（標高タイル）を加工して作成（LANDMARK・試作・参考値）');
+document.querySelectorAll('input[name=bg]').forEach(r => r.addEventListener('change', () => {
+  Object.values(bgs).forEach(l => map.removeLayer(l)); bgs[r.value].addTo(map);
+}));
+
+const renderer = L.canvas({ padding: 0.5 });
+const groups = {};
+ORDER.forEach(k => { groups[k] = L.layerGroup(); });
+function sync() {
+  document.querySelectorAll('input[data-layer]').forEach(cb => {
+    const g = groups[cb.dataset.layer];
+    if (cb.checked) { if (!map.hasLayer(g)) g.addTo(map); } else map.removeLayer(g);
+  });
+  // 描く順をそろえる（下から）
+  ORDER.forEach(k => { if (map.hasLayer(groups[k])) groups[k].eachLayer(l => l.bringToFront()); });
+}
+document.querySelectorAll('input[data-layer]').forEach(cb => cb.addEventListener('change', sync));
+
+(async () => {
+  const st = document.getElementById('status');
+  try {
+    const idx = await (await fetch('out/tiles/index.json')).json();
+    const b = idx.bbox;
+    L.rectangle([[b.lat0, b.lon0], [b.lat1, b.lon1]], { color: '#555', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(map);
+    map.fitBounds([[b.lat0, b.lon0], [b.lat1, b.lon1]]);
+    let n = 0;
+    for (const [x, y] of idx.tiles) {
+      const t = await (await fetch(`out/tiles/${idx.z}/${x}/${y}.json`)).json();
+      for (const [name, lines] of Object.entries(t.layers)) {
+        if (!groups[name]) continue;
+        for (const f of lines) {
+          const ll = [];
+          for (let i = 0; i < f.length; i += 2) ll.push([f[i + 1], f[i]]);
+          L.polyline(ll, { ...STYLE[name], renderer, interactive: false }).addTo(groups[name]);
+          n++;
+        }
+      }
+    }
+    sync();
+    st.textContent = `タイル ${idx.tiles.length} 枚・線 ${n} 本`;
+  } catch (e) {
+    st.textContent = '読み込めない：out/tiles/ が無いか、ファイルを直接開いている（ローカルサーバーで開く）。' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
