@@ -2320,7 +2320,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.143.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.144.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2582,6 +2582,7 @@ html, body {
    STATE
    ============================================================ */
 const state = {
+  model: 'jma',      // 予報モデルのキー（FORECAST_MODELS）。起動のたびに既定へ戻す（ADR-0015）。UI は段階 B-3
   lat: 36.57,
   lon: 137.65,
   locationName: '立山・黒部',
@@ -2830,7 +2831,12 @@ function wxStore(mode) {
   return wxDb().then(db => db.transaction(WX_STORE, mode).objectStore(WX_STORE));
 }
 // 座標のキー。小数3桁（約100m）に丸める。GPSの揺れで件数が無限に増えないように
-function wxKey(lat, lon) { return `${lat.toFixed(3)},${lon.toFixed(3)}`; }
+/* ⚠ **既定（JMA）のキーは従来と1文字も変えない**（保存済みの控えを無効にしない）。
+   JMA 以外は `|モデル` を付けて別の記録にする（別のモデルの控えを出さない・ADR-0015） */
+function wxKey(lat, lon, modelKey) {
+  const base = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  return (!modelKey || modelKey === DEFAULT_MODEL) ? base : `${base}|${modelKey}`;
+}
 
 /* 1件を読んで、同じトランザクションの中で書き戻す。
    ⚠⚠ **読みと書きの間に await を挟まないこと。** IndexedDBのトランザクションは
@@ -2857,11 +2863,12 @@ function wxUpdate(key, mutate) {
    通信とIndexedDBの往復のあいだに別の地点が選ばれた場合に**後から選んだ名前が
    先の地点の控えに焼き付く**。座標は正しいまま名前だけ別の山になるので、
    帯が「女峰山（19.2km先）」のように**実在しない組み合わせ**を出す（実機で踏んだ）。 */
-async function saveWxCache(lat, lon, json, dem, name) {
+async function saveWxCache(lat, lon, json, dem, name, modelKey) {
   try {
-    const key = wxKey(lat, lon);
+    const key = wxKey(lat, lon, modelKey);
     await wxUpdate(key, prev => ({
       key, lat, lon,
+      model: modelKey || DEFAULT_MODEL,   // 古い控え（この欄が無い）は JMA として扱う
       name: name || '',
       at: Date.now(),
       json,
@@ -2878,9 +2885,9 @@ async function saveWxCache(lat, lon, json, dem, name) {
 
 /* 補助データを、控えてある本体の記録へ後付けする。
    ⚠ `at`（本体を取った時刻）は**触らない**。古さの根拠は本体の取得時刻だけ。 */
-async function saveWxSupplemental(lat, lon, h) {
+async function saveWxSupplemental(lat, lon, h, modelKey) {
   try {
-    await wxUpdate(wxKey(lat, lon), prev =>
+    await wxUpdate(wxKey(lat, lon, modelKey), prev =>
       prev ? Object.assign(prev, { sup: h, supAt: Date.now() }) : null);   // 本体が無ければ置き場所も無い
   } catch (e) { /* 任意データなので握りつぶす */ }
 }
@@ -2888,14 +2895,17 @@ async function saveWxSupplemental(lat, lon, h) {
 /* 控えてあるものを1件返す。完全一致 → 無ければ WX_NEAR_KM 以内で最も近いもの。
    ⚠ **古くても返す。** 「古すぎる」と画面で言うために、あること自体は知る必要がある。
      使ってよいかは呼び手が `ageMs` で決める。 */
-async function loadWxCache(lat, lon) {
+async function loadWxCache(lat, lon, modelKey) {
   try {
     const st = await wxStore('readonly');
     const all = await wxReq(st.getAll());
     if (!all || !all.length) return null;
-    const key = wxKey(lat, lon);
+    const key = wxKey(lat, lon, modelKey);
+    const want = modelKey || DEFAULT_MODEL;
     let best = null, bestKm = Infinity;
     for (const r of all) {
+      // ⚠ 別のモデルの控えは使わない（欄が無い古い控えは JMA）
+      if ((r.model || DEFAULT_MODEL) !== want) continue;
       const km = (r.key === key) ? 0 : haversineKm(lat, lon, r.lat, r.lon);
       if (km > WX_NEAR_KM) continue;
       // ほぼ同じ距離なら新しい方を採る
@@ -2963,12 +2973,33 @@ function setWxSource(info) {
 /* ============================================================
    DATA FETCH
    ============================================================ */
+/* 予報モデルの登録簿（段階 B-1・ADR-0015）。**取得の入口はここだけ。**
+   ・キーは内部の名前。`id` が Open-Meteo の `models=` に渡す値
+   ・`phases: 'jma'` … MSM／移行／GSM の判別（windModelPhases）を使うモデル。**JMA 専用**で、他のモデルに当てはめない。
+     他のモデルは全時刻を `short`（モデル名）とする
+   ⚠ 選べるのは要件（docs/requirements_model_switch.md）で決めた4つだけ。
+     ecmwf_ifs（9km）は気圧面の風が無く山頂の風を作れない／ecmwf_aifs025 は地上の列が空 → 入れない
+   ⚠ 地図の風（fetchWindColumns）とランキングは JMA 固定のまま（ADR-0015 の決定 4）。ここは通さない */
+const FORECAST_MODELS = {
+  jma:   { id: 'jma_seamless',  label: '気象庁',        short: 'JMA',   phases: 'jma' },
+  gfs:   { id: 'gfs_seamless',  label: 'GFS（米国）',    short: 'GFS',   phases: null },
+  icon:  { id: 'icon_seamless', label: 'ICON（ドイツ）', short: 'ICON',  phases: null },
+  ecmwf: { id: 'ecmwf_ifs025',  label: 'ECMWF（欧州）',  short: 'ECMWF', phases: null },
+};
+const DEFAULT_MODEL = 'jma';
+// 知らないキーは既定に落とす（壊れた値で URL に変な models= を出さない）
+function forecastModel(key) { return FORECAST_MODELS[key] || FORECAST_MODELS[DEFAULT_MODEL]; }
+
 async function fetchWeather(lat, lon) {
   showLoading('気象データ取得中…');
   /* ⚠ **この要求の地点名を、awaitを挟む前に写し取る。**
      呼び出し側はどれも fetchWeather の前に `state.locationName` を入れている。
      あとから読むと、取得中に別の地点へ移ったときの名前を拾う（上の注記） */
   const reqName = state.locationName;
+  /* ⚠ モデルも**awaitを挟む前に写し取る**（地点名と同じ理由。将来 UI で切り替えられるようになったとき、
+     取得中に切り替わっても、この要求のモデルで最後まで通す） */
+  const reqModel = FORECAST_MODELS[state.model] ? state.model : DEFAULT_MODEL;
+  const fm = forecastModel(reqModel);
   // past_days=3で過去3日分（解析値）も、forecast_days=9で先7日ぶんに余裕を持たせて取得。
   // 表示範囲は applyRange で切り出す。jma_seamlessが実際に何日先まで返すかはモデル依存
   // （GSMの予報期間まで）なので、足りない分はprocessDataが末尾のnullを切り落とす
@@ -2978,7 +3009,7 @@ async function fetchWeather(lat, lon) {
   // 気圧面の高さも取る：選んだ層が無い時刻（GSM の期間）に上下の層から山頂高度へ補間するため
   const lvVars = windInterpLevels()
     .map(hPa => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join(',');
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=jma_seamless`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=${fm.id}`;
   try {
     // 山頂標高（地理院DEM）は**判定の入力**なので、気象データと一緒に待つ。
     // 先に判定を出してから覆ると、安全に関わる表示が化ける（ADR-0006）
@@ -2989,21 +3020,21 @@ async function fetchWeather(lat, lon) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     setWxSource(null);                           // 通信で取れた＝帯は消す
-    applyWeatherJson(json, dem, lat, lon);
+    applyWeatherJson(json, dem, lat, lon, reqModel);
     // 圏外で出せるように控える（失敗しても無視）。
     // ⚠ **補助データの取得より先に済ませる。** 補助は本体の記録に後付けするので、
     //   本体がまだ無いと置き場所が無く、せっかく取った突風・雲量を捨てることになる
-    await saveWxCache(lat, lon, json, dem, reqName);
+    await saveWxCache(lat, lon, json, dem, reqName, reqModel);
     // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
-    fetchSupplemental(lat, lon);
+    fetchSupplemental(lat, lon, reqModel);
   } catch (e) {
     // 通信できない／APIが不調。控えてあるものがあれば出す（無ければ従来どおり諦める）
-    const hit = await loadWxCache(lat, lon);
+    const hit = await loadWxCache(lat, lon, reqModel);
     if (hit && hit.ageMs <= WX_MAX_AGE_MS) {
       // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
       //   あとから出すと帯のぶんの高さがチャートに入らず、下端が隠れる
       setWxSource(hit);
-      applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon);
+      applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon, reqModel);
       // ⚠ 補助データも**描画が走る前に**混ぜる。あとから混ぜると
       //   突風の目盛りと右軸だけが一拍遅れて動く
       if (hit.rec.sup) { try { applySupplemental(hit.rec.sup, false); } catch (e2) { /* 任意 */ } }
@@ -3020,7 +3051,7 @@ async function fetchWeather(lat, lon) {
    ⚠⚠ **通信で取れたときも、控えてあるものを出すときも、必ずここを通す。**
      別々に書くと片方だけ直したときに判定が食い違う。
      同じ日の同じ山がランキングでC・詳細画面でAになった前例がある（ADR-0011）。 */
-function applyWeatherJson(json, dem, lat, lon) {
+function applyWeatherJson(json, dem, lat, lon, modelKey) {
   state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
   state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // モデル格子の標高(m)
   state.demElevation = (typeof dem === 'number' && isFinite(dem)) ? dem : null;
@@ -3033,7 +3064,7 @@ function applyWeatherJson(json, dem, lat, lon) {
   // ランキングと同じ決め方にそろえてある。渡していた頃は、同じ日の同じ山が
   // ランキングでC・詳細画面でAという食い違いを起こしていた
   state.windSource = pickWindSource(state.summitElev ?? state.demElevation);
-  state.fullData = processData(json, state.windSource);   // dpressは全期間の文脈で算出済み
+  state.fullData = processData(json, state.windSource, modelKey);   // dpressは全期間の文脈で算出済み
   state.lat = lat;
   state.lon = lon;
   applyRange();                                // 表示範囲を切り出し
@@ -3061,7 +3092,7 @@ const CLOUD_LEVELS = [
 ];
 // 補助データ（気圧面ごとの雲量 + 突風）。JMAモデルは突風/気圧面雲量を返さないため
 // modelsを指定せず（best_match）に別リクエストで取得する。失敗しても本体に影響させない。
-async function fetchSupplemental(lat, lon) {
+async function fetchSupplemental(lat, lon, modelKey) {
   // メインと同じ標高を指定し、地形条件を揃える（突風が過大にならないように）
   const elev = (typeof state.elevation === 'number') ? `&elevation=${Math.round(state.elevation)}` : '';
   const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${elev}` +
@@ -3078,7 +3109,7 @@ async function fetchSupplemental(lat, lon) {
   if (!h) { try { h = await get('wind_gusts_10m'); } catch (e) { h = null; } }   // 突風だけでも取得
   if (!h) return;
   applySupplemental(h, true);
-  saveWxSupplemental(lat, lon, h);   // 圏外でも突風・気圧面の雲量が出るように控える
+  saveWxSupplemental(lat, lon, h, modelKey);   // 圏外でも突風・気圧面の雲量が出るように控える
 }
 
 /* 補助データを状態へ混ぜる。
@@ -3221,10 +3252,13 @@ function applyRange() {
      null は"降っていない"として素通りする。 */
 function aheadHour(arr, i) { return (arr && arr[i + 1] != null) ? arr[i + 1] : null; }
 
-function processData(json, windSrc) {
+function processData(json, windSrc, modelKey) {
   const h = json.hourly;
   const len = h.time.length; // past_days + forecast_days ぶん
-  const phases = windModelPhases(h, len);
+  /* 時刻ごとのモデル。MSM／移行／GSM の判別は JMA 専用（windModelPhases）。
+     他のモデルは全時刻をそのモデル名にする（MSM と言い張らない）。modelKey 省略＝JMA（ランキングなど） */
+  const fm = forecastModel(modelKey);
+  const phases = fm.phases === 'jma' ? windModelPhases(h, len) : new Array(len).fill(fm.short);
   const data = [];
   for (let i = 0; i < len; i++) {
     const dt = new Date(h.time[i]);
@@ -5429,7 +5463,8 @@ function drawModelBand(u, pr) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (const sg of modelBandSegments(data)) {
-    const st = MODEL_BAND_STYLE[sg.m];
+    // JMA 以外のモデル名（GFS など）は一色の帯にして、名前をそのまま出す
+    const st = MODEL_BAND_STYLE[sg.m] || { col: '#5f8a6e', txt: '#ffffff', label: sg.m };
     const x0 = u.valToPos(sg.start - 0.5, 'x', true);
     const x1 = u.valToPos(sg.end + 0.5, 'x', true);
     ctx.fillStyle = st.col;
