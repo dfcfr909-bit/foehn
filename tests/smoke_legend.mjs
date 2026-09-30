@@ -135,7 +135,8 @@ const spot = await page.evaluate(() => {
 });
 ok(spot.lg.temp === Math.round(spot.d.temp) + '°', '★凡例の気温が選択時刻の値', spot);
 ok(spot.lg.wind === String(Math.round(spot.d.wind)), '★凡例の風速が選択時刻の値', spot);
-ok(spot.lg.gust === String(Math.round(spot.d.gust)), '凡例の突風が選択時刻の値', spot);
+// ⚠ 突風は山頂高度へ換算した値（地上10m風が弱い時刻は null → '--'）
+ok(spot.lg.gust === (spot.d.gust == null ? '--' : String(Math.round(spot.d.gust))), '凡例の突風が選択時刻の値', spot);
 /* ⚠ **窓と丸め方をそろえる。** 同じ時刻に違う数字が2か所へ出ると、どちらが本当か分からない */
 ok(spot.lg.temp === spot.pop, '★★ポップアップと同じ数字（丸め方をそろえる）', spot);
 

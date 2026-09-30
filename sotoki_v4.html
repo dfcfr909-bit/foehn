@@ -705,6 +705,8 @@ html, body {
 }
 /* 突風は風の行に畳む（行を1つ減らす）。取れなかったときは丸ごと消える */
 .pop-gust b { font-weight: 700; font-family: var(--font-display); font-size: 13px; }
+/* 突風は山頂高度へ換算した参考値（summitGust）。字は小さく、薄く */
+.pop-gust-ref { font-style: normal; font-size: 9px; opacity: .7; margin-left: 2px; }
 /* 判定に使った風の高度。値ではなく但し書きなので最下段に小さく置く */
 #pop-windsrc {
   font-size: 10px;
@@ -2365,7 +2367,7 @@ html, body {
              ⚠ 突風は行を分けず風の行に畳む。行数がそのまま高さになる -->
         <div class="pop-row"><span class="pop-k">温</span><span class="pop-v" id="pop-temp">--°</span><span class="pop-sub" id="pop-app">体感--°</span></div>
         <div class="pop-row"><span class="pop-k">雨</span><span class="pop-v" id="pop-prec">--</span><span class="pop-sub" id="pop-rain">—</span></div>
-        <div class="pop-row"><span class="pop-k">風</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windw">—</span><span class="pop-sub pop-gust" id="pop-gust-row">突<b id="pop-gust">--</b></span></div>
+        <div class="pop-row"><span class="pop-k">風</span><span class="pop-v" id="pop-wind">--</span><span class="pop-sub">m/s</span><span class="pop-sub" id="pop-windw">—</span><span class="pop-sub pop-gust" id="pop-gust-row">突<b id="pop-gust">--</b><i class="pop-gust-ref" title="地上10mの突風率を山頂の風へ掛けた換算値">参考</i></span></div>
         <div class="pop-row"><span class="pop-k">圧</span><span class="pop-v" id="pop-dp">--</span><span class="pop-sub">hPa/6h</span></div>
       </div>
       <!-- ⚠ **判定にどこの風を使ったかは消さない**（ADR-0006 / ADR-0011）。
@@ -2395,13 +2397,13 @@ html, body {
     <div class="legend-item" title="降水"><div class="legend-dot" style="background:#1abebe"></div><span class="legend-v" id="lg-prec">--</span></div>
     <div class="legend-item" title="降雪"><div class="legend-dot" style="background:#3c78dc"></div><span class="legend-v" id="lg-snow">--</span></div>
     <div class="legend-item" title="風速"><div class="legend-dot" style="background:#6c5ce7"></div><span class="legend-v" id="lg-wind">--</span></div>
-    <div class="legend-item" title="突風"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
+    <div class="legend-item" title="突風（山頂高度へ換算した参考値）"><div class="legend-dot" style="background:#1f9d8f"></div><span class="legend-v" id="lg-gust">--</span></div>
     <!-- 雲量は「値」ではなく色の目盛り。⚠ 狭い端末では最初にこれを畳む -->
     <div class="legend-item" id="legend-cloud" title="雲量（青空0% → 白い雲100%）">雲量<span id="cloud-legend"></span></div>
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.146.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.147.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -3290,8 +3292,9 @@ async function fetchSupplemental(lat, lon, modelKey) {
     return (json && json.hourly && json.hourly.time) ? json.hourly : null;
   };
   let h = null;
-  try { h = await get(`${cloudVars},wind_gusts_10m`); } catch (e) { h = null; }
-  if (!h) { try { h = await get('wind_gusts_10m'); } catch (e) { h = null; } }   // 突風だけでも取得
+  // ⚠ windspeed_10m（旧名。本体と同じ綴り）は突風率（地上10m突風÷地上10m風）の分母。突風と同じモデルで取る
+  try { h = await get(`${cloudVars},wind_gusts_10m,windspeed_10m`); } catch (e) { h = null; }
+  if (!h) { try { h = await get('wind_gusts_10m,windspeed_10m'); } catch (e) { h = null; } }   // 突風だけでも取得
   if (!h) return;
   applySupplemental(h, true);
   saveWxSupplemental(lat, lon, h, modelKey);   // 圏外でも突風・気圧面の雲量が出るように控える
@@ -3306,7 +3309,9 @@ function applySupplemental(h, redraw) {
   // 突風：時刻→値の索引を作り、メインデータへ突き合わせる
   if (h.wind_gusts_10m) {
     const gmap = new Map();
+    const tmap = new Map();   // 時刻 -> 添字（地上10m風を同じ時刻で引く）
     for (let i = 0; i < h.time.length; i++) {
+      tmap.set(h.time[i], i);
       if (h.wind_gusts_10m[i] != null) gmap.set(h.time[i], h.wind_gusts_10m[i]);
     }
     if (gmap.size) {
@@ -3314,11 +3319,20 @@ function applySupplemental(h, redraw) {
       if (state.fullData) {
         /* ⚠ 突風も直前1時間の最大なので、**1時間先の時刻**を引く。
            ここを素の d.time で引くと、メイン側（aheadHour）とズレた値が後から
-           上書きし、補助リクエストが通った端末だけ1時間ずれる。 */
-        state.fullData.forEach(d => {
-          const v = gmap.get(isoHour(new Date(d.time.getTime() + 3600e3)));
-          if (v != null) d.gust = v;
-        });
+           上書きし、補助リクエストが通った端末だけ1時間ずれる。
+           ⚠ 突風は山頂高度へ換算する（summitGust）。突風率は**補助リクエスト自身の**
+           地上10m風（同じモデル）から取る。本体（JMA）の10m風とは混ぜない。
+           地上10m風が無い控え（v4.147.0 より前に控えたもの）では換算できないので
+           触らない（本体が突風を返さなければ突風なしのまま）。 */
+        const w10 = h.windspeed_10m;
+        if (w10) {
+          state.fullData.forEach(d => {
+            const key = isoHour(new Date(d.time.getTime() + 3600e3));
+            const g = gmap.get(key);
+            const i = tmap.get(key);
+            d.gust = summitGust(d.wind, g != null ? g : null, i != null ? w10[i] : null);
+          });
+        }
       }
     }
   }
@@ -3437,6 +3451,21 @@ function applyRange() {
      null は"降っていない"として素通りする。 */
 function aheadHour(arr, i) { return (arr && arr[i + 1] != null) ? arr[i + 1] : null; }
 
+/* ⚠⚠ **突風は山頂高度へ換算した参考値。** 風（`d.wind`）は山頂高度の気圧面の風だが、
+   Open-Meteo の突風は**地上10mだけ**（気圧面の突風は無い）。そのまま並べると
+   地表摩擦で弱い突風が、上空の風より小さく出る（実機：風11・突風10）。
+   → **同じモデル・同じ時刻の「地上10m突風 ÷ 地上10m風」（突風率）を、山頂の風に掛ける。**
+   固定係数は使わない。
+   ・突風率は下限1（突風は風を下回らない）・上限3（ADR-0006：実在地点で1.3〜2倍）
+   ・地上10m風が弱い（GUST_MIN_W10 未満）と比が暴れるので、突風は出さない（null）
+   ・山頂の風が無い（判定不能）ときも出さない。⚠ 判定（ABC）は突風を見ない */
+const GUST_MIN_W10 = 2;     // m/s。これ未満は突風率を信用しない
+const GUST_RATIO_MAX = 3;
+function summitGust(wind, gust10, wind10) {
+  if (wind == null || gust10 == null || wind10 == null || wind10 < GUST_MIN_W10) return null;
+  return wind * Math.min(GUST_RATIO_MAX, Math.max(1, gust10 / wind10));
+}
+
 function processData(json, windSrc, modelKey) {
   const h = json.hourly;
   const len = h.time.length; // past_days + forecast_days ぶん
@@ -3464,7 +3493,9 @@ function processData(json, windSrc, modelKey) {
       model: phases[i],                             // その時刻の予報モデル 'MSM'/'移行'/'GSM'/null（帯とポップアップ用）
       windMissing: sw.trace.kind === 'missing',     // ⚠ true なら判定不能（gradeOf）
       wind10: h.windspeed_10m[i],   // 地上10m風。参考用に残す（判定には使わない）
-      gust: aheadHour(h.windgusts_10m, i),   // 突風(m/s)。これも直前1時間の最大なので1つ先
+      // 突風(m/s)。これも直前1時間の最大なので1つ先。山頂高度へ換算した参考値（summitGust）。
+      // 突風率は同じ時刻スタンプ（1つ先）の地上10m風で取る
+      gust: summitGust(sw.spd, aheadHour(h.windgusts_10m, i), aheadHour(h.windspeed_10m, i)),
       wcode: h.weathercode[i],
       cloud: h.cloudcover[i],
       cloudLow: h.cloud_cover_low ? h.cloud_cover_low[i] : null,
