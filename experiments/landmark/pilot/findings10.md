@@ -137,7 +137,7 @@
 
 **コミットしたもの**：`exportHand.mjs`・`hand_trial.py`・`plot_corridor.py`・`fragment_check.py`・`plot_fragments.py`・`make_tiles_v3.py`・`viewer_v3.html`・`check_viewer_v3.py`・`findings10.md`
 
-**コミットしていないもの**：`serve_local.py`（コミットしてよいかの返事待ち）。`.gitignore` 対象：`pilot/out/`（prod_hand・prod_chan・hand_trial・layers_hand・fragment_check・tiles_v3・画像・ログ）
+**コミットしていないもの**：なし（`serve_local.py` は利用者の了承を得て後からコミットした）。`.gitignore` 対象：`pilot/out/`（prod_hand・prod_chan・hand_trial・layers_hand・fragment_check・tiles_v3・画像・ログ）
 
 ## 再現コマンド（experiments/landmark で。findings8・9 の出力が要る）
 
@@ -150,3 +150,12 @@ node --max-old-space-size=8192 pilot/exportHand.mjs
 .venv/Scripts/python.exe pilot/make_tiles_v3.py
 .venv/Scripts/python.exe pilot/check_viewer_v3.py
 ```
+
+## 一時停止（利用者の判断で、CS立体図・CI を先に進める）
+
+LANDMARK の尾根・沢の線は、この findings10 と `viewer_v3.html` の状態で止める。追加の作業はしない。先に、標高タイルからブラウザでその場で計算する CS立体図・CI（収束指数）を `experiments/relief/` で試す。
+
+未着手の課題（再開するときの入口）：
+- 沢の切れ端の直し方（2 の表：A_out を範囲全体で計算し直す／継ぎ目の両側で端点を結ぶ／湖の流入・流出を結ぶ など。どれも実装していない）
+- 扇状地で谷として掘れていない所の沢（那須野ヶ原の中央の、標準地図に川の無い平行な線。水路・道路の段差か見かけの流路か未判定）
+- 稜線のがたつき（升目の階段・交わる所で升目1つずれて節を共有しない・後処理で 60〜90m のすき間ができる所がある）
