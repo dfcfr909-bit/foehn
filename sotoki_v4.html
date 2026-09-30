@@ -567,6 +567,69 @@ html, body {
   box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   display: none;
 }
+/* 予報モデルのチップ（段階 B-3・ADR-0015）。ヘッダーの右端。押すと選択シートが開く。
+   ⚠ JMA（既定）のときは控えめな枠だけ。**JMA 以外のときは橙で塗り、ヘッダーの下線も橙にする**
+   （別のモデルを見ていることに気づかず使い続けないため。利用者の指定：「JMA ではないことを分かりやすく」） */
+#btn-model {
+  flex-shrink: 0;
+  margin-left: auto;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#btn-model.alt {
+  background: #e07a10;
+  border-color: #e07a10;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+#header.model-alt { border-bottom: 4px solid #e07a10; }
+/* 選択シート：下から出るカード。背景を押すと閉じる */
+#model-sheet {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: flex-end;
+  background: rgba(0,0,0,0.45);
+}
+#model-sheet[hidden] { display: none; }
+#model-sheet-card {
+  width: 100%; max-height: 82vh; overflow-y: auto;
+  background: var(--surface); color: var(--text);
+  border-radius: 16px 16px 0 0;
+  padding: 6px 12px calc(14px + var(--sa-bottom));
+}
+#model-sheet-head { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+#model-sheet-head h3 { flex: 1; min-width: 0; font-size: 16px; }
+#model-sheet-close { width: 44px; height: 44px; border: none; background: none; font-size: 20px; color: var(--text); cursor: pointer; }
+.model-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 56px; padding: 8px 10px; margin-top: 8px;
+  border: 2px solid var(--border); border-radius: 12px;
+  background: var(--surface); color: var(--text);
+  font-family: var(--font-ui); text-align: left; cursor: pointer;
+}
+.model-row.cur { border-color: var(--accent, #e05020); background: var(--bg2); }
+.model-row.alt.cur { border-color: #e07a10; }
+.model-mark { flex-shrink: 0; width: 22px; text-align: center; font-size: 16px; }
+.model-name { font-size: 15px; font-weight: 800; }
+.model-desc { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text3); line-height: 1.35; }
+.model-tag { flex-shrink: 0; margin-left: auto; font-size: 10px; font-weight: 700; color: var(--text3); }
+#model-sheet-note { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--text3); }
+/* 取得に失敗したときの通知帯（表示は直前のデータのまま）。橙の警告色 */
+#model-note {
+  display: none; flex-shrink: 0; padding: 6px 10px;
+  font-size: 11px; line-height: 1.35; font-weight: 700;
+  color: #6b3600; background: #fff0d6; border-bottom: 2px solid #e07a10;
+  cursor: pointer;
+}
+#model-note.on { display: block; }
 /* 選択情報ポップアップ（Yahoo天気風。指の右上に追従） */
 #scrub-popup {
   position: absolute;
@@ -2226,6 +2289,8 @@ html, body {
     <!-- ⚠ お気に入り円柱は最下段の #fav-bar へ移した（v4.105.0。横幅いっぱいで大きく回すため） -->
     <!-- 右端へ「現在」を置く。選択が現在から離れたときだけ出る -->
     <button id="btn-now" onclick="jumpToNow()">⏱現在</button>
+    <!-- 予報モデルのチップ（右端）。名前は updateModelChip が書く。JMA 以外は橙 -->
+    <button id="btn-model" type="button" onclick="openModelSheet()" aria-haspopup="dialog" aria-label="予報モデルを選ぶ（いまは JMA）">JMA ▾</button>
   </div>
 
   <!-- 圏外で「控えてあるもの」を出しているときだけ現れる帯。
@@ -2235,6 +2300,22 @@ html, body {
   <!-- レーダー実況とモデル予報が食い違っているときだけ現れる帯。
        ⚠ 中身は paintRadarNote が書く。一致しているときは出さない -->
   <div id="radar-note"></div>
+
+  <!-- 予報モデルを切り替えて取得に失敗したときだけ現れる帯。押すと消える。
+       ⚠ 中身は showModelNote が書く。表示は直前のデータのまま（黙って別のモデルの値を出さない） -->
+  <div id="model-note" role="status" onclick="hideModelNote()"></div>
+
+  <!-- 予報モデルの選択シート（openModelSheet が中身を作る） -->
+  <div id="model-sheet" role="dialog" aria-modal="true" aria-labelledby="model-sheet-title" hidden onclick="if (event.target === this) closeModelSheet()">
+    <div id="model-sheet-card">
+      <div id="model-sheet-head">
+        <h3 id="model-sheet-title">予報モデル</h3>
+        <button id="model-sheet-close" type="button" onclick="closeModelSheet()" aria-label="閉じる">✕</button>
+      </div>
+      <div id="model-sheet-rows"></div>
+      <div id="model-sheet-note">判定（A/B/C）も、選んだモデルの値で出ます。山岳の風はモデルによる差が大きく、JMA 以外の精度は検証中です。地図の風とランキングは、いつも JMA です。起動のたびに JMA へ戻ります。</div>
+    </div>
+  </div>
 
   <!-- 上部の日付/HUD/ABCは撤去し、選択情報は指追従ポップアップに集約 -->
 
@@ -2320,7 +2401,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.145.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.146.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2582,7 +2663,8 @@ html, body {
    STATE
    ============================================================ */
 const state = {
-  model: 'jma',      // 予報モデルのキー（FORECAST_MODELS）。起動のたびに既定へ戻す（ADR-0015）。UI は段階 B-3
+  model: 'jma',      // これから取る予報モデルのキー（FORECAST_MODELS）。起動のたびに既定へ戻す（覚えない・ADR-0015）
+  dataModel: 'jma',  // いま画面に出しているデータのモデル（チップ・ヘッダーの色はこちらを見る）
   lat: 36.57,
   lon: 137.65,
   locationName: '立山・黒部',
@@ -2990,17 +3072,99 @@ function setWxSource(info) {
      ecmwf_ifs（9km）は気圧面の風が無く山頂の風を作れない／ecmwf_aifs025 は地上の列が空 → 入れない
    ⚠ 地図の風（fetchWindColumns）とランキングは JMA 固定のまま（ADR-0015 の決定 4）。ここは通さない */
 const FORECAST_MODELS = {
-  jma:   { id: 'jma_seamless',  label: '気象庁',        short: 'JMA',   phases: 'jma', windMethod: 'table' },
-  gfs:   { id: 'gfs_seamless',  label: 'GFS（米国）',    short: 'GFS',   phases: null,  windMethod: 'gh' },
-  icon:  { id: 'icon_seamless', label: 'ICON（ドイツ）', short: 'ICON',  phases: null,  windMethod: 'gh' },
-  ecmwf: { id: 'ecmwf_ifs025',  label: 'ECMWF（欧州）',  short: 'ECMWF', phases: null,  windMethod: 'gh' },
+  jma:   { id: 'jma_seamless',  label: '気象庁',        short: 'JMA',   phases: 'jma', windMethod: 'table', note: '既定。MSM→GSM。約9日先まで' },
+  gfs:   { id: 'gfs_seamless',  label: 'GFS（米国）',    short: 'GFS',   phases: null,  windMethod: 'gh', note: '約9日先まで。突風あり' },
+  icon:  { id: 'icon_seamless', label: 'ICON（ドイツ）', short: 'ICON',  phases: null,  windMethod: 'gh', note: '約7日先まで。突風あり' },
+  ecmwf: { id: 'ecmwf_ifs025',  label: 'ECMWF（欧州）',  short: 'ECMWF', phases: null,  windMethod: 'gh', note: '約9日先まで。気圧面の層が少ない' },
 };
 const DEFAULT_MODEL = 'jma';
 // 知らないキーは既定に落とす（壊れた値で URL に変な models= を出さない）
 function forecastModel(key) { return FORECAST_MODELS[key] || FORECAST_MODELS[DEFAULT_MODEL]; }
 
-async function fetchWeather(lat, lon) {
-  showLoading('気象データ取得中…');
+/* ------ 予報モデルの切り替え UI（段階 B-3・ADR-0015） ------
+   ・入口はヘッダーのチップ（#btn-model）。押すと選択シート。**JMA 以外は橙**（チップ・ヘッダーの下線）
+   ・選んだモデルは**地点を変えても維持**（セッション中）。起動のたびに JMA へ戻す（localStorage に書かない）
+   ・取得に失敗したら**表示は直前のデータのまま**、理由を帯で出す。黙って別のモデルの値を出さない
+   ・地図の風とランキングは常に JMA（ここは通らない） */
+function updateModelChip() {
+  const key = FORECAST_MODELS[state.dataModel] ? state.dataModel : DEFAULT_MODEL;
+  const fm = forecastModel(key), alt = key !== DEFAULT_MODEL;
+  const btn = document.getElementById('btn-model');
+  if (btn) {
+    btn.textContent = `${alt ? '⚠ ' : ''}${fm.short} ▾`;
+    btn.classList.toggle('alt', alt);
+    btn.setAttribute('aria-label', `予報モデルを選ぶ（いまは ${fm.label}${alt ? '・JMA ではありません' : ''}）`);
+  }
+  const hd = document.getElementById('header');
+  if (hd) hd.classList.toggle('model-alt', alt);
+}
+function openModelSheet() {
+  const cur = FORECAST_MODELS[state.dataModel] ? state.dataModel : DEFAULT_MODEL;
+  const rows = document.getElementById('model-sheet-rows');
+  rows.innerHTML = '';
+  for (const [key, fm] of Object.entries(FORECAST_MODELS)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'model-row' + (key === cur ? ' cur' : '') + (key !== DEFAULT_MODEL ? ' alt' : '');
+    b.dataset.k = key;
+    const mk = document.createElement('span'); mk.className = 'model-mark'; mk.textContent = key === cur ? '●' : '○';
+    const tx = document.createElement('span');
+    const nm = document.createElement('span'); nm.className = 'model-name'; nm.textContent = fm.label;
+    const ds = document.createElement('span'); ds.className = 'model-desc'; ds.textContent = fm.note || '';
+    tx.appendChild(nm); tx.appendChild(ds);
+    b.appendChild(mk); b.appendChild(tx);
+    if (key === cur) { const tg = document.createElement('span'); tg.className = 'model-tag'; tg.textContent = '表示中'; b.appendChild(tg); }
+    b.addEventListener('click', () => switchModel(key));
+    rows.appendChild(b);
+  }
+  document.getElementById('model-sheet').hidden = false;
+}
+function closeModelSheet() { const el = document.getElementById('model-sheet'); if (el) el.hidden = true; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModelSheet(); });
+
+let modelNoteTimer = null;
+function showModelNote(msg) {
+  const el = document.getElementById('model-note');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(modelNoteTimer);
+  modelNoteTimer = setTimeout(hideModelNote, 12000);
+}
+function hideModelNote() {
+  const el = document.getElementById('model-note');
+  if (el) { el.classList.remove('on'); el.textContent = ''; }
+}
+
+let modelSwitching = false;
+async function switchModel(key) {
+  closeModelSheet();
+  if (!FORECAST_MODELS[key] || modelSwitching) return;
+  const shown = FORECAST_MODELS[state.dataModel] ? state.dataModel : DEFAULT_MODEL;
+  if (key === shown && key === state.model) return;      // すでにそのモデルを見ている
+  const prev = state.model;
+  hideModelNote();
+  state.model = key;
+  modelSwitching = true;
+  try {
+    await fetchWeather(state.lat, state.lon, { strict: true });
+  } catch (e) {
+    // 表示は直前のデータのまま。選び直す前のモデルに戻し、理由を出す
+    state.model = prev;
+    const nowLabel = forecastModel(FORECAST_MODELS[state.dataModel] ? state.dataModel : prev).label;
+    showModelNote(`${forecastModel(key).label} の取得に失敗しました（${e && e.message ? e.message : '通信エラー'}）。表示は ${nowLabel} のままです`);
+  } finally {
+    modelSwitching = false;
+    updateModelChip();
+  }
+}
+
+/* 予報の取得。opts.strict … モデルを切り替えたときの取得（B-3）。
+   失敗したら**画面のデータには触らずに例外を投げる**（呼び手が理由を出す）。従来の「控えを出す」は使わない
+   （選んだモデルの控えではなく、直前に見ていたデータをそのまま残すため）。戻り値は成功で true */
+async function fetchWeather(lat, lon, opts) {
+  const strict = !!(opts && opts.strict);
+  showLoading(strict ? `${forecastModel(state.model).label} を取得中…` : '気象データ取得中…');
   /* ⚠ **この要求の地点名を、awaitを挟む前に写し取る。**
      呼び出し側はどれも fetchWeather の前に `state.locationName` を入れている。
      あとから読むと、取得中に別の地点へ移ったときの名前を拾う（上の注記） */
@@ -3028,6 +3192,8 @@ async function fetchWeather(lat, lon) {
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
+    // strict：中身が空の応答（そのモデルがこの地点を返さない等）も失敗として扱う
+    if (strict && !weatherJsonUsable(json)) throw new Error('データが空でした');
     setWxSource(null);                           // 通信で取れた＝帯は消す
     applyWeatherJson(json, dem, lat, lon, reqModel);
     // 圏外で出せるように控える（失敗しても無視）。
@@ -3036,7 +3202,9 @@ async function fetchWeather(lat, lon) {
     await saveWxCache(lat, lon, json, dem, reqName, reqModel);
     // 補助データ（気圧面ごとの雲量・突風）は任意取得。失敗しても本体に影響させない
     fetchSupplemental(lat, lon, reqModel);
+    return true;
   } catch (e) {
+    if (strict) { hideLoading(); throw e; }      // 画面は直前のまま。理由は呼び手が出す
     // 通信できない／APIが不調。控えてあるものがあれば出す（無ければ従来どおり諦める）
     const hit = await loadWxCache(lat, lon, reqModel);
     if (hit && hit.ageMs <= WX_MAX_AGE_MS) {
@@ -3060,6 +3228,12 @@ async function fetchWeather(lat, lon) {
    ⚠⚠ **通信で取れたときも、控えてあるものを出すときも、必ずここを通す。**
      別々に書くと片方だけ直したときに判定が食い違う。
      同じ日の同じ山がランキングでC・詳細画面でAになった前例がある（ADR-0011）。 */
+/* 応答が使える形か（時刻と、気温の値がある）。strict の取得だけが見る */
+function weatherJsonUsable(json) {
+  const h = json && json.hourly;
+  return !!(h && Array.isArray(h.time) && h.time.length >= 24 && Array.isArray(h.temperature_2m)
+    && h.temperature_2m.some(v => v != null));
+}
 function applyWeatherJson(json, dem, lat, lon, modelKey) {
   state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
   state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // モデル格子の標高(m)
@@ -3074,6 +3248,8 @@ function applyWeatherJson(json, dem, lat, lon, modelKey) {
   // ランキングでC・詳細画面でAという食い違いを起こしていた
   state.windSource = pickWindSource(state.summitElev ?? state.demElevation);
   state.fullData = processData(json, state.windSource, modelKey);   // dpressは全期間の文脈で算出済み
+  state.dataModel = FORECAST_MODELS[modelKey] ? modelKey : DEFAULT_MODEL;   // いま画面に出しているデータのモデル
+  updateModelChip();
   state.lat = lat;
   state.lon = lon;
   applyRange();                                // 表示範囲を切り出し

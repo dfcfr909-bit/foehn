@@ -272,6 +272,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `drawFreezingLine(u)` | **0℃の線**（濃い青の点線。drawAxes の hook＝気温の線の下。範囲に0℃が無ければ引かない） | 約 5250 |
 | `drawTempOverlay(u)` | 日付ヘッダー・**天気アイコン**・最高最低注記 | 約 3625 |
 | `FORECAST_MODELS` / `DEFAULT_MODEL` / `forecastModel(key)` | **予報モデルの登録簿**（JMA/GFS/ICON/ECMWF・取得の入口。v4.144.0） | 約 3010 |
+| `updateModelChip` / `openModelSheet` / `switchModel(key)` / `showModelNote` | **予報モデルの切り替え UI**（ヘッダーのチップ・選択シート・失敗の帯。v4.146.0） | 約 3050 |
 | `drawModelBand(u, pr)` / `modelBandSegments(data)` | **予報モデルの帯**（MSM/移行/GSM を横につなげて塗る。v4.142.0） | 約 5375 |
 | `drawPrecipBars(u)` | 降水・降雪バー | 約 3706 |
 | `drawWindOverlay(u)` | 風速バー（`THRESH` で色分け）＋風向矢印 | 約 3737 |
