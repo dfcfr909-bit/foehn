@@ -43,7 +43,8 @@ const TIME = Array.from({ length: N }, (_, i) => {
 const PRECIP = TIME.map((_, i) => Math.round(i * 0.01 * 100) / 100);
 const SNOW   = TIME.map((_, i) => Math.round(i * 0.02 * 100) / 100);
 const GUST   = TIME.map((_, i) => i * 0.1);            // メイン側（JMAは実際にはnullを返す）
-const GUST2  = TIME.map((_, i) => 100 + i);            // 補助リクエスト側。メインと必ず違う値
+const W10_2  = TIME.map(() => 50);                     // 補助リクエスト側の地上10m風（突風率の分母）
+const GUST2  = TIME.map((_, i) => 60 + i * 0.05);      // 補助リクエスト側。メインと必ず違う値（突風率 1.2〜1.9）
 
 function body(withGusts) {
   const f = v => TIME.map(() => v);
@@ -64,7 +65,7 @@ function body(withGusts) {
 }
 // 補助リクエスト（models未指定）の返り。突風だけ別の値で返す
 function supplementalBody() {
-  const h = { time: TIME, wind_gusts_10m: GUST2 };
+  const h = { time: TIME, wind_gusts_10m: GUST2, windspeed_10m: W10_2 };
   for (const [hPa] of [[925],[900],[850],[800],[700],[600]]) h[`cloud_cover_${hPa}hPa`] = TIME.map(() => 30);
   return { hourly: h };
 }
@@ -108,7 +109,7 @@ const rows = await page.evaluate(() => {
   if (typeof state === 'undefined' || !state.fullData) return null;
   return state.fullData.map(d => ({
     t: `${d.time.getFullYear()}-${String(d.time.getMonth()+1).padStart(2,'0')}-${String(d.time.getDate()).padStart(2,'0')}T${String(d.time.getHours()).padStart(2,'0')}:00`,
-    precip: d.precip, snow: d.snow, gust: d.gust, temp: d.temp,
+    precip: d.precip, snow: d.snow, gust: d.gust, wind: d.wind, temp: d.temp,
   }));
 });
 ok(rows && rows.length === 288, '★前提: fullData が288行そろっている（window.state ではなく state を読む）',
@@ -156,10 +157,28 @@ if (rows) {
      ここを素の時刻で引くと、補助が通った端末だけ1時間ずれた値で上書きされる。 */
   {
     ok(supplementalHits > 0, '★前提: 補助リクエストが実際に飛んでいる', supplementalHits);
+    // 突風＝山頂の風×突風率（先の1時間の値から）。直前1時間の値から作ると別の数になる
+    const exp = i => rows[i].wind * (GUST2[i] / 50);
     const i = 120;
-    ok(rows[i].gust === GUST2[i + 1],
+    ok(Math.abs(rows[i].gust - exp(i + 1)) < 1e-9,
       '★★★補助リクエストの突風も「先の1時間」で突き合わせる',
-      { 行: rows[i].t, 入った値: rows[i].gust, 先の1時間: GUST2[i + 1], 直前1時間: GUST2[i] });
+      { 行: rows[i].t, 入った値: rows[i].gust, 先の1時間: exp(i + 1), 直前1時間: exp(i) });
+    // 突風は山頂の風を下回らず、突風率は3を超えない
+    const bad = rows.filter(r => r.gust != null && (r.gust < r.wind - 1e-9 || r.gust > r.wind * 3 + 1e-9));
+    ok(bad.length === 0, '★★★突風は山頂の風以上・風の3倍以下（突風率の下限1・上限3）', bad.slice(0, 3));
+    // 換算の規則（実機の「風11・突風10」が逆転しない／弱い風では出さない／上限3）
+    const r = await page.evaluate(() => ({
+      逆転: summitGust(11, 10, 8),      // 突風率 1.25 → 13.75
+      突風率下限: summitGust(11, 6, 8), // 0.75 → 1 に切り上げ → 11
+      上限: summitGust(10, 40, 5),      // 8 → 3 に切り詰め → 30
+      弱い風: summitGust(10, 6, 1.9),
+      風なし: summitGust(null, 6, 4), 突風なし: summitGust(10, null, 4), 分母なし: summitGust(10, 6, null),
+    }));
+    ok(Math.abs(r.逆転 - 13.75) < 1e-9 && r.逆転 >= 11, '★★★実機の「風11・突風10」が逆転しない', r);
+    ok(r.突風率下限 === 11, '★★突風率の下限は1（突風は風を下回らない）', r);
+    ok(r.上限 === 30, '★★突風率の上限は3', r);
+    ok(r.弱い風 === null, '★★★地上10m風が2m/s未満なら突風を出さない', r);
+    ok(r.風なし === null && r.突風なし === null && r.分母なし === null, '★★材料が欠けたら突風を出さない', r);
   }
 
   /* ============ 6. ★★ ABC判定が同じ値を見ている ============

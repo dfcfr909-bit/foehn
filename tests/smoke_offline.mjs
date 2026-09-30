@@ -62,7 +62,7 @@ function fakeWeather() {
 // 補助リクエスト（models未指定）。突風と気圧面ごとの雲量
 function fakeSupplemental() {
   const time = hours();
-  const h = { time, wind_gusts_10m: time.map(() => 13) };
+  const h = { time, wind_gusts_10m: time.map(() => 13), windspeed_10m: time.map(() => 10) };   // 突風率1.3
   for (const p of CLOUD_HPA) h[`cloud_cover_${p}hPa`] = time.map(() => 55);
   return { hourly: h };
 }
@@ -122,6 +122,7 @@ const cached = () => page.evaluate(() => new Promise(res => {
 const drawn = () => page.evaluate(() => ({
   points: (typeof state !== 'undefined' && state.allData) ? state.allData.length : 0,
   gust: (typeof state !== 'undefined' && state.allData) ? state.allData[0].gust : null,
+  wind: (typeof state !== 'undefined' && state.allData) ? state.allData[0].wind : null,
   loading: getComputedStyle(document.getElementById('loading-overlay')).display,
 }));
 
@@ -150,7 +151,8 @@ await openAt(P1);
   ok(n.text.includes('保存データを表示中'), '★★何を見ているのか帯で言っている', n.text);
   ok(/\d+\/\d+ \d\d:\d\d取得/.test(n.text), '★★★いつ取ったものかを出している', n.text);
   ok(n.text.includes(P1.name), '★★どこで取ったものかを出している', n.text);
-  ok(d.gust === 13, '★★控えた補助データも混ざる（突風が欠けない）', d);
+  ok(d.wind != null && d.gust != null && Math.abs(d.gust - d.wind * 1.3) < 1e-9,
+    '★★控えた補助データも混ざる（突風が欠けない。山頂の風×突風率1.3）', d);
   ok(dialogs.length === 0, '★控えがあるときに「取得失敗」で驚かせない', dialogs);
 }
 
