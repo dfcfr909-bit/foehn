@@ -2320,7 +2320,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.142.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.143.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -5342,7 +5342,50 @@ function drawFeelBand(u, pr) {
    ⚠ 気温の目盛りの範囲に0℃が入っていないとき（夏）は引かない。範囲を0℃まで広げない
      （広げると気温の線がつぶれて読みにくくなる） */
 const FREEZING_LINE_COLOR = '#1d3a9e';
+/* 氷点下のゾーン（v4.143.0・利用者の要望「氷点下は薄い青で、低いほど寒そうな色に」）。
+   0℃の線より下の領域に、**気温の絶対値で決めた**青のグラデーションを敷く。
+   0℃で透明 → 冷えるほど濃く・深い青へ。⚠ 色は「パネルの下端からの距離」ではなく**気温そのもの**で決める
+   （目盛りの範囲が日ごとに変わっても、-10℃ はいつも同じ青に見えるように）。
+   ⚠ 0℃の線と同じく、目盛りの範囲に0℃が入らないとき（夏）は敷かない。
+   ⚠ 0℃ではぴったり透明にする（0℃の線の点線の検査 smoke_freeze が線の高さの青を数えるため。
+     線のすぐ下が塗られていると点線の途切れが見えなくなる） */
+const COLD_ZONE_STOPS = [   // [気温℃, r, g, b, alpha]
+  [0, 190, 225, 255, 0],
+  [-3, 175, 215, 255, 0.20],
+  [-8, 130, 185, 250, 0.32],
+  [-15, 85, 145, 235, 0.42],
+  [-25, 55, 105, 215, 0.52],
+];
+function coldZoneRgba(t) {
+  const S = COLD_ZONE_STOPS;
+  if (t >= S[0][0]) return S[0].slice(1);
+  for (let i = 1; i < S.length; i++) {
+    if (t >= S[i][0]) {
+      const a = S[i - 1], b = S[i], w = (a[0] - t) / (a[0] - b[0]);
+      return [1, 2, 3, 4].map(k => a[k] + (b[k] - a[k]) * w);
+    }
+  }
+  return S[S.length - 1].slice(1);
+}
+function drawColdZone(u) {
+  const y0 = u.valToPos(0, 'y', true);
+  const top = u.bbox.top, bottom = u.bbox.top + u.bbox.height;
+  if (!(y0 >= top && y0 < bottom)) return;   // 範囲に0℃が入らない（夏）／0℃が下端
+  const ctx = u.ctx;
+  const tBottom = u.posToVal(bottom, 'y', true);
+  const g = ctx.createLinearGradient(0, y0, 0, bottom);
+  const N = 10;
+  for (let k = 0; k <= N; k++) {
+    const f = k / N, [r, gg, b, al] = coldZoneRgba(tBottom * f);
+    g.addColorStop(f, `rgba(${Math.round(r)},${Math.round(gg)},${Math.round(b)},${al.toFixed(3)})`);
+  }
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(u.bbox.left, y0, u.bbox.width, bottom - y0);
+  ctx.restore();
+}
 function drawFreezingLine(u) {
+  drawColdZone(u);   // ゾーンは線・気温の線の下に敷く
   const y = u.valToPos(0, 'y', true);
   const top = u.bbox.top, bottom = u.bbox.top + u.bbox.height;
   if (!(y >= top && y <= bottom)) return;
