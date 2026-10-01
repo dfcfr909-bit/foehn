@@ -62,7 +62,7 @@ function fakeWeather() {
 // 補助リクエスト（models未指定）。突風と気圧面ごとの雲量
 function fakeSupplemental() {
   const time = hours();
-  const h = { time, wind_gusts_10m: time.map(() => 13), windspeed_10m: time.map(() => 10) };   // 突風率1.3
+  const h = { time, wind_gusts_10m: time.map(() => 13) };   // 突風は使わない（山頂の風×1.75）。混ざったら検出する
   for (const p of CLOUD_HPA) h[`cloud_cover_${p}hPa`] = time.map(() => 55);
   return { hourly: h };
 }
@@ -151,8 +151,8 @@ await openAt(P1);
   ok(n.text.includes('保存データを表示中'), '★★何を見ているのか帯で言っている', n.text);
   ok(/\d+\/\d+ \d\d:\d\d取得/.test(n.text), '★★★いつ取ったものかを出している', n.text);
   ok(n.text.includes(P1.name), '★★どこで取ったものかを出している', n.text);
-  ok(d.wind != null && d.gust != null && Math.abs(d.gust - d.wind * 1.3) < 1e-9,
-    '★★控えた補助データも混ざる（突風が欠けない。山頂の風×突風率1.3）', d);
+  ok(d.wind != null && d.gust != null && Math.abs(d.gust - d.wind * 1.75) < 1e-9,
+    '★★圏外でも突風が出る（山頂の風×1.75。控えた補助の突風 13 は使わない）', d);
   ok(dialogs.length === 0, '★控えがあるときに「取得失敗」で驚かせない', dialogs);
 }
 
