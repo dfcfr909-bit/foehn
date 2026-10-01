@@ -31,8 +31,14 @@ console.log('高標高アメダスの突風率が実測できるかを調べま�
 
 /* ---- ① 局の一覧と標高 ---- */
 const table = await getJson(`${BASE}/const/amedastable.json`);
+// ⚠ 標高のキーは推測で決めない。1局ぶんの生の中身を先に出す（1回目は elevation と決め打って全局 0 になった）
+const firstCode = Object.keys(table)[0];
+console.log(`\n   局の中身の例（${firstCode}）: ${JSON.stringify(table[firstCode])}`);
+const elevKey = ['alt', 'elevation', 'height'].find(k => typeof table[firstCode][k] === 'number');
+if (!elevKey) throw new Error('標高のキーが見つからない: ' + Object.keys(table[firstCode]).join(','));
+console.log(`   標高のキー: ${elevKey}`);
 const all = Object.entries(table).map(([code, s]) => ({
-  code, name: s.kjName, elev: s.elevation, lat: deg(s.lat), lon: deg(s.lon), type: s.type,
+  code, name: s.kjName, elev: s[elevKey], lat: deg(s.lat), lon: deg(s.lon), type: s.type, elems: s.elems,
 }));
 console.log(`\n── ① 局の数: ${all.length}`);
 for (const th of [500, 1000, 1500, 2000]) {
@@ -41,7 +47,7 @@ for (const th of [500, 1000, 1500, 2000]) {
 const high = all.filter(s => s.elev >= 1000).sort((a, b) => b.elev - a.elev);
 console.log('\n   標高 1000m 以上の局（標高の高い順）:');
 for (const s of high) {
-  console.log(`   ${s.code}  ${String(s.elev).padStart(5)}m  ${s.name}  (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})  type=${s.type}`);
+  console.log(`   ${s.code}  ${String(s.elev).padStart(5)}m  ${s.name}  (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})  type=${s.type} elems=${s.elems}`);
 }
 
 /* ---- ② 観測値の項目 ---- */
