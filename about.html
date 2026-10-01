@@ -156,8 +156,10 @@ footer {
     <tr><td><strong>気象データ全般</strong><br><span style="color:var(--text3);font-size:12px">気温・体感・降水・降雪・風・気圧・雲量</span></td>
         <td><a href="https://open-meteo.com/">Open-Meteo</a> Forecast API<br>
             モデルは <strong>気象庁（JMA）</strong>の <code>jma_seamless</code>。1時間ごと、実績3日＋予報9日</td></tr>
-    <tr><td>突風・気圧面ごとの雲量</td>
+    <tr><td>気圧面ごとの雲量</td>
         <td>同 Open-Meteo（JMAが返さない項目なので、モデル指定なしの補助リクエスト）</td></tr>
+    <tr><td>突風</td>
+        <td>取得していません。<strong>山頂の風から計算した目安</strong>です（下の「妥協点」）</td></tr>
     <tr><td><strong>山頂の標高</strong></td>
         <td><a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> 標高タイル（判定の入力に使います）</td></tr>
     <tr><td>地図の風（AUTO）の高さの基準</td>
@@ -340,9 +342,12 @@ footer {
   <li>気象庁モデルの格子は細かいほうでも<strong>約5km</strong>。
     孤立峰や細い尾根は<strong>平滑化されて潰れます</strong></li>
   <li>突風は表示だけで、<strong>判定には使っていません</strong></li>
-  <li>⚠ 突風は<strong>参考値</strong>です。Open-Meteo の突風は<strong>地上10mだけ</strong>で、山頂高度の突風はありません。
-    そこで<strong>地上10mの「突風÷風」の比</strong>（1〜3倍に制限）を、山頂の風に掛けて換算しています。
-    地上10mの風が弱いとき（2m/s未満）は比が当てにならないので、突風は出しません</li>
+  <li>⚠ 突風は<strong>目安</strong>です。Open-Meteo の突風は<strong>地上10mだけ</strong>で、山頂の突風はありません。
+    山では地上10mの突風が山頂の風より小さく出ることが多く、そのまま使えません。
+    そこで<strong>山頂の風に、世界気象機関（WMO）の突風率 1.75 を掛けて</strong>出しています
+    （幅は ±0.1。出典は WMO/TD-1555 の Table 1.1「ほぼ開けた地形」・1時間平均に対する3秒突風）。
+    ⚠ <strong>これは平地・強風の値で、山岳は資料の範囲外</strong>です。山頂ではもっと大きくなる可能性があります。
+    山頂の風が 3m/s 未満のときは出しません</li>
   <li>地図の風の矢印は、既定（<strong>AUTO</strong>）では場所ごとに高さを自動で選びます。
     升目の<strong>稜線の高さ</strong>（高い方から1割の標高）に対して、その時刻の気圧面の実際の高さから
     上下の層を<strong>按分</strong>します。判定（A/B/C）の層の選び方とは別の仕組みです</li>
