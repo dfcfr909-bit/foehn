@@ -2403,7 +2403,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.147.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.148.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2742,7 +2742,7 @@ function windSourceLabel(src) {
   // ⚠ 落ちた理由が「読んだ標高が低い」ときは**その標高を出す**。
   // 座標が山頂からずれていると DEM が斜面を読んで静かにここへ落ちる。
   // 数字が出ていないと、実機で「なぜ地上風なのか」を切り分けられない（実際に踏んだ）
-  if (typeof src.summitM === 'number') return `地上10m（山頂${Math.round(src.summitM)}m）`;
+  if (typeof src.summitM === 'number') return `地上10m（標高${Math.round(src.summitM)}m）`;
   return '地上10m';
 }
 

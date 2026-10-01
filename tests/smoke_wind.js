@@ -352,7 +352,7 @@ function fakeWeather() {
     await p.close();
     return r;
   })();
-  ok(/山頂\d+m/.test(diag),
+  ok(/標高\d+m/.test(diag),
     '★地上風に落ちたら「読んだ標高」を出す（黙って落ちると切り分けられない）', diag);
   demMode = 'summit';
 
