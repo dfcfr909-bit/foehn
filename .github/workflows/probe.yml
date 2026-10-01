@@ -25,6 +25,7 @@ on:
           - wind-seam
           - terrain-ref
           - pages-cache
+          - gust-obs
       peak:
         description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
         required: false
@@ -91,6 +92,10 @@ jobs:
       - name: 公開URLのキャッシュ指示
         if: ${{ inputs.target == 'pages-cache' }}
         run: node scripts/probePagesCache.mjs | tee result.txt
+
+      - name: 高標高アメダスで突風率を実測できるか
+        if: ${{ inputs.target == 'gust-obs' }}
+        run: node scripts/probeGustObs.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
