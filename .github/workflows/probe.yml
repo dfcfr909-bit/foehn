@@ -27,6 +27,7 @@ on:
           - pages-cache
           - gust-obs
           - snow-thunder
+          - snow-verify
       peak:
         description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
         required: false
@@ -101,6 +102,10 @@ jobs:
       - name: 降雪・雷雨の目安の入力（Open-Meteo の変数）
         if: ${{ inputs.target == 'snow-thunder' }}
         run: node scripts/probeSnowThunder.mjs | tee result.txt
+
+      - name: 降雪の目安の標高補正を高標高アメダスで検証
+        if: ${{ inputs.target == 'snow-verify' }}
+        run: node scripts/probeSnowVerify.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
