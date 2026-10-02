@@ -1339,6 +1339,8 @@ html, body {
 .layer-ov.on .layer-ov-box { background: var(--text); border-color: var(--text); }
 .layer-ov-name { min-width: 0; }
 .layer-ov-note { display: block; font-size: 9px; font-weight: 400; color: var(--text3); }
+/* 衛星のバンド注記（チップの下。左端はチップ行 .amedas-els と同じ 30px にそろえる） */
+.sat-hint { flex-basis: 100%; padding: 0 8px 6px 30px; line-height: 1.5; }
 .layer-ov-name em {
   font-style: normal; font-size: 9px; font-weight: 700;
   color: var(--b-col); border: 1px solid var(--b-col);
@@ -2403,7 +2405,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.149.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.150.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6657,11 +6659,18 @@ const SAT_BANDS = [
      取得できたタイルの割合が分かるようにしてあるので、それを見て切り分ける。 */
   { id: 'REP', name: 'カラー', band: 'REP', prod: 'ETC', pending: true },
   // 赤外＝白黒。雲が白く晴れが暗い
-  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45 },
+  { id: 'B13', name: '赤外',   band: 'B13', prod: 'TBB', alphaCut: 0.45,
+    hint: '赤外：雲頂が低い雲（層雲・霧）は暗く、晴れと見分けにくい' },
   // 雲頂＝明るさが雲・色が雲頂高度。色を保ちたいので合成ではなく透明度で抜く
-  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.40 },
+  { id: 'SND', name: '雲頂',   band: 'SND', prod: 'ETC', alphaCut: 0.40,
+    hint: '雲頂：色が雲頂の高さ（雲底は分からない）' },
 ];
 const SAT_BAND_DEFAULT = 'B13';
+/* 衛星のバンドによらず添える注記（段階1・#127）。
+   ⚠ 高さの数字は書かない。予報の雲量（低・中・高層）の高さの定義は、SCW の説明（850〜940／500〜850／
+     100〜500hPa）と Open-Meteo の説明（低＜3km／中 3〜8km／高＞8km）で別物で、JMA モデルでの確認が済んでいない。
+     「出にくい」と言い切らず「出ないことがある」にとどめる（docs/decisions.md 2026-10-02） */
+const SAT_COMMON_HINT = '盆地の層雲・雲海のような低い雲は、予報の雲量に出ないことがあります。衛星で見ます';
 /* ⚠⚠ **雲の着色（`SAT_TINTS`）は撤去した（v4.99.0）。作り直さないこと。**
    白黒の赤外をピンク／シアンで塗る機能を v4.75.0 で入れ、v4.75.1 で「フィルタを
    要素ごと作り直す」修正も入れたが、**実機（iOS）では最後まで白のままだった**
@@ -11031,7 +11040,10 @@ function satBandChips() {
              onclick="setSatBand('${b.id}')">${b.name}</button>`).join('') + `</div>`;
   /* ⚠ 着色のチップはもう出さない（v4.99.0 で撤去）。実機で色が付かなかった。
      SAT_BANDS の上の注意書きを読むこと。**作り直さない。** */
-  return chips;
+  // 選んでいるバンドの注記＋共通の注記（バンドを切り替えると renderLayerPanel で入れ替わる）
+  const b = satBandDef(mapPrefs.satBand);
+  const hint = `<span class="layer-ov-note sat-hint">${escapeHtml([b.hint, SAT_COMMON_HINT].filter(Boolean).join('。'))}</span>`;
+  return chips + hint;
 }
 
 /* 風の場の決め方の切り替え。AUTO が既定（ふだん使い）、層は検証・比較用。

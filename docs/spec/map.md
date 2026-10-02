@@ -422,6 +422,10 @@ Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると�
 ### 衛星の雲（ひまわり）
 
 バンドは `SAT_BANDS`（既定 `SAT_BAND_DEFAULT`='B13'）。切替は `setSatBand`。
+**バンドの注記（v4.150.0・#127）**：`satBandChips` がチップの下に `.sat-hint` を出す。
+選んでいるバンドの `hint`（`SAT_BANDS`）＋共通の `SAT_COMMON_HINT`。バンドを切り替えると `renderLayerPanel` で入れ替わる。
+⚠ **高さの数字（500m・3km 等）は書かない。** 予報の雲量（低・中・高層）の高さの定義は SCW の説明と Open-Meteo の説明で別物で、
+JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-02。検査は `tests/smoke_mapui.js`。
 ⚠⚠ **着色（`SAT_TINTS`・ピンク／シアン）は v4.99.0 で撤去した。作り直さないこと。**
 実機（iOS）では最後まで白のままで、**Chromium では正しく色が付く**
 （画素で確認：ピンク(255,46,184) / シアン(51,242,255)）。

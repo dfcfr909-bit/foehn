@@ -805,6 +805,19 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(sat.chips.includes('赤外') && sat.chips.includes('雲頂'), 'バンド切替のチップが出る', sat.chips);
   ok(satHits.length > 0, '衛星タイルを実際に取りに行っている', satHits.length);
 
+  /* 段階1（#127）：衛星のバンド注記。赤外は低層雲が見えにくい・雲海は予報の雲量に出ないことがある。
+     ⚠ 高さの数字（500m・3km 等）は書かない（予報の雲量の高さの定義が未確認。docs/decisions.md 2026-10-02） */
+  const satHintIr = await page.evaluate(() => {
+    const el = document.querySelector('.sat-hint');
+    return el ? el.textContent : null;
+  });
+  ok(satHintIr && /赤外/.test(satHintIr) && /見分けにくい/.test(satHintIr),
+    '★衛星（赤外）の注記：低い雲は見分けにくい', satHintIr);
+  ok(satHintIr && /雲海/.test(satHintIr) && /予報の雲量/.test(satHintIr),
+    '★衛星の注記：雲海は予報の雲量に出ないことがある（共通）', satHintIr);
+  ok(satHintIr && !/\d+\s*(m|km|ｍ)/.test(satHintIr) && !/\d+\s*hPa/.test(satHintIr),
+    '★注記に高さの数字を書かない（定義が未確認）', satHintIr);
+
   /* バンドを変えるとURLと**合成方法**が変わり、選択は保存される。
      ⚠合成はバンドごと。赤外は背景が暗いので screen が効くが、
      色つきの雲頂を screen にすると明るい地図の上で潰れる（カラーで実際に潰れた）。 */
@@ -848,6 +861,13 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(satBand.url && /\/SND\/ETC\//.test(satBand.url), '雲頂に切り替わる（SND/ETC）', satBand.url);
   ok(satBand.saved === 'SND', '選んだバンドが保存される', satBand.saved);
+  const satHintSnd = await page.evaluate(() => {
+    const el = document.querySelector('.sat-hint');
+    return el ? el.textContent : null;
+  });
+  ok(satHintSnd && /雲頂/.test(satHintSnd) && /雲底は分からない/.test(satHintSnd) && !/見分けにくい/.test(satHintSnd),
+    '★バンドを切り替えたら注記も入れ替わる（赤外の注記が残らない）', satHintSnd);
+  ok(satHintSnd && /雲海/.test(satHintSnd), '雲頂でも共通の注記（雲海）は残る', satHintSnd);
   ok(Math.abs(curveAt(satBand, 0.40)) < 0.01,
     '★バンドを変えたら曲線も書き換わる（前のバンドのcutが残らない）', satBand);
 
