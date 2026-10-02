@@ -134,12 +134,15 @@ if (DRY) {
 } else {
   if (tbl.error) die(`局の一覧を取れない: ${tbl.error}`);
   stations = Object.entries(tbl.json)
-    .map(([code, s]) => ({ code, name: s.kjName, alt: s.alt, lat: deg(s.lat), lon: deg(s.lon) }))
-    .filter(s => typeof s.alt === 'number' && s.alt >= 1000)
+    .map(([code, s]) => ({ code, name: s.kjName, alt: s.alt, lat: deg(s.lat), lon: deg(s.lon), elems: String(s.elems || '') }))
+    /* ⚠ 気温を観測する局だけ。elems の先頭が '1' の局は気温あり、'0' は無し（#134 の最初の実行で、
+       先頭が '0' の7局は点データに temp が1件も無く、先頭が '1' の3局は全時間そろっていた）。
+       標高の高い順に取ると、降水だけの局（御嶽山・上高地など）ばかり選んで検証が空振りした */
+    .filter(s => typeof s.alt === 'number' && s.alt >= 1000 && s.elems[0] === '1')
     .sort((a, b) => b.alt - a.alt)
     .slice(0, N_STATIONS);
 }
-console.log(`\n## ① 検証する局（標高 1,000m 以上の高い順に ${stations.length} 局）`);
+console.log(`\n## ① 検証する局（標高 1,000m 以上で気温を観測する局を、標高の高い順に ${stations.length} 局）`);
 for (const s of stations) console.log(`  ${s.code}  ${String(s.alt).padStart(5)}m  ${s.name}  (${s.lat.toFixed(3)}, ${s.lon.toFixed(3)})`);
 
 /* ---- ② 観測：点データ（3時間ごとのファイル）から毎正時の気温 ---- */
@@ -242,6 +245,8 @@ if (!forecasts.size) die('どのモデルも当時の予報を取れなかった
 const band = s => s.alt >= BAND_SPLIT_M ? `${BAND_SPLIT_M}m以上` : `1000〜${BAND_SPLIT_M}m`;
 const rows = new Map();                  // key -> errs[]
 const perStation = new Map();            // `${model}|${lead}|${code}|${method}` -> errs[]
+const todRows = new Map();               // `${model}|${method}|${band}|${tod}`（1日前の予報のみ）-> errs[]
+const todOf = hk => { const h = +hk.slice(11, 13); return h >= 9 && h <= 15 ? '昼(9〜15時)' : (h >= 21 || h <= 5) ? '夜(21〜5時)' : '朝夕'; };
 const push = (m, key, e) => { if (!m.has(key)) m.set(key, []); m.get(key).push(e); };
 for (const [model, f] of forecasts) {
   for (const [lead, perSt] of f.leads) {
@@ -257,6 +262,7 @@ for (const [model, f] of forecasts) {
           push(rows, `${model}|${lead}|${method}|${band(s)}`, e);
           push(rows, `${model}|${lead}|${method}|全局`, e);
           push(perStation, `${model}|${lead}|${s.code}|${method}`, e);
+          if (lead === 1) push(todRows, `${model}|${method}|${band(s)}|${todOf(hk)}`, e);
         }
       }
     });
@@ -274,15 +280,29 @@ for (const k of keys) {
 }
 
 console.log(`\n## ⑤ 局ごとのバイアス（予報 − 観測。1日前の予報）`);
-console.log('   局           標高  モデル標高   MSM raw  MSM 補正   GSM raw  GSM 補正');
+console.log('   局           標高  モデル標高   MSM raw  MSM 補正   GSM raw  GSM 補正  実効の減率(MSM・℃/km)');
 stations.forEach((s, i) => {
   const cell = (model, method) => {
     const e = perStation.get(`${model}|1|${s.code}|${method}`);
     return e ? f1(statsOf(e).bias) : '    -';
   };
   const zm = forecasts.get('jma_msm') ? forecasts.get('jma_msm').zModel[i] : null;
-  console.log(`   ${s.name.padEnd(6)} ${String(s.alt).padStart(6)}m ${zm == null ? '      -' : String(Math.round(zm)).padStart(6) + 'm'}  ${cell('jma_msm', 'raw')}  ${cell('jma_msm', '補正')}   ${cell('jma_gsm', 'raw')}  ${cell('jma_gsm', '補正')}`);
+  /* 実効の減率：raw の誤差 ÷ (局の標高 − モデル標高)。標高差が小さい（±300m 未満）局は誤差に埋もれるので出さない。
+     本体の減率（0.0065℃/m＝6.5℃/km）と比べて、補正が効きすぎ／足りないかを読む */
+  const eRaw = perStation.get(`jma_msm|1|${s.code}|raw`);
+  const dz = zm == null ? null : s.alt - zm;
+  const eff = (eRaw && dz != null && Math.abs(dz) >= 300) ? statsOf(eRaw).bias / dz * 1000 : null;
+  console.log(`   ${s.name.padEnd(6)} ${String(s.alt).padStart(6)}m ${zm == null ? '      -' : String(Math.round(zm)).padStart(6) + 'm'}  ${cell('jma_msm', 'raw')}  ${cell('jma_msm', '補正')}   ${cell('jma_gsm', 'raw')}  ${cell('jma_gsm', '補正')}   ${eff == null ? '        -' : f1(eff)}`);
 });
+
+console.log(`\n## ⑥ 時間帯別（1日前の予報。昼は日射でモデルの2m気温が暖まり、夜は放射冷却で冷える）`);
+console.log('   モデル   方式   標高帯          時間帯        n    バイアス  平均絶対');
+for (const k of [...todRows.keys()].sort()) {
+  const [model, method, b, tod] = k.split('|');
+  const st = statsOf(todRows.get(k));
+  if (!st.n) continue;
+  console.log(`   ${model.padEnd(8)} ${method.padEnd(3)}  ${b.padEnd(13)} ${tod.padEnd(10)} ${String(st.n).padStart(5)}  ${f1(st.bias)}   ${f1(st.mae)}`);
+}
 console.log('\n読み方: バイアスが正＝予報が観測より暖かい（雪を雨と見誤る側）、負＝寒い（雨を雪と見誤る側）。');
 console.log('        raw と 補正 を比べて、補正で 0 に近づけば標高補正が効いている。補正後も一方向にずれるなら補正式（減率）か局の代表性を疑う。');
 console.log(`\n通信回数: ${calls}`);
