@@ -71,6 +71,26 @@
 - 地形表を読めないときは AUTO を出さない（赤帯で言う）。手動は使える
 - 検査は `tests/smoke_windfield.mjs`（鉛直の決め方・同じ取得・GSM の期間）と `tests/smoke_windrate.mjs`（回数）
 
+### 降雪の目安（段階2・v4.151.0・#131）→ `docs/adr/0016-snow-thunder-hint.md`
+
+レイヤー「降雪の目安」（`snowHint`）。風の矢印と**同じ格子点**（`windFieldLattice`）に、選択時刻の「雨／みぞれ／雪」の記号を置く。降水がある点だけ。
+押すと根拠の札（気温の補正前後・基準標高・モデル標高・閾値・モデル名）。
+
+- ⚠⚠ **予報モデルの値であって、観測ではない。** 凡例・札に明記し、「実際の降水は降雨レーダーで確認」と添える
+- ⚠⚠ **判定（ABC評価）ではない。** 閾値は `SNOW_HINT`（仮置き）。`THRESH` を参照しない（`smoke_snowhint` が見張る）
+- 気温は標高補正：`T = T2m + 0.0065 × (モデル標高 − z_ref)`（`z_ref` は風の AUTO と同じ基準標高＝稜線の高さ）。
+  分け方は `snowTypeOf`：T ≦ 0.5℃ 雪／≦ 2.0℃ みぞれ／それ超 雨（**仮置き・実験値**）
+- 降水は**先の1時間**（`precipitation[k+1]`・`aheadHour` と同じ）。気温は瞬間値。0.1mm 未満は記号なし（`dry`）
+- `snowHintAt` の返り値：`ok`（記号）／`dry`／`noTime`（取った期間の外・別の時刻で埋めない）／`missing`（値が無い＝降水が無い、とは違う）／`sea`（地形表に無い升目）
+- ⚠ 記号が1つも無いときは**理由を言う**（`snowHintStateNote`）：降水が無い／範囲の外／取得できていない
+- 取得（`fetchSnowColumns`）は風と**別**（`temperature_2m`・`precipitation`＋モデル判別の風の層）。`elevation=nan`・`cell_selection=nearest`・`wind_speed_unit=ms`・`jma_seamless`・過去3日〜先8日。
+  控え `snowCols`・差分取得・1回40地点まで・動き終わって500ms 後。429 の待ち（`windBackoffUntil`）は風と**共有**
+- 地形表（`terrainRef`）を使うので、読み込み中・失敗は理由を出す（基準標高が無いまま気温をそのまま使って雨雪を言わない）
+- 地図のタイムスライダーは、降雪の目安だけを入れていても出る（`pointHintAnyOn`）
+- ズームが粗い間（`WIND_MIN_ZOOM` 未満）は出さず「拡大すると降雪の目安を表示します」
+- `freezing_level_height` / `cape` / `lifted_index` は JMA で返らない（#126）ので使わない
+- 検査は `tests/smoke_snowhint.mjs`
+
 ### 風の流れ（Particle Engine・v4.116.0）
 
 レイヤー「風の流れ」（`windFlow`）。**矢印（`windArrows`）と同じ場**（`ensureWindField` → `buildWindField`）を粒子で流す。
@@ -365,7 +385,7 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
 ## 気象レイヤー（`MAP_WEATHER`）
 
 アメダス実測（点）・降雨レーダー・衛星の雲（ひまわり）・雷（気象庁ナウキャスト）・
-風向風速（Open-Meteo）。
+風向風速（Open-Meteo）・降雪の目安（Open-Meteo の予報モデルの値・v4.151.0）。
 
 ⚠ **気圧配置（H/L・等圧線）は一度作って外した** → `docs/adr/0010-pressure-layer-removed.md`。
 「格子点APIで総観規模の場を、閲覧のたびにブラウザから描く」形が

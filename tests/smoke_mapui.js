@@ -679,9 +679,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
        （1つ消して1つ足しても通ってしまう）。**顔ぶれで見る。** */
   // v4.116.0 で「風の流れ」（windFlow・粒子）を足した。矢印と同じ場を使う
   // v4.120.0 で「風の流れ（実験）」（windFlowGL・WebGL の PoC）を足した。Canvas 版と並べて比べる
-  const WX_EXPECT = ['radar', 'satellite', 'thunder', 'amedas', 'windFlow', 'windFlowGL', 'windArrows'];
+  // v4.151.0 で「降雪の目安」（snowHint・#131）を足した（風の矢印と同じ格子点に雨・みぞれ・雪の記号）
+  const WX_EXPECT = ['radar', 'satellite', 'thunder', 'amedas', 'windFlow', 'windFlowGL', 'windArrows', 'snowHint'];
   ok(JSON.stringify(wxDefs.map(w => w.id)) === JSON.stringify(WX_EXPECT),
-    '気象レイヤーの顔ぶれ（7種）', wxDefs.map(w => w.id));
+    '気象レイヤーの顔ぶれ（8種）', wxDefs.map(w => w.id));
 
   // 降雨レーダー：targetTimes を引いてから basetime/validtime 入りのURLを組む
   await page.evaluate(() => toggleOverlay('radar'));

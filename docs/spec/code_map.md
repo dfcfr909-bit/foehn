@@ -441,6 +441,10 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `windFlowStat` / `windGLMeasure()` | 計測（FPS・CPU 時間。Canvas 版も）／10秒計測 | 約 8371 |
 | `updateMapTime()` / `setMapTime(idx)` | **地図のタイムスライダー**（風の層があるときだけ出す・グラフと同じ選択時刻を動かして風を描き直す） | 約 8050 |
 | `drawWindArrows(f, opacity)` | 場の格子点に矢印（向きは風向+180°）。推定値は点線・地中は「地中」 | 約 7500 |
+| `snowTypeOf(tC)` / `snowTempAt(t2m, zModel, zRef)` | 降雪の目安：気温→雨／みぞれ／雪（閾値は `SNOW_HINT`・仮置き）／モデル標高→基準標高の気温補正 | 約 8100 |
+| `fetchSnowColumns(pts)` | 降雪の目安の取得（気温・降水・モデル判別の風の層。風とは別の取得・429 の待ちだけ風と共有） | 約 8120 |
+| `snowHintAt(rec, timeKey)` | 1点・1時刻の目安（`ok`/`dry`/`noTime`/`missing`/`sea`。降水は先の1時間） | 約 8150 |
+| `ensureSnowHint(bounds)` / `drawSnowHint(cells, opacity)` / `snowHintLegend()` | 取得・控え・状態の文／記号を置く（押すと根拠）／レイヤー行の凡例 | 約 8170 |
 | `loadPressureGrid(bounds)` | 画面を9×9に割った海面気圧を1リクエストで（#26） | 約 5626 |
 | `pressAt(g, i, j)` | 格子の添字→気圧。欠測は null | 約 5670 |
 | `pressureExtremes(g)` | 高気圧/低気圧の中心。⚠ **縁は極値と呼ばない**・起伏0.8hPa以上 | 約 5685 |
