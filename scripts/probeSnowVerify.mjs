@@ -13,9 +13,13 @@
  * ⚠ **調べるだけ。判定も表示も何も変えない。**
  *
  * 比べるもの（局の標高で）:
- *   raw  … モデル標高の2m気温（elevation=nan。Windy の2m気温と同じ＝地形の補正なし）
- *   補正 … raw + 0.0065 × (モデル標高 − 局の標高)  ← 本体の降雪の目安と同じ式
- *   ⚠ 減率と閾値の幅は本体（sotoki_v4.html の SNOW_HINT）から読む。写さない（写し違いを作らない）
+ *   raw     … モデル標高の2m気温（elevation=nan。Windy の2m気温と同じ＝地形の補正なし）
+ *   補正6.5 … raw + 0.0065 × (モデル標高 − 局の標高)  ← 本体の降雪の目安と同じ式
+ *   補正5.5・補正5.0 … 減率だけを 0.0055・0.0050 に替えた比較（#136。実験の数字・本体の値ではない）
+ *   気圧面  … 地表（モデル標高の2m気温）と気圧面（925/850/800/700/600hPa）の気温・高さから局の標高へ内挿（#136）。
+ *             風の AUTO と同じ考え方で、減率が一定という仮定に頼らない。最上層より上は上2点の傾きで外挿、
+ *             モデル地形より下の気圧面は外挿値なので使わない（ADR-0012）
+ *   ⚠ 本体の減率と閾値の幅は本体（sotoki_v4.html の SNOW_HINT）から読む。写さない（写し違いを作らない）
  *
  * 出すもの: 誤差（予報 − 観測）のバイアス・平均絶対誤差・10〜90% の幅を、
  *   モデル（MSM／GSM）× 何日前の予報か × 方式 × 標高帯 で。
@@ -84,6 +88,22 @@ function statsOf(errs) {
   return { n: a.length, bias: sum / a.length, mae: abs / a.length, p10: quantile(a, 0.1), p90: quantile(a, 0.9) };
 }
 const corrected = (raw, zModel, zStation, lapse) => raw + lapse * (zModel - zStation);
+/* 気圧面の按分（#136）。levels = [{ z: 気圧面の高さ(m), t: 気温(℃) }]。
+   地表（モデル標高 zModel の2m気温 t2m）を足して高さ順に並べ、局の標高 zS を挟む2点で線形に内挿する。
+   最上層より上は上2点の傾きで外挿。局がモデル地形より低いときは一定の減率 lapse で下げる（補正と同じ）。
+   ⚠ モデル地形（+50m）以下の気圧面は外挿値なので使わない。使える気圧面が1つも無ければ null */
+function profileTemp(levels, zS, zModel, t2m, lapse) {
+  if (zS <= zModel) return t2m + lapse * (zModel - zS);
+  const pts = [{ z: zModel, t: t2m }, ...levels.filter(l => Number.isFinite(l.z) && Number.isFinite(l.t) && l.z > zModel + 50)]
+    .sort((a, b) => a.z - b.z);
+  if (pts.length < 2) return null;
+  for (let k = 0; k < pts.length - 1; k++) {
+    const a = pts[k], b = pts[k + 1];
+    if (zS <= b.z) return a.t + (b.t - a.t) * (zS - a.z) / (b.z - a.z);
+  }
+  const a = pts[pts.length - 2], b = pts[pts.length - 1];
+  return b.t + (b.t - a.t) / (b.z - a.z) * (zS - b.z);
+}
 
 if (SELFTEST) {
   const eq = (a, b, label) => { if (Math.abs(a - b) > 1e-9) die(`selftest NG: ${label} … ${a} ≠ ${b}`); console.log(`  ok ${label}`); };
@@ -99,6 +119,13 @@ if (SELFTEST) {
   eq(statsOf([5, NaN, 5]).n, 2, '欠測（NaN）は数えない');
   eq(quantile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.1), 2, '10%点');
   eq(quantile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.9), 9, '90%点');
+  const lv = [{ z: 1500, t: 5 }, { z: 3000, t: -5 }];
+  eq(profileTemp(lv, 2250, 1000, 10, 0.0065), 0, '気圧面：2つの気圧面の中間（1500m 5℃ と 3000m −5℃ の間 2250m）');
+  eq(profileTemp(lv, 1250, 1000, 10, 0.0065), 7.5, '気圧面：地表と最下の気圧面の間');
+  eq(profileTemp(lv, 3500, 1000, 10, 0.0065), -5 - 500 * (10 / 1500), '気圧面：最上層より上は上2点の傾きで外挿');
+  eq(profileTemp(lv, 800, 1000, 10, 0.0065), 11.3, '気圧面：局がモデル地形より低いときは一定の減率');
+  eq(profileTemp([{ z: 900, t: 12 }, ...lv], 1250, 1000, 10, 0.0065), 7.5, '気圧面：モデル地形より下の気圧面は使わない');
+  eq(profileTemp([], 2000, 1000, 10, 0.0065) === null ? 1 : 0, 1, '気圧面：使える気圧面が無ければ null');
   console.log('selftest OK');
   process.exit(0);
 }
@@ -232,10 +259,60 @@ async function fetchForecast(model) {
   }
   return null;
 }
+/* 気圧面の気温・高さ（#136）。Previous Runs で 0〜2日前、取れなければ 0日前だけ（Previous Runs → Historical Forecast の順）。
+   ⚠ 知らない変数が1つでもあると全体が 400 になるので、段階的に落とす */
+const PL_LEVELS = [925, 850, 800, 700, 600];
+const PL_LEADS = [0, 1, 2];
+const plName = (kind, p, l) => `${kind}_${p}hPa${l === 0 ? '' : `_previous_day${l}`}`;
+const pressure = new Map();              // model -> { source, leads: Map(lead -> [per station: Map(hourKey -> [{z, t}])]) }
+async function fetchPressure(model) {
+  const common = {
+    latitude: stations.map(s => s.lat).join(','), longitude: stations.map(s => s.lon).join(','),
+    elevation: stations.map(() => 'nan').join(','),
+    cell_selection: 'nearest', models: model, timezone: 'Asia/Tokyo', past_days: String(pastDays), forecast_days: '1',
+  };
+  const tries = [
+    { source: 'Previous Runs API（0〜2日前）', base: OM_PREV, leads: PL_LEADS },
+    { source: 'Previous Runs API（0日前のみ）', base: OM_PREV, leads: [0] },
+    { source: 'Historical Forecast API（0日前のみ）', base: OM_HIST, leads: [0] },
+  ];
+  for (const t of tries) {
+    const vars = t.leads.flatMap(l => PL_LEVELS.flatMap(p => [plName('temperature', p, l), plName('geopotential_height', p, l)]));
+    const q = new URLSearchParams({ ...common, hourly: vars.join(',') });
+    const r = await getJson(`${t.base}?${q}`, `${model} 気圧面 ${t.source}`);
+    if (DRY) continue;
+    if (r.error) { console.log(`  ${model}: 気圧面 ${t.source} ✗ ${r.error} ${r.body || ''}`); continue; }
+    const arr = Array.isArray(r.json) ? r.json : [r.json];
+    const leads = new Map();
+    let usable = 0;
+    for (const l of t.leads) {
+      leads.set(l, arr.map(rec => {
+        const h = rec && rec.hourly, m = new Map();
+        if (!h) return m;
+        h.time.forEach((tm, k) => {
+          const lv = PL_LEVELS.map(p => ({ p, t: (h[plName('temperature', p, l)] || [])[k], z: (h[plName('geopotential_height', p, l)] || [])[k] }))
+            .filter(x => x.t != null && x.z != null);
+          if (lv.length) m.set(tm, lv);
+        });
+        usable += m.size;
+        return m;
+      }));
+    }
+    if (!usable) { console.log(`  ${model}: 気圧面 ${t.source} ✗ 値が全部 null`); continue; }
+    const per = t.leads.map(l => `${l}日前=${leads.get(l).reduce((s2, m) => s2 + m.size, 0)}`).join(' ');
+    console.log(`  ${model}: 気圧面 ${t.source} ○（有効な時間数 ${per}）`);
+    return { source: t.source, leads };
+  }
+  console.log(`  ${model}: 気圧面は取れなかった（方式「気圧面」は比べない）`);
+  return null;
+}
 console.log(`\n## ③ Open-Meteo の当時の予報（${MODELS.join('・')}）`);
 for (const model of MODELS) {
   const f = await fetchForecast(model);
   if (f) forecasts.set(model, f);
+  await sleep(1000);
+  const pl = await fetchPressure(model);
+  if (pl) pressure.set(model, pl);
   await sleep(1000);
 }
 if (DRY) { console.log(`\n通信回数: ${calls}（--dry-run）`); process.exit(0); }
@@ -256,9 +333,17 @@ for (const [model, f] of forecasts) {
       for (const [hk, raw] of fc) {
         const o = obs.get(hk);
         if (o == null) continue;
-        const eRaw = raw - o;
-        const eCor = corrected(raw, zm, s.alt, C.lapse) - o;
-        for (const [method, e] of [['raw', eRaw], ['補正', eCor]]) {
+        const levels = (pressure.get(model) && pressure.get(model).leads.get(lead) && pressure.get(model).leads.get(lead)[i])
+          ? pressure.get(model).leads.get(lead)[i].get(hk) : null;
+        const tPl = levels ? profileTemp(levels.map(x => ({ z: x.z, t: x.t })), s.alt, zm, raw, C.lapse) : null;
+        const cand = [
+          ['raw', raw - o],
+          [`補正${(C.lapse * 1000).toFixed(1)}`, corrected(raw, zm, s.alt, C.lapse) - o],
+          ['補正5.5', corrected(raw, zm, s.alt, 0.0055) - o],
+          ['補正5.0', corrected(raw, zm, s.alt, 0.0050) - o],
+        ];
+        if (tPl != null) cand.push(['気圧面', tPl - o]);
+        for (const [method, e] of cand) {
           push(rows, `${model}|${lead}|${method}|${band(s)}`, e);
           push(rows, `${model}|${lead}|${method}|全局`, e);
           push(perStation, `${model}|${lead}|${s.code}|${method}`, e);
@@ -270,17 +355,18 @@ for (const [model, f] of forecasts) {
 }
 const f1 = x => x == null || !Number.isFinite(x) ? '    -' : x.toFixed(1).padStart(5);
 console.log(`\n## ④ 誤差（予報 − 観測。℃）。目安：平均絶対誤差が ${WIDTH}℃（みぞれの幅）以内なら、境の気温を詰める意味がある`);
-console.log('   モデル   日前  方式   標高帯          n    バイアス  平均絶対   10%    90%   目安');
+console.log('   モデル   日前  方式     標高帯          n    バイアス  平均絶対   10%    90%   目安');
 const keys = [...rows.keys()].sort();
 for (const k of keys) {
   const [model, lead, method, b] = k.split('|');
   const st = statsOf(rows.get(k));
   if (!st.n) continue;
-  console.log(`   ${model.padEnd(8)} ${lead}日前  ${method.padEnd(3)}  ${b.padEnd(13)} ${String(st.n).padStart(5)}  ${f1(st.bias)}   ${f1(st.mae)}  ${f1(st.p10)} ${f1(st.p90)}   ${st.mae <= WIDTH ? '○' : '×'}`);
+  console.log(`   ${model.padEnd(8)} ${lead}日前  ${method.padEnd(6)}  ${b.padEnd(13)} ${String(st.n).padStart(5)}  ${f1(st.bias)}   ${f1(st.mae)}  ${f1(st.p10)} ${f1(st.p90)}   ${st.mae <= WIDTH ? '○' : '×'}`);
 }
 
 console.log(`\n## ⑤ 局ごとのバイアス（予報 − 観測。1日前の予報）`);
-console.log('   局           標高  モデル標高   MSM raw  MSM 補正   GSM raw  GSM 補正  実効の減率(MSM・℃/km)');
+const M65 = `補正${(C.lapse * 1000).toFixed(1)}`;
+console.log(`   局           標高  モデル標高 |  MSM: raw  ${M65}  補正5.5  補正5.0  気圧面 |  GSM: ${M65}  気圧面 | 実効の減率(MSM・℃/km)`);
 stations.forEach((s, i) => {
   const cell = (model, method) => {
     const e = perStation.get(`${model}|1|${s.code}|${method}`);
@@ -289,20 +375,25 @@ stations.forEach((s, i) => {
   const zm = forecasts.get('jma_msm') ? forecasts.get('jma_msm').zModel[i] : null;
   /* 実効の減率：raw の誤差 ÷ (局の標高 − モデル標高)。標高差が小さい（±300m 未満）局は誤差に埋もれるので出さない。
      本体の減率（0.0065℃/m＝6.5℃/km）と比べて、補正が効きすぎ／足りないかを読む */
-  const eRaw = perStation.get(`jma_msm|1|${s.code}|raw`);
+  const eRaw = perStation.get(`jma_msm|1|${s.code}|raw`);   // 実効の減率は raw の誤差から（方式を替えても同じ）
   const dz = zm == null ? null : s.alt - zm;
   const eff = (eRaw && dz != null && Math.abs(dz) >= 300) ? statsOf(eRaw).bias / dz * 1000 : null;
-  console.log(`   ${s.name.padEnd(6)} ${String(s.alt).padStart(6)}m ${zm == null ? '      -' : String(Math.round(zm)).padStart(6) + 'm'}  ${cell('jma_msm', 'raw')}  ${cell('jma_msm', '補正')}   ${cell('jma_gsm', 'raw')}  ${cell('jma_gsm', '補正')}   ${eff == null ? '        -' : f1(eff)}`);
+  const cols = [['jma_msm', 'raw'], ['jma_msm', M65], ['jma_msm', '補正5.5'], ['jma_msm', '補正5.0'], ['jma_msm', '気圧面']]
+    .map(([m2, me]) => cell(m2, me)).join('  ');
+  const colsG = [['jma_gsm', M65], ['jma_gsm', '気圧面']].map(([m2, me]) => cell(m2, me)).join('  ');
+  console.log(`   ${s.name.padEnd(6)} ${String(s.alt).padStart(6)}m ${zm == null ? '      -' : String(Math.round(zm)).padStart(6) + 'm'} |  ${cols} |  ${colsG} | ${eff == null ? '        -' : f1(eff)}`);
 });
 
 console.log(`\n## ⑥ 時間帯別（1日前の予報。昼は日射でモデルの2m気温が暖まり、夜は放射冷却で冷える）`);
-console.log('   モデル   方式   標高帯          時間帯        n    バイアス  平均絶対');
+console.log('   モデル   方式     標高帯          時間帯        n    バイアス  平均絶対');
 for (const k of [...todRows.keys()].sort()) {
   const [model, method, b, tod] = k.split('|');
+  if (method !== M65 && method !== '気圧面') continue;       // 出力が長くなるので、今の式と気圧面だけ
   const st = statsOf(todRows.get(k));
   if (!st.n) continue;
-  console.log(`   ${model.padEnd(8)} ${method.padEnd(3)}  ${b.padEnd(13)} ${tod.padEnd(10)} ${String(st.n).padStart(5)}  ${f1(st.bias)}   ${f1(st.mae)}`);
+  console.log(`   ${model.padEnd(8)} ${method.padEnd(6)}  ${b.padEnd(13)} ${tod.padEnd(10)} ${String(st.n).padStart(5)}  ${f1(st.bias)}   ${f1(st.mae)}`);
 }
 console.log('\n読み方: バイアスが正＝予報が観測より暖かい（雪を雨と見誤る側）、負＝寒い（雨を雪と見誤る側）。');
 console.log('        raw と 補正 を比べて、補正で 0 に近づけば標高補正が効いている。補正後も一方向にずれるなら補正式（減率）か局の代表性を疑う。');
+console.log('        気圧面が補正より 0 に近い（特に標高差の大きい局）なら、減率を一定にする仮定が効かない所で気圧面の按分が効いている。');
 console.log(`\n通信回数: ${calls}`);
