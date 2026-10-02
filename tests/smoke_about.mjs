@@ -24,6 +24,23 @@ const ABOUT = fs.readFileSync(path.join(ROOT, 'about.html'), 'utf8');
 const fails = [];
 const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefined ? ` … ${JSON.stringify(extra).slice(0, 300)}` : '')); };
 
+/* ============ 0. 降雪の目安の境の気温が本体（SNOW_HINT）と一致する ============
+   ⚠ about.html に書いた境の気温（雪・みぞれ）は、本体の `SNOW_HINT` と**2か所にある数字**。
+   片方だけ変えたら知らせる（THRESH と同じ作法）。 */
+const sh = APP.match(/const SNOW_HINT = \{([\s\S]*?)\n\};/);
+ok(!!sh, '★前提: 本体から SNOW_HINT を読み出せる（検査が空振りしていない）');
+if (sh) {
+  const S = new Function(`const MSM_ONLY_PROBE_LEVELS = [900, 800]; return {${sh[1]}}`)();
+  ok(typeof S.SNOW_MAX_C === 'number' && typeof S.SLEET_MAX_C === 'number', '★前提: SNOW_HINT の境の気温が読めている', S);
+  const sec = (ABOUT.match(/<h3>降雪の目安（地図）<\/h3>[\s\S]*?<\/ul>/) || [''])[0];
+  ok(sec.length > 0, '★前提: about.html に降雪の目安の節がある');
+  ok(sec.includes(`雪 ${S.SNOW_MAX_C.toFixed(1)}℃以下`) && sec.includes(`みぞれ ${S.SLEET_MAX_C.toFixed(1)}℃以下`),
+    '★★降雪の目安の境の気温（雪・みぞれ）が本体の SNOW_HINT と一致する', { want: [S.SNOW_MAX_C, S.SLEET_MAX_C] });
+  ok(sec.includes(`${S.LAPSE_C_PER_M * 1000}℃`) || sec.includes(`${(S.LAPSE_C_PER_M * 1000).toFixed(1)}℃`),
+    '降雪の目安の補正の減率が本体と一致する', S.LAPSE_C_PER_M);
+  ok(/観測ではありません/.test(sec) && /仮置き/.test(sec), '★降雪の目安は「観測ではない」「仮置き」と明記している');
+}
+
 /* ============ 1. ⚠⚠ 閾値が本体と一致する ============
    本体の THRESH をそのまま読み出し、ページに載るはずの文言を組み立てて突き合わせる。
    ⚠ 閾値を調整したらこのページも直す——ここが知らせる。 */
