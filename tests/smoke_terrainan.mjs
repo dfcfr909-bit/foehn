@@ -590,6 +590,41 @@ ok(sl.has && sl.steps === '100,200,300,400,500,1000,1500,2000,2500,3000,3500,400
 ok(sl.n === 3000 && sl.savedN === 3000 && sl.labelN === '3,000' && sl.n300 === 300, '★粒のスライダーで粒の数が変わり、端末に覚える', sl);
 ok(Math.abs(sl.alpha - 0.7) < 1e-9 && sl.texA === Math.round(255 * 0.7) && sl.labelB === '0.70', '★背景のスライダーで背景の濃さが変わり、端末に覚える', sl);
 ok(Math.abs(sl.clampB - 0.9) < 1e-9 && sl.clampN === 100 && sl.clampHi === 10000 && sl.q === 1000 && Math.abs(sl.reset - 0.45) < 1e-9, 'スライダーの値は範囲（100〜10,000）に収める・粒¼で1/4・覚えた値が無ければ既定', sl);
+// ⑫粒の大きさ・粒だけの濃さ（v4.154.0）：スライダーで変わり、端末に覚え、描画の uniform に届く。背景の濃さとは別
+const pwa = await page.evaluate(() => {
+  const w = document.getElementById('wind-sl-width'), a = document.getElementById('wind-sl-palpha');
+  const out = { has: !!w && !!a, wMin: +w.min, wMax: +w.max, aMin: +a.min, aMax: +a.max, defW: windPWidth(), defA: windPAlpha() };
+  const uni = () => { windGLStep(0.016, glView(), performance.now()); windGLRender(glView(), 0.016);
+    const g = windGL.gl, s = windGL.progSeg; return { w: g.getUniform(s.p, s.u_coreHalf) * 2, a: g.getUniform(s.p, s.u_pAlpha), err: g.getError() }; };
+  out.u0 = uni();
+  const bg0 = windBgAlpha();
+  w.value = 4.4; w.dispatchEvent(new Event('input'));
+  a.value = 0.3; a.dispatchEvent(new Event('input'));
+  out.w = windPWidth(); out.a = windPAlpha(); out.savedW = windPref.get('width'); out.savedA = windPref.get('pAlpha');
+  out.labelW = document.getElementById('wind-sl-width-v').textContent; out.labelA = document.getElementById('wind-sl-palpha-v').textContent;
+  out.u1 = uni();
+  out.bgSame = windBgAlpha() === bg0;
+  // 濃さが実際に絵へ効く：同じ粒の動きで、濃さ 1 と 0.1 の尾の濃さ（α の合計）を比べる（uniform が届くだけでは、シェーダーが掛けていなくても通る）
+  const sumA = () => { const g = windGL.gl, W = windGL.cv.width, H = windGL.cv.height;
+    g.bindFramebuffer(g.FRAMEBUFFER, windGL.fbo); g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, windGL.tex[1 - windGL.cur], 0);
+    const px = new Uint8Array(W * H * 4); g.readPixels(0, 0, W, H, g.RGBA, g.UNSIGNED_BYTE, px); g.bindFramebuffer(g.FRAMEBUFFER, null);
+    let n = 0; for (let k = 3; k < px.length; k += 4) n += px[k]; return n; };
+  const settle = () => { for (let i = 0; i < 60; i++) { windGLStep(0.016, glView(), performance.now()); windGLRender(glView(), 0.016); } return sumA(); };
+  windGLSetPAlpha(1); out.sumHi = settle();
+  windGLSetPAlpha(0.1); out.sumLo = settle();
+  windGLSetWidth(99); out.clampW = windPWidth(); windGLSetPAlpha(0); out.clampA = windPAlpha();
+  localStorage.removeItem('windGL.width'); localStorage.removeItem('windGL.pAlpha');
+  out.back = [windPWidth(), windPAlpha()];
+  return out;
+});
+ok(pwa.has && pwa.wMin === 1 && pwa.wMax === 6 && pwa.aMin === 0.1 && pwa.aMax === 1, '★「風の流れ」の行に粒の大きさ（1〜6px）と粒の濃さ（0.1〜1）のスライダー', pwa);
+ok(pwa.defW === 2.8 && pwa.defA === 1 && Math.abs(pwa.u0.w - 2.8) < 1e-4 && Math.abs(pwa.u0.a - 1) < 1e-4, '★既定は太さ 2.8px・濃さ 1（覚えた値が無ければ）。描画の uniform にも既定が届く', pwa);
+ok(pwa.w === 4.4 && Math.abs(pwa.a - 0.3) < 1e-9 && pwa.savedW === 4.4 && Math.abs(pwa.savedA - 0.3) < 1e-9 && pwa.labelW === '4.4' && pwa.labelA === '0.30',
+  '★スライダーで粒の大きさ・濃さが変わり、端末に覚える', pwa);
+ok(Math.abs(pwa.u1.w - 4.4) < 1e-4 && Math.abs(pwa.u1.a - 0.3) < 1e-4 && pwa.u1.err === 0, '★★変えた値が描画（線の太さ・粒の濃さの uniform）に届く・WebGL のエラーが無い', pwa.u1);
+ok(pwa.sumHi > 0 && pwa.sumLo < pwa.sumHi * 0.5, '★★粒の濃さを下げると、実際に尾の濃さ（α）が下がる（描画に効いている）', { hi: pwa.sumHi, lo: pwa.sumLo });
+ok(pwa.bgSame, '★粒の濃さは背景の濃さを動かさない（別）', pwa);
+ok(pwa.clampW === 6 && pwa.clampA === 0.1 && pwa.back[0] === 2.8 && pwa.back[1] === 1, '範囲（1〜6px・0.1〜1）に収める・覚えた値が無ければ既定に戻る', pwa);
 // 粒の色（v4.140.0）：見た目の粒の速さで、背景と同じ付け方（帯の中ほどで整数・間は線形）。a_meta の整数部は 0〜64
 const pc = await page.evaluate(() => {
   const out = { pos: [windSpeedPos(0), windSpeedPos(1.5), windSpeedPos(3.25), windSpeedPos(21), windSpeedPos(99)] };
