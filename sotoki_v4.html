@@ -2438,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.152.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.154.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -8563,8 +8563,8 @@ const WIND_FLOW = {
   CLEAN_EVERY: 8, CLEAN_FADE: 0.8,
   FPS: 30,
   DPR_MAX: 1.5,          // ⚠ iPhone の3倍のままだと毎コマ約300万画素を塗る
-  WIDTH: 1.8,            // 線の太さ（CSS px）
-  HALO: 1.4,             // 縁取りの幅（CSS px・線の両側の合計）。明るい地図にも暗い重ねにも沈まないように
+  WIDTH: 2.8,            // 線の太さ（CSS px）。WebGL 版（WIND_GL.WIDTH）と同じ見た目に揃える（v4.153.0）
+  HALO: 1.6,             // 縁取りの幅（CSS px・線の両側の合計）。明るい地図にも暗い重ねにも沈まないように
   HALO_COLOR: 'rgba(10,20,40,0.45)',
   // 風速の色（m/s 未満）。判定の閾値（THRESH）とは切り離す（層によって意味が違うため）。
   // ⚠ 暗い色は紫の重ね（雨雲など）の上で消えた。明るい色＋暗い縁取りにする
@@ -8750,8 +8750,8 @@ const WIND_GL = {
   DROP_PER_S: 0.02,         // 寿命とは別に毎秒この割合を撒き直す（収束する所に粒が溜まらない。webgl-wind の考え方）
   EDGE: 0.15,               // 寿命の始め・終わりのこの割合で濃さを上げ下げ（撒き直しでチラつかない）
   FADE_30: WIND_FLOW.FADE,  // 30コマ／秒で1コマに残す尾の濃さ。コマの間隔に合わせて累乗する
-  WIDTH: 1.6,               // 線の太さ（CSS px）
-  HALO: 1.2,                // 縁取りの幅（両側の合計・CSS px）
+  WIDTH: 2.8,               // 線の太さ（CSS px）。⚠ v4.153.0 で 1.6→2.8（実機で「粒が小さくて見づらい」・利用者の判断）。ほぼ無風の粒は点に見えるので、点の大きさもこれで決まる
+  HALO: 1.6,                // 縁取りの幅（両側の合計・CSS px）
   HALO_RGBA: [10 / 255, 20 / 255, 40 / 255, 0.45],
   HEAD_EXT: 0.35,           // 線の頭を伸ばす量（CSS px）。ほぼ無風の粒も点として見える
   DPR_MAX: 1.5,             // Canvas 版と同じ（比べるため）
@@ -8820,7 +8820,7 @@ void main() {
 }`;
 const WIND_GL_SEG_FS = `
 precision highp float;     // ⚠ u_halfW は頂点側と共有するので精度を揃える（違うとリンクで落ちる）
-uniform float u_halfW, u_coreHalf;
+uniform float u_halfW, u_coreHalf, u_pAlpha;   // u_pAlpha … 粒（尾・縁取りとも）の濃さの倍率。背景には掛けない（v4.154.0）
 uniform vec4 u_halo;
 varying float v_d;
 varying vec4 v_col;
@@ -8829,7 +8829,7 @@ void main() {
   float core = 1.0 - smoothstep(u_coreHalf - 0.5, u_coreHalf + 0.5, d);
   float edge = 1.0 - smoothstep(u_halfW - 0.7, u_halfW, d);
   vec4 halo = vec4(u_halo.rgb * u_halo.a, u_halo.a) * edge;
-  gl_FragColor = (vec4(v_col.rgb, 1.0) * core + halo * (1.0 - core)) * v_col.a;   // 乗算済みアルファ
+  gl_FragColor = (vec4(v_col.rgb, 1.0) * core + halo * (1.0 - core)) * v_col.a * u_pAlpha;   // 乗算済みアルファ
 }`;
 const WIND_GL_QUAD_VS = `
 attribute vec2 a_pos;      // 0..1
@@ -8865,12 +8865,34 @@ const WIND_BG = {
 // 計測表示のスライダー（v4.139.0・利用者の要望「粒の数多すぎ、背景薄めに感じる。スライダーで別々に調整」）
 /* 粒のスライダー（v4.140.0 利用者の指定）：100〜10,000。500 までは 100 刻み、500 からは 500 刻み（段の並びを添字で動かす）。
    内部の上限 COUNT_MAX（20万）は URL の windn 用 */
-const WIND_SLIDER = { COUNT_MIN: 100, COUNT_MAX: 10000, ALPHA_MIN: 0.1, ALPHA_MAX: 0.9, ALPHA_STEP: 0.05 };
+const WIND_SLIDER = { COUNT_MIN: 100, COUNT_MAX: 10000, ALPHA_MIN: 0.1, ALPHA_MAX: 0.9, ALPHA_STEP: 0.05,
+  // v4.154.0（利用者の要望）：粒の大きさ（線の太さ・CSS px）と粒だけの濃さ。背景の濃さ（ALPHA）とは別
+  WIDTH_MIN: 1, WIDTH_MAX: 6, WIDTH_STEP: 0.2, PALPHA_MIN: 0.1, PALPHA_MAX: 1, PALPHA_STEP: 0.05 };
 const WIND_COUNT_STEPS = [100, 200, 300, 400, ...Array.from({ length: 20 }, (_, i) => 500 * (i + 1))];   // 100…400, 500, 1000 … 10000
 const windCountIndex = n => WIND_COUNT_STEPS.reduce((b, v, i) => Math.abs(v - n) < Math.abs(WIND_COUNT_STEPS[b] - n) ? i : b, 0);
 function windBgAlpha() {
   const a = windPref.get('bgAlpha');
   return a >= WIND_SLIDER.ALPHA_MIN && a <= WIND_SLIDER.ALPHA_MAX ? a : WIND_BG.ALPHA;
+}
+// 粒の大きさ（線の太さ・CSS px）。覚えていなければ既定（WIND_GL.WIDTH）。範囲外の値は既定へ
+function windPWidth() {
+  const w = windPref.get('width');
+  return w >= WIND_SLIDER.WIDTH_MIN && w <= WIND_SLIDER.WIDTH_MAX ? w : WIND_GL.WIDTH;
+}
+// 粒だけの濃さ（0.1〜1。背景には掛けない）。既定 1
+function windPAlpha() {
+  const a = windPref.get('pAlpha');
+  return a >= WIND_SLIDER.PALPHA_MIN && a <= WIND_SLIDER.PALPHA_MAX ? a : 1;
+}
+function windGLSetWidth(w) {
+  w = Math.max(WIND_SLIDER.WIDTH_MIN, Math.min(WIND_SLIDER.WIDTH_MAX, +w));
+  windPref.set('width', w);
+  windGLHudText();
+}
+function windGLSetPAlpha(a) {
+  a = Math.max(WIND_SLIDER.PALPHA_MIN, Math.min(WIND_SLIDER.PALPHA_MAX, +a));
+  windPref.set('pAlpha', a);
+  windGLHudText();
 }
 function windGLSetCount(n) {
   n = Math.max(WIND_SLIDER.COUNT_MIN, Math.min(WIND_SLIDER.COUNT_MAX, Math.round(+n)));
@@ -10621,8 +10643,10 @@ function windGLRender(v, dt) {
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.uniform2f(s.u_size, windGL.w, windGL.h);
-  gl.uniform1f(s.u_halfW, (WIND_GL.WIDTH + WIND_GL.HALO) / 2);
-  gl.uniform1f(s.u_coreHalf, WIND_GL.WIDTH / 2);
+  const pw = windPWidth();
+  gl.uniform1f(s.u_halfW, (pw + WIND_GL.HALO) / 2);
+  gl.uniform1f(s.u_coreHalf, pw / 2);
+  gl.uniform1f(s.u_pAlpha, windPAlpha());
   gl.uniform1f(s.u_ext, WIND_GL.HEAD_EXT);
   gl.uniform4f(s.u_halo, ...WIND_GL.HALO_RGBA);
   gl.uniform1f(s.u_mono, windGL.colorMode === 'bg' ? 1 : 0);
@@ -10820,6 +10844,15 @@ function windFlowSettingsSync() {
     if (document.activeElement !== slb) slb.value = windBgAlpha();
     document.getElementById('wind-sl-bg-v').textContent = windBgAlpha().toFixed(2);
     slb.disabled = windGL.colorMode !== 'bg';
+  }
+  const slw = document.getElementById('wind-sl-width'), sla = document.getElementById('wind-sl-palpha');
+  if (slw) {
+    if (document.activeElement !== slw) slw.value = windPWidth();
+    document.getElementById('wind-sl-width-v').textContent = windPWidth().toFixed(1);
+  }
+  if (sla) {
+    if (document.activeElement !== sla) sla.value = windPAlpha();
+    document.getElementById('wind-sl-palpha-v').textContent = windPAlpha().toFixed(2);
   }
   const bc = document.getElementById('wind-hud-color');
   if (bc) { bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒'; bc.classList.toggle('active', windGL.colorMode === 'bg'); }
@@ -11494,7 +11527,7 @@ function windModeChips() {
    どれも端末に覚える（windPref）。⚠ 要素の id は計測表示にあったときのまま（wind-hud-*・wind-sl-*。windGLHudText が同じ id で書き換える） */
 function windFlowSettings() {
   const chip = (id, on, label, fn) => `<button type="button" id="${id}" class="amedas-el${on ? ' active' : ''}" onclick="${fn}">${label}</button>`;
-  const n = windGL.n || windGLParticleCount(), a = windBgAlpha();
+  const n = windGL.n || windGLParticleCount(), a = windBgAlpha(), pw = windPWidth(), pa = windPAlpha();
   return `<div class="amedas-els wind-set">` +
     chip('wind-hud-color', windGL.colorMode === 'bg', windGL.colorMode === 'bg' ? '色:背景' : '色:粒', 'windGLToggleColor()') +
     chip('wind-hud-shelter', windGL.shelterOn, windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切', 'windGLToggleShelter()') +
@@ -11503,6 +11536,8 @@ function windFlowSettings() {
     `<label>粒 <input type="range" id="wind-sl-count" min="0" max="${WIND_COUNT_STEPS.length - 1}" step="1" value="${windCountIndex(n)}" oninput="windGLSetCount(WIND_COUNT_STEPS[this.value])"> <span id="wind-sl-count-v">${n.toLocaleString()}</span></label>` +
     `<span class="wind-set-btns"><button type="button" class="amedas-el" onclick="windGLScaleCount(0.25)">粒¼</button><button type="button" class="amedas-el" onclick="windGLScaleCount(0.5)">粒½</button><button type="button" class="amedas-el" onclick="windGLScaleCount(2)">粒×2</button></span>` +
     `<label>背景 <input type="range" id="wind-sl-bg" min="${WIND_SLIDER.ALPHA_MIN}" max="${WIND_SLIDER.ALPHA_MAX}" step="${WIND_SLIDER.ALPHA_STEP}" value="${a}" ${windGL.colorMode === 'bg' ? '' : 'disabled'} oninput="windGLSetBgAlpha(this.value)"> <span id="wind-sl-bg-v">${a.toFixed(2)}</span></label>` +
+    `<label>粒の大きさ <input type="range" id="wind-sl-width" min="${WIND_SLIDER.WIDTH_MIN}" max="${WIND_SLIDER.WIDTH_MAX}" step="${WIND_SLIDER.WIDTH_STEP}" value="${pw}" oninput="windGLSetWidth(this.value)"> <span id="wind-sl-width-v">${pw.toFixed(1)}</span></label>` +
+    `<label>粒の濃さ <input type="range" id="wind-sl-palpha" min="${WIND_SLIDER.PALPHA_MIN}" max="${WIND_SLIDER.PALPHA_MAX}" step="${WIND_SLIDER.PALPHA_STEP}" value="${pa}" oninput="windGLSetPAlpha(this.value)"> <span id="wind-sl-palpha-v">${pa.toFixed(2)}</span></label>` +
     `<label class="wind-set-hud"><input type="checkbox" id="wind-set-hud" ${windGL.hudOn ? 'checked' : ''} onchange="windGLSetHud(this.checked)"> 計測表示（開発用）</label>` +
     `</div>`;
 }
