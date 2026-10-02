@@ -2438,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.152.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.153.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -8563,8 +8563,8 @@ const WIND_FLOW = {
   CLEAN_EVERY: 8, CLEAN_FADE: 0.8,
   FPS: 30,
   DPR_MAX: 1.5,          // ⚠ iPhone の3倍のままだと毎コマ約300万画素を塗る
-  WIDTH: 1.8,            // 線の太さ（CSS px）
-  HALO: 1.4,             // 縁取りの幅（CSS px・線の両側の合計）。明るい地図にも暗い重ねにも沈まないように
+  WIDTH: 2.8,            // 線の太さ（CSS px）。WebGL 版（WIND_GL.WIDTH）と同じ見た目に揃える（v4.153.0）
+  HALO: 1.6,             // 縁取りの幅（CSS px・線の両側の合計）。明るい地図にも暗い重ねにも沈まないように
   HALO_COLOR: 'rgba(10,20,40,0.45)',
   // 風速の色（m/s 未満）。判定の閾値（THRESH）とは切り離す（層によって意味が違うため）。
   // ⚠ 暗い色は紫の重ね（雨雲など）の上で消えた。明るい色＋暗い縁取りにする
@@ -8750,8 +8750,8 @@ const WIND_GL = {
   DROP_PER_S: 0.02,         // 寿命とは別に毎秒この割合を撒き直す（収束する所に粒が溜まらない。webgl-wind の考え方）
   EDGE: 0.15,               // 寿命の始め・終わりのこの割合で濃さを上げ下げ（撒き直しでチラつかない）
   FADE_30: WIND_FLOW.FADE,  // 30コマ／秒で1コマに残す尾の濃さ。コマの間隔に合わせて累乗する
-  WIDTH: 1.6,               // 線の太さ（CSS px）
-  HALO: 1.2,                // 縁取りの幅（両側の合計・CSS px）
+  WIDTH: 2.8,               // 線の太さ（CSS px）。⚠ v4.153.0 で 1.6→2.8（実機で「粒が小さくて見づらい」・利用者の判断）。ほぼ無風の粒は点に見えるので、点の大きさもこれで決まる
+  HALO: 1.6,                // 縁取りの幅（両側の合計・CSS px）
   HALO_RGBA: [10 / 255, 20 / 255, 40 / 255, 0.45],
   HEAD_EXT: 0.35,           // 線の頭を伸ばす量（CSS px）。ほぼ無風の粒も点として見える
   DPR_MAX: 1.5,             // Canvas 版と同じ（比べるため）
