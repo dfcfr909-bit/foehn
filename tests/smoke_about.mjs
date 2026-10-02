@@ -41,6 +41,21 @@ if (sh) {
   ok(/観測ではありません/.test(sec) && /仮置き/.test(sec), '★降雪の目安は「観測ではない」「仮置き」と明記している');
 }
 
+/* ============ 0b. 雷雨の目安のSSIの境が本体（THUNDER_HINT）と一致する ============
+   ⚠ about.html に書いた SSI の境（0／-3／-6／-9）は、本体の `THUNDER_HINT` と**2か所にある数字**。 */
+const th = APP.match(/const THUNDER_HINT = \{([\s\S]*?)\n\};/);
+ok(!!th, '★前提: 本体から THUNDER_HINT を読み出せる（検査が空振りしていない）');
+if (th) {
+  const H = new Function(`const MSM_ONLY_PROBE_LEVELS = [900, 800]; return {${th[1]}}`)();
+  ok([H.SSI_UNSTABLE, H.SSI_POSSIBLE, H.SSI_SEVERE, H.SSI_SEVERE_HIGH].every(Number.isFinite), '★前提: THUNDER_HINT の境が読めている', H);
+  const sec = (ABOUT.match(/<h3>雷雨の目安（地図）<\/h3>[\s\S]*?<\/ul>/) || [''])[0];
+  ok(sec.length > 0, '★前提: about.html に雷雨の目安の節がある');
+  ok(sec.includes(`SSI ${H.SSI_UNSTABLE} 以下で不安定`) && sec.includes(`${H.SSI_POSSIBLE} 以下で雷雨の可能性`) &&
+    sec.includes(`${H.SSI_SEVERE} 以下で激しい雷雨の可能性`) && sec.includes(`${H.SSI_SEVERE_HIGH} 以下で激しい雷雨の可能性大`),
+    '★★雷雨の目安のSSIの境が本体の THUNDER_HINT と一致する', H);
+  ok(/観測ではありません/.test(sec) && /雷ナウキャスト/.test(sec), '★雷雨の目安は「観測ではない」「雷ナウキャストで確認」と明記している');
+}
+
 /* ============ 1. ⚠⚠ 閾値が本体と一致する ============
    本体の THRESH をそのまま読み出し、ページに載るはずの文言を組み立てて突き合わせる。
    ⚠ 閾値を調整したらこのページも直す——ここが知らせる。 */

@@ -91,6 +91,22 @@
 - `freezing_level_height` / `cape` / `lifted_index` は JMA で返らない（#126）ので使わない
 - 検査は `tests/smoke_snowhint.mjs`
 
+### 雷雨の目安（段階3・v4.152.0・#138）→ `docs/adr/0016-snow-thunder-hint.md`
+
+レイヤー「雷雨の目安」（`thunderHint`）。風の矢印・降雪の目安と**同じ格子点**に、選択時刻の**ショワルター安定指数（SSI）**が不安定側（≦0）の点だけ記号（`SSI -7.5`）を置く。押すと根拠の札。
+
+- ⚠⚠ **予報モデルの値であって、観測ではない。** 凡例・札に明記し、「実際の雷は雷ナウキャスト（観測）で確認」と添える
+- ⚠⚠ **判定（ABC評価）ではない。** 境は `THUNDER_HINT`。`THRESH` を参照しない（`smoke_thunderhint` が見張る）
+- SSI ＝ T500 − T_P。850hPa の空気塊を持ち上げた温度 T_P（凝結高度まで乾燥断熱・以降は湿潤断熱）。自前の `showalterIndex`（LCL は Bolton 1980・湿潤断熱は RK4）。
+  **MetPy の `showalter_index` と最大 0.04℃差**（参照値 `tests/refs/ssi_metpy_ref.json`・生成 `tests/refs/ssi_metpy_ref.py`）
+- 区分（`thunderLevelOf`・SCW の説明に倣う）：＞0 安定（記号なし）／≦0 不安定／≦-3 雷雨の可能性／≦-6 激しい雷雨の可能性／≦-9 同・大
+- 取得（`thunderEngine`）：`temperature_850hPa`・`dew_point_850hPa`・`temperature_500hPa`・`geopotential_height_850hPa`＋モデル判別の風の層。降雪の目安・風とは別の取得で、控え `thunderCols`。
+  取得・控え・差分・40地点まで・動き終わって500ms・429（`windBackoffUntil` 共有）は `makeHintEngine`（降雪の目安と共通）。地形表は使わない
+- `thunderHintAt` の返り値：`ok`／`stable`／`noTime`／`missing`（入力が欠けた＝安定、とは違う）／`underground`（850hPa 面が地中：モデル標高 ＞ 850hPa の高度 − 50m は計算しない）
+- ⚠ 記号が1つも無いときは**理由を言う**（`thunderHintStateNote`）：安定／範囲の外／気圧面の値を取得できていない／高い山で計算できない
+- 地図のタイムスライダーは、雷雨の目安だけを入れていても出る（`pointHintAnyOn`）
+- 検査は `tests/smoke_thunderhint.mjs`
+
 ### 風の流れ（Particle Engine・v4.116.0）
 
 レイヤー「風の流れ」（`windFlow`）。**矢印（`windArrows`）と同じ場**（`ensureWindField` → `buildWindField`）を粒子で流す。
@@ -385,7 +401,7 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
 ## 気象レイヤー（`MAP_WEATHER`）
 
 アメダス実測（点）・降雨レーダー・衛星の雲（ひまわり）・雷（気象庁ナウキャスト）・
-風向風速（Open-Meteo）・降雪の目安（Open-Meteo の予報モデルの値・v4.151.0）。
+風向風速（Open-Meteo）・降雪の目安（Open-Meteo の予報モデルの値・v4.151.0）・雷雨の目安（同・v4.152.0）。
 
 ⚠ **気圧配置（H/L・等圧線）は一度作って外した** → `docs/adr/0010-pressure-layer-removed.md`。
 「格子点APIで総観規模の場を、閲覧のたびにブラウザから描く」形が

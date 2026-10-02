@@ -1447,6 +1447,21 @@ html, body {
 .sh-box.snow { background: rgba(255,255,255,0.92); color: #1a4fa0; border-color: #6aa8ff; }
 .sh-box.sleet { background: rgba(236,226,255,0.92); color: #5a3a9a; border-color: #b49cf0; }
 .sh-box.rain { background: rgba(70,130,210,0.88); color: #fff; border-color: #2a5aa0; }
+/* 雷雨の目安（段階3・#138）。SSI が小さいほど濃い（黄→橙→赤→暗赤）。置き方は .sh-box と同じ */
+.thunder-hint { background: none; border: none; }
+.th-box {
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
+  display: inline-flex; align-items: baseline; gap: 3px;
+  padding: 1px 5px; border-radius: 6px; white-space: nowrap;
+  border: 1px solid rgba(0,0,0,0.25);
+}
+.th-box b { font-size: 11px; }
+.th-box span { font-size: 10px; font-family: var(--font-mono); }
+.th-box.unstable { background: rgba(255,244,170,0.94); color: #6a5200; border-color: #d8b800; }
+.th-box.possible { background: rgba(255,190,90,0.94); color: #5a2e00; border-color: #e08a00; }
+.th-box.severe { background: rgba(235,80,60,0.92); color: #fff; border-color: #a82a1a; }
+.th-box.severeHigh { background: rgba(130,20,50,0.94); color: #fff; border-color: #5a0a22; }
+.sh-legend .th-box { transform: none; }
 /* レイヤー行の凡例。左端はチップ行（.amedas-els）と同じ 30px。記号は置き場の transform を外す */
 .sh-legend { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
   padding: 0 8px 6px 30px; font-size: 11px; color: var(--text2); }
@@ -2423,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.151.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.152.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6762,6 +6777,10 @@ const MAP_WEATHER = [
      説明は「降雪の目安」の節（drawSnowHint の上） */
   { id: 'snowHint', name: '降雪の目安', kind: 'snowHint', opacity: 0.9,
     attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の雨・みぞれ・雪の目安（予報モデルの値。観測ではありません）。記号を押すと根拠' },
+  /* 雷雨の目安（段階3・#138）。風の矢印と同じ格子点に、ショワルター安定指数（SSI）が不安定側の点だけ記号を置く。
+     ⚠ 予報モデルの値であって観測ではない。雷ナウキャスト（観測）の代わりではない。説明は「雷雨の目安」の節 */
+  { id: 'thunderHint', name: '雷雨の目安', kind: 'thunderHint', opacity: 0.9,
+    attribution: 'Open-Meteo', note: '選択時刻の大気の不安定さ（SSI）。予報モデルの値で観測ではありません。記号を押すと根拠' },
 ];
 
 function findBase(id) { return MAP_BASES.find(b => b.id === id) || null; }
@@ -6891,7 +6910,7 @@ function applyOverlays() {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
     } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
       addTimedTileLayer(def, item.opacity);
-    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas') {
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (def.url) {
       const layer = L.tileLayer(def.url,
@@ -8052,7 +8071,7 @@ const WIND_LAYER_IDS = ['windFlow', 'windFlowGL', 'windArrows'];
 const windLayersOn = () => WIND_LAYER_IDS.filter(id => isOverlayOn(id));
 const windAnyOn = () => windLayersOn().length > 0;
 // 時刻で変わる点の層（風・降雪の目安）。地図のタイムスライダーと地形表の読み込み後の描き直しが見る
-function pointHintAnyOn() { return windAnyOn() || isOverlayOn('snowHint'); }
+function pointHintAnyOn() { return windAnyOn() || isOverlayOn('snowHint') || isOverlayOn('thunderHint'); }
 function windNote(text) { windLayersOn().forEach(id => setLayerNote(id, text)); }
 function windError(text) { windLayersOn().forEach(id => setLayerError(id, text)); }
 function windClear() { windLayersOn().forEach(id => clearLayerStatus(id)); }
@@ -8135,6 +8154,119 @@ function drawWindArrows(f, opacity) {
   }
 }
 
+/* ------ 格子点の目安の共通部分（降雪の目安・雷雨の目安）------
+   風の矢印と同じ格子点（windFieldLattice）に、選択時刻の記号を置く層の、取得・控え・状態の文をまとめる。
+   層ごとに違うのは：取る変数（cfg.VARS）・1点1時刻の目安（at）・状態の文（stateNote）・地形表が要るか（needTerrain）だけ。
+   ・控え・差分取得・1回の地点数の上限・動き終わってから取る・429 のあとの待ち（windBackoffUntil は風と共有）は同じ作法
+   ・⚠ 風の取得に相乗りしない（変数が違う）。返事に値の無い点も空で控える（取り直しが止まらなくなるのを防ぐ） */
+function makeHintEngine(o) {
+  const cfg = o.cfg, eng = { timer: null, gen: 0 };
+  const note = t => setLayerNote(o.id, t);
+  const fail = t => setLayerError(o.id, t);
+  const on = () => isOverlayOn(o.id);
+  eng.record = key => {
+    const c = o.store.get(key);
+    return (c && Date.now() - c.at < cfg.CACHE_MS) ? c : null;
+  };
+  eng.fetchColumns = async pts => {
+    const q = new URLSearchParams({
+      latitude: pts.map(p => p.lat).join(','),
+      longitude: pts.map(p => p.lon).join(','),
+      elevation: pts.map(() => 'nan').join(','),   // モデル標高の値を返させる（補正は自前で持つ）
+      cell_selection: 'nearest',
+      hourly: cfg.VARS.join(','),
+      models: 'jma_seamless',
+      timezone: 'Asia/Tokyo',
+      wind_speed_unit: 'ms',       // ★既定はkm/h（ADR-0005）。風はモデルの判別にしか使わないが、付け忘れない
+      ...cfg.SPAN,
+    });
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`);
+    if (res.status === 429) {
+      windBackoffUntil = Date.now() + WIND_BACKOFF_MS;       // 風と共有（同じ回線の枠）
+      const e = new Error('HTTP 429'); e.rateLimited = true; throw e;
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const arr = Array.isArray(json) ? json : [json];
+    const now = Date.now();
+    pts.forEach((p, n) => {
+      const r = arr[n], h = r && r.hourly;
+      const time = (h && h.time) || [];
+      const cols = {};
+      for (const v of cfg.VARS) cols[v] = (h && h[v]) || null;
+      o.store.set(p.key, { at: now, i: p.i, j: p.j, lat: p.lat, lon: p.lon,
+        zModel: r && typeof r.elevation === 'number' ? r.elevation : null,
+        time, idx: new Map(time.map((t, k) => [t, k])), cols,
+        phases: windModelPhases(cols, time.length) });
+    });
+    while (o.store.size > cfg.CACHE_MAX) o.store.delete(o.store.keys().next().value);
+  };
+  /* 場を用意する（取得・控え・状態の文）。返り値は cells（[{ p, rec, res }]）か
+     null（拡大が足りない・地形表を待っている／読めない） */
+  eng.ensure = bounds => {
+    if (leafletMap.getZoom() < WIND_MIN_ZOOM) { note(`拡大すると${o.name}を表示します`); return null; }
+    if (o.needTerrain) {
+      loadTerrainRef();
+      if (terrainRefState === 'loading' || terrainRefState === 'idle') { note('地形表を読み込み中…'); return null; }
+      if (terrainRefState === 'error') {
+        // ⚠ 基準標高が無いと標高補正できない。補正しないまま気温で雨雪を言わない
+        fail(`地形表を読めないため表示できません（${terrainRefError}）`);
+        return null;
+      }
+    }
+    const sel = state.allData && state.allData[state.sliderIndex];
+    const timeKey = isoHour(sel ? sel.time : new Date());
+    const L = windFieldLattice(bounds, leafletMap.getZoom());
+    const cells = [], missing = [];
+    for (const p of L.pts) {
+      const rec = eng.record(p.key);
+      if (!rec) { missing.push(p); continue; }
+      cells.push({ p, rec, res: o.at(rec, timeKey) });
+    }
+    if (!missing.length) {
+      const t = o.stateNote(cells);
+      if (t) note(t); else clearLayerStatus(o.id);
+      return cells;
+    }
+    // 429 のあとは取りに行かない（控えだけ描いて、待っていることを言う）
+    const wait = windBackoffUntil - Date.now();
+    if (wait > 0) {
+      fail(`問い合わせが多すぎると断られました（HTTP 429）。${Math.ceil(wait / 1000)}秒ほどで取り直します`);
+      clearTimeout(eng.timer);
+      eng.timer = setTimeout(() => { if (isMapOpen() && on()) refreshWeatherPoints(); }, wait + 200);
+      return cells;
+    }
+    note(`${o.name}を取得中…`);
+    // 動き終わってから取りに行く（続けて動かしている間は取らない）
+    const gen = ++eng.gen;
+    clearTimeout(eng.timer);
+    eng.timer = setTimeout(async () => {
+      if (gen !== eng.gen) return;
+      try {
+        for (let s = 0; s < missing.length; s += cfg.FETCH_MAX_POINTS) {
+          await eng.fetchColumns(missing.slice(s, s + cfg.FETCH_MAX_POINTS));
+        }
+        if (gen !== eng.gen || !on()) return;
+        clearLayerStatus(o.id);
+        refreshWeatherPoints();       // 控えが埋まったので描き直す（今度は通信しない）
+      } catch (e) {
+        if (e.rateLimited) {
+          fail(`問い合わせが多すぎると断られました（HTTP 429）。${Math.round(WIND_BACKOFF_MS / 1000)}秒ほどで取り直します`);
+          eng.timer = setTimeout(() => { if (isMapOpen() && on()) refreshWeatherPoints(); }, WIND_BACKOFF_MS + 200);
+        } else {
+          fail(`取得できません（${e.message}）`);
+        }
+      }
+    }, cfg.FETCH_DELAY_MS);
+    return cells;
+  };
+  return eng;
+}
+// モデル名の言い方（札・状態の文で共通）
+function hintModelText(model) {
+  return model ? `モデル：${model === 'GSM' ? 'GSM（粗い・約50km）' : model === '移行' ? 'MSMとGSMの混合（移行中）' : 'MSM'}` : '';
+}
+
 /* ============================================================
    降雪の目安（段階2・#131）→ docs/requirements_snow_thunder_hint.md
    風の矢印と同じ格子点に、選択時刻の「雨／みぞれ／雪」の小さな記号を置く（降水がある点だけ）。
@@ -8165,8 +8297,6 @@ const SNOW_HINT = {
 };
 const SNOW_TYPES = { snow: { label: '雪' }, sleet: { label: 'みぞれ' }, rain: { label: '雨' } };
 const snowCols = new Map();   // `${i}:${j}` -> { at, i, j, lat, lon, zModel, time[], idx, cols, phases }
-let snowFetchTimer = null;
-let snowFetchGen = 0;
 
 // 標高補正後の気温 → 雨雪の種類。境の気温は SNOW_HINT（仮置き）
 function snowTypeOf(tC) {
@@ -8176,47 +8306,6 @@ function snowTypeOf(tC) {
 function snowTempAt(t2m, zModel, zRef) {
   return t2m + SNOW_HINT.LAPSE_C_PER_M * (zModel - zRef);
 }
-function snowRecord(key) {
-  const c = snowCols.get(key);
-  return (c && Date.now() - c.at < SNOW_HINT.CACHE_MS) ? c : null;
-}
-
-async function fetchSnowColumns(pts) {
-  const q = new URLSearchParams({
-    latitude: pts.map(p => p.lat).join(','),
-    longitude: pts.map(p => p.lon).join(','),
-    elevation: pts.map(() => 'nan').join(','),   // モデル標高の気温を返させる（補正は自前で持つ）
-    cell_selection: 'nearest',
-    hourly: SNOW_HINT.VARS.join(','),
-    models: 'jma_seamless',
-    timezone: 'Asia/Tokyo',
-    wind_speed_unit: 'ms',       // ★既定はkm/h（ADR-0005）。風はモデルの判別にしか使わないが、付け忘れない
-    ...SNOW_HINT.SPAN,
-  });
-  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`);
-  if (res.status === 429) {
-    windBackoffUntil = Date.now() + WIND_BACKOFF_MS;       // 風と共有（同じ回線の枠）
-    const e = new Error('HTTP 429'); e.rateLimited = true; throw e;
-  }
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
-  const arr = Array.isArray(json) ? json : [json];
-  const now = Date.now();
-  /* ⚠ 返事に値の無い点も「取った」として控える（空で）。控えないと、描き直すたびにその点が
-     「控えに無い」ままになり、取り直しが止まらない（風と同じ。429 の元をまた作る） */
-  pts.forEach((p, n) => {
-    const r = arr[n], h = r && r.hourly;
-    const time = (h && h.time) || [];
-    const cols = {};
-    for (const v of SNOW_HINT.VARS) cols[v] = (h && h[v]) || null;
-    snowCols.set(p.key, { at: now, i: p.i, j: p.j, lat: p.lat, lon: p.lon,
-      zModel: r && typeof r.elevation === 'number' ? r.elevation : null,
-      time, idx: new Map(time.map((t, k) => [t, k])), cols,
-      phases: windModelPhases(cols, time.length) });
-  });
-  while (snowCols.size > SNOW_HINT.CACHE_MAX) snowCols.delete(snowCols.keys().next().value);
-}
-
 /* 1点・1時刻の目安。返り値 { kind, ... }。kind:
      'ok'      … 降水があり、雨雪を決められた（記号を置く）
      'dry'     … 先の1時間の降水が PRECIP_MIN_MM 未満（記号を置かない）
@@ -8249,70 +8338,16 @@ function snowHintStateNote(cells) {
   return tag ? tag.slice(1) : '';
 }
 
-/* 場を用意する（取得・控え・状態の文）。返り値は cells（[{ p, rec, res }]）か null（拡大が足りない・地形表を待っている／読めない） */
-function ensureSnowHint(bounds) {
-  const note = t => setLayerNote('snowHint', t);
-  const fail = t => setLayerError('snowHint', t);
-  if (leafletMap.getZoom() < WIND_MIN_ZOOM) { note('拡大すると降雪の目安を表示します'); return null; }
-  loadTerrainRef();
-  if (terrainRefState === 'loading' || terrainRefState === 'idle') { note('地形表を読み込み中…'); return null; }
-  if (terrainRefState === 'error') {
-    // ⚠ 基準標高が無いと標高補正できない。気温をそのまま使って雨雪を言わない
-    fail(`地形表を読めないため表示できません（${terrainRefError}）`);
-    return null;
-  }
-  const sel = state.allData && state.allData[state.sliderIndex];
-  const timeKey = isoHour(sel ? sel.time : new Date());
-  const L = windFieldLattice(bounds, leafletMap.getZoom());
-  const cells = [], missing = [];
-  for (const p of L.pts) {
-    const rec = snowRecord(p.key);
-    if (!rec) { missing.push(p); continue; }
-    cells.push({ p, rec, res: snowHintAt(rec, timeKey) });
-  }
-  if (!missing.length) {
-    const t = snowHintStateNote(cells);
-    if (t) note(t); else clearLayerStatus('snowHint');
-    return cells;
-  }
-  // 429 のあとは取りに行かない（控えだけ描いて、待っていることを言う）
-  const wait = windBackoffUntil - Date.now();
-  if (wait > 0) {
-    fail(`問い合わせが多すぎると断られました（HTTP 429）。${Math.ceil(wait / 1000)}秒ほどで取り直します`);
-    clearTimeout(snowFetchTimer);
-    snowFetchTimer = setTimeout(() => { if (isMapOpen() && isOverlayOn('snowHint')) refreshWeatherPoints(); }, wait + 200);
-    return cells;
-  }
-  note('降雪の目安を取得中…');
-  // 動き終わってから取りに行く（続けて動かしている間は取らない）
-  const gen = ++snowFetchGen;
-  clearTimeout(snowFetchTimer);
-  snowFetchTimer = setTimeout(async () => {
-    if (gen !== snowFetchGen) return;
-    try {
-      for (let s = 0; s < missing.length; s += SNOW_HINT.FETCH_MAX_POINTS) {
-        await fetchSnowColumns(missing.slice(s, s + SNOW_HINT.FETCH_MAX_POINTS));
-      }
-      if (gen !== snowFetchGen || !isOverlayOn('snowHint')) return;
-      clearLayerStatus('snowHint');
-      refreshWeatherPoints();       // 控えが埋まったので描き直す（今度は通信しない）
-    } catch (e) {
-      if (e.rateLimited) {
-        fail(`問い合わせが多すぎると断られました（HTTP 429）。${Math.round(WIND_BACKOFF_MS / 1000)}秒ほどで取り直します`);
-        snowFetchTimer = setTimeout(() => { if (isMapOpen() && isOverlayOn('snowHint')) refreshWeatherPoints(); }, WIND_BACKOFF_MS + 200);
-      } else {
-        fail(`取得できません（${e.message}）`);
-      }
-    }
-  }, SNOW_HINT.FETCH_DELAY_MS);
-  return cells;
-}
+// 降雪の目安のエンジン（取得・控え・状態の文は makeHintEngine）
+const snowEngine = makeHintEngine({ id: 'snowHint', name: '降雪の目安', store: snowCols, cfg: SNOW_HINT,
+  needTerrain: true, at: snowHintAt, stateNote: snowHintStateNote });
+function ensureSnowHint(bounds) { return snowEngine.ensure(bounds); }
 
 function snowHintText(r) {
   const f0 = x => Math.round(x).toLocaleString();
   const ty = SNOW_TYPES[r.type].label;
   const th = r.type === 'snow' ? `≦${SNOW_HINT.SNOW_MAX_C}℃` : r.type === 'sleet' ? `≦${SNOW_HINT.SLEET_MAX_C}℃` : `＞${SNOW_HINT.SLEET_MAX_C}℃`;
-  const m = r.model ? `モデル：${r.model === 'GSM' ? 'GSM（粗い・約50km）' : r.model === '移行' ? 'MSMとGSMの混合（移行中）' : 'MSM'}` : '';
+  const m = hintModelText(r.model);
   return [
     `<b>${ty}の目安</b>（予報モデルの値。観測ではありません）`,
     `降水 <b>${r.precip.toFixed(1)}mm</b>（この時刻からの1時間）`,
@@ -8348,6 +8383,159 @@ function snowHintLegend() {
     `<span>${box('rain')} それ超</span>` +
     `<span class="layer-ov-note">稜線の高さに補正した気温で分けます（仮置き）。数字は降水量（mm・先の1時間）。` +
     `予報モデルの値で、観測ではありません。実際の降水は降雨レーダーで確認してください</span></div>`;
+}
+
+/* ============================================================
+   雷雨の目安（段階3・#138）→ docs/requirements_snow_thunder_hint.md
+   風の矢印と同じ格子点に、選択時刻の**ショワルター安定指数（SSI）**が不安定側の点だけ記号を置く。
+   SSI = T500 − T_P。T_P は 850hPa の空気塊を持ち上げ（凝結高度まで乾燥断熱・それより上は湿潤断熱）、500hPa に着いたときの温度。
+   小さい（負）ほど大気の状態が不安定＝雷雨が起きやすい。分類は SCW の説明に倣う：
+     ＞0 安定／≦0 不安定／≦−3 雷雨の可能性／≦−6 激しい雷雨の可能性／≦−9 激しい雷雨の可能性大
+   ⚠⚠ **予報モデルの値であって、観測ではない。** 実際の雷は雷ナウキャスト（観測）で確認する。
+   ⚠⚠ **判定（ABC評価）ではない。** `THRESH` とは別の定数表（THUNDER_HINT）。
+   ・Open-Meteo（JMA）は cape / lifted_index を返さない（#126）ので、気圧面の値から**自前で**計算する
+     （LCL は Bolton(1980)、湿潤断熱は RK4。MetPy の showalter_index と最大 0.04℃差 → tests/refs/）
+   ・850hPa 面が地中の升目（モデル標高が 850hPa の高度に近い＝高い山）は計算できない。**黙って消さず**理由を言う
+   ・入力（850hPa 気温・露点、500hPa 気温、850hPa 高度）が欠けたら「分からない」。安定とは言わない
+   ・SSI は瞬間値。降水のような1時間ずらしは無い。地形表（基準標高）は使わない
+   ・取得は降雪の目安・風と別（makeHintEngine）。429 の待ちだけ共有 */
+const THUNDER_HINT = {
+  SSI_UNSTABLE: 0,           // これ以下 → 不安定
+  SSI_POSSIBLE: -3,          // これ以下 → 雷雨の可能性
+  SSI_SEVERE: -6,            // これ以下 → 激しい雷雨の可能性
+  SSI_SEVERE_HIGH: -9,       // これ以下 → 激しい雷雨の可能性大
+  UNDERGROUND_MARGIN_M: 50,  // モデル標高が 850hPa の高度 − これ より高ければ、850hPa 面は地中として計算しない
+  FETCH_MAX_POINTS: 40,
+  FETCH_DELAY_MS: 500,
+  CACHE_MS: 30 * 60 * 1000,
+  CACHE_MAX: 600,
+  SPAN: { past_days: '3', forecast_days: '8' },
+  VARS: ['temperature_850hPa', 'dew_point_850hPa', 'temperature_500hPa', 'geopotential_height_850hPa',
+    ...MSM_ONLY_PROBE_LEVELS.map(p => `wind_speed_${p}hPa`)],
+};
+const THUNDER_LEVELS = {
+  unstable:   { label: '不安定',           short: '不安定' },
+  possible:   { label: '雷雨の可能性',     short: '雷雨可能性' },
+  severe:     { label: '激しい雷雨の可能性', short: '激しい雷雨' },
+  severeHigh: { label: '激しい雷雨の可能性大', short: '激しい雷雨大' },
+};
+const thunderCols = new Map();   // `${i}:${j}` -> snowCols と同じ形
+
+// SSI → 区分。安定（＞0）は null
+function thunderLevelOf(ssi) {
+  const T = THUNDER_HINT;
+  return ssi > T.SSI_UNSTABLE ? null : ssi <= T.SSI_SEVERE_HIGH ? 'severeHigh'
+    : ssi <= T.SSI_SEVERE ? 'severe' : ssi <= T.SSI_POSSIBLE ? 'possible' : 'unstable';
+}
+
+// --- ショワルター安定指数の計算（定数・式は MetPy と同じ系。tests/smoke_thunderhint.mjs が参照値と突き合わせる）---
+const THERMO = { KAPPA: 0.2854, RD: 287.04, CP: 1005.7, EPS: 0.622, LV: 2.501e6 };
+const satVapPressure = tC => 6.112 * Math.exp(17.67 * tC / (tC + 243.5));              // hPa（Bolton 1980）
+const lclTempK = (tK, tdK) => 1 / (1 / (tdK - 56) + Math.log(tK / tdK) / 800) + 56;    // 持ち上げ凝結高度の温度
+// 湿潤断熱で p0 → p1（hPa）へ動かした温度（℃）。RK4・5hPa刻み
+function moistAscentC(tC, p0, p1) {
+  const { RD, CP, EPS, LV } = THERMO;
+  const f = (p, T) => {
+    const es = satVapPressure(T - 273.15), rs = EPS * es / (p - es);
+    return (RD * T + LV * rs) / (p * (CP + LV * LV * rs * EPS / (RD * T * T)));
+  };
+  const n = Math.max(1, Math.ceil((p0 - p1) / 5)), h = (p1 - p0) / n;
+  let T = tC + 273.15, p = p0;
+  for (let i = 0; i < n; i++) {
+    const k1 = f(p, T), k2 = f(p + h / 2, T + h / 2 * k1), k3 = f(p + h / 2, T + h / 2 * k2), k4 = f(p + h, T + h * k3);
+    T += h / 6 * (k1 + 2 * k2 + 2 * k3 + k4); p += h;
+  }
+  return T - 273.15;
+}
+// 850hPa の気温・露点と 500hPa の気温（℃）から SSI（℃）。入力が欠けていれば null（安定とは言わない）
+function showalterIndex(t850, td850, t500) {
+  if (![t850, td850, t500].every(Number.isFinite)) return null;
+  const tK = t850 + 273.15, tdK = Math.min(td850, t850) + 273.15;   // 露点は気温を超えない
+  const tl = lclTempK(tK, tdK);
+  const pl = 850 * Math.pow(tl / tK, 1 / THERMO.KAPPA);              // 凝結高度の気圧
+  const tp = pl <= 500 ? tK * Math.pow(500 / 850, THERMO.KAPPA) - 273.15 : moistAscentC(tl - 273.15, pl, 500);
+  return t500 - tp;
+}
+
+/* 1点・1時刻の目安。返り値 { kind, ... }。kind:
+     'ok'          … SSI ≦ 0（記号を置く）。level / ssi / 入力値
+     'stable'      … SSI ＞ 0（記号を置かない）
+     'noTime'      … 取った期間の外
+     'missing'     … 入力のどれかが無い（安定、とは違う）
+     'underground' … 850hPa 面が地中（計算できない） */
+function thunderHintAt(rec, timeKey) {
+  const k = rec.idx.get(timeKey);
+  if (k == null) return { kind: 'noTime' };
+  const at = v => rec.cols[v] ? rec.cols[v][k] : null;
+  const t850 = at('temperature_850hPa'), td850 = at('dew_point_850hPa'), t500 = at('temperature_500hPa'), gh850 = at('geopotential_height_850hPa');
+  if (t850 == null || td850 == null || t500 == null || gh850 == null || rec.zModel == null) return { kind: 'missing' };
+  if (rec.zModel > gh850 - THUNDER_HINT.UNDERGROUND_MARGIN_M) return { kind: 'underground', zModel: rec.zModel, gh850 };
+  const ssi = showalterIndex(t850, td850, t500);
+  if (ssi == null) return { kind: 'missing' };
+  const level = thunderLevelOf(ssi);
+  return level ? { kind: 'ok', level, ssi, t850, td850, t500, gh850, zModel: rec.zModel, model: rec.phases[k] }
+    : { kind: 'stable', ssi };
+}
+
+// 状態の文。⚠ 記号が1つも無いときは**理由を言う**（安定なのか、計算できないのか、取れていないのか）
+function thunderHintStateNote(cells) {
+  if (!cells.length) return '';
+  if (cells.every(c => c.res.kind === 'noTime')) return 'この時刻の予報はありません（予報の範囲の外）';
+  if (cells.every(c => c.res.kind === 'missing' || c.res.kind === 'noTime')) return 'この時刻の気圧面の値（850hPa・500hPa）を取得できていません';
+  if (cells.every(c => c.res.kind === 'underground' || c.res.kind === 'noTime')) return '高い山の範囲では850hPa面が地面より下になるため、雷雨の目安を計算できません';
+  const shown = cells.filter(c => c.res.kind === 'ok');
+  const phases = new Set(cells.map(c => c.res.model).filter(Boolean));
+  const tag = phases.has('GSM') ? '・この時刻は粗いモデル（GSM・約50km）'
+    : phases.has('移行') ? '・MSMとGSMの混合（移行中）' : '';
+  if (!shown.length) return `この時刻、表示範囲に不安定（SSI ≦ ${THUNDER_HINT.SSI_UNSTABLE}）の予報はありません${tag}`;
+  return tag ? tag.slice(1) : '';
+}
+
+const thunderEngine = makeHintEngine({ id: 'thunderHint', name: '雷雨の目安', store: thunderCols, cfg: THUNDER_HINT,
+  needTerrain: false, at: thunderHintAt, stateNote: thunderHintStateNote });
+function ensureThunderHint(bounds) { return thunderEngine.ensure(bounds); }
+
+function thunderHintText(r) {
+  const f0 = x => Math.round(x).toLocaleString();
+  const lv = THUNDER_LEVELS[r.level].label;
+  return [
+    `<b>${lv}の目安</b>（予報モデルの値。観測ではありません）`,
+    `ショワルター安定指数 <b>SSI ${r.ssi.toFixed(1)}</b>`,
+    `850hPa：気温 ${r.t850.toFixed(1)}℃・露点 ${r.td850.toFixed(1)}℃（高度 約${f0(r.gh850)}m）`,
+    `500hPa：気温 ${r.t500.toFixed(1)}℃`,
+    `モデル標高 ${f0(r.zModel)}m`,
+    hintModelText(r.model),
+    `<small>SSI = T500 − （850hPa の空気塊を500hPaまで持ち上げた温度）。小さいほど不安定。` +
+    `⚠ 予報モデルの値で、実際の雷は雷ナウキャスト（観測）で確認</small>`,
+  ].filter(Boolean).join('<br>');
+}
+
+// 不安定な点に記号（SSI の値つき）。押すと根拠（風の矢印・降雪の目安と同じ作法）
+function drawThunderHint(cells, opacity) {
+  for (const c of cells) {
+    const r = c.res;
+    if (r.kind !== 'ok') continue;
+    const html = `<div class="th-box ${r.level}"><b>SSI</b><span>${r.ssi.toFixed(1)}</span></div>`;
+    const m = L.marker([c.p.lat, c.p.lon], {
+      pane: 'mapWeather', opacity,
+      icon: L.divIcon({ className: 'thunder-hint', html, iconSize: null }),
+    }).addTo(leafletMap);
+    m.bindPopup(() => `<div class="wind-why">${thunderHintText(r)}</div>`, { maxWidth: 280 });
+    weatherMarkers.push(m);
+  }
+}
+
+// レイヤー行の凡例（SSI の境・注意書き）。境の数字は THUNDER_HINT から出す
+function thunderHintLegend() {
+  const T = THUNDER_HINT;
+  const box = lv => `<span class="th-box ${lv}"><b>${THUNDER_LEVELS[lv].short}</b></span>`;
+  return `<div class="sh-legend">` +
+    `<span>${box('unstable')} SSI ≦${T.SSI_UNSTABLE}</span>` +
+    `<span>${box('possible')} ≦${T.SSI_POSSIBLE}</span>` +
+    `<span>${box('severe')} ≦${T.SSI_SEVERE}</span>` +
+    `<span>${box('severeHigh')} ≦${T.SSI_SEVERE_HIGH}</span>` +
+    `<span class="layer-ov-note">ショワルター安定指数（SSI）が0以下の点だけ表示（小さいほど不安定）。記号が無い所は安定、または高い山で計算できない所。` +
+    `予報モデルの値で、観測ではありません。実際の雷は雷ナウキャスト（雷レイヤー）で確認してください</span></div>`;
 }
 
 /* ============================================================
@@ -10896,6 +11084,10 @@ function refreshWeatherPoints() {
     const cells = ensureSnowHint(bounds);
     if (cells) drawSnowHint(cells, overlayOpacity('snowHint'));
   }
+  if (isOverlayOn('thunderHint')) {
+    const cells = ensureThunderHint(bounds);
+    if (cells) drawThunderHint(cells, overlayOpacity('thunderHint'));
+  }
   updateThunderIcons();
   updateMapTime();
   weatherPointsDirty = false;
@@ -11119,7 +11311,7 @@ function setOverlayOpacity(id, value) {
     layer.setOpacity(item.opacity);
   }
   const def = findOverlay(id);
-  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint')) refreshWeatherPoints();
+  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint')) refreshWeatherPoints();
   if (def && def.kind === 'windFlow' && windFlow.cv) windFlow.cv.style.opacity = String(item.opacity);
   if (def && def.kind === 'windFlowGL' && windGL.cv) windGL.cv.style.opacity = String(item.opacity);
   const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
@@ -11337,7 +11529,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}
         <div class="layer-ov-op">
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
