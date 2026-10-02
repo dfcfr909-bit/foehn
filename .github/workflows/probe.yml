@@ -26,6 +26,7 @@ on:
           - terrain-ref
           - pages-cache
           - gust-obs
+          - snow-thunder
       peak:
         description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
         required: false
@@ -96,6 +97,10 @@ jobs:
       - name: 高標高アメダスで突風率を実測できるか
         if: ${{ inputs.target == 'gust-obs' }}
         run: node scripts/probeGustObs.mjs | tee result.txt
+
+      - name: 降雪・雷雨の目安の入力（Open-Meteo の変数）
+        if: ${{ inputs.target == 'snow-thunder' }}
+        run: node scripts/probeSnowThunder.mjs | tee result.txt
 
       - name: 結果をサマリーへ
         if: always()
