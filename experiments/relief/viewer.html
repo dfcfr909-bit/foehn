@@ -268,6 +268,12 @@ const resCache = new Map(), RES_MAX = 48;
 function metersPerPx(z, lat) { return 40075016.686 * Math.cos(lat * Math.PI / 180) / (TILE * 2 ** z); }
 function tileLat(z, y) { const n = Math.PI - 2 * Math.PI * (y + 0.5) / 2 ** z; return Math.atan(Math.sinh(n)) * 180 / Math.PI; }
 
+// 1タイルの計算の前に制御をブラウザへ返す（地図のドラッグ・スライダーなどの入力と描画を挟めるようにする）。
+// setTimeout(0) を使う理由：requestIdleCallback は iOS Safari に無い。MessageChannel は待ちが無く、タイルの計算が連続したとき描画・入力より先に次の計算が走る可能性がある（Safari では未確認）。
+// setTimeout(0) は入れ子で 4ms 以上の下限が付くことがあり、描画・入力に番を譲りやすい。増える待ちの量は findings.md のヘッドレスの測定を参照（実機は未確認）。
+// 譲りは1本の列にして直列にする：全タイル分の setTimeout(0) を同時に作ると、先に期限が来た順に連続して走り、あとから期限の来る setInterval などが全タイルの終了まで走れない。
+let yieldChain = Promise.resolve();
+const yieldToBrowser = () => (yieldChain = yieldChain.then(() => new Promise(resolve => setTimeout(resolve, 0))));
 function getResult(zd, dx, dy) {
   const key = `${gen}/${zd}/${dx}/${dy}`;
   if (resCache.has(key)) return resCache.get(key);
@@ -279,6 +285,8 @@ function getResult(zd, dx, dy) {
     const M = Math.min(TILE, needM), W = TILE + 2 * M;
     const tiles = await Promise.all([-1, 0, 1].flatMap(oy => [-1, 0, 1].map(ox => loadElev(src, zd, dx + ox, dy + oy).then(t => [ox, oy, t]))));
     if (my !== gen) return null;
+    await yieldToBrowser();
+    if (my !== gen) return null;   // 譲っている間に世代が変わった（古い仕事）なら、計算せずに捨てる
     const centre = tiles.find(([ox, oy]) => !ox && !oy)[2];
     const t0 = performance.now();
     const grid = new Float32Array(W * W).fill(NaN);
