@@ -76,5 +76,6 @@ with sync_playwright() as p:
     pg.wait_for_timeout(55000)
     show("D 擬似 クリック56秒後（まだ戻らない想定）", pg.evaluate(BTN))
     pg.wait_for_function("!document.getElementById('apply').disabled", timeout=20000)
-    show("D 擬似 ボタンが戻るまで(s)", round(time.time() - t, 1)); show("D 擬似 戻った後", pg.evaluate(BTN)); pg.close()
+    show("D 擬似 ボタンが戻るまで(s)", round(time.time() - t, 1)); show("D 擬似 戻った後", pg.evaluate(BTN))
+    show("D 擬似 所要時間の表示欄と applyMs", pg.evaluate("({text: $('applyTime').textContent, applyMs: __stats.applyMs})")); pg.close()
     b.close()

@@ -46,13 +46,14 @@
     </select></div>
   <div class="row"><label for="maxz">最大ズーム</label><input id="maxz" type="range" min="12" max="18" step="1" value="18"><output id="maxz_o"></output></div>
   <div class="row"><label for="sigma">CS σ（m）</label><input id="sigma" type="range" min="1" max="30" step="0.5" value="5"><output id="sigma_o"></output></div>
-  <div class="row"><label for="cscale">CS 曲率の強さ</label><input id="cscale" type="range" min="-3" max="-0.7" step="0.05" value="-1.5"><output id="cscale_o"></output></div>
+  <div class="row"><label for="cscale">CS 曲率の強さ</label><input id="cscale" type="range" min="-3" max="-0.7" step="0.05" value="-2"><output id="cscale_o"></output></div>
   <div class="row"><label for="rad">CI 半径 R（m）</label><input id="rad" type="range" min="5" max="200" step="5" value="30"><output id="rad_o"></output></div>
   <div class="row"><label for="sigc">CI 下ならし（m）</label><input id="sigc" type="range" min="0" max="10" step="0.5" value="1.5"><output id="sigc_o"></output></div>
-  <div class="row"><label for="ciscale">CI 満色（%）</label><input id="ciscale" type="range" min="5" max="80" step="5" value="30"><output id="ciscale_o"></output></div>
-  <div class="row"><label for="op">不透明度</label><input id="op" type="range" min="0.1" max="1" step="0.05" value="0.8"><output id="op_o"></output></div>
-  <div class="row two"><label for="miss">欠けの表示</label><label><input id="miss" type="checkbox" checked> 欠けを赤で示す</label></div>
+  <div class="row"><label for="ciscale">CI 満色（%）</label><input id="ciscale" type="range" min="5" max="80" step="5" value="20"><output id="ciscale_o"></output></div>
+  <div class="row"><label for="op">不透明度</label><input id="op" type="range" min="0.1" max="1" step="0.05" value="0.65"><output id="op_o"></output></div>
+  <div class="row two"><label for="miss">欠けの表示</label><label><input id="miss" type="checkbox"> 欠けを赤で示す</label></div>
   <button id="apply" type="button">適用</button>
+  <div class="note" id="applyTime">適用：未実行</div>
   <div class="note">不透明度以外の変更は「適用」を押したときに計算する（押すまで前の設定のまま）。</div>
   <div class="legend" id="lg"></div>
   <div class="note" id="lgnote"></div>
@@ -62,6 +63,7 @@
     <button data-v="37.1236,139.9689,15">那須岳</button></span></div>
   <div id="attr"></div>
   <div class="row two"><label>計測</label><span><button id="reset">リセット</button> <button id="copy">JSONをコピー</button></span></div>
+  <div class="note" id="copyMsg"></div>
   <div id="stats">計測中…</div>
   <div class="note">σ・R は m で指定し、タイルごとに升目の数へ直す。欠けは別の解像度で埋めない。標高タイルはメモリにだけ保持。</div>
 </details></div>
@@ -100,18 +102,19 @@ function isDirty() {   // 画面の値が、確定済みの設定と違うか（
 }
 
 // ---- 計測（数字だけ。画像は保存しない）----
-const stats = { fetch: [], decode: [], compute: [], draw: [], tiles: 0, hit: 0, miss403: 0, missOther: 0, allTransparent: 0, layerLoadMs: [], evict: 0 };
+const stats = { fetch: [], decode: [], compute: [], draw: [], tiles: 0, hit: 0, miss403: 0, missOther: 0, allTransparent: 0, layerLoadMs: [], applyMs: [], evict: 0 };
 function q(a, p) { if (!a.length) return "-"; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(1); }
 function showStats() {
   const f = (n, a) => `${n} n=${a.length} 中央${q(a, .5)} p95 ${q(a, .95)} 最大${q(a, 1)} ms`;
   $("stats").textContent = [
     f("標高取得", stats.fetch), f("PNG復号", stats.decode), f("計算(1タイル)", stats.compute), f("描き込み", stats.draw),
     `描画完了までの時間(画面全体) ${stats.layerLoadMs.map(v => v.toFixed(0)).join(", ") || "-"} ms`,
+    `適用の所要時間 ${stats.applyMs.map(v => v.toFixed(0)).join(", ") || "-"} ms`,
     `タイル ${stats.tiles} / 標高キャッシュ命中 ${stats.hit} / 欠け: 403=${stats.miss403} 他=${stats.missOther} 全透明=${stats.allTransparent} / 追い出し ${stats.evict}`,
     `UA ${navigator.userAgent.slice(0, 80)}`,
   ].join("\n");
 }
-function resetStats() { for (const k of ["fetch", "decode", "compute", "draw", "layerLoadMs"]) stats[k] = []; for (const k of ["tiles", "hit", "miss403", "missOther", "allTransparent", "evict"]) stats[k] = 0; showStats(); }
+function resetStats() { for (const k of ["fetch", "decode", "compute", "draw", "layerLoadMs", "applyMs"]) stats[k] = []; for (const k of ["tiles", "hit", "miss403", "missOther", "allTransparent", "evict"]) stats[k] = 0; showStats(); }
 window.__stats = stats;
 
 // ---- 標高タイル（メモリ保持。同じタイルを取り直さない）----
@@ -332,6 +335,7 @@ let tLoad = 0;
 layer.on("loading", () => { tLoad = performance.now(); });
 layer.on("load", () => {
   if (tLoad) { stats.layerLoadMs.push(performance.now() - tLoad); tLoad = 0; showStats(); }
+  finishApply(false);
   setBusy(false);
 });
 
@@ -347,14 +351,23 @@ function setBusy(on) {   // 計算中は「適用」を押せなくする（進�
   const b = $("apply"); b.disabled = on; b.textContent = on ? "計算中…" : "適用";
   b.classList.toggle("dirty", !on && isDirty());
 }
+// 適用の所要時間：クリックから load まで。計算中は画面が更新されないので、動く秒数表示は作らない（終わってからの確定値だけ出す）
+let tClick = 0;   // 0 のときは記録しない（適用以外の load＝パンなどでは記録しない。記録したら 0 に戻す）
+function finishApply(timeout) {
+  if (!tClick) return;
+  if (timeout) $("applyTime").textContent = "前回の適用：未完了（タイムアウト）";
+  else { const ms = performance.now() - tClick; stats.applyMs.push(ms); $("applyTime").textContent = `前回の適用：${(ms / 1000).toFixed(1)} 秒`; showStats(); }
+  tClick = 0;
+}
 function applyParams() {   // 「適用」を押したときだけ：設定を確定 → 古い結果を捨てる → 1回だけ再描画
-  if ($("apply").disabled) return;
+  if ($("apply").disabled) return;   // 無効中のクリックは無視（時刻も記録しない）
+  tClick = performance.now();
   commitParams(); gen++; resCache.clear();
   setBusy(true);
   // 「計算中…」が画面に描かれてから重い計算を始めるため、2フレーム待つ
   requestAnimationFrame(() => requestAnimationFrame(() => {
     layer.redraw();
-    busyTimer = setTimeout(() => setBusy(false), BUSY_TIMEOUT_MS);
+    busyTimer = setTimeout(() => { finishApply(true); setBusy(false); }, BUSY_TIMEOUT_MS);
   }));
 }
 $("src").addEventListener("input", () => { $("maxz").max = SRC[$("src").value].zmax; $("maxz").value = SRC[$("src").value].zmax; });
@@ -366,11 +379,27 @@ document.querySelectorAll("#panel select, #panel input").forEach(e => e.addEvent
 $("apply").addEventListener("click", applyParams);
 document.querySelectorAll("button[data-v]").forEach(b => b.addEventListener("click", () => { const [a, o, z] = b.dataset.v.split(",").map(Number); map.setView([a, o], z); }));
 $("reset").addEventListener("click", resetStats);
+// コピーの手順（上から順に試し、成功したら止める）：a. Clipboard API（https か localhost のときだけ使える）→ b. textarea＋execCommand（http の iOS Safari 向け）→ c. prompt で手動コピー
+function copyText(text) {
+  const done = how => { $("copyMsg").textContent = `コピーしました（${how}）`; };
+  const viaExec = () => {
+    const ta = document.createElement("textarea");   // readOnly にしない（iOS Safari で選択できなくなる）
+    ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0;font-size:16px";   // 画面外。16px は iOS の自動ズーム防止
+    document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, 99999);
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  };
+  const fallback = () => { if (viaExec()) done("b：execCommand"); else prompt("コピーしてください", text); };
+  $("copyMsg").textContent = "";
+  if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done("a：Clipboard API"), fallback);
+  else fallback();
+}
 $("copy").addEventListener("click", () => {
   const r = a => ({ n: a.length, median: +q(a, .5), p95: +q(a, .95), max: +q(a, 1) });
   const j = JSON.stringify({ src: P.src, layer: P.layer, maxz: P.maxz, sigma: P.sigma, rad: P.rad, z: map.getZoom(), fetch: r(stats.fetch), decode: r(stats.decode),
-    compute: r(stats.compute), draw: r(stats.draw), layerLoadMs: stats.layerLoadMs, viewport: [innerWidth, innerHeight], ua: navigator.userAgent });
-  (navigator.clipboard ? navigator.clipboard.writeText(j) : Promise.reject()).catch(() => prompt("コピーしてください", j));
+    compute: r(stats.compute), draw: r(stats.draw), layerLoadMs: stats.layerLoadMs, applyMs: stats.applyMs, viewport: [innerWidth, innerHeight], ua: navigator.userAgent });
+  copyText(j);
 });
 // 位置は URL のハッシュに（#lat,lng,z）
 function fromHash() { const m = location.hash.slice(1).split(",").map(Number); return m.length === 3 && m.every(isFinite) ? m : [36.7656, 139.4937, 15]; }
