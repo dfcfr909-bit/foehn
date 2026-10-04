@@ -24,6 +24,8 @@
   #stats { font: 11px/1.4 ui-monospace, monospace; white-space: pre-wrap; background: #f4f4f4; padding: 4px; border-radius: 4px; }
   .legend { display: flex; height: 10px; border-radius: 3px; margin: 2px 0; }
   .note { font-size: 11px; color: #555; }
+  #apply { width: 100%; padding: 6px; margin: 4px 0; }
+  #apply.dirty { background: #ffd54f; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -50,6 +52,8 @@
   <div class="row"><label for="ciscale">CI 満色（%）</label><input id="ciscale" type="range" min="5" max="80" step="5" value="30"><output id="ciscale_o"></output></div>
   <div class="row"><label for="op">不透明度</label><input id="op" type="range" min="0.1" max="1" step="0.05" value="0.8"><output id="op_o"></output></div>
   <div class="row two"><label for="miss">欠けの表示</label><label><input id="miss" type="checkbox" checked> 欠けを赤で示す</label></div>
+  <button id="apply" type="button">適用</button>
+  <div class="note">不透明度以外の変更は「適用」を押したときに計算する（押すまで前の設定のまま）。</div>
   <div class="legend" id="lg"></div>
   <div class="note" id="lgnote"></div>
   <div class="row two"><label>移動</label><span>
@@ -76,16 +80,23 @@ const TILE = 256;
 const $ = id => document.getElementById(id);
 
 // ---- 設定 ----
-const P = {};   // 現在の設定（readParams で更新）
+const P = {};   // 確定済みの設定（commitParams で更新。画面の値とは「適用」まで一致しない）
 const FMT = { maxz: v => "z" + v, sigma: v => v + " m", cscale: v => (10 ** v).toFixed(3), rad: v => v + " m",
   sigc: v => v + " m", ciscale: v => v + " %", op: v => (+v).toFixed(2) };
-function readParams() {
+function updateLabels() { for (const k of Object.keys(FMT)) $(k + "_o").textContent = FMT[k](+$(k).value); }   // 表示値（ラベル）だけ更新。設定は変えない
+function commitParams() {   // 画面の値を設定 P に確定する。適用時と初回表示のときだけ呼ぶ
   P.src = $("src").value; P.layer = $("layer").value;
-  for (const k of Object.keys(FMT)) { P[k] = +$(k).value; $(k + "_o").textContent = FMT[k](P[k]); }
+  for (const k of Object.keys(FMT)) P[k] = +$(k).value;
   P.miss = $("miss").checked;
   P.cs0 = 10 ** P.cscale;
-  const s = SRC[P.src]; $("maxz").max = s.zmax; if (P.maxz > s.zmax) { P.maxz = s.zmax; $("maxz").value = s.zmax; $("maxz_o").textContent = FMT.maxz(s.zmax); }
+  const s = SRC[P.src]; $("maxz").max = s.zmax; if (P.maxz > s.zmax) { P.maxz = s.zmax; $("maxz").value = s.zmax; }
+  updateLabels();
   $("attr").innerHTML = s.attr;
+  legend();
+}
+function isDirty() {   // 画面の値が、確定済みの設定と違うか（op は即時反映なので見ない）
+  if ($("src").value !== P.src || $("layer").value !== P.layer || $("miss").checked !== P.miss) return true;
+  return Object.keys(FMT).some(k => k !== "op" && +$(k).value !== P[k]);
 }
 
 // ---- 計測（数字だけ。画像は保存しない）----
@@ -187,7 +198,7 @@ function divColor(t, out) {   // t: -1(谷)〜+1(尾根)
 
 function computeTile(src, zd, dx, dy, P, grid, M, W, px) {   // grid: (W×W) の標高（欠けは NaN）→ 256×256 の ImageData
   const img = new ImageData(TILE, TILE), o = img.data, c = [0, 0, 0];
-  const alpha = Math.round(255 * P.op);
+  const alpha = 255;   // 不透明度は層の不透明度（layer.setOpacity）で反映する。ここには入れない
   let Zs, Zc, ux, uy, offs, offX, offD, offR, offY;
   if (P.layer === "cs") Zs = blurM(grid, W, P.sigma, px);
   else if (P.layer === "ci") {
@@ -315,24 +326,44 @@ const Relief = L.GridLayer.extend({
     return tile;
   },
 });
-readParams();
-const layer = new Relief({ tileSize: TILE, minZoom: 8, maxZoom: 19, opacity: 1, updateWhenZooming: false, keepBuffer: 1 }).addTo(map);
+commitParams();
+const layer = new Relief({ tileSize: TILE, minZoom: 8, maxZoom: 19, opacity: P.op, updateWhenZooming: false, keepBuffer: 1 }).addTo(map);
 let tLoad = 0;
 layer.on("loading", () => { tLoad = performance.now(); });
-layer.on("load", () => { if (tLoad) { stats.layerLoadMs.push(performance.now() - tLoad); tLoad = 0; showStats(); } });
+layer.on("load", () => {
+  if (tLoad) { stats.layerLoadMs.push(performance.now() - tLoad); tLoad = 0; showStats(); }
+  setBusy(false);
+});
 
 function legend() {
   const g = P.layer === "ci" ? `linear-gradient(90deg, rgb(${VALLEY}), rgb(${GRAY}), rgb(${RIDGE}))` : `linear-gradient(90deg, rgb(${VALLEY}), rgb(${GRAY}), rgb(${RIDGE}))`;
   $("lg").style.background = g; $("lg").style.display = P.layer === "none" ? "none" : "flex";
   $("lgnote").textContent = P.layer === "cs" ? "谷（青）← 曲率 → 尾根（赤）。急な斜面ほど暗い" : P.layer === "ci" ? "収束＝谷（−・青）← CI → 発散＝尾根（＋・赤）" : "";
 }
-let timer = 0;
-function apply() {
-  readParams(); legend(); gen++; resCache.clear();
-  clearTimeout(timer); timer = setTimeout(() => layer.redraw(), 120);
+const BUSY_TIMEOUT_MS = 60000;   // redraw から load が来ないまま、これだけ経ったらボタンを元に戻す（保険）
+let busyTimer = 0;
+function setBusy(on) {   // 計算中は「適用」を押せなくする（進行中の計算は止められないので、連打による重なりを防ぐ）
+  clearTimeout(busyTimer);
+  const b = $("apply"); b.disabled = on; b.textContent = on ? "計算中…" : "適用";
+  b.classList.toggle("dirty", !on && isDirty());
+}
+function applyParams() {   // 「適用」を押したときだけ：設定を確定 → 古い結果を捨てる → 1回だけ再描画
+  if ($("apply").disabled) return;
+  commitParams(); gen++; resCache.clear();
+  setBusy(true);
+  // 「計算中…」が画面に描かれてから重い計算を始めるため、2フレーム待つ
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    layer.redraw();
+    busyTimer = setTimeout(() => setBusy(false), BUSY_TIMEOUT_MS);
+  }));
 }
 $("src").addEventListener("input", () => { $("maxz").max = SRC[$("src").value].zmax; $("maxz").value = SRC[$("src").value].zmax; });
-document.querySelectorAll("#panel select, #panel input").forEach(e => e.addEventListener("input", apply));
+// 入力は表示値の更新と「未適用」の印だけ。不透明度だけは即時に反映する（再計算しない）
+document.querySelectorAll("#panel select, #panel input").forEach(e => e.addEventListener("input", () => {
+  updateLabels();
+  if (e.id === "op") { P.op = +e.value; layer.setOpacity(P.op); } else $("apply").classList.toggle("dirty", isDirty());
+}));
+$("apply").addEventListener("click", applyParams);
 document.querySelectorAll("button[data-v]").forEach(b => b.addEventListener("click", () => { const [a, o, z] = b.dataset.v.split(",").map(Number); map.setView([a, o], z); }));
 $("reset").addEventListener("click", resetStats);
 $("copy").addEventListener("click", () => {
@@ -346,8 +377,8 @@ function fromHash() { const m = location.hash.slice(1).split(",").map(Number); r
 { const [a, o, z] = fromHash(); map.setView([a, o], z); }
 map.on("moveend", () => history.replaceState(null, "", `#${map.getCenter().lat.toFixed(5)},${map.getCenter().lng.toFixed(5)},${map.getZoom()}`));
 setInterval(showStats, 1000);
-readParams(); legend(); resetStats();
-window.map = map; window.layer = layer; window.apply = apply;
+updateLabels(); resetStats();
+window.map = map; window.layer = layer; window.applyParams = applyParams;
 </script>
 </body>
 </html>
