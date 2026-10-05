@@ -66,9 +66,9 @@
   据え置いたまま PR を出すと `scripts/checkVersionBump.mjs` が落とす。
   タグは `main` マージ後に**自動で打たれる**（Pages のデプロイ成功が起点）
   → **詳細は `docs/workflow.md`**
-- **マージ: CIが緑なら確認なしでよい。** ただし ABC評価・`areas.json` の座標/標高・
-  `sw.js`/`manifest`/`icons`・外部の情報源・公開範囲に触れるものは**必ず確認**
-  → `docs/workflow.md`「マージ（確認なしでよい範囲）」
+- **マージ: CIが緑なら確認なしでマージする。実機で確認したい場合、version（版）を PR に明示する。**
+  ただし ABC評価・`areas.json` の座標/標高・`sw.js`/`manifest`/`icons`・外部の情報源・公開範囲に触れるものは
+  **必ず確認してからマージ** → `docs/workflow.md`「マージ（確認なしでよい範囲）」
 
 ## 構成
 
