@@ -2438,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.154.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.154.2</span></a>
   </div>
 
   <!-- Footer -->
@@ -9235,6 +9235,10 @@ const WIND_SHELTER = {   // ⚠ 実験のパラメータ（仮の初期値・未
   SX_LO_DEG: 2,          // これ以下の Sx は遮蔽なし（倍率 1）
   SX_HI_DEG: 20,         // これ以上の Sx で倍率 F_MIN
   F_MIN: 0.3,            // いちばん隠れた所の倍率
+  /* ⚠ これより引いた縮尺では掛けない（v4.154.2）。約30mの標高格子（画面＋3kmの余白）を縮尺を変えるたびに作り直すので、
+     広域（z8〜9）では標高タイルを1,000枚超取りに行き、メインスレッドを1秒以上止めた（実機で「拡大すると重くて使えない」）。
+     広域では30mの地形の遮蔽は見えない（粒の速さの見せ方だけ）ので、掛けないほうが実害が無い */
+  MIN_ZOOM: 12,
 };
 const WIND_COL = {       // ⚠ 実験のパラメータ（仮の初期値・未検証）。1.3倍などを物理的に正しい値として扱わない
   MIN_DEPTH_M: null,     // 対象にする鞍部の深さの下限（m）。null＝◎の既定（COL.SHOW_MIN_M）に合わせる
@@ -9386,6 +9390,7 @@ function windShelterProbeLines() {
   const w = windGL.shelterRes, g = windGL.grid;
   if (!windGL.shelterOn) return ['風の補正：切（計測表示の「補正」で入れる。粒の見せ方だけ）'];
   if (windGL.fieldMode !== 'auto') return ['風の補正：手動の層には掛けない（AUTO のときだけ）'];
+  if (!windShelterActive()) return [`風の補正：ズーム${WIND_SHELTER.MIN_ZOOM}以上で掛かる（広域では掛けていない）`];
   if (!w || !g) return ['風の補正：まだ求めていない'];
   const c = leafletMap.getCenter(), p = leafletMap.project(c, g.z0);
   const cc = Math.round((p.x - g.x0) / g.step), rr = Math.round((p.y - g.y0) / g.step);
@@ -10737,7 +10742,7 @@ function updateWindFlowGL(f) {
   }
   // 段階3a：風下の遮蔽（AUTO だけ・既定は切）。粒の速さの見せ方だけ。場・矢印・ポップアップ・判定は変えない
   windGL.shelterRes = null; windGL.fieldMode = f.mode;
-  if (windGL.shelterOn && f.mode === 'auto') {
+  if (windShelterActive() && f.mode === 'auto') {
     windGL.shelterRes = windGLShelter(g);
     g = windGL.shelterRes.grid;
   }
@@ -10870,8 +10875,8 @@ function windGLHudText() {
   rows.push(windGLTerrainText());
   rows.push(windShelterHudText());
   rows.push(windGL.colorMode === 'bg'
-    ? `<b>色</b> 背景＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}・粒は白・濃さ${windBgAlpha().toFixed(2)}`
-    : `<b>色</b> 粒＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}`);
+    ? `<b>色</b> 背景＝${windShelterActive() && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}・粒は白・濃さ${windBgAlpha().toFixed(2)}`
+    : `<b>色</b> 粒＝${windShelterActive() && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}`);
   if (terrainAn.on) rows.push(terrainHudText());
   el.innerHTML = rows.join('<br>');
   const bp = document.getElementById('wind-hud-sprobe');
@@ -10903,6 +10908,7 @@ function windShelterHudText() {
   const w = windGL.shelterRes, P = WIND_SHELTER;
   if (!windGL.shelterOn) return '<b>補正</b> 切（粒の見せ方だけの推定。入れても場・矢印・判定は変わらない）';
   if (windGL.fieldMode !== 'auto') return '<b>補正</b> 遮蔽・コル（AUTO のときだけ。いまは手動の層なので掛けていない）';
+  if (!windShelterActive()) return `<b>補正</b> 遮蔽・コル：ズーム${WIND_SHELTER.MIN_ZOOM}以上で掛かる（広域では重いので掛けていない）`;
   if (!w || !w.applied) return `<b>補正</b> 遮蔽・コル：地形${w && w.loading ? 'を読み込み中' : 'が無い'}（倍率1のまま）`;
   const s = w.stats;
   return `<b>補正</b> 遮蔽・コル（推定・Sx 風上${P.DMAX_M}m）${w.ms.toFixed(0)}ms${w.loading ? '・読込中' : ''}｜遮蔽 ${s.sheltered}/${s.n}点（${Math.round(100 * s.sheltered / Math.max(1, s.n))}%）` +
@@ -10920,6 +10926,8 @@ function windGLToggleColor() {
   windGL.lastView = null;   // 尾を消して描き直す（色の混ざった尾を残さない）
   windGLHudText();
 }
+// 補正を入れていて、かつ掛けられる縮尺か（広域では重すぎるので掛けない。WIND_SHELTER.MIN_ZOOM）
+const windShelterActive = () => windGL.shelterOn && leafletMap.getZoom() >= WIND_SHELTER.MIN_ZOOM;
 function windGLToggleShelter() {
   windGL.shelterOn = !windGL.shelterOn;
   windPref.set('shelter', windGL.shelterOn ? 1 : 0);
