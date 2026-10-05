@@ -579,9 +579,16 @@ const bgm = await page.evaluate(() => {
   out.saved = windPref.get('bgSpeedMinAbs');
   document.getElementById('wind-hud-bgspeed').click();
   out.backMin = windBgMinSpeed();
+  // 色:粒（背景を描かない）でも、押すとラベルと選択が切り替わる
+  windGLToggleColor();
+  const bt = document.getElementById('wind-hud-bgspeed');
+  out.partBefore = bt.textContent; bt.click(); out.partAfter = document.getElementById('wind-hud-bgspeed').textContent;
+  out.partActive = document.getElementById('wind-hud-bgspeed').classList.contains('active');
+  document.getElementById('wind-hud-bgspeed').click(); windGLToggleColor();
   return out;
 });
 ok(bgm.relMin === 5 && bgm.absMin === 3 && bgm.backMin === 5 && bgm.saved === 1, '★背景の最小風速：相対5m/s・絶対3m/sをボタンで切り替え、端末に覚える', bgm);
+ok(bgm.partBefore === '背景最小:相対5m/s' && bgm.partAfter === '背景最小:絶対3m/s' && bgm.partActive, '★色:粒でも背景最小を押すとラベルと選択が切り替わる', bgm);
 ok(bgm.rel.loBad === 0 && bgm.rel.hiBad === 0 && bgm.abs.loBad === 0 && bgm.abs.hiBad === 0, '★最小風速未満は透明・以上は着色（切り替え後の塗り直し）', bgm);
 // ⑪計測表示のスライダー（v4.139.0）：粒の数と背景の濃さを別々に変えられ、端末に覚える
 const sl = await page.evaluate(() => {
