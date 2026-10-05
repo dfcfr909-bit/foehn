@@ -2438,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.2</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.3</span></a>
   </div>
 
   <!-- Footer -->
@@ -8877,16 +8877,13 @@ function windBgAlpha() {
   const a = windPref.get('bgAlpha');
   return a >= WIND_SLIDER.ALPHA_MIN && a <= WIND_SLIDER.ALPHA_MAX ? a : WIND_BG.ALPHA;
 }
-// 背景の最小風速（相対/絶対を切り替え可能）
-function windBgMinSpeed() {
-  const mode = windPref.get('bgSpeedMinMode') || WIND_BG.SPEED_MIN_MODE;
-  return mode === 'relative' ? WIND_BG.SPEED_MIN_RELATIVE : WIND_BG.SPEED_MIN_ABSOLUTE;
-}
+// 背景の最小風速（相対/絶対を切り替え可能）。windPref は数値で返すので 0＝相対・1＝絶対で覚える
+function windBgAbsolute() { return windPref.get('bgSpeedMinAbs') === 1; }
+function windBgMinSpeed() { return windBgAbsolute() ? WIND_BG.SPEED_MIN_ABSOLUTE : WIND_BG.SPEED_MIN_RELATIVE; }
+function windBgSpeedLabel() { return `背景最小:${windBgAbsolute() ? '絶対' : '相対'}${windBgMinSpeed()}m/s`; }
 function windBgToggleSpeedMinMode() {
-  const mode = windPref.get('bgSpeedMinMode') || WIND_BG.SPEED_MIN_MODE;
-  const newMode = mode === 'relative' ? 'absolute' : 'relative';
-  windPref.set('bgSpeedMinMode', newMode);
-  if (lastWindField) updateWindFlowGL(lastWindField);
+  windPref.set('bgSpeedMinAbs', windBgAbsolute() ? 0 : 1);
+  if (windGL.colorMode === 'bg' && windGL.grid) windGLBgTexture(windGL.grid);
   windGLHudText();
 }
 // 粒の大きさ（線の太さ・CSS px）。覚えていなければ既定（WIND_GL.WIDTH）。範囲外の値は既定へ
@@ -10882,6 +10879,8 @@ function windFlowSettingsSync() {
   }
   const bc = document.getElementById('wind-hud-color');
   if (bc) { bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒'; bc.classList.toggle('active', windGL.colorMode === 'bg'); }
+  const bm = document.getElementById('wind-hud-bgspeed');
+  if (bm) bm.textContent = windBgSpeedLabel();
   const bs = document.getElementById('wind-hud-shelter');
   if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('active', windGL.shelterOn); }
 }
@@ -11559,7 +11558,7 @@ function windFlowSettings() {
   const n = windGL.n || windGLParticleCount(), a = windBgAlpha(), pw = windPWidth(), pa = windPAlpha();
   return `<div class="amedas-els wind-set">` +
     chip('wind-hud-color', windGL.colorMode === 'bg', windGL.colorMode === 'bg' ? '色:背景' : '色:粒', 'windGLToggleColor()') +
-    chip('wind-hud-bgspeed', true, `背景最小:${windBgMinSpeed() === WIND_BG.SPEED_MIN_RELATIVE ? '相対' : '絶対'}`, 'windBgToggleSpeedMinMode()') +
+    chip('wind-hud-bgspeed', true, windBgSpeedLabel(), 'windBgToggleSpeedMinMode()') +
     chip('wind-hud-shelter', windGL.shelterOn, windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切', 'windGLToggleShelter()') +
     chip('wind-hud-terrain', windGL.terrainOn, windGL.terrainOn ? '高さ:地形' : '高さ:升目', 'windGLToggleTerrain()') +
     `</div><div class="wind-set-sl">` +
