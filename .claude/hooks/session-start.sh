@@ -58,7 +58,8 @@ if [ "$behind" -gt 0 ]; then
 ‼️ 警告: いまのブランチは origin/main より ${behind} コミット遅れています。
    ここで読むコードもドキュメント（CLAUDE.md / docs/）も、その分だけ古い内容です。
    「その機能は無い」と判断する前に、必ず origin/main 側を確認してください。
-   通常は先に  git rebase origin/main  で追いつかせてから作業を始めます。
+   通常は先に  /sync-main  で追いつかせてから作業を始めます（merge で取り込む。rebase・force push はしない）。
+   いまいるのが main なら、追いつかせるのではなく origin/main から新しいブランチを切ります。
 MSG
 fi
 
