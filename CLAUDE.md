@@ -74,7 +74,9 @@
 ## 構成
 
 - `sotoki_v4.html` — 現行版（改修ベース）。7,000行超あるので
-  **本体を読む前にまず `docs/spec/code_map.md`（関数索引）を見る**
+  **本体を読む前にまず `docs/spec/code_map.md`（関数索引）を見る**。
+  全関数・定数と参照元（影響範囲）は自動生成の `docs/spec/code_index.md`
+  （関数を足す・消す・改名したら `node scripts/genCodeIndex.mjs`。忘れると `smoke_codeindex` が落とす）
 - `about.html` — **利用者自身が説明するための手元資料**（データの参照元・判定の基準・**妥協点**）。
   入口は地図の右側のボタン列の `ℹ️` と版数表示。⚠ **閾値を書き写しているので `THRESH` を触ったら必ず直す**
   （`tests/smoke_about.mjs` が行ごとに突き合わせて落とす）。
