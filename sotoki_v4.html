@@ -1319,7 +1319,7 @@ html, body {
   font-family: var(--font-ui); font-size: 12px; font-weight: 700;
   cursor: pointer;
 }
-.amedas-el.active { background: var(--text); color: #fff; border-color: var(--text); }
+.amedas-el.active { background: var(--text); color: var(--surface); border-color: var(--text); }   /* ダークでは --text が明るいので、文字は面の色にする（#fff だと白地に白文字） */
 .layer-ov-toggle {
   flex: 1; min-width: 0; min-height: 44px;
   display: flex; align-items: center; gap: 8px;
@@ -2438,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.3</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.4</span></a>
   </div>
 
   <!-- Footer -->
@@ -10880,7 +10880,7 @@ function windFlowSettingsSync() {
   const bc = document.getElementById('wind-hud-color');
   if (bc) { bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒'; bc.classList.toggle('active', windGL.colorMode === 'bg'); }
   const bm = document.getElementById('wind-hud-bgspeed');
-  if (bm) bm.textContent = windBgSpeedLabel();
+  if (bm) { bm.textContent = windBgSpeedLabel(); bm.classList.toggle('active', windBgAbsolute()); }
   const bs = document.getElementById('wind-hud-shelter');
   if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('active', windGL.shelterOn); }
 }
@@ -11558,7 +11558,7 @@ function windFlowSettings() {
   const n = windGL.n || windGLParticleCount(), a = windBgAlpha(), pw = windPWidth(), pa = windPAlpha();
   return `<div class="amedas-els wind-set">` +
     chip('wind-hud-color', windGL.colorMode === 'bg', windGL.colorMode === 'bg' ? '色:背景' : '色:粒', 'windGLToggleColor()') +
-    chip('wind-hud-bgspeed', true, windBgSpeedLabel(), 'windBgToggleSpeedMinMode()') +
+    chip('wind-hud-bgspeed', windBgAbsolute(), windBgSpeedLabel(), 'windBgToggleSpeedMinMode()') +
     chip('wind-hud-shelter', windGL.shelterOn, windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切', 'windGLToggleShelter()') +
     chip('wind-hud-terrain', windGL.terrainOn, windGL.terrainOn ? '高さ:地形' : '高さ:升目', 'windGLToggleTerrain()') +
     `</div><div class="wind-set-sl">` +
