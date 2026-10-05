@@ -35,7 +35,8 @@ allowed-tools: Bash(git status*), Bash(git branch*), Bash(git fetch*), Bash(git 
 5. **検査する**（競合の有無に関わらず）
    - `node scripts/genCodeIndex.mjs --check`（落ちたら `node scripts/genCodeIndex.mjs` で作り直してコミット）
    - `node scripts/checkVersionBump.mjs origin/main`（`sotoki_v4.html` を変えているのに版が上がっていなければ直す）
-   - `node tests/run-all.js`（全件。10分ほどかかる。`Cannot find module` なら `cd tests && npm install` を1回）
+   - `node tests/run-all.js`（全件。**10分を超えることがあるので、バックグラウンドで流して終わりを待つ**。
+     前面で流すと上限で打ち切られる（2026-10-05 に実際に起きた）。`Cannot find module` なら `cd tests && npm install` を1回）
 6. **落ちたら原因を切り分ける**：取り込み前の自分のブランチ（`git stash` ではなく `ORIG_HEAD`）と main 単体で同じテストが通るかを見て、
    「取り込みで壊れた」「もともと落ちていた」「不安定」のどれかを言う。取り込みで壊れたなら直してコミットする。
    推測で「既知」「無関係」と言わない
