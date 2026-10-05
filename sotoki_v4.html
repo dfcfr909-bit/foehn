@@ -11555,7 +11555,7 @@ function windModeChips() {
 /* 風の流れの設定（v4.141.0・ADR-0014：計測表示から「風の流れ」の行へ移した）。色・補正・高さ・粒・背景・計測表示。
    どれも端末に覚える（windPref）。⚠ 要素の id は計測表示にあったときのまま（wind-hud-*・wind-sl-*。windGLHudText が同じ id で書き換える） */
 function windFlowSettings() {
-  const chip = (id, on, label, fn) => `<button type="button" id="${id}" class="amedas-el${on ? ' active' : ''}" onclick="${fn}">${label}</button>`;
+  const chip = (id, on, label, fn) => `<button type="button" id="${id}" class="amedas-el${on ? ' active' : ''}" data-action="${fn}">${label}</button>`;
   const n = windGL.n || windGLParticleCount(), a = windBgAlpha(), pw = windPWidth(), pa = windPAlpha();
   return `<div class="amedas-els wind-set">` +
     chip('wind-hud-color', windGL.colorMode === 'bg', windGL.colorMode === 'bg' ? '色:背景' : '色:粒', 'windGLToggleColor()') +
@@ -11604,6 +11604,14 @@ function renderLayerPanel() {
       </div>`;
   };
   ovWrap.innerHTML = usableOverlays().map(row).join('');
+  // data-action属性を持つボタンのイベントリスナーを登録
+  ovWrap.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fn = btn.getAttribute('data-action');
+      const match = fn.match(/^(\w+)\(\)$/);
+      if (match && window[match[1]]) window[match[1]]();
+    });
+  });
 
   const wxWrap = document.getElementById('layer-weather');
   if (wxWrap) wxWrap.innerHTML = usableWeather().filter(o => !o.hidden).map(row).join('');   // hidden … 予備の層（Canvas 版の風の流れ）
