@@ -537,7 +537,9 @@ const bgc = await page.evaluate(() => {
     const g = windGL.bgGrid, d = windGL.bgData, A = WIND_BG.ALPHA; let bad = 0, n = 0;
     for (let k = 0; k < g.u.length; k += 37) {
       if (!g.ok[k]) continue; n++;
-      const c = windBgRGB(Math.hypot(g.u[k], g.v[k]));
+      const ms = Math.hypot(g.u[k], g.v[k]);
+      if (ms < windBgMinSpeed()) { if (d[k * 4 + 3] !== 0) bad++; continue; }   // 最小風速未満は着色しない（透明）
+      const c = windBgRGB(ms);
       if (Math.abs(d[k * 4] - Math.round(c[0] * A)) > 1 || Math.abs(d[k * 4 + 3] - Math.round(255 * A)) > 1) bad++;
     }
     return { n, bad, same: g === windGL.grid };
@@ -563,6 +565,31 @@ ok(bgc.off.n > 10 && bgc.off.bad === 0 && bgc.off.same, '★背景＝粒の格�
 ok(bgc.on.n > 10 && bgc.on.bad === 0 && bgc.on.same && bgc.onFac && /見た目の粒の速さ（補正込みの推定/.test(bgc.hudOn),
   '★★補正を入れると背景は補正後の速さ（見た目の粒の速さ）で塗り直し、計測表示にそう明記', bgc);
 ok(bgc.part === 'particle' && bgc.btn === '色:粒' && bgc.glErr === 0, '「色:粒」に戻せる・描画で WebGL のエラーが無い', bgc);
+// ⑩-b 背景の最小風速（v4.155.0）：未満は透明・相対(5m/s)と絶対(3m/s)を切り替えられ、端末に覚える・ボタンが押せる
+const bgm = await page.evaluate(() => {
+  const out = { relMin: windBgMinSpeed() };
+  const cnt = () => { const g = windGL.bgGrid, d = windGL.bgData; let lo = 0, loBad = 0, hi = 0, hiBad = 0;
+    for (let k = 0; k < g.u.length; k++) { if (!g.ok[k]) continue; const ms = Math.hypot(g.u[k], g.v[k]);
+      if (ms < windBgMinSpeed()) { lo++; if (d[k * 4 + 3] !== 0) loBad++; } else { hi++; if (d[k * 4 + 3] === 0) hiBad++; } }
+    return { lo, loBad, hi, hiBad }; };
+  out.rel = cnt();
+  document.getElementById('wind-hud-bgspeed').click();      // 実際に押す
+  out.absMin = windBgMinSpeed(); out.abs = cnt();
+  out.label = document.getElementById('wind-hud-bgspeed').textContent;
+  out.saved = windPref.get('bgSpeedMinAbs');
+  document.getElementById('wind-hud-bgspeed').click();
+  out.backMin = windBgMinSpeed();
+  // 色:粒（背景を描かない）でも、押すとラベルと選択が切り替わる
+  windGLToggleColor();
+  const bt = document.getElementById('wind-hud-bgspeed');
+  out.partBefore = bt.textContent; bt.click(); out.partAfter = document.getElementById('wind-hud-bgspeed').textContent;
+  out.partActive = document.getElementById('wind-hud-bgspeed').classList.contains('active');
+  document.getElementById('wind-hud-bgspeed').click(); windGLToggleColor();
+  return out;
+});
+ok(bgm.relMin === 5 && bgm.absMin === 3 && bgm.backMin === 5 && bgm.saved === 1, '★背景の最小風速：相対5m/s・絶対3m/sをボタンで切り替え、端末に覚える', bgm);
+ok(bgm.partBefore === '背景最小:相対5m/s' && bgm.partAfter === '背景最小:絶対3m/s' && bgm.partActive, '★色:粒でも背景最小を押すとラベルと選択が切り替わる', bgm);
+ok(bgm.rel.loBad === 0 && bgm.rel.hiBad === 0 && bgm.abs.loBad === 0 && bgm.abs.hiBad === 0, '★最小風速未満は透明・以上は着色（切り替え後の塗り直し）', bgm);
 // ⑪計測表示のスライダー（v4.139.0）：粒の数と背景の濃さを別々に変えられ、端末に覚える
 const sl = await page.evaluate(() => {
   const c = document.getElementById('wind-sl-count'), b = document.getElementById('wind-sl-bg'), keep = windGL.override;
@@ -574,7 +601,7 @@ const sl = await page.evaluate(() => {
   c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
   out.n = windGL.n; out.savedN = windPref.get('count'); out.labelN = document.getElementById('wind-sl-count-v').textContent;
   b.value = 0.7; b.dispatchEvent(new Event('input'));
-  out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex(x => x) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
+  out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex((x, k) => x && Math.hypot(windGL.bgGrid.u[k], windGL.bgGrid.v[k]) >= windBgMinSpeed()) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
   windGLSetBgAlpha(9); out.clampB = windBgAlpha();
   windGLSetCount(10); out.clampN = windGL.n;
   windGLSetCount(50000); out.clampHi = windGL.n;

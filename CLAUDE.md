@@ -66,14 +66,25 @@
   据え置いたまま PR を出すと `scripts/checkVersionBump.mjs` が落とす。
   タグは `main` マージ後に**自動で打たれる**（Pages のデプロイ成功が起点）
   → **詳細は `docs/workflow.md`**
-- **マージ: CIが緑なら確認なしでよい。** ただし ABC評価・`areas.json` の座標/標高・
-  `sw.js`/`manifest`/`icons`・外部の情報源・公開範囲に触れるものは**必ず確認**
-  → `docs/workflow.md`「マージ（確認なしでよい範囲）」
+- **main へ直接 push しない。** 作業は毎回 `origin/main` から新しいブランチを切り、PR で入れる。
+  古いブランチ（squash マージ済みのもの）は再利用しない。作業中に main が進んだら `/sync-main`（merge で取り込む）。直接 push は CI を通らず PR も残らないため、
+  取り残しの PR（#151）と競合を生んだ（2026-10-05） → `docs/status.md`「開発ブランチ」
+- **レビュー役（`plan-reviewer` エージェント）に計画と差分を見せる。** 対象は
+  `sotoki_v4.html` のロジック変更・複数ファイルにまたがる変更・確認が要るマージの区分に触れる変更
+  （文言だけ・1か所の小さな修正は対象外）。①実装の前に計画を、②push の前に差分を渡す。
+  判定が「直して出し直し」なら直して再提出、「利用者の判断が要る」なら**その質問をそのまま利用者に渡す**
+  （言い換えて薄めない）。レビュー役は読むだけで、承認やマージの権限は持たない → `.claude/agents/plan-reviewer.md`
+- **マージ: CIが緑なら確認なしでマージする。実機で確認したい場合、version（版）を PR に明示する。**
+  ただし ABC評価・`areas.json` の座標/標高・`sw.js`/`manifest`/`icons`・外部の情報源・公開範囲に触れるものは
+  **必ず確認してからマージ** → `docs/workflow.md`「マージ（確認なしでよい範囲）」
+  マージ完了時は以下を出す：**「マージ完了。v（その版） が main に反映されます。PWAはキャッシュをクリアして再起動してください。」**
 
 ## 構成
 
 - `sotoki_v4.html` — 現行版（改修ベース）。7,000行超あるので
-  **本体を読む前にまず `docs/spec/code_map.md`（関数索引）を見る**
+  **本体を読む前にまず `docs/spec/code_map.md`（関数索引）を見る**。
+  全関数・定数と参照元（影響範囲）は自動生成の `docs/spec/code_index.md`
+  （関数を足す・消す・改名したら `node scripts/genCodeIndex.mjs`。忘れると `smoke_codeindex` が落とす）
 - `about.html` — **利用者自身が説明するための手元資料**（データの参照元・判定の基準・**妥協点**）。
   入口は地図の右側のボタン列の `ℹ️` と版数表示。⚠ **閾値を書き写しているので `THRESH` を触ったら必ず直す**
   （`tests/smoke_about.mjs` が行ごとに突き合わせて落とす）。
@@ -93,7 +104,7 @@
 - `docs/install.md` — PWAインストール手順・アイコン再生成
 - `manifest.webmanifest` / `sw.js` / `icons/` — PWA一式（アイコン原図は `icons/icon.svg`）
 - `tests/` — スモークテスト（改修のたびに全件実行する）
-- `.claude/` — スラッシュコマンド（`/test` `/status` `/spec` `/release`）・permissions・起動時のブランチ鮮度フック
+- `.claude/` — スラッシュコマンド（`/test` `/status` `/spec` `/release` `/sync-main`）・レビュー役のエージェント（`agents/plan-reviewer.md`）・permissions・起動時のブランチ鮮度フック
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 - `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
 - `scripts/checkPeaks.mjs` / `scripts/snapPeaks.mjs` / `scripts/searchPeaks.mjs` —

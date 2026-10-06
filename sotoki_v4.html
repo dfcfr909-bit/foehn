@@ -1319,7 +1319,7 @@ html, body {
   font-family: var(--font-ui); font-size: 12px; font-weight: 700;
   cursor: pointer;
 }
-.amedas-el.active { background: var(--text); color: #fff; border-color: var(--text); }
+.amedas-el.active { background: var(--text); color: var(--surface); border-color: var(--text); }   /* ダークでは --text が明るいので、文字は面の色にする（#fff だと白地に白文字） */
 .layer-ov-toggle {
   flex: 1; min-width: 0; min-height: 44px;
   display: flex; align-items: center; gap: 8px;
@@ -2438,7 +2438,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.154.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.4</span></a>
   </div>
 
   <!-- Footer -->
@@ -8861,6 +8861,9 @@ void main() {
 const WIND_BG = {
   ALPHA: 0.45,           // 背景の濃さの既定（地形図が見える程度）。計測表示のスライダーで変えられる（windBgAlpha）
   MID: [1.5, 5, 9.5, 15, 21],   // WIND_FLOW.COLORS の各帯の色を置く風速（m/s・帯の中ほど）
+  SPEED_MIN_MODE: 'relative',   // 'relative'（C級の半分）または 'absolute'（絶対値）
+  SPEED_MIN_RELATIVE: 5,         // 相対：C級（10m/s）の半分
+  SPEED_MIN_ABSOLUTE: 3,         // 絶対：3m/s
 };
 // 計測表示のスライダー（v4.139.0・利用者の要望「粒の数多すぎ、背景薄めに感じる。スライダーで別々に調整」）
 /* 粒のスライダー（v4.140.0 利用者の指定）：100〜10,000。500 までは 100 刻み、500 からは 500 刻み（段の並びを添字で動かす）。
@@ -8873,6 +8876,15 @@ const windCountIndex = n => WIND_COUNT_STEPS.reduce((b, v, i) => Math.abs(v - n)
 function windBgAlpha() {
   const a = windPref.get('bgAlpha');
   return a >= WIND_SLIDER.ALPHA_MIN && a <= WIND_SLIDER.ALPHA_MAX ? a : WIND_BG.ALPHA;
+}
+// 背景の最小風速（相対/絶対を切り替え可能）。windPref は数値で返すので 0＝相対・1＝絶対で覚える
+function windBgAbsolute() { return windPref.get('bgSpeedMinAbs') === 1; }
+function windBgMinSpeed() { return windBgAbsolute() ? WIND_BG.SPEED_MIN_ABSOLUTE : WIND_BG.SPEED_MIN_RELATIVE; }
+function windBgSpeedLabel() { return `背景最小:${windBgAbsolute() ? '絶対' : '相対'}${windBgMinSpeed()}m/s`; }
+function windBgToggleSpeedMinMode() {
+  windPref.set('bgSpeedMinAbs', windBgAbsolute() ? 0 : 1);
+  if (windGL.colorMode === 'bg' && windGL.grid) windGLBgTexture(windGL.grid);
+  windGLHudText();
 }
 // 粒の大きさ（線の太さ・CSS px）。覚えていなければ既定（WIND_GL.WIDTH）。範囲外の値は既定へ
 function windPWidth() {
@@ -8925,9 +8937,15 @@ function windBgRGB(ms) {
 // 格子 → 背景のテクスチャ（乗算済みアルファ）。返り値の data は検査用
 function windGLBgTexture(g) {
   const gl = windGL.gl, n = g.cols * g.rows, data = new Uint8Array(n * 4), A = windBgAlpha();
+  const minSpd = windBgMinSpeed();
   for (let k = 0; k < n; k++) {
     if (!g.ok[k]) continue;
-    const c = windBgRGB(Math.hypot(g.u[k], g.v[k]));
+    const ms = Math.hypot(g.u[k], g.v[k]);
+    if (ms < minSpd) {
+      data[k * 4] = 0; data[k * 4 + 1] = 0; data[k * 4 + 2] = 0; data[k * 4 + 3] = 0;  // 透明
+      continue;
+    }
+    const c = windBgRGB(ms);
     data[k * 4] = Math.round(c[0] * A); data[k * 4 + 1] = Math.round(c[1] * A); data[k * 4 + 2] = Math.round(c[2] * A); data[k * 4 + 3] = Math.round(255 * A);
   }
   if (!windGL.bgTex) windGL.bgTex = gl.createTexture();
@@ -9235,6 +9253,10 @@ const WIND_SHELTER = {   // ⚠ 実験のパラメータ（仮の初期値・未
   SX_LO_DEG: 2,          // これ以下の Sx は遮蔽なし（倍率 1）
   SX_HI_DEG: 20,         // これ以上の Sx で倍率 F_MIN
   F_MIN: 0.3,            // いちばん隠れた所の倍率
+  /* ⚠ これより引いた縮尺では掛けない（v4.154.2）。約30mの標高格子（画面＋3kmの余白）を縮尺を変えるたびに作り直すので、
+     広域（z8〜9）では標高タイルを1,000枚超取りに行き、メインスレッドを1秒以上止めた（実機で「拡大すると重くて使えない」）。
+     広域では30mの地形の遮蔽は見えない（粒の速さの見せ方だけ）ので、掛けないほうが実害が無い */
+  MIN_ZOOM: 12,
 };
 const WIND_COL = {       // ⚠ 実験のパラメータ（仮の初期値・未検証）。1.3倍などを物理的に正しい値として扱わない
   MIN_DEPTH_M: null,     // 対象にする鞍部の深さの下限（m）。null＝◎の既定（COL.SHOW_MIN_M）に合わせる
@@ -9386,6 +9408,7 @@ function windShelterProbeLines() {
   const w = windGL.shelterRes, g = windGL.grid;
   if (!windGL.shelterOn) return ['風の補正：切（計測表示の「補正」で入れる。粒の見せ方だけ）'];
   if (windGL.fieldMode !== 'auto') return ['風の補正：手動の層には掛けない（AUTO のときだけ）'];
+  if (!windShelterActive()) return [`風の補正：ズーム${WIND_SHELTER.MIN_ZOOM}以上で掛かる（広域では掛けていない）`];
   if (!w || !g) return ['風の補正：まだ求めていない'];
   const c = leafletMap.getCenter(), p = leafletMap.project(c, g.z0);
   const cc = Math.round((p.x - g.x0) / g.step), rr = Math.round((p.y - g.y0) / g.step);
@@ -10737,7 +10760,7 @@ function updateWindFlowGL(f) {
   }
   // 段階3a：風下の遮蔽（AUTO だけ・既定は切）。粒の速さの見せ方だけ。場・矢印・ポップアップ・判定は変えない
   windGL.shelterRes = null; windGL.fieldMode = f.mode;
-  if (windGL.shelterOn && f.mode === 'auto') {
+  if (windShelterActive() && f.mode === 'auto') {
     windGL.shelterRes = windGLShelter(g);
     g = windGL.shelterRes.grid;
   }
@@ -10856,6 +10879,8 @@ function windFlowSettingsSync() {
   }
   const bc = document.getElementById('wind-hud-color');
   if (bc) { bc.textContent = windGL.colorMode === 'bg' ? '色:背景' : '色:粒'; bc.classList.toggle('active', windGL.colorMode === 'bg'); }
+  const bm = document.getElementById('wind-hud-bgspeed');
+  if (bm) { bm.textContent = windBgSpeedLabel(); bm.classList.toggle('active', windBgAbsolute()); }
   const bs = document.getElementById('wind-hud-shelter');
   if (bs) { bs.textContent = windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切'; bs.classList.toggle('active', windGL.shelterOn); }
 }
@@ -10870,8 +10895,8 @@ function windGLHudText() {
   rows.push(windGLTerrainText());
   rows.push(windShelterHudText());
   rows.push(windGL.colorMode === 'bg'
-    ? `<b>色</b> 背景＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}・粒は白・濃さ${windBgAlpha().toFixed(2)}`
-    : `<b>色</b> 粒＝${windGL.shelterOn && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}`);
+    ? `<b>色</b> 背景＝${windShelterActive() && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}・粒は白・濃さ${windBgAlpha().toFixed(2)}`
+    : `<b>色</b> 粒＝${windShelterActive() && windGL.fieldMode === 'auto' ? '見た目の粒の速さ（補正込みの推定。モデルの風速ではない）' : 'モデルの風速'}`);
   if (terrainAn.on) rows.push(terrainHudText());
   el.innerHTML = rows.join('<br>');
   const bp = document.getElementById('wind-hud-sprobe');
@@ -10903,6 +10928,7 @@ function windShelterHudText() {
   const w = windGL.shelterRes, P = WIND_SHELTER;
   if (!windGL.shelterOn) return '<b>補正</b> 切（粒の見せ方だけの推定。入れても場・矢印・判定は変わらない）';
   if (windGL.fieldMode !== 'auto') return '<b>補正</b> 遮蔽・コル（AUTO のときだけ。いまは手動の層なので掛けていない）';
+  if (!windShelterActive()) return `<b>補正</b> 遮蔽・コル：ズーム${WIND_SHELTER.MIN_ZOOM}以上で掛かる（広域では重いので掛けていない）`;
   if (!w || !w.applied) return `<b>補正</b> 遮蔽・コル：地形${w && w.loading ? 'を読み込み中' : 'が無い'}（倍率1のまま）`;
   const s = w.stats;
   return `<b>補正</b> 遮蔽・コル（推定・Sx 風上${P.DMAX_M}m）${w.ms.toFixed(0)}ms${w.loading ? '・読込中' : ''}｜遮蔽 ${s.sheltered}/${s.n}点（${Math.round(100 * s.sheltered / Math.max(1, s.n))}%）` +
@@ -10920,6 +10946,8 @@ function windGLToggleColor() {
   windGL.lastView = null;   // 尾を消して描き直す（色の混ざった尾を残さない）
   windGLHudText();
 }
+// 補正を入れていて、かつ掛けられる縮尺か（広域では重すぎるので掛けない。WIND_SHELTER.MIN_ZOOM）
+const windShelterActive = () => windGL.shelterOn && leafletMap.getZoom() >= WIND_SHELTER.MIN_ZOOM;
 function windGLToggleShelter() {
   windGL.shelterOn = !windGL.shelterOn;
   windPref.set('shelter', windGL.shelterOn ? 1 : 0);
@@ -11530,6 +11558,7 @@ function windFlowSettings() {
   const n = windGL.n || windGLParticleCount(), a = windBgAlpha(), pw = windPWidth(), pa = windPAlpha();
   return `<div class="amedas-els wind-set">` +
     chip('wind-hud-color', windGL.colorMode === 'bg', windGL.colorMode === 'bg' ? '色:背景' : '色:粒', 'windGLToggleColor()') +
+    chip('wind-hud-bgspeed', windBgAbsolute(), windBgSpeedLabel(), 'windBgToggleSpeedMinMode()') +
     chip('wind-hud-shelter', windGL.shelterOn, windGL.shelterOn ? '補正:遮蔽・コル' : '補正:切', 'windGLToggleShelter()') +
     chip('wind-hud-terrain', windGL.terrainOn, windGL.terrainOn ? '高さ:地形' : '高さ:升目', 'windGLToggleTerrain()') +
     `</div><div class="wind-set-sl">` +
