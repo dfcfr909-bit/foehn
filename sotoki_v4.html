@@ -1103,6 +1103,8 @@ html, body {
   border-radius: 6px;
   margin-left: auto;
 }
+/* 出典のリンクだけ押せるようにする（#map-foot は pointer-events: none。枠全体に付けると地図の操作を邪魔する） */
+#map-attribution a { pointer-events: auto; color: inherit; text-decoration: underline; }
 /* 選択中の地点（名前＋標高）。地図を閉じずに選べるようにしたので常に出す */
 #map-picked {
   max-width: 60%;
@@ -2438,7 +2440,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.4</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.5</span></a>
   </div>
 
   <!-- Footer -->
@@ -6566,11 +6568,11 @@ const MAP_ZOOM_MAX = 18;   // 地理院のオーバーレイに合わせて18で
 /* ベースマップ（排他選択）。maxNativeZoom を超えた分はオーバーズームで引き伸ばす */
 const MAP_BASES = [
   { id: 'std',   name: '標準地図',        url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
-    minNativeZoom: 5, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#eae6dc' },
+    minNativeZoom: 5, maxNativeZoom: 18, attribution: '地理院タイル', swatch: '#eae6dc' },
   { id: 'pale',  name: '淡色地図',        url: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
-    minNativeZoom: 5, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#f2f0ea' },
+    minNativeZoom: 5, maxNativeZoom: 18, attribution: '地理院タイル', swatch: '#f2f0ea' },
   { id: 'photo', name: '航空写真',        url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',
-    minNativeZoom: 2, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#4d6640' },
+    minNativeZoom: 2, maxNativeZoom: 18, attribution: '地理院タイル', swatch: '#4d6640' },
   { id: 'osm',   name: 'OpenStreetMap',  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     minNativeZoom: 0, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors', swatch: '#e8e2d8' },
   // EsriだけURLのタイル座標順が {z}/{y}/{x}（xとyが逆）
@@ -6587,14 +6589,14 @@ const MAP_OVERLAYS = [
   { id: 'areas', name: '山域・百名山', kind: 'areas', opacity: 0.45,
     note: '山域の範囲と百名山。ランキングを開いた後は判定の色になる' },
   { id: 'rrimLike',  name: '赤色立体図風', composite: true, opacity: 0.70,
-    minNativeZoom: 3, maxNativeZoom: 15, attribution: '国土地理院（陰影起伏図・傾斜量図）',
+    minNativeZoom: 3, maxNativeZoom: 15, attribution: '地理院タイル（陰影起伏図・傾斜量図）',
     note: '陰影起伏図に傾斜量図を乗算合成' },
   { id: 'slope',     name: '傾斜量図',     url: 'https://cyberjapandata.gsi.go.jp/xyz/slopemap/{z}/{x}/{y}.png',
-    minNativeZoom: 3, maxNativeZoom: 15, opacity: 0.50, attribution: '国土地理院' },
+    minNativeZoom: 3, maxNativeZoom: 15, opacity: 0.50, attribution: '地理院タイル' },
   { id: 'hillshade', name: '陰影起伏図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png',
-    minNativeZoom: 2, maxNativeZoom: 16, opacity: 0.50, attribution: '国土地理院' },
+    minNativeZoom: 2, maxNativeZoom: 16, opacity: 0.50, attribution: '地理院タイル' },
   { id: 'relief',    name: '色別標高図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png',
-    minNativeZoom: 5, maxNativeZoom: 15, opacity: 0.40, attribution: '国土地理院' },
+    minNativeZoom: 5, maxNativeZoom: 15, opacity: 0.40, attribution: '地理院タイル' },
   /* CS立体図（曲率＋傾斜＋陰影の合成。長野県林業総合センター 戸田堅一郎氏の考案）。
      ⚠**地理院ではなく第三者の配信を見に行く。URLも利用条件も未確認**なので
      unverified にしてある。タイルが取れなければパネルに理由が出る。
@@ -6610,19 +6612,19 @@ const MAP_OVERLAYS = [
     attribution: 'エコリス地図タイル（CS立体図）', unverified: true, mayBeEmpty: true,
     note: '曲率＋傾斜＋陰影の合成。配信範囲が限られている可能性あり' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo3', name: '過去空中写真3', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo3/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo4', name: '過去空中写真4', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo4/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   /* 火山土地条件図：要件定義 §11-1 の「実装前に要確認」がまだ確認できていない
      （開発環境から地理院に到達できずレイヤーIDと配信範囲を確かめられない）。
      推測でURLを書くと黙って壊れるので pending にしてUIに出していない。
      正しいIDが分かったら url と minNativeZoom/maxNativeZoom を埋めて pending を消すこと。 */
   { id: 'volcano', name: '火山土地条件図', url: null, pending: true,
-    minNativeZoom: 10, maxNativeZoom: 16, opacity: 0.60, attribution: '国土地理院' },
+    minNativeZoom: 10, maxNativeZoom: 16, opacity: 0.60, attribution: '地理院タイル' },
 ];
 // 赤色立体図風が使う2枚（単独トグルと同じURLを参照する）
 const RRIM_SHADE = 'hillshade';
@@ -6765,18 +6767,18 @@ const MAP_WEATHER = [
   /* ⚠ v4.141.0（ADR-0014）から Canvas 版は**予備**。レイヤー一覧には出さない（hidden）。WebGL が使えない端末で windFlowGL の代わりに流す。
      前の版で windFlow を入れていた人は、読み込み時に windFlowGL へ移す（loadMapPrefs） */
   { id: 'windFlow', name: '風の流れ（Canvas・予備）', kind: 'windFlow', opacity: 0.9, hidden: true,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。AUTO／層の切り替えは風向風速と共通' },
+    attribution: 'Open-Meteo', note: '選択時刻の風を粒子で流す。AUTO／層の切り替えは風向風速と共通' },
   /* 風の流れ（WebGL）。v4.120.0 の PoC（ADR-0013）を v4.141.0 で正式に（ADR-0014）。矢印と**同じ場**を WebGL で描く。
      設定（色・補正・高さ・粒・背景・計測表示）はこの行の下に出す（windFlowSettings）。WebGL が使えなければ Canvas 版で流す */
   { id: 'windFlowGL', name: '風の流れ', kind: 'windFlowGL', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。パン・ズーム中も流れる。AUTO／層の切り替えは風向風速と共通' },
+    attribution: 'Open-Meteo', note: '選択時刻の風を粒子で流す。パン・ズーム中も流れる。AUTO／層の切り替えは風向風速と共通' },
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
+    attribution: 'Open-Meteo', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
   /* 降雪の目安（段階2・#131）。風の矢印と同じ格子点に、選択時刻の雨・みぞれ・雪の記号を置く。
      ⚠ 予報モデルの値であって観測ではない。判定（ABC評価）でもない（閾値は SNOW_HINT・仮置き）。
      説明は「降雪の目安」の節（drawSnowHint の上） */
   { id: 'snowHint', name: '降雪の目安', kind: 'snowHint', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の雨・みぞれ・雪の目安（予報モデルの値。観測ではありません）。記号を押すと根拠' },
+    attribution: 'Open-Meteo', note: '選択時刻の雨・みぞれ・雪の目安（予報モデルの値。観測ではありません）。記号を押すと根拠' },
   /* 雷雨の目安（段階3・#138）。風の矢印と同じ格子点に、ショワルター安定指数（SSI）が不安定側の点だけ記号を置く。
      ⚠ 予報モデルの値であって観測ではない。雷ナウキャスト（観測）の代わりではない。説明は「雷雨の目安」の節 */
   { id: 'thunderHint', name: '雷雨の目安', kind: 'thunderHint', opacity: 0.9,
@@ -11310,6 +11312,8 @@ function paintThunderIcons() {
 }
 
 // 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
+const GSI_TILE_LIST_URL = 'https://maps.gsi.go.jp/development/ichiran.html';
+const GSI_DEM_CREDIT = '地理院タイル（標高タイル）を加工して作成';
 function updateMapAttribution() {
   const el = document.getElementById('map-attribution');
   if (!el) return;
@@ -11320,7 +11324,20 @@ function updateMapAttribution() {
     const def = findOverlay(item.id);
     if (def && def.attribution && !parts.includes(def.attribution)) parts.push(def.attribution);
   });
-  el.textContent = parts.join(' / ');
+  // 地理院の回答（2026-10）：地図は「地理院タイル＋URL」、加工した標高タイルは「地理院タイル（標高タイル）を加工して作成」。
+  // 標高タイルはレイヤーの選択に関係なく使う（地点の標高・風の地形補正）ので、加工の表記は常に出す
+  parts.push(GSI_DEM_CREDIT);
+  el.textContent = '';
+  parts.forEach((t, i) => {
+    if (i) el.appendChild(document.createTextNode(' / '));
+    if (t.startsWith('地理院タイル')) {
+      const a = document.createElement('a');
+      a.href = GSI_TILE_LIST_URL; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '地理院タイル';
+      el.appendChild(a);
+      if (t.length > 6) el.appendChild(document.createTextNode(t.slice(6)));
+    } else el.appendChild(document.createTextNode(t));
+  });
 }
 
 function setMapBase(id) {

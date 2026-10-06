@@ -376,6 +376,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       hasVolcano: ovRows.some(r => /火山/.test(r.textContent)),
       volcanoDefined: MAP_OVERLAYS.some(o => o.id === 'volcano' && o.pending),
       attribution: document.getElementById('map-attribution').textContent,
+      attrLinks: [...document.querySelectorAll('#map-attribution a')].map(a => ({ href: a.href, text: a.textContent, target: a.target, rel: a.rel })),
+      attrNoInnerHTML: !/innerHTML/.test(updateMapAttribution.toString()),
       tooSmall: small,
       // 既定はオーバーレイなし
       overlaysOn: mapPrefs.overlays.length,
@@ -389,7 +391,11 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(init.overlaysOn === 0, '既定はオーバーレイなし');
   ok(!init.hasVolcano && init.volcanoDefined, '火山土地条件図はpendingでUIに出さない',
     { hasVolcano: init.hasVolcano, defined: init.volcanoDefined });
-  ok(init.attribution === '国土地理院', '出典が有効ベースと一致', init.attribution);
+  ok(init.attribution.startsWith('地理院タイル / '), '出典が有効ベースと一致（地理院タイル）', init.attribution);
+  ok(init.attribution.endsWith('地理院タイル（標高タイル）を加工して作成'), '★加工した標高タイルの出典を常に出す（地理院の回答 2026-10）', init.attribution);
+  ok(init.attrLinks.length >= 1 && init.attrLinks.every(l => l.href === 'https://maps.gsi.go.jp/development/ichiran.html' && l.text === '地理院タイル' && l.target === '_blank' && /noopener/.test(l.rel)),
+    '★「地理院タイル」はタイル一覧へのリンク（＝地理院タイル＋URL）', init.attrLinks);
+  ok(init.attrNoInnerHTML, '出典は innerHTML を使わずに組み立てる');
   ok(init.tooSmall.length === 0, 'タッチターゲットは44px以上', init.tooSmall);
   ok(init.zoomRange[1] === 18, '最大ズームは18', init.zoomRange);
 
@@ -407,6 +413,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(/\{z\}\/\{y\}\/\{x\}/.test(esri.url), 'EsriはURLのx/yが逆', esri.url);
   ok(esri.saved === 'esri', '選択が保存される', esri.saved);
   ok(esri.attribution.includes('Esri'), '出典がEsriに変わる', esri.attribution);
+  ok(esri.attribution.startsWith('Esri') && esri.attribution.endsWith('地理院タイル（標高タイル）を加工して作成'),
+    '★Esri だけでも加工した標高タイルの出典は出る（標高タイルはレイヤーと関係なく使う）', esri.attribution);
   ok(esri.activeCount === 1, '切替後もactiveは1つだけ', esri.activeCount);
 
   /* ================= 2.5 山域・百名山レイヤー =================
@@ -510,7 +518,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(Math.abs(relief.opacity - 0.40) < 1e-6, '既定透過率40%', relief.opacity);
   ok(relief.maxNative === 15 && relief.maxZoom === 18,
     'ネイティブ上限を超えてもオーバーズームで埋める', relief);
-  ok(relief.attribution.includes('Esri') && relief.attribution.includes('国土地理院'),
+  ok(relief.attribution.includes('Esri') && relief.attribution.includes('地理院タイル / '),
     '出典がベース＋オーバーレイになる', relief.attribution);
 
   // スライダーを動かすと即座に反映される
@@ -1092,6 +1100,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
                           return !!t && document.getElementById('map-search-input').contains(t); })(),
       closeH: Math.round(close.height),
       // 出典表記は利用条件。浮かせても見えていること
+      attrLinkHit: (() => { const a = document.querySelector('#map-attribution a'); if (!a) return null;
+        const r = a.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return hit === a || a.contains(hit) ? true : (hit ? (hit.id || hit.className || hit.tagName) : null); })(),
       attrVisible: (() => { const a = document.getElementById('map-attribution').getBoundingClientRect();
                             return a.width > 0 && a.height > 0 && a.bottom <= window.innerHeight + 1; })(),
       // ★DOMの入れ子が壊れていないこと（他の画面が地図の中に入り込むと見えなくなる）
@@ -1107,6 +1118,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(full.closeHit && full.closeH >= 44, '閉じるボタンが押せる（44px以上）', full);
   ok(full.searchHit, '検索欄が押せる', full.searchHit);
   ok(full.attrVisible, '出典表記が見えている（利用条件）', full.attrVisible);
+  ok(full.attrLinkHit === true, '★出典のリンクは押せる（#map-foot の pointer-events: none を打ち消す。パネルを閉じた状態）', full.attrLinkHit);
   ok(full.rankOutside && full.favOverlayOutside,
     '★他の画面が地図の入れ子に紛れ込んでいない', full);
   ok(full.zoomCtl === 0, 'Leaflet標準の+/-は出さない（左上は閉じるボタン）', full.zoomCtl);
