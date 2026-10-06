@@ -79,6 +79,16 @@
   **必ず確認してからマージ** → `docs/workflow.md`「マージ（確認なしでよい範囲）」
   マージ完了時は以下を出す：**「マージ完了。v（その版） が main に反映されます。PWAはキャッシュをクリアして再起動してください。」**
 
+## セッションの区切り
+
+**残量は数値で測れない。** 次を合図にする。
+- **会話が要約された**（起動時に `.claude/hooks/after-compact.sh` が知らせる）
+- **PR を数本マージして区切りがついた**
+
+合図が出たら、**作業中の PR を片付けてから**新セッションへの移行を提案し、
+**新セッションの最初に貼る引き継ぎ文面を作って渡す。** 文面は `docs/status.md` と未完の Issue を指すだけにする（長い経緯は書かない）。
+→ `docs/workflow.md`「Issue 駆動の進め方」
+
 ## 構成
 
 - `sotoki_v4.html` — 現行版（改修ベース）。7,000行超あるので
@@ -104,7 +114,7 @@
 - `docs/install.md` — PWAインストール手順・アイコン再生成
 - `manifest.webmanifest` / `sw.js` / `icons/` — PWA一式（アイコン原図は `icons/icon.svg`）
 - `tests/` — スモークテスト（改修のたびに全件実行する）
-- `.claude/` — スラッシュコマンド（`/test` `/status` `/spec` `/release` `/sync-main`）・レビュー役のエージェント（`agents/plan-reviewer.md`）・permissions・起動時のブランチ鮮度フック
+- `.claude/` — スラッシュコマンド（`/test` `/status` `/spec` `/release` `/sync-main` `/next`）・レビュー役のエージェント（`agents/plan-reviewer.md`）・permissions・起動時のブランチ鮮度フック
 - `scripts/gen-outlook.mjs` — AI全国概況の生成スクリプト
 - `scripts/gen-icons.mjs` — アイコンPNGの書き出しスクリプト
 - `scripts/checkPeaks.mjs` / `scripts/snapPeaks.mjs` / `scripts/searchPeaks.mjs` —

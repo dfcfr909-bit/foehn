@@ -68,6 +68,11 @@
   - `.claude/` にスラッシュコマンド（`/test` `/status` `/spec` `/release`）と permissions を置いた
   - ラベル `feature` / `chore` / `needs-decision` は作成済み（`bug` は既定のもの）。
     **#1〜#16 への付与も完了**（`needs-decision` … #9 #10 #12 ／ `feature` … #11 ／ `chore` … 残り）
+  - **2026-10-06: Issue 駆動の運用を足した。** ラベル `ready`（人間だけが付ける）と領域ラベル
+    （`map` `chart` `wind` `judge` `pwa` `ranking` `relief` `docs` `infra`）を作り、既存 Issue に領域を付与。
+    `/next` が `ready` を1件ずつ片付ける。要約（compact）を合図に新セッションへの移行を促す
+    → `docs/workflow.md`「Issue 駆動の進め方」・`CLAUDE.md`「セッションの区切り」
+    ⚠ compact のフックの出力が文脈に入るかは**実セッションで未確認**
 - **Netlify は撤去した（ADR-0008）。** プロジェクトを削除し `netlify.toml` も消した。
   PRのチェックは GitHub Actions のスモークテスト（`.github/workflows/test.yml`）に置き換え
   - ⚠ **マージ前に実機で触る手段は無くなった。** 実機確認はマージ後に公開URLで行う
