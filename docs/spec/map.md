@@ -17,6 +17,10 @@
 - 案内文は開いた直後だけ `MAP_HINT_MS`(4500ms) 出て消える（`showMapHint`）。
   短いタップで呼び戻す
 - **出典表記は消さない**（利用条件）。浮かせた下段に地点名と並ぶ。`updateMapAttribution()`
+  - 地理院は「地理院タイル」をタイル一覧（`GSI_TILE_LIST_URL`）へのリンクにする（＝地理院タイル＋URL）。
+    末尾に「地理院タイル（標高タイル）を加工して作成」を**選んだレイヤーに関係なく常に**出す
+    （標高タイルは地点の標高・風の地形補正で常に使う。国土地理院の回答 2026-10 → `docs/decisions.md`）
+  - 出典欄は `#map-foot` の `pointer-events: none` を受け継ぐので、**リンクにだけ** `pointer-events: auto`
 - `#map-stage` には `overflow: hidden` が要る（レイヤーパネルは閉じているとき
   `translateY(101%)` で下へ逃がしてあるため）
 - ノッチ／ホームインジケータの逃げ幅は **`--sa-top` / `--sa-bottom`（`:root`）**。
