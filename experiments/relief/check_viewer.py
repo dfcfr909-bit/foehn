@@ -1,5 +1,5 @@
 # 閲覧ページ（viewer.html）の動作確認と描画時間の計測（新規）。画面写しは out/（.gitignore 対象）。
-# 使い方（experiments/relief で）: ../landmark/.venv/Scripts/python.exe check_viewer.py
+# 使い方（experiments/relief で）: 初回は python -m venv .venv → .venv/Scripts/pip install -r requirements.txt → .venv/Scripts/python -m playwright install chromium。実行は .venv/Scripts/python check_viewer.py
 import functools, http.server, json, threading
 from playwright.sync_api import sync_playwright
 
