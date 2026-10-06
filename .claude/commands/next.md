@@ -1,6 +1,6 @@
 ---
 description: ready の Issue を1件選び、計画→実装→テスト→PR→（線引きの外なら）マージ→Issue を閉じる
-allowed-tools: Bash(git status*), Bash(git branch*), Bash(git fetch*), Bash(git checkout -B claude/*), Bash(git log*), Bash(git diff*), Bash(git show*), Bash(git rev-parse*), Bash(git rev-list*), Bash(git add*), Bash(git commit*), Bash(git merge origin/main*), Bash(git merge --abort), Bash(git push -u origin HEAD), Bash(node tests/*), Bash(cd tests && npm install), Bash(node scripts/*), Bash(grep*), Read, Edit, Write, Grep, Glob, Agent, mcp__github__list_issues, mcp__github__issue_read, mcp__github__issue_write, mcp__github__add_issue_comment, mcp__github__list_pull_requests, mcp__github__search_pull_requests, mcp__github__create_pull_request, mcp__github__pull_request_read, mcp__github__merge_pull_request, mcp__github__subscribe_pr_activity
+allowed-tools: Bash(git status*), Bash(git branch*), Bash(git fetch*), Bash(git checkout -B claude/*), Bash(git log*), Bash(git diff*), Bash(git show*), Bash(git rev-parse*), Bash(git rev-list*), Bash(git add*), Bash(git commit*), Bash(git merge origin/main*), Bash(git merge --abort), Bash(git push -u origin HEAD), Bash(node tests/*), Bash(cd tests && npm install), Bash(node scripts/*), Bash(grep*), Read, Edit, Write, Grep, Glob, Agent, mcp__github__list_issues, mcp__github__issue_read, mcp__github__issue_write, mcp__github__add_issue_comment, mcp__github__list_pull_requests, mcp__github__search_pull_requests, mcp__github__create_pull_request, mcp__github__pull_request_read, mcp__github__merge_pull_request, mcp__github__update_pull_request, mcp__claude-code-remote__subscribe_pr_activity, Bash(gh api repos/dfcfr909-bit/foehn/pulls/*/ccr/ready_for_review*)
 ---
 
 `ready` ラベルの Issue を1件だけ片付ける。運用の全体は `docs/workflow.md`「Issue 駆動の進め方」。
@@ -34,12 +34,14 @@ GitHub の操作は **GitHub MCP（`mcp__github__*`）で行う**（`gh` の Gra
 6. **PR**：`git push -u origin HEAD` → draft の PR。**本文に `Closes #N`** を入れる。
    実機で見たい変更は版を本文に明記する。PR を出したら `subscribe_pr_activity` で見張る
 7. **マージの前に、差分で線引きを機械的に判定する**（「触れていそう」の目視で済ませない）
+   - ここに書く止まる条件は、`docs/workflow.md` の表に **`/next` 固有の追加**（`.github/workflows/`・`.claude/settings.json`・`CLAUDE.md`・`destination-out`）を足したもの。自動で動く工程なので広く取る
    - `git diff origin/main --name-only` に次が**含まれる** → 止まって利用者に確認
      `areas.json` ／ `sw.js` ／ `manifest.webmanifest` ／ `icons/` ／ `.github/workflows/` ／ `.claude/settings.json` ／ `CLAUDE.md`
    - `git diff origin/main` に次の語が**出る** → 止まって確認
-     `abcScore` ／ `abcScoreInv` ／ `judgePoint` ／ `THRESH` ／ `wind_speed_unit`
-   - 新しい外部URL・送信先が増える／ファイルの削除・上書きがある／公開範囲に関わる語が入りうる → 止まって確認
-   - 何も該当せず、**CI（`smoke`）が緑**で、`plan-reviewer` が「進めてよい」→ マージしてよい
+     `abcScore` ／ `abcScoreInv` ／ `judgePoint` ／ `THRESH` ／ `wind_speed_unit` ／ `destination-out`
+   - **追加行**（`git diff origin/main | grep '^+'`）に `https?://` が出る（外部URL・送信先が増える）／ファイルの削除・上書きがある／公開範囲に関わる語が入りうる → 止まって確認
+   - 何も該当せず、**CI（`smoke`）が緑**で、`plan-reviewer` が「進めてよい」→ **利用者に見せずにマージしてよい**（CLAUDE.md「CIが緑なら確認なしでマージ」の範囲。止まった場合だけ、差分と該当した線引きを利用者に見せて承認を待つ）
+   - マージの前に **draft を外す**（`update_pull_request` の `draft: false`。通らなければ `gh api -X POST repos/dfcfr909-bit/foehn/pulls/<N>/ccr/ready_for_review`）
 8. **マージして閉じる**：`merge_pull_request`（squash）。`Closes #N` で閉じなければ、`issue_write` で `state_reason: completed` を付けて閉じる。
    マージしたら **「マージ完了。v（その版） が main に反映されます。PWAはキャッシュをクリアして再起動してください。」** を出す（`sotoki_v4.html` を変えたときだけ）
 9. **区切り**：PR を数本マージしたら、CLAUDE.md「セッションの区切り」に従い移行を提案する

@@ -147,6 +147,7 @@ git checkout -B claude/44-legend-position origin/main
 | `areas.json` の座標・標高 | 同上。座標ズレは判定を甘くする側に効く → #13 |
 | `sw.js` / `manifest.webmanifest` / `icons/` | **悪い版が端末に貼り付く。** キャッシュとインストールに影響する |
 | 外部の情報源を足す・送信先が増える | 相手方の利用条件・CORS・レート（#14）に関わる |
+| `.github/workflows/` ・ `.claude/settings.json` ・ `CLAUDE.md`（**自動で動く工程そのものを変える**。2026-10-06 追加） | 次の `/next` が変えた規則で動く。人が見ないと誰も止めない |
 | 院内情報・施設名・個人名が入りうるもの | **このリポジトリは public。取り返しがつかない** → ADR-0009 |
 
 要するに **「見た目とUIの改善はそのまま、判定と配信と公開範囲に触るものは確認」**。
