@@ -15,6 +15,7 @@
 | `findings-07.md` | 項目6 座標入力（UTM・MGRS） |
 | `findings-08.md` | 項目7 検索窓の挙動（スーパー地形・地理院地図・YAMAP・ヤマレコ）＋ Föhn の検索データに要る項目 |
 | `findings-09.md` | 次フェーズ（データモデル確定）の前に人間が判断すべき点 |
+| `findings-10.md` | データモデルの案（確定ではない）・`areas.json` との突き合わせの試行 |
 | `raw/` | 取得した生データの抜粋（出典つき） |
 | `queries/` | Overpass・SPARQL のクエリ |
 | `scripts/` | 抽出に使った小さなスクリプト（`python -I` で、データとは別の場所から実行した） |
