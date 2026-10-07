@@ -11,7 +11,12 @@
     「『maps.gsi.go.jp』ドメインで公開しているウェブサイト」。**`msearch.gsi.go.jp` を名指ししていない**
   - 地理院地図の開発者向けページ（https://maps.gsi.go.jp/development/ichiran.html・siyou.html・vt.html）にも、この API の記載は見つからなかった
   - 地理院地図の「よくあるご質問」は GitHub の Issues（`gsi-cyberjapan/gsimaps`）にあるが、Web 画面と API に到達できず**未確認**
-- **検索結果の保存・再配信の可否は未確認**（規約が見つからないため）
+- **地理院地図の「よくあるご質問」**（GitHub `gsi-cyberjapan/gsimaps` の Issue。ラベル「よくあるご質問」「過去のご質問」。2015-03-23 投稿・回答。利用者の画面写真で確認、2026-10-07）:
+  - 問い「現在開発中のシステムに地名検索や住所表示の機能を組み入れる際、地理院地図で参照されている以下のURL（`msearch.gsi.go.jp/address-search/AddressSearch`・`mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress`）を利用することは可能でしょうか？」
+  - 回答「地理院地図から呼び出すサーバ側動的機能（地名検索機能等）については、**主に地理院地図からの利用を想定しております**。そのため、**必ずしも常にまた長期的に提供できるとは限らない**ことをご承知おきください。また、当該機能の**仕様や利用方法は、予告なく変更する場合があります**。」
+  - 「なお、地理院地図の検索機能のうち、住所に関しては、東京大学空間情報科学研究センター（CSIS）のシンプルジオコーディングを利用しています。」（2015年時点の説明。いまも同じかは**未確認**）
+  - → **利用を禁じてはいないが、保証はしない**という位置づけ。保存・再配信についての記述は無い
+- **検索結果の保存・再配信の可否は未確認**（上の回答にも記述が無い）
 - 地理院地図 Vector も同じ API を使っている（`https://maps.gsi.go.jp/vector/js/src/util/addresssearcher.js` に
   `this._addressSearchUrl = 'https://msearch.gsi.go.jp/address-search/AddressSearch'`）
 
