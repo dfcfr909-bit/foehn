@@ -26,6 +26,17 @@
 - 「Substantial」の定義（§1.0）は "substantial in terms of quantity or quality or a combination of both"。
   非実質的な部分の繰り返し抽出も実質的な部分に当たりうる、とある
 
+### OSMF のガイドライン「When is my project a Produced Work?」（利用者が本文を貼付、2026-10-07）
+
+一次情報: https://osmfoundation.org/wiki/Licence/Community_Guidelines/Produced_Work_-_Guideline （「Status: Endorsed by the OSMF board 2014-06-06」）
+- "If the published result of your project is **intended for the extraction of the original data, then it is a database and not a Produced Work**. Otherwise it is a Produced Work."
+- "However, if you publish a produced work, the underlying database has to be published as well (or alternations to the original database as is the case of derived databases), according to section 4.6 of ODbL."
+- 通常 Produced Work: PNG・JPG・PDF・SVG などの画像、印刷物の地図。通常 Produced Work でない: Planet dump などのデータベースのダンプ
+- "Examples: None"（具体例は無い）
+
+→ 山名・読み・座標の JSON は、**元のデータを取り出すためのもの**（検索のために名前と読みを引く）なので、**Produced Work ではなくデータベース**。OSM の読みを入れれば**派生データベース（ODbL）**になる。下の「当てはめ」の読みと一致した。
+→ 「照合だけに使い、成果物に入れない」場合については、このガイドラインは何も書いていない（**未確認のまま**。ただし成果物に OSM の内容が入らなければ、そもそも OSM の派生物を配っていない）
+
 ### この依頼の形に当てはめると
 
 - 自作の山名 JSON は「データベース」で、**画像や文章ではない**。OSM の `name:ja-Hira` を数千件規模で写して JSON に入れ、
@@ -77,9 +88,14 @@
 - **住所検索 API（`msearch.gsi.go.jp`）の応答が「本サイトのコンテンツ」に入るかは、規約の文言からは決まらない。**
   規約は「本サイト」の範囲を書いていない（ページは `www.gsi.go.jp`）。地名データそのものが他機関由来かどうか（2）イ））も不明で、
   **引き続き未確認**（→ `findings-05.md`）
-- **PDL1.0 本文**（デジタル庁 https://www.digital.go.jp/resources/open_data/public_data_license_v1.0 ）は
-  この環境から到達できず**未確認**。PDL1.0 と ODbL（OSM）・CC BY 4.0 との互換の扱いも本文で確かめていない
-  （PDL1.0 が CC BY 4.0 と互換とされている、という理解は**記憶によるもので未検証**）
+- **PDL1.0 本文**（デジタル庁 https://www.digital.go.jp/resources/open_data/public_data_license_v1.0 。利用者が本文を貼付、2026-10-07。「令和6年7月5日に定めた」）:
+  - 「複製、公衆送信、翻訳・変形等の翻案等、自由に利用できます…**商用利用も可能**です。」
+  - 「なお、**数値データ、簡単な表・グラフ等は著作権による保護の対象ではありません**ので、これらについては本利用ルールの適用はなく、自由に利用できます。」
+  - 出典記載例「出典：D庁ウェブサイト（当該ページのURL）、PDL1.0（規約原文ページのURL）」。加工したら「編集・加工等を行ったこと**及びその主体**」を記載
+  - 「外部データベース等とのAPI…連携等により取得しているコンテンツについては、その提供元の利用条件に従ってください。」
+  - 1.7「本利用ルールは、**クリエイティブ・コモンズ・ライセンスの表示4.0 国際ライセンス…（CC BY）と互換性があります**。…利用者がCC BYに従って利用することを許諾します。」
+  - → 地理院データは **CC BY 4.0 として扱ってよい**。山名・座標・標高の一覧は「数値データ…簡単な表」に近く、著作権の保護の外と読める余地もあるが、地理院の重要情報（出典・加工の表示）には従うのが安全（**解釈**）
+  - → **ODbL（OSM）との混在**：PDL1.0 は CC BY 4.0 互換までしか言っていない。CC BY 4.0 のデータを ODbL のデータベースに入れてよいかは、OSMF 側の判断が要り**未確認**（今回の方針＝OSM を混ぜない、なら問題にならない）
 - 参考: 国土数値情報（国土交通省）の規約も PDL1.0 準拠で、出典と加工の書き方が同じ形（https://nlftp.mlit.go.jp/ksj/other/agreement.html）
 
 ## 3. 測量法：事前計算データを配信するときの手続き
