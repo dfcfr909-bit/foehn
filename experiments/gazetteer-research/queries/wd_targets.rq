@@ -1,0 +1,11 @@
+# 対象の山名（日本語ラベル一致）について、読み・標高・座標・クラス・所在地を引く
+SELECT ?item ?label ?kana ?ele ?coord (GROUP_CONCAT(DISTINCT STR(?cls);separator=" ") AS ?classes) (GROUP_CONCAT(DISTINCT ?admLabel;separator="/") AS ?adm) (GROUP_CONCAT(DISTINCT ?partLabel;separator="/") AS ?parentRange) WHERE {
+  VALUES ?label { "富士山"@ja "巻機山"@ja "光岳"@ja "笈ヶ岳"@ja "那須岳"@ja "茶臼岳"@ja "高原山"@ja "八甲田山"@ja "赤岳"@ja "燧ヶ岳"@ja "俎嵓"@ja "釈迦ヶ岳"@ja "三本槍岳"@ja "大岳"@ja }
+  ?item rdfs:label ?label ; wdt:P17 wd:Q17 .
+  OPTIONAL { ?item wdt:P1814 ?kana }
+  OPTIONAL { ?item wdt:P2044 ?ele }
+  OPTIONAL { ?item wdt:P625 ?coord }
+  OPTIONAL { ?item wdt:P31 ?cls }
+  OPTIONAL { ?item wdt:P131 ?adm . ?adm rdfs:label ?admLabel FILTER(LANG(?admLabel)="ja") }
+  OPTIONAL { ?item wdt:P4552 ?part . ?part rdfs:label ?partLabel FILTER(LANG(?partLabel)="ja") }
+} GROUP BY ?item ?label ?kana ?ele ?coord ORDER BY ?label

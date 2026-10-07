@@ -1,0 +1,10 @@
+# 取得: https://registry.npmjs.org/<package> 2026-10-07。unpackedSize は npm 登録値（パッケージ全体）
+name	latest	license	latest_published	first_published	unpackedSize	dependencies	repository
+mgrs	2.2.0	MIT	2026-07-11	2013-12-07	124365		git://github.com/proj4js/mgrs.git
+proj4	2.22.0	MIT	2026-08-31	2013-09-17	844766	mgrs,wkt-parser	git+https://github.com/proj4js/proj4js.git
+geodesy	2.4.0	MIT	2022-03-22	2015-03-19	271025		https://github.com/chrisveness/geodesy
+utm-latlng	1.0.8	MIT	2024-01-11	2016-01-20	38139		git+https://github.com/shahid28/utm-latlng.git
+utm	1.1.1	MIT	2017-06-27	2015-10-25	0		git+https://github.com/timothygu/utm.git
+@ngageoint/mgrs-js	1.0.0	MIT	2022-10-27	2022-10-03	323691	@ngageoint/color-js,@ngageoint/grid-js,decimal-format,sprintf-js,tstl	git+https://github.com/ngageoint/mgrs-js.git
+usng.js	0.4.5	MIT	2021-03-01	2018-07-18	1745558		git://github.com/codice/usng.js.git
+geographiclib-mgrs	1.0.5	MIT	2026-04-16	2025-03-17	4960057		git+https://github.com/spatialillusions/geographiclib-mgrs.git

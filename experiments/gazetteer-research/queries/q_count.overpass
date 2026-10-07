@@ -1,0 +1,13 @@
+[out:json][timeout:180];
+area["ISO3166-1"="JP"][admin_level=2]->.jp;
+node["natural"="peak"](area.jp)->.p;
+.p out count;
+node.p["name"] -> .pn; .pn out count;
+node.p["name:ja-Hira"] -> .h; .h out count;
+node.p["name:ja-Kana"] -> .k; .k out count;
+node.p["name:ja_kana"] -> .k2; .k2 out count;
+node.p["name:ja_rm"] -> .r; .r out count;
+node.p["name:ja-Latn"] -> .l; .l out count;
+node.p["ele"] -> .e; .e out count;
+node.p["wikidata"] -> .w; .w out count;
+node.p["name"]["ele"] -> .ne; .ne out count;

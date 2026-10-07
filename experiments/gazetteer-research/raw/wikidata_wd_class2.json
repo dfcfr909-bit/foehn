@@ -1,0 +1,128 @@
+{
+  "head" : {
+    "vars" : [ "cls", "n" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "6230"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q8072"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "126"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q10561633"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "84"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q503269"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "63"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q169358"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "51"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q54050"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "45"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1595289"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "38"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3393392"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "26"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q534282"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "24"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q674775"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "21"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q46831"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "12"
+      }
+    }, {
+      "cls" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1330974"
+      },
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "10"
+      }
+    } ]
+  }
+}
