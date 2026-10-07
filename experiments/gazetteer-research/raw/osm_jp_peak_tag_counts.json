@@ -1,0 +1,123 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-07T01:01:16Z",
+    "timestamp_areas_base": "2026-10-05T17:16:21Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "17484",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "17484"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "13894",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "13894"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "3110",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "3110"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "0",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "0"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "0",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "0"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "224",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "224"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "1713",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "1713"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "16431",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "16431"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "2763",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "2763"
+  }
+},
+{
+  "type": "count",
+  "id": 0,
+  "tags": {
+    "nodes": "12989",
+    "ways": "0",
+    "relations": "0",
+    "areas": "0",
+    "total": "12989"
+  }
+}
+
+  ]
+}

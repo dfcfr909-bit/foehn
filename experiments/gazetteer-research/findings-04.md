@@ -1,0 +1,83 @@
+# 地名・山名検索の調査 04：ライセンスの境界
+
+⚠ ここは法律の助言ではない。取得できた一次情報の本文を並べ、そこから読めることと読めないことを分けた。
+
+## 1. OSM 由来の読みを自作の山名 JSON に混ぜて静的配信する場合（ODbL）
+
+### 一次情報
+
+- ODbL 1.0 本文 https://opendatacommons.org/licenses/odbl/1-0/ （2026-10-07 取得）
+- OSM 著作権ページ https://www.openstreetmap.org/copyright/ja （同）
+- ✕ OSMF の FAQ・ガイドライン（Produced Work・Substantial・Collective Database など）は
+  `osmfoundation.org` に到達できず**未確認**
+
+### 本文から読めること
+
+- **派生データベース（Derivative Database）** の定義（§1.0）:
+  "a database based upon the Database, and includes any translation, adaptation, arrangement, modification, or any other alteration of the Database or of a Substantial part of the Contents. This includes, but is not limited to, Extracting or Re-utilising the whole or a Substantial part of the Contents in a new Database."
+- §4.4 b: "Extraction or Re-utilisation of the whole or a Substantial part of the Contents into a new database is a Derivative Database and must comply with Section 4.4."
+- **成果物（Produced Work）** の定義（§1.0）:
+  "a work (such as an image, audiovisual material, text, or sounds) resulting from using the whole or a Substantial part of the Contents (via a search or other query) from this Database..."
+- §4.5 b: Produced Work を作っても派生データベースにはならない
+- §4.4 a: 公に使う派生データベースは **ODbL（か互換ライセンス）でしか出せない**
+- §4.6: 派生データベース（またはそこからの Produced Work）を公に使うなら、
+  **派生データベース全体、または変更内容（作り方のアルゴリズムでも可）を機械可読で提供**しなければならない
+- §4.4 d: ODbL と両立しない内容を派生データベースに加えてはならない
+- 「Substantial」の定義（§1.0）は "substantial in terms of quantity or quality or a combination of both"。
+  非実質的な部分の繰り返し抽出も実質的な部分に当たりうる、とある
+
+### この依頼の形に当てはめると
+
+- 自作の山名 JSON は「データベース」で、**画像や文章ではない**。OSM の `name:ja-Hira` を数千件規模で写して JSON に入れ、
+  配信して誰でも取れる状態にすれば、§4.4 b の「新しいデータベースへの抽出」にあたり、**派生データベース**と読むのが自然
+  （**Produced Work とは読みにくい**）
+- 派生データベースにすると、**その JSON 全体が ODbL になり**（§4.4 a）、
+  地理院由来の項目と同じファイルに混ぜることの可否（§4.4 d：地理院側の条件が ODbL と両立するか）が問題になる。
+  地理院側の規約本文が未確認なので、**両立するかは判断できない**
+- どの量から「Substantial」かは、OSMF のガイドラインが読めず**未確認**
+
+### 混ぜずに済ませる代替の成否
+
+| 代替 | 本文から言えること | 残る不確実さ |
+|---|---|---|
+| OSM は**照合（突き合わせ・検査）だけ**に使い、配信する JSON に OSM の値を入れない | 配信物に OSM の内容が入らなければ、配信物は派生データベースに当たらないと読める | 照合の結果で地理院データを**直した**場合、その修正値は OSM の内容の写しか。OSMF のガイドライン未確認 |
+| 実行時に Overpass/Nominatim を叩き、端末の中で使う（いまの `doMapSearch` と同じ） | 応答を画面に出すのは "interaction with a user through a computer network" で、ODbL の Convey に含まれない（§1.0 Convey の定義） | オフラインのために端末へ保存する量が増えると、その扱いは未確認。Nominatim の利用規約（1秒1回など）は今回未取得 |
+| OSM の読みを**別ファイル**（ODbL で配布）に分ける | Collective Database（§1.0）として、他のファイルは ODbL にしなくてよい（§4.5 a）と読める | 分け方が Collective Database と認められる条件はガイドライン未確認 |
+
+## 2. 地理院コンテンツ利用規約（出典表示・加工表示）
+
+- ✕ 規約本文（`https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html`）は**到達できず未確認**
+- 取得できた範囲:
+  - 地理院地図 利用規約 https://maps.gsi.go.jp/help/termsofuse.html
+    - 「本規約は、地理院地図ウェブサイト（『maps.gsi.go.jp』ドメインで公開しているウェブサイト…）で提供しているサービス…を利用する際に適用されます。」
+    - 「本サービスで公開している地図・空中写真等（地理院タイル）を利用する際は、『国土地理院コンテンツ利用規約』に従ってご利用いただけます。」
+    - 「地理院タイルの中には、『2)イ 第三者が権利を有しているもの』や、『3) 個別法令による利用の制約があるもの』に当てはまるものもございます」
+    - 「本サービスの正常な運用を妨げ、またはその恐れが生じる程度の負荷をサーバに与える通信に対して、予告なくアクセスの遮断を行う場合があります。」
+  - ベクトルタイル提供実験 https://maps.gsi.go.jp/development/vt_expt.html
+    - 「提供するベクトルタイルは国土地理院コンテンツ利用規約に従って利用できます（実験的に提供するもので、基本測量成果ではありません）。」
+- **出典の書き方・加工の表示の文言は、規約本文が読めないため未確認。**
+  参考として、国土数値情報（国土交通省）の規約は PDL1.0 準拠で、
+  「コンテンツを編集・加工等して利用する場合は、以下の出典とは別に、利用したコンテンツの名称及び編集・加工等を行ったことを記載」
+  「編集・加工した情報を、あたかも国が作成したかのような態様で公表・利用してはいけません」としている
+  （https://nlftp.mlit.go.jp/ksj/other/agreement.html 。**地理院の規約ではない**）
+- 本体は既に「地理院タイル」の出典と加工の表記を出している（v4.155.5、PR #160）。
+  地名データを加えるときに同じ書き方でよいかは、規約本文を読んでから決める
+
+## 3. 測量法：事前計算データを配信するときの手続き（公開情報の範囲）
+
+- ✕ 測量法の条文（e-Gov）は**到達できず未確認**。地理院の申請案内も `www.gsi.go.jp` にあり未確認
+- 取得できた公開情報:
+  - **ベクトルタイルは「基本測量成果ではありません」**（上記 vt_expt.html）。
+    基本測量成果でなければ、基本測量成果の複製・使用の承認の対象外と**読める**が、条文で確かめていない（**未検証**）
+  - 国土数値情報の規約: 背景図に基本測量成果を使った成果を「測量法に基づく複製・使用を行う場合は、国土地理院の承認を得る必要があります」
+    （https://nlftp.mlit.go.jp/ksj/other/agreement.html 1.2(1)）
+  - 国土数値情報「観光資源」は「国土地理院長の承認を得て、同院発行の数値地図（国土基本情報）、電子国土基本図（地図情報）、基盤地図情報を使用しました。（承認番号 平26情使、 第441号）」と書いている
+    （https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P12-2014.html）
+  - スーパー地形は、内蔵の地名データについて
+    「この地図は、国土地理院長の承認を得て、同院発行の数値地図25000（地名・公共施設）を複製したものである。（承認番号 平27情複、 第1269号）」
+    ほか、基盤地図情報の使用承認を複数掲げている（https://www.kashmir3d.com/online/superdemapp/manual/ 著作権表示）
+- 読めること: **同種のアプリは、地理院の地名データを内蔵するときに複製承認を取っている例がある。**
+  ただしその当時の数値地図25000は製品として販売されていたもので、
+  いまのベクトルタイル・1003山・住所検索の結果が同じ扱いかは**未確認**
+- 「地理院に問い合わせ済みの件」とは別に、**事前計算データ（地名＋座標＋標高を JSON に固めて配信）が
+  「複製」「使用」のどちらに当たるか、承認が要るかは、公開情報では決められなかった**

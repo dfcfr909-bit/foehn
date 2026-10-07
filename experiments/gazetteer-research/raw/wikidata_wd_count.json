@@ -1,0 +1,39 @@
+{
+  "head" : {
+    "vars" : [ "n", "nJaLabel", "nKana", "nCoord", "nEle", "nOsm" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "n" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "6477"
+      },
+      "nJaLabel" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "3898"
+      },
+      "nKana" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "407"
+      },
+      "nCoord" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "6347"
+      },
+      "nEle" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "3215"
+      },
+      "nOsm" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
+        "type" : "literal",
+        "value" : "2"
+      }
+    } ]
+  }
+}
