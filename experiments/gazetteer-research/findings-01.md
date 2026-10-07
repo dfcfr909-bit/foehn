@@ -94,7 +94,8 @@ GitHub の公開リポジトリは `git clone` だけ通った（地理院の `g
 | 旧形式 `experimental_bvmap` の配信・更新の予定 | 告知が見つからない |
 | 基盤地図情報の注記（読みの有無） | `fgd.gsi.go.jp`・`service.gsi.go.jp` に到達できない |
 | OSMF のガイドライン（Produced Work・Substantial・Collective Database） | `osmfoundation.org` に到達できない |
-| 測量法の条文 | `laws.e-gov.go.jp` に到達できない |
+| ~~測量法の条文~~ | **確認済み**（利用者が e-Gov から取得した PDF、令和8年9月3日施行版 → `findings-04.md` 3.） |
+| 測量法施行規則・地理院の複製・使用の承認の案内 | 到達できない |
 | 住所検索 API の利用条件・保存・再配信 | 規約が見つからない。地理院の FAQ（GitHub の Issues）は Web 画面に到達できない |
 | 気象庁・産総研による山群の構成（一次情報） | `www.data.jma.go.jp`・`gbank.gsj.jp` に到達できない |
 | YAMAP の検索の挙動 | `help.yamap.com` が確認画面で本文を返さない |
