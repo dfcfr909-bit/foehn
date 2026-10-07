@@ -171,6 +171,11 @@ const GSI = {
     .catch(e => e.message);
   if (boot) throw new Error(`起動に失敗: ${boot} / pageerror: ${errors.join(' / ') || 'なし'}`);
 
+  /* 手元の山の検索（#171）を止めて、地名検索（Nominatim・地理院）だけを検査する。
+     ⚠ areasData は残す（百名山の印の照合が読む）。一覧を作り終えてから空にする
+     （作成中に空にすると、作り終えた一覧で上書きされる） */
+  await page.evaluate(async () => { await ensureMtnIndex(); mtnIndex = []; });
+
   /* --- 表記揺れの作り方 --- */
   const variants = await page.evaluate(() => ({
     sho: nameSearchVariants('笙ヶ岳'),
@@ -189,7 +194,7 @@ const GSI = {
   const rows = await page.evaluate(async () => {
     document.getElementById('map-search-input').value = '笙ヶ岳';
     await doMapSearch();
-    return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+    return [...document.querySelectorAll('#place-results .map-result-item')].map(el => ({
       name: el.querySelector('.map-result-name').textContent,
       sub: el.querySelector('.map-result-sub').textContent,
     }));
@@ -211,7 +216,7 @@ const GSI = {
   const shaka = await page.evaluate(async () => {
     document.getElementById('map-search-input').value = '釈迦ヶ岳';
     await doMapSearch();
-    return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+    return [...document.querySelectorAll('#place-results .map-result-item')].map(el => ({
       name: el.querySelector('.map-result-name').textContent,
       sub: el.querySelector('.map-result-sub').textContent,
     }));
@@ -230,7 +235,7 @@ const GSI = {
   const fallback = await page.evaluate(async () => {
     document.getElementById('map-search-input').value = '釈迦ヶ岳';
     await doMapSearch();
-    return [...document.querySelectorAll('#map-results .map-result-item')].map(el =>
+    return [...document.querySelectorAll('#place-results .map-result-item')].map(el =>
       el.querySelector('.map-result-sub').textContent);
   });
   ok(fallback.length === 2, '★★地理院が読めなくてもOSMの結果は出る（検索が壊れない）', fallback);
@@ -244,7 +249,7 @@ const GSI = {
     document.getElementById('map-search-input').value = '五竜岳';
     await doMapSearch();
     await new Promise(r => setTimeout(r, 600));   // 標高は一覧を出したあとに埋まる
-    return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+    return [...document.querySelectorAll('#place-results .map-result-item')].map(el => ({
       name: el.querySelector('.map-result-name').textContent,
       elev: el.querySelector('.map-result-elev').textContent,
       badge: (el.querySelector('.map-result-badge') || {}).textContent || '',
@@ -266,16 +271,16 @@ const GSI = {
   const sortState = await page.evaluate(async () => {
     document.getElementById('map-search-input').value = '五竜岳';
     await doMapSearch();
-    const first = () => document.querySelector('#map-results .map-result-item .map-result-name').textContent;
+    const first = () => document.querySelector('#place-results .map-result-item .map-result-name').textContent;
     const nearFirst = first();                       // 標高が埋まる前
     await new Promise(r => setTimeout(r, 600));      // 埋まったあと
     const stillNearFirst = first();
-    const chips = [...document.querySelectorAll('.map-sort-chip')].map(b => b.textContent);
-    const onLabel = (document.querySelector('.map-sort-chip.on') || {}).textContent;
+    const chips = [...document.querySelectorAll('#place-results .map-sort-chip')].map(b => b.textContent);
+    const onLabel = (document.querySelector('#place-results .map-sort-chip.on') || {}).textContent;
     // 「高い順」を押す
-    [...document.querySelectorAll('.map-sort-chip')].find(b => b.textContent === '高い順').click();
-    const highFirst = document.querySelector('#map-results .map-result-item .map-result-elev').textContent;
-    const onAfter = (document.querySelector('.map-sort-chip.on') || {}).textContent;
+    [...document.querySelectorAll('#place-results .map-sort-chip')].find(b => b.textContent === '高い順').click();
+    const highFirst = document.querySelector('#place-results .map-result-item .map-result-elev').textContent;
+    const onAfter = (document.querySelector('#place-results .map-sort-chip.on') || {}).textContent;
     return { nearFirst, stillNearFirst, chips, onLabel, highFirst, onAfter };
   });
   ok(sortState.chips.join('/') === '近い順/高い順', '並べ替えの札が出る', sortState.chips);
@@ -303,7 +308,7 @@ const GSI = {
     document.getElementById('map-search-input').value = '釈迦ヶ岳';
     await doMapSearch();
     await new Promise(r => setTimeout(r, 600));
-    return [...document.querySelectorAll('#map-results .map-result-item')].map(el =>
+    return [...document.querySelectorAll('#place-results .map-result-item')].map(el =>
       el.querySelector('.map-result-elev').textContent);
   });
   ok(noElev.length === 3, '★標高が読めなくても候補は出る（一覧を止めない）', noElev);

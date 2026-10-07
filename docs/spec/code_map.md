@@ -543,7 +543,8 @@ SW 側の実装は `sw.js` → `pwa.md`
 | `updatePinVisibility()` | 追跡中は選択地点のピンを出さない | 約 5941 |
 | `updateMapToolButtons()` | 右上3ボタンの状態 | 約 5948 |
 | `doMapSearch()` | 地名検索。OSMと地理院を同時に回す（Nominatimの中は直列）。`fetchJsonWithTimeout`（`SEARCH_TIMEOUT_MS`=5秒） | 約 8391 |
-| `renderSearchHist()` / `addSearchHist()` | **検索の履歴**（選んだ地点。空の窓で全件・打つと絞り込み）。`sotoki_search_hist` に100件 | 約 8491 |
+| `renderSearchHist()` / `addSearchHist()` | **検索の窓の中身**（手元の山の候補・山の履歴 → 地名の履歴。空の窓で全件・打つと絞り込み）。地名の履歴は `sotoki_search_hist` に100件 | 約 8491 |
+| `mtnSearch()` / `mtnKey()` / `buildPeakIndex()` / `renderMtnSection()` | **手元の山の検索**（#171）。areas.json の110峰＋`data/peak_meta.json`（読み等）。一致度＋履歴＋名山（`MTN_SEARCH`）。山の履歴は `mtnSearchHistory.v1` に50件（`addMtnHist`）。選ぶと `pickMtn` が公称の標高を渡す | 約 13000 |
 | `showMapHint()` / `flashPinHint()` | 案内文（`MAP_HINT_MS`=4.5秒） | 約 6359 / 6341 |
 
 ## 現在地の追跡と地図の向き

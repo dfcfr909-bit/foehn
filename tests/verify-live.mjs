@@ -134,16 +134,29 @@ if (ONLY === 'deploy') {
        ここで**地理院由来の候補が出れば CORS が通っている**と言える
        （ブラウザでしか確かめられない。#27 では人の目に頼るしかなかった）。 */
     const rows = await page.evaluate(async () => {
+      /* 手元の山（#171）は通信しないので、ここで別に確かめる（同梱の data/peak_meta.json と areas.json）。
+         ⚠ 地名検索の検査では手元の検索を止める。止めないと、手元に出した五竜岳と同じ山が
+           地名検索の側から外れ、地理院の候補が残らないことがある */
+      const ix = await ensureMtnIndex();
+      const box = document.createElement('div');
+      renderMtnSection(box, '五竜岳');
+      const mtnHyaku = [...box.querySelectorAll('.mtn-item')]
+        .some(el => (el.querySelector('.mtn-tag') || {}).textContent === '百');
+      const metaOk = !!(ix && ix.some(p => p.kana));
+      mtnIndex = [];
       document.getElementById('map-search-input').value = '五竜岳';
       await doMapSearch();
       await new Promise(r => setTimeout(r, 3000));   // 標高の読み取りを待つ
-      return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+      mtnIndex = ix;
+      const place = [...document.querySelectorAll('#place-results .map-result-item')].map(el => ({
         name: el.querySelector('.map-result-name').textContent,
         sub: el.querySelector('.map-result-sub').textContent,
         elev: el.querySelector('.map-result-elev').textContent,
         badge: (el.querySelector('.map-result-badge') || {}).textContent || '',
       }));
-    }).catch(e => ({ err: e.message }));
+      return { place, mtnHyaku, metaOk };
+    }).then(r => (r && r.place ? Object.assign(r.place, { mtnHyaku: r.mtnHyaku, metaOk: r.metaOk }) : r))
+      .catch(e => ({ err: e.message }));
 
     if (Array.isArray(rows)) {
       console.log('    検索結果:', JSON.stringify(rows));
@@ -153,6 +166,8 @@ if (ONLY === 'deploy') {
       ok(rows.some(r => /\d+m/.test(r.elev)),
         '★標高が読める（標高タイルをCanvasで読めている）', rows);
       ok(rows.some(r => r.badge === '百名山'), '百名山の印が出る', rows);
+      ok(rows.mtnHyaku, '手元の山の行に [百] が出る（#171）', rows);
+      ok(rows.metaOk, '読み（data/peak_meta.json）が配信されている（#171）', rows);
     } else {
       ok(false, '検索を実行できる', rows);
     }
