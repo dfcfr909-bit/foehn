@@ -961,6 +961,31 @@ html, body {
   color: var(--text3); font-size: 15px; cursor: pointer; }
 .map-hist-clear { border: none; background: none; color: var(--text3); font-size: 11px;
   text-decoration: underline; padding: 4px 0; min-height: 28px; cursor: pointer; }
+/* 手元の山の候補（#171）。山名とチップは折り返さない。文字は地名の行より大きめ。
+   1行目＝山名・チップ・標高、2行目＝都道府県・距離。行頭を揃え、空白を作らない */
+.mtn-item { padding: 8px 14px; min-height: 44px; border-bottom: 1px solid var(--border); cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.mtn-item:active { background: var(--bg2); }
+.mtn-line1 { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.mtn-name { font-size: 16px; font-weight: 700; color: var(--text); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* 名山の区分。⚠ 色だけで区別しない（文字も出す）。押すと全タグ */
+.mtn-tag { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 700; color: #fff;
+  background: var(--accent, #e2703a); border: none; border-radius: 4px; padding: 2px 6px;
+  line-height: 1.3; cursor: pointer; }
+.mtn-elev { flex-shrink: 0; margin-left: auto; font-size: 13px; color: var(--text3); white-space: nowrap; }
+.mtn-sub { font-size: 12px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mtn-hist-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.mtn-hist-row .mtn-item { flex: 1; border-bottom: none; }
+.mtn-sort-row { display: flex; align-items: center; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
+.mtn-sort-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: none;
+  background: var(--panel2, #2a2a2a); color: var(--text3); min-height: 28px; }
+.mtn-sort-chip.on { background: var(--accent, #e2703a); color: #fff; font-weight: 700; }
+.mtn-sort-chip:disabled { opacity: 0.4; }
+.mtn-origin { font-size: 11px; color: var(--text3); margin-left: auto; white-space: nowrap; }
+/* 手元の山と地名検索の結果の区切り */
+.place-sep { padding: 5px 14px; font-size: 11px; color: var(--text3); background: var(--bg2);
+  border-bottom: 1px solid var(--border); }
 /* overflow:hidden が要る。レイヤーパネルは閉じているとき translateY(101%) で
    下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
 #map-stage { flex: 1; position: relative; min-height: 0; overflow: hidden; }
@@ -2440,7 +2465,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.5</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.156.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -12561,7 +12586,8 @@ function setMapSearchSort(mode) {
 }
 
 function renderMapResults() {
-  const results = document.getElementById('map-results');
+  // ⚠ 地名検索の結果だけを描く（手元の山は #mtn-results。#171）
+  const results = document.getElementById('place-results');
   if (!results) return;
   results.innerHTML = '';
   if (!mapSearchItems.length) return;
@@ -12641,9 +12667,28 @@ let mapSearchSeq = 0;   // 打ち直したとき、前の検索の遅い応答�
 async function doMapSearch() {
   const input = document.getElementById('map-search-input');
   const q = input.value.trim();
-  const results = document.getElementById('map-results');
-  if (!q) { results.innerHTML = ''; return; }
+  const root = document.getElementById('map-results');
+  if (!q) { root.innerHTML = ''; return; }
   const seq = ++mapSearchSeq;
+  /* 手元の山（#171）を上に残し、区切りの下に地名検索の結果を足す（決定2）。
+     ⚠ 手元の一覧は同梱のファイルなので待っても短い。読めなければ地名検索だけになる */
+  if (!mtnIndex) await ensureMtnIndex();
+  if (seq !== mapSearchSeq) return;
+  root.innerHTML = '';
+  const mbox = document.createElement('div');
+  mbox.id = 'mtn-results';
+  renderMtnSection(mbox, q);
+  const hasMtn = mbox.childNodes.length > 0;
+  if (hasMtn) {
+    root.appendChild(mbox);
+    const sep = document.createElement('div');
+    sep.className = 'place-sep';
+    sep.textContent = '地名（OSM・国土地理院）';
+    root.appendChild(sep);
+  }
+  const results = document.createElement('div');
+  results.id = 'place-results';
+  root.appendChild(results);
   results.innerHTML = '<div class="map-result-msg">検索中…</div>';
   try {
     /* 日本国内に限定して山名・地名を検索。表記揺れぶんだけ順に引き、
@@ -12653,7 +12698,10 @@ async function doMapSearch() {
       const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
       if (!isFinite(lat) || !isFinite(lon)) return;
       // 情報源が違えば座標も少し違う。名前と約1km四方で畳む
-      const name = normalizeSearchName((item.display_name || '').split(',')[0]);
+      const rawName = (item.display_name || '').split(',')[0];
+      // 手元の行に出している峰と同じ山は外す（同じ山が2行出ないように。#171）
+      if (isShownMtn(rawName, lat, lon)) return;
+      const name = normalizeSearchName(rawName);
       const key = `${name}@${lat.toFixed(2)},${lon.toFixed(2)}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -12688,7 +12736,7 @@ async function doMapSearch() {
     if (gsi.status === 'fulfilled') gsi.value.forEach(add);
     if (!items.length && osm.status === 'rejected') throw osm.reason;
     if (!items.length) {
-      results.innerHTML = '<div class="map-result-msg">見つかりませんでした</div>';
+      results.innerHTML = `<div class="map-result-msg">${hasMtn ? '地名は見つかりませんでした' : '見つかりませんでした'}</div>`;
       return;
     }
     /* いま見ている場所に近いものから並べる。
@@ -12779,12 +12827,25 @@ function renderSearchHist() {
   const results = document.getElementById('map-results');
   const input = document.getElementById('map-search-input');
   if (!results || !input) return;
-  const q = normalizeSearchName(input.value.trim());
+  const raw = input.value;
+  const q = normalizeSearchName(raw.trim());
   const all = loadSearchHist();
   const shown = all.map((h, i) => ({ h, i }))
     .filter(({ h }) => !q || normalizeSearchName(h.name).includes(q));
   results.innerHTML = '';
   mapSearchItems = [];              // 並べ替えの札の対象を残さない
+
+  /* 手元の山（#171）を上に。空の窓では 山の履歴 → 地名の履歴 の順（決定3）。
+     峰の一覧がまだ無ければ裏で作り、入力が変わっていなければ描き直す */
+  if (!mtnIndex) {
+    ensureMtnIndex().then(ix => {
+      if (ix && input.value === raw && document.activeElement === input) renderSearchHist();
+    });
+  }
+  const mbox = document.createElement('div');
+  mbox.id = 'mtn-results';
+  renderMtnSection(mbox, raw);
+  if (mbox.childNodes.length) results.appendChild(mbox);
   if (!shown.length) return;        // 空なら #map-results:empty で消える
 
   const head = document.createElement('div');
@@ -12792,18 +12853,8 @@ function renderSearchHist() {
   const label = document.createElement('span');
   label.textContent = `🕘 最近選んだ地点（${all.length}件）`;
   head.appendChild(label);
-  if (!q) {
-    const clr = document.createElement('button');
-    clr.type = 'button';
-    clr.className = 'map-hist-clear';
-    clr.textContent = '履歴を消去';
-    clr.addEventListener('click', () => {
-      if (!confirm('検索の履歴をすべて消します。よろしいですか？')) return;
-      saveSearchHist([]);
-      renderSearchHist();
-    });
-    head.appendChild(clr);
-  }
+  // 全消去は1つだけ（山の履歴の見出しに出ていればそちら）。山・地名の両方を消す
+  if (!q && !mbox.querySelector('.map-hist-clear')) head.appendChild(mtnClearButton());
   results.appendChild(head);
 
   for (const { h, i } of shown) {
@@ -12850,6 +12901,380 @@ function renderSearchHist() {
     results.appendChild(row);
   }
 }
+/* ============================================================
+   手元の山の検索（#171・第1段階）
+   ⚠ 引くのは areas.json の110峰だけ（読み・都道府県・総称・別名は data/peak_meta.json）。
+      外部（Nominatim・地理院）は Enter のときだけ、これまでどおり下に足す。
+   ⚠ 点数 = 一致度 ＋ 履歴 ＋ 名山。**一致しなかった山は候補から外す**ので、
+      履歴・名山の上乗せは一致した候補の中の並びにしか効かない。
+   ⚠ 数値は仮置き（実機で調整）。ABC評価には触れない。
+   ============================================================ */
+const MTN_SEARCH = {
+  MATCH: { exact: 120, prefix: 80, part: 60, fuzzy: 30 },
+  FUZZY_MIN_LEN: 3,          // 曖昧一致は3文字以上打ったときだけ
+  HIST_BOOST_MAX: 40,        // 履歴の上乗せの上限
+  HIST_HALF_LIFE_DAYS: 14,   // 半減期
+  TIERS: [['百', 30], ['二百', 20], ['三百', 12], ['新百', 8]],   // 上乗せは最上位の1つだけ
+  RESULT_MAX: 8,             // 入力中に出す候補の上限
+  SUGGEST_MAX: 20,           // 空の窓で履歴が無いとき、名山を出す上限
+  HIST_MAX: 50,              // 山の履歴の上限
+};
+const MTN_HIST_KEY = 'mtnSearchHistory.v1';   // ⚠ 旧アプリ名を含めない（#171）
+
+/* 照合用に揃える。⚠ 既存の normalizeSearchName は外部検索の重複判定・地名の履歴で使っているので変えない。
+   順番に意味がある：
+   ① ひらがな化は「ヵ・ヶ」を除く（U+30F5/30F6 を足すと ゕ・ゖ になり、畳む集合から外れる）
+   ② 畳む集合 {ヶ,ヵ,け,が,か} は、利用者の決定「ヶケガがヵカを1字に」をひらがな化のあとに写したもの。
+      ひらがな化の前に畳むと「ヤリガタケ」と「やりがたけ」が一致しない
+      （既存の normalizeSearchName もカタカナのカ・ケを語のどこでも畳んでいる。それをひらがなに広げた） */
+const MTN_KA_GROUP = /[ヶヵけがか]/g;
+function mtnKey(s) {
+  let t = String(s == null ? '' : s).normalize('NFKC').toLowerCase();
+  t = t.replace(/[\s・･ー－\-‐()（）［］\[\]「」『』〈〉<>＜＞【】]/g, '');
+  for (const [old, now] of KANJI_VARIANT_PAIRS) t = t.split(old).join(now);
+  t = t.replace(/[ァ-ヴ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+  t = t.replace(MTN_KA_GROUP, 'ヶ').replace(/[ノの之]/g, 'の');
+  return t;
+}
+
+// 編集距離（短い語だけを比べるので素直な表で足りる）
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/* 1つの照合キーに対する一致度。0 は不一致。
+   曖昧一致：入力が3文字以上のとき、キーの先頭 n 文字（n＝入力長±1）との編集距離が1以下 */
+function mtnMatchKey(q, key) {
+  if (!q || !key) return 0;
+  const M = MTN_SEARCH.MATCH;
+  if (key === q) return M.exact;
+  if (key.startsWith(q)) return M.prefix;
+  if (key.includes(q)) return M.part;
+  if (q.length >= MTN_SEARCH.FUZZY_MIN_LEN) {
+    for (let n = q.length - 1; n <= q.length + 1; n++) {
+      if (n < 1 || n > key.length) continue;
+      if (editDistance(key.slice(0, n), q) <= 1) return M.fuzzy;
+    }
+  }
+  return 0;
+}
+// 名前・読み・別名（総称を含む）のうち最良
+function mtnMatchScore(q, peak) {
+  let best = 0;
+  for (const k of peak.keys) best = Math.max(best, mtnMatchKey(q, k));
+  return best;
+}
+
+// 名山の上乗せ：最上位のティア1つ分だけ
+function mtnTopTier(tags) {
+  for (const [t] of MTN_SEARCH.TIERS) if (tags && tags.includes(t)) return t;
+  return null;
+}
+function mtnTierBoost(tags) {
+  const top = mtnTopTier(tags);
+  const hit = MTN_SEARCH.TIERS.find(([t]) => t === top);
+  return hit ? hit[1] : 0;
+}
+// 履歴の上乗せ：上限 × 半減期14日の減衰 × 回数（log2(count+1)/3、上限1）
+function mtnHistBoost(h, now = Date.now()) {
+  if (!h) return 0;
+  const days = Math.max(0, (now - h.lastAt) / 86400000);
+  const decay = Math.pow(0.5, days / MTN_SEARCH.HIST_HALF_LIFE_DAYS);
+  const cnt = Math.min(1, Math.log2(h.count + 1) / 3);
+  return MTN_SEARCH.HIST_BOOST_MAX * decay * cnt;
+}
+
+/* 峰の一覧を作る。⚠ id は「山域id/山名」（areas.json は変えない・#171 の決定7）。
+   改名すると履歴の id が宙に浮くが、見つからない id は黙って捨てる */
+function buildPeakIndex(areas, meta) {
+  const out = [];
+  const m = (meta && meta.peaks) || {};
+  for (const area of (areas && areas.areas) || []) {
+    for (const p of area.peaks || []) {
+      const id = `${area.id}/${p.name}`;
+      const x = m[id] || {};
+      const base = String(p.name).replace(/[（(].*$/, '');
+      const words = [p.name, base, x.kana, ...(x.aliases || []), x.group, x.groupKana];
+      out.push({
+        id, name: p.name, kana: x.kana || null, aliases: x.aliases || [],
+        group: x.group || null, lat: p.lat, lon: p.lon, elevation: p.elev,
+        pref: x.pref || [], areaName: area.name,
+        // 決定4：hyakumeizan:true を「百」として出す。他のティアは今回は入れない（出典・版が未決定）
+        tags: p.hyakumeizan ? ['百'] : [],
+        keys: [...new Set(words.filter(Boolean).map(mtnKey).filter(Boolean))],
+      });
+    }
+  }
+  return out;
+}
+
+let mtnIndex = null;          // 峰の一覧（初回に作って持つ）。検査では差し替える
+let mtnIndexLoading = null;
+async function loadPeakMeta() {
+  try {
+    const res = await fetch('data/peak_meta.json');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }   // 読めなければ名前だけで引く
+}
+function ensureMtnIndex() {
+  if (mtnIndex) return Promise.resolve(mtnIndex);
+  if (!mtnIndexLoading) {
+    mtnIndexLoading = Promise.all([loadAreas(), loadPeakMeta()])
+      .then(([areas, meta]) => (mtnIndex = mtnIndex || buildPeakIndex(areas, meta)))
+      .catch(() => null)
+      .finally(() => { mtnIndexLoading = null; });
+  }
+  return mtnIndexLoading;
+}
+function mtnById(id) { return (mtnIndex || []).find(p => p.id === id) || null; }
+
+/* ------ 山の履歴（mtnSearchHistory.v1）------
+   ⚠ 地名の履歴（sotoki_search_hist）とは別。既存の履歴は移さない（決定3）。
+   ⚠ 読めない・壊れた・保存できないときは空として扱い、検索は止めない */
+function loadMtnHist() {
+  try {
+    const a = JSON.parse(localStorage.getItem(MTN_HIST_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(h => h && typeof h.id === 'string' &&
+      isFinite(h.count) && h.count > 0 && isFinite(h.lastAt)) : [];
+  } catch { return []; }
+}
+function saveMtnHist(list) {
+  try { localStorage.setItem(MTN_HIST_KEY, JSON.stringify(list)); } catch { /* 容量超過・無効 */ }
+}
+function addMtnHist(id, now = Date.now()) {
+  if (!id) return;
+  const list = loadMtnHist();
+  const old = list.find(h => h.id === id);
+  const rest = list.filter(h => h.id !== id);
+  rest.unshift({ id, count: (old ? old.count : 0) + 1, lastAt: now });
+  saveMtnHist(rest.slice(0, MTN_SEARCH.HIST_MAX));
+}
+function removeMtnHist(id) { saveMtnHist(loadMtnHist().filter(h => h.id !== id)); }
+
+/* ------ 候補を出す ------ */
+let mtnSort = 'rec';          // 'rec'（おすすめ・既定）| 'dist' | 'high'
+
+/* 距離の基準：現在地があれば現在地、無ければ地図の中心（決定6）。基準は画面に書き添える */
+function mtnDistOrigin() {
+  if (myPos && isFinite(myPos.lat) && isFinite(myPos.lon)) return { lat: myPos.lat, lon: myPos.lon, label: '現在地から' };
+  const c = leafletMap && leafletMap.getCenter && leafletMap.getCenter();
+  if (c && isFinite(c.lat) && isFinite(c.lng)) return { lat: c.lat, lon: c.lng, label: '地図の中心から' };
+  if (isFinite(state.lat) && isFinite(state.lon)) return { lat: state.lat, lon: state.lon, label: '選択地点から' };
+  return null;
+}
+
+// 打った語に一致した峰を、点数つきで返す（並べ替えはしない）
+function mtnSearch(q, index = mtnIndex, hist = loadMtnHist(), now = Date.now()) {
+  const key = mtnKey(q);
+  if (!key || !index) return [];
+  const byId = new Map(hist.map(h => [h.id, h]));
+  const out = [];
+  for (const p of index) {
+    const match = mtnMatchScore(key, p);
+    if (!match) continue;   // 不一致は除外。上乗せは一致した中だけ
+    out.push({ p, match, score: match + mtnHistBoost(byId.get(p.id), now) + mtnTierBoost(p.tags) });
+  }
+  return out;
+}
+
+/* 山名順。⚠ 漢字のまま比べると文字コード順になる（悪沢岳・旭岳・塩見岳…）ので、読みがあれば読みで比べる */
+function mtnNameCmp(a, b) {
+  return (a.kana || a.name).localeCompare(b.kana || b.name, 'ja') || a.name.localeCompare(b.name, 'ja');
+}
+// 並べ替え。同順位はおすすめの点数の降順、さらに同点は山名順
+function mtnSortList(list, mode, origin) {
+  const byRec = (a, b) => (b.score - a.score) || mtnNameCmp(a.p, b.p);
+  for (const r of list) r.dist = origin ? haversineKm(origin.lat, origin.lon, r.p.lat, r.p.lon) : null;
+  const arr = list.slice();
+  if (mode === 'dist' && origin) arr.sort((a, b) => (a.dist - b.dist) || byRec(a, b));
+  else if (mode === 'high') arr.sort((a, b) => ((b.p.elevation || 0) - (a.p.elevation || 0)) || byRec(a, b));
+  else arr.sort(byRec);
+  return arr;
+}
+
+// 表示名：総称があり山名と違えば「新山（鳥海山）」
+function mtnDisplayName(p) {
+  return (p.group && p.group !== p.name) ? `${p.name}（${p.group}）` : p.name;
+}
+
+// 選んで確定：山の履歴に残し、公称の標高を渡して飛ぶ（ADR-0006。△と同じ扱い）
+function pickMtn(p) {
+  addMtnHist(p.id);
+  pickMapPoint(p.lat, p.lon, p.name, p.elevation);
+}
+
+/* ------ 画面 ------
+   #map-results の中に、手元の山（#mtn-results）と地名（#place-results・地名の履歴）を分けて置く。
+   ⚠ 既存の .map-result-item / .map-sort-row は地名検索の結果だけで使う（既存の検査がそこを見ている） */
+
+// 名山のチップ：最上位だけ。押すと全タグ（行の選択には伝えない）
+function mtnTagChip(tags) {
+  const top = mtnTopTier(tags);
+  if (!top) return null;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'mtn-tag';
+  b.textContent = top;
+  b.title = '名山の区分';
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    const all = MTN_SEARCH.TIERS.map(([t]) => t).filter(t => tags.includes(t)).join('・');
+    b.textContent = (b.textContent === top) ? all : top;
+  });
+  return b;
+}
+
+// 1行（山名・チップ・標高／都道府県・距離）。⚠ 保存値・データは textContent で組む
+function mtnRowEl(p, dist) {
+  const el = document.createElement('div');
+  el.className = 'mtn-item';
+  el.dataset.id = p.id;
+  const l1 = document.createElement('div');
+  l1.className = 'mtn-line1';
+  const nm = document.createElement('span');
+  nm.className = 'mtn-name';
+  nm.textContent = mtnDisplayName(p);
+  l1.appendChild(nm);
+  const chip = mtnTagChip(p.tags);
+  if (chip) l1.appendChild(chip);
+  if (typeof p.elevation === 'number') {
+    const ev = document.createElement('span');
+    ev.className = 'mtn-elev';
+    ev.textContent = `${p.elevation.toLocaleString('ja-JP')}m`;
+    l1.appendChild(ev);
+  }
+  const l2 = document.createElement('div');
+  l2.className = 'mtn-sub';
+  const parts = [p.pref.length ? p.pref.join('・') : p.areaName];
+  if (typeof dist === 'number' && isFinite(dist)) parts.push(dist < 10 ? `${dist.toFixed(1)}km` : `${Math.round(dist)}km`);
+  l2.textContent = parts.join(' · ');
+  el.append(l1, l2);
+  el.addEventListener('click', () => pickMtn(p));
+  return el;
+}
+
+function mtnHead(text) {
+  const head = document.createElement('div');
+  head.className = 'map-hist-head mtn-head';
+  const label = document.createElement('span');
+  label.textContent = text;
+  head.appendChild(label);
+  return head;
+}
+
+// 全消去（山・地名の両方）。確認あり
+function mtnClearButton() {
+  const clr = document.createElement('button');
+  clr.type = 'button';
+  clr.className = 'map-hist-clear';
+  clr.textContent = '履歴を消去';
+  clr.addEventListener('click', () => {
+    if (!confirm('検索の履歴（山・地名）をすべて消します。よろしいですか？')) return;
+    saveMtnHist([]);
+    saveSearchHist([]);
+    renderSearchHist();
+  });
+  return clr;
+}
+
+/* 手元の山の候補を組む。q が空なら 山の履歴（新しい順）／無ければ名山。
+   返り値は表示した峰（地名検索の重複を外すのに使う） */
+let mtnShown = [];
+function renderMtnSection(box, rawQ) {
+  box.innerHTML = '';
+  mtnShown = [];
+  if (!mtnIndex) return [];
+  const origin = mtnDistOrigin();
+  const q = rawQ.trim();
+  if (!q) {
+    const hist = loadMtnHist().map(h => ({ h, p: mtnById(h.id) })).filter(x => x.p)
+      .sort((a, b) => b.h.lastAt - a.h.lastAt);
+    if (hist.length) {
+      const head = mtnHead(`🕘 最近選んだ山（${hist.length}件）`);
+      head.appendChild(mtnClearButton());
+      box.appendChild(head);
+      for (const { p } of hist) {
+        const row = document.createElement('div');
+        row.className = 'mtn-hist-row';
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'map-hist-del mtn-hist-del';
+        del.textContent = '✕';
+        del.setAttribute('aria-label', `${p.name} を履歴から消す`);
+        del.addEventListener('click', e => { e.stopPropagation(); removeMtnHist(p.id); renderSearchHist(); });
+        row.append(mtnRowEl(p, origin ? haversineKm(origin.lat, origin.lon, p.lat, p.lon) : null), del);
+        box.appendChild(row);
+        mtnShown.push(p);
+      }
+      return mtnShown;
+    }
+    // 履歴が無ければ名山ティア順（同じティアは山名順）
+    const tiers = MTN_SEARCH.TIERS.map(([t]) => t);
+    const rank = p => { const t = mtnTopTier(p.tags); return t ? tiers.indexOf(t) : Infinity; };
+    const list = mtnIndex.filter(p => mtnTopTier(p.tags))
+      .sort((a, b) => (rank(a) - rank(b)) || mtnNameCmp(a, b))
+      .slice(0, MTN_SEARCH.SUGGEST_MAX);
+    if (!list.length) return [];
+    box.appendChild(mtnHead('⛰ 名山'));
+    for (const p of list) {
+      box.appendChild(mtnRowEl(p, origin ? haversineKm(origin.lat, origin.lon, p.lat, p.lon) : null));
+      mtnShown.push(p);
+    }
+    return mtnShown;
+  }
+  const hits = mtnSortList(mtnSearch(q), mtnSort, origin).slice(0, MTN_SEARCH.RESULT_MAX);
+  if (!hits.length) return [];
+  // 並べ替え：おすすめ（既定）／距離／標高。距離の基準を書き添える
+  const row = document.createElement('div');
+  row.className = 'mtn-sort-row';
+  for (const [mode, label] of [['rec', 'おすすめ'], ['dist', '距離'], ['high', '標高']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mtn-sort-chip' + (mtnSort === mode ? ' on' : '');
+    b.textContent = label;
+    b.dataset.mode = mode;
+    if (mode === 'dist' && !origin) b.disabled = true;
+    b.addEventListener('click', () => {
+      if (mtnSort === mode) return;
+      mtnSort = mode;
+      renderMtnSection(box, rawQ);
+    });
+    row.appendChild(b);
+  }
+  if (origin) {
+    const o = document.createElement('span');
+    o.className = 'mtn-origin';
+    o.textContent = `距離は${origin.label}`;
+    row.appendChild(o);
+  }
+  box.appendChild(row);
+  for (const r of hits) {
+    box.appendChild(mtnRowEl(r.p, r.dist));
+    mtnShown.push(r.p);
+  }
+  return mtnShown;
+}
+
+// 地名検索の結果のうち、手元に出している峰と同じもの（名前一致・1km以内）か
+const MTN_DUP_KM = 1;
+function isShownMtn(name, lat, lon) {
+  const want = normalizeSearchName(String(name).replace(/[（(].*$/, ''));
+  if (!want) return false;
+  return mtnShown.some(p =>
+    normalizeSearchName(String(p.name).replace(/[（(].*$/, '')) === want &&
+    haversineKm(lat, lon, p.lat, p.lon) <= MTN_DUP_KM);
+}
+
 /* ============================================================
    座標の表記（DD・DMS・DDM・度分秒）— v4.109.0
    ⚠ 繰り上がりに注意。秒を丸めて60になったら分へ、分が60なら度へ送る

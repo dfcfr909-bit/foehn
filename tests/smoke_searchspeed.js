@@ -79,13 +79,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ? 'fetchJsonWithTimeout未定義' : null)).catch(e => e.message);
   if (boot) throw new Error(`起動に失敗: ${boot} / pageerror: ${errors.join(' / ') || 'なし'}`);
 
+  /* 手元の山の検索（#171）を止めて、地名検索（Nominatim・地理院）だけを検査する。
+     ⚠ areasData は残す（百名山の印の照合が読む）。一覧を作り終えてから空にする
+     （作成中に空にすると、作り終えた一覧で上書きされる） */
+  await page.evaluate(async () => { await ensureMtnIndex(); mtnIndex = []; });
+
   const search = q => page.evaluate(async q => {
     document.getElementById('map-search-input').value = q;
     const t0 = performance.now();
     await doMapSearch();
     return { ms: performance.now() - t0,
-      names: [...document.querySelectorAll('#map-results .map-result-name')].map(e => e.firstChild.textContent),
-      msg: (document.querySelector('#map-results .map-result-msg') || {}).textContent || '' };
+      names: [...document.querySelectorAll('#place-results .map-result-name')].map(e => e.firstChild.textContent),
+      msg: (document.querySelector('#place-results .map-result-msg') || {}).textContent || '' };
   }, q);
 
   /* --- 1. OSMと地理院を同時に回す（揺れのある語で3本ずつ） --- */
@@ -131,7 +136,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     q.value = '釈迦ヶ岳';
     const second = doMapSearch();
     await Promise.all([first, second]);
-    return [...document.querySelectorAll('#map-results .map-result-name')].map(e => e.firstChild.textContent);
+    return [...document.querySelectorAll('#place-results .map-result-name')].map(e => e.firstChild.textContent);
   });
   ok(r5.length === 1 && r5[0] === '釈迦ヶ岳', '★★打ち直したら前の検索の応答で上書きしない', r5);
 
