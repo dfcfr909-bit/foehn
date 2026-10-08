@@ -2,7 +2,7 @@
 #   a: http://localhost（セキュアコンテキスト）   b: http://<LANのIP>（http なので isSecureContext=false。iPhone と同じ形）
 #   c: b の経路で execCommand を失敗させる   a失敗→b: localhost で writeText を拒否させる
 #   ⚠ LAN の IP で待ち受けるため、配るのは /viewer.html だけにする（serve_local.py と同じ）。終わったらすぐ止まる。
-# 使い方（experiments/relief で）: ../landmark/.venv/Scripts/python.exe check_copy.py
+# 使い方（experiments/relief で）: 初回は python -m venv .venv → .venv/Scripts/pip install -r requirements.txt → .venv/Scripts/python -m playwright install chromium。実行は .venv/Scripts/python check_copy.py
 import functools, http.server, json, socket, threading
 from playwright.sync_api import sync_playwright
 
