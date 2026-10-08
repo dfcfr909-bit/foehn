@@ -118,7 +118,7 @@ function pngSize(file) {
 
   const out = { manifest: { hasAny192, hasAny512, hasMaskable, display: manifest.display,
                             start_url: manifest.start_url, scope: manifest.scope,
-                            name: manifest.name, short_name: manifest.short_name },
+                            name: manifest.name, short_name: manifest.short_name, orientation: manifest.orientation },
                 iconChecks, htmlIconFiles, refs, swChecks, linked, errors };
   console.log(JSON.stringify(out, null, 2));
 
@@ -126,6 +126,8 @@ function pngSize(file) {
     // manifestのインストール要件
     !!manifest.name && !!manifest.short_name && manifest.short_name.length <= 12 &&
     manifest.display === 'standalone' && manifest.start_url === './' && manifest.scope === './' &&
+    // 横向きを許す（#184・v4.161.0）。portrait に戻すとホーム画面の PWA が縦に固定される
+    manifest.orientation === 'any' &&
     hasAny192 && hasAny512 && hasMaskable &&
     // アイコンが実在し宣言どおりの寸法
     iconChecks.every(c => c.ok) &&
