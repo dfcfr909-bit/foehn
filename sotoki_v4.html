@@ -12797,14 +12797,8 @@ function goCoordPoint(lat, lon) {
   mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : 11, COORD_GO_ZOOM));
   pickPinPoint(lat, lon);
 }
-// 入力中の窓の先頭に出す「座標へ移動」の行（範囲外ならその旨だけ）
+// 入力中の窓の先頭に出す「座標へ移動」の行（範囲外は出さない。renderSearchHist の注記）
 function coordGoRow(pc) {
-  if (pc.outOfRange) {
-    const msg = document.createElement('div');
-    msg.className = 'map-result-msg coord-go-out';
-    msg.textContent = COORD_OUT_MSG;
-    return msg;
-  }
   const el = document.createElement('div');
   el.className = 'map-result-item coord-go';
   const nm = document.createElement('div');
@@ -12879,8 +12873,10 @@ function renderSearchHist() {
     .filter(({ h }) => !q || normalizeSearchName(h.name).includes(q));
   results.innerHTML = '';
   mapSearchItems = [];              // 並べ替えの札の対象を残さない
+  /* ⚠ 入力中は「範囲外」を出さない。打っている途中（35 1 → 35 13 → 35 139）は2つ目の数が育つまで
+     一時的に範囲外になるため。範囲外と言うのは Enter したときだけ */
   const pc = parseCoordInput(raw);
-  if (pc) results.appendChild(coordGoRow(pc));
+  if (pc && !pc.outOfRange) results.appendChild(coordGoRow(pc));
 
   /* 手元の山（#171）を上に。空の窓では 山の履歴 → 地名の履歴 の順（決定3）。
      峰の一覧がまだ無ければ裏で作り、入力が変わっていなければ描き直す */

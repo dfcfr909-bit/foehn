@@ -155,7 +155,8 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
     const el = document.querySelector('#map-results > :first-child');
     return el && { cls: el.className, text: el.textContent };
   });
-  ok(top && /coord-go-out/.test(top.cls) && top.text.includes('範囲外'), '★範囲外は「範囲外」の行だけ（移動の行は出さない）', top);
+  ok(!top || (!/coord-go/.test(top.cls) && !top.text.includes('範囲外')),
+    '★入力中は範囲外を出さない（打っている途中の 35 1 で騒がない。範囲外と言うのは Enter のときだけ）', top);
 
   /* ---------- 4. Enter：外に投げずに移る・履歴に残る ---------- */
   await page.evaluate(() => localStorage.removeItem('sotoki_search_hist'));
