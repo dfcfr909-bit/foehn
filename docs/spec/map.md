@@ -38,7 +38,8 @@
 
 **円柱ピッカーの DOM は1つだけ。** 地図を開いている間だけ🏠ごと（`#fav-bar`）`#map-fav-slot` へ引っ越す
 （`moveFavRotaryTo` / `restoreFavRotary`）→ `ui.md`。⚠ 🏠をグラフと地図で同じ位置に出すため、
-`#map-bottom` の余白（左右8px・下 6px＋safe-area）はグラフ側の `#fav-bar-slot` と揃えてある
+`#map-bottom` の余白はグラフ側の `#fav-bar-slot` と式で合わせてある（v4.162.0。上の「出典表記」の項。
+iPhone では一致、下の safe-area の無い端末では出典の帯の高さまでずれる）
 
 地図を開いている間の「取得中…」は地点名の欄に出る（`showLoading`）。**取り終えたら `hideLoading` が
 地点名へ戻す**（v4.105.0。戻していなかったので「気象データ取得中…」が残り続けていた）

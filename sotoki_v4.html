@@ -2555,8 +2555,9 @@ html, body {
 
   <!-- 最下段：🏠（自宅）＋お気に入り円柱（v4.105.0）。
        ⚠ **グラフと地図で🏠が同じ位置に来るようにする。** 器ごと地図の下へ引っ越す
-       （moveFavRotaryTo）。上下左右の余白はグラフ側（#fav-bar-slot）と地図側
-       （#map-bottom）で同じにしてある。片方だけ変えると🏠の位置がずれる -->
+       （moveFavRotaryTo）。左右の余白はグラフ側（#fav-bar-slot）と地図側（#map-bottom）で同じ。
+       下は v4.162.0 から式で合わせている（地図は器 46px・出典の帯を下の余白に重ねる。#map-bottom の --mb-pad）。
+       一致するのは下の safe-area がある端末（iPhone）だけ。片方だけ変えると🏠の位置がずれる -->
   <div id="fav-bar-slot">
     <div id="fav-bar">
       <button id="btn-home" class="spot-btn" type="button" onclick="goSpot('home')" aria-label="自宅" title="自宅（お気に入り一覧で設定）">🏠</button>
