@@ -1047,6 +1047,84 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
 
   await page.screenshot({ path: __dirname + '/smoke_mapui.png' });
 
+  /* ================= 5c'. 地図の上の情報を隠す（#185） ================= */
+  await page.evaluate(() => {
+    closeLayerPanel();
+    const q = document.getElementById('map-search-input');
+    q.value = '槍'; q.focus();                 // 入力の途中で押したときにキーボードを畳むか
+    document.getElementById('map-time').classList.remove('hidden');   // つまみも隠れるかを見るため出しておく
+  });
+  await page.waitForTimeout(300);
+  const DC_HIDE = ['map-search-row', 'map-results', 'map-when', 'map-hint', 'map-rain', 'map-trouble',
+    'map-awake', 'map-time', 'map-picked', 'map-fav-slot',
+    'btn-layers', 'btn-orient', 'btn-locate', 'btn-wxmap', 'btn-about'];
+  const DC_KEEP = ['map-attribution', 'btn-map-close', 'btn-declutter'];
+  const dcState = () => page.evaluate(({ hide, keep }) => {
+    const vis = id => getComputedStyle(document.getElementById(id)).visibility;
+    // 中心を突いて、そのボタン自身（か子）に当たるか
+    const hit = id => {
+      const el = document.getElementById(id), r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!t && (t === el || el.contains(t));
+    };
+    const b = document.getElementById('btn-declutter').getBoundingClientRect();
+    const vw = innerWidth, vh = innerHeight;
+    return {
+      pressed: document.getElementById('btn-declutter').getAttribute('aria-pressed'),
+      hidden: hide.filter(id => vis(id) === 'hidden'),
+      keptVisible: keep.filter(id => vis(id) === 'visible'),
+      btnHit: hit('btn-declutter'),
+      closeHit: hit('btn-map-close'),
+      // 隠した検索窓の位置を突くと、下の地図に抜ける（見えない部品が指を奪わない）
+      searchHitsMap: (() => {
+        const r = document.getElementById('map-search-row').getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!t && !!t.closest('#map');
+      })(),
+      size: [b.width, b.height],
+      inView: b.left >= 0 && b.top >= 0 && b.right <= vw && b.bottom <= vh,
+      activeIsSearch: document.activeElement === document.getElementById('map-search-input'),
+      btnTop: b.top,
+    };
+  }, { hide: DC_HIDE, keep: DC_KEEP });
+  const dcBefore = await dcState();
+  ok(dcBefore.pressed === 'false' && dcBefore.hidden.length === 0, '隠す前はすべて見えている', dcBefore);
+  await page.evaluate(() => toggleMapDeclutter());
+  await page.waitForTimeout(250);
+  const dcOn = await dcState();
+  ok(dcOn.pressed === 'true', '隠すボタンが押された状態になる', dcOn.pressed);
+  ok(JSON.stringify(dcOn.hidden) === JSON.stringify(DC_HIDE), '隠すものがすべて隠れる（時刻のつまみ・ボタン列を含む）',
+    DC_HIDE.filter(id => !dcOn.hidden.includes(id)));
+  ok(dcOn.keptVisible.length === DC_KEEP.length, '出典・閉じる・戻すボタンは見えたまま', dcOn.keptVisible);
+  ok(dcOn.btnHit, '隠している間も戻すボタンが押せる（elementFromPoint）', dcOn);
+  ok(dcOn.closeHit, '隠している間も地図を閉じられる', dcOn);
+  ok(dcOn.searchHitsMap, '隠した検索窓の位置は地図に抜ける', dcOn);
+  ok(dcOn.size[0] >= 44 && dcOn.size[1] >= 44, '戻すボタンは44px以上', dcOn.size);
+  ok(!dcOn.activeIsSearch, '入力の途中で隠したらキーボードを畳む（検索欄からフォーカスを外す）', dcOn);
+  ok(dcOn.btnTop === dcBefore.btnTop, '隠してもボタンの位置が動かない', [dcBefore.btnTop, dcOn.btnTop]);
+  // 横向きの低い画面でも、戻すボタンが画面に収まり押せる（#184 の前に見ておく）
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(250);
+  const dcLand = await dcState();
+  ok(dcLand.btnHit && dcLand.inView, '横向きの低い画面でも戻すボタンが押せる', dcLand);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => toggleMapDeclutter());
+  await page.waitForTimeout(250);
+  const dcOff = await dcState();
+  ok(dcOff.pressed === 'false' && dcOff.hidden.length === 0, 'もう一度押すと元に戻る', dcOff.hidden);
+  // 状態は覚えない：隠したまま閉じて開き直すと表示に戻る
+  await page.evaluate(() => { toggleMapDeclutter(); closeMap(); openMap(); });
+  await page.waitForTimeout(400);
+  const dcReopen = await dcState();
+  ok(dcReopen.pressed === 'false' && dcReopen.hidden.length === 0, '開き直すと表示に戻る（状態を覚えない）', dcReopen.hidden);
+  ok(await page.evaluate(() => { try { return !Object.keys(localStorage).some(k => /declutter/i.test(k)); } catch (e) { return true; } }),
+    '隠した状態を端末に保存しない');
+  await page.evaluate(() => {
+    document.getElementById('map-search-input').value = '';
+    document.getElementById('map-time').classList.add('hidden');
+  });
+
   /* ================= 5d. 地図を閉じずに地点を選べる ================= */
   await page.evaluate(() => { closeLayerPanel(); leafletMap.setView([36.57, 137.65], 11); });
   await page.waitForTimeout(300);
