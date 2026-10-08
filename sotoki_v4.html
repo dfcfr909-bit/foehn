@@ -65,6 +65,9 @@
   /* 左右は横向きのノッチ用（#184）。縦向きでは 0 なので見た目は変わらない */
   --sa-left: env(safe-area-inset-left, 0px);
   --sa-right: env(safe-area-inset-right, 0px);
+  /* 右のボタン列だけが使う右の逃げ幅。iOS は横向きでノッチの無い側にも同じ幅を返すので、
+     ノッチが左にあるとき（画面の回転角 90）は 0 にして右端まで寄せる（applyNotchSide・v4.162.0） */
+  --sa-right-tools: var(--sa-right);
 
   --sky-dawn:  #f9a875;
   --sky-day:   #87ceeb;
@@ -840,6 +843,7 @@ html, body {
 @media (orientation: landscape) {
   #map-overlay { position: fixed; inset: 0; }
 }
+:root.notch-left { --sa-right-tools: 0px; }
 
 /* 上に浮かぶ操作（閉じる＋検索）。
    ⚠**器は pointer-events:none。** 中身以外の場所は地図に触れるようにするため。
@@ -1013,10 +1017,28 @@ html, body {
   bottom: 0;
   z-index: 1100;
   display: flex; flex-direction: column; gap: 4px;
-  padding: 0 calc(8px + var(--sa-right)) calc(6px + var(--sa-bottom)) calc(8px + var(--sa-left));
+  /* 右の余白（横向きでは下の @media でボタン列の分を足す）。出典の帯も同じ値を使う */
+  --mb-pr: calc(8px + var(--sa-right));
+  /* 下の余白。出典の帯（#map-attribution）は円柱の下のこの余白に重ねて置く（v4.162.0）。
+     ⚠ 🏠を「グラフと同じ位置」に保つ式：グラフでは🏠の下が (52−44)/2＋6＋safe-area＝10＋safe-area。
+       地図では円柱の器を 46px に削るので (46−44)/2＋余白＝1＋余白 → 余白＝9＋safe-area。
+       ただし帯が入りきらなければ帯の高さ＋3px まで広げる（その分だけ円柱が上がる。
+       iPhone はホームバーの分 safe-area が 34px あるので、2行の帯でも上がらない）。
+       --attr-h は JS（watchAttributionHeight）が帯の実測の高さを入れる */
+  --mb-pad: max(calc(9px + var(--sa-bottom)), calc(var(--attr-h, 14px) + 3px));
+  padding: 0 var(--mb-pr) var(--mb-pad) calc(8px + var(--sa-left));
   pointer-events: none;
 }
+/* 地図では円柱の器を少し削る（52→46px・利用者の指定）。ボタンは 44px のまま */
+#map-fav-slot #fav-bar { height: 46px; }
+#map-fav-slot #fav-rotary { height: 44px; }
 #map-bottom > * { pointer-events: auto; }
+/* 横向きでは下の帯（時刻・地点名・円柱・出典）を右のボタン列の手前で止める（v4.162.0）。
+   背が低いので、ボタン列の下の方と帯が同じ高さに来て重なった（v4.161.0 の実機）。44px＝丸ボタンの幅。
+   ⚠ 上の #map-bottom の padding より後ろに書くこと（先に書くと打ち消される） */
+@media (orientation: landscape) {
+  #map-bottom { --mb-pr: calc(8px + var(--sa-right-tools) + 44px + 8px); }
+}
 #map-foot {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
   pointer-events: none;
@@ -1133,17 +1155,24 @@ html, body {
   white-space: nowrap;
 }
 /* 出典表記。常時表示（利用条件） */
+/* 円柱の下に横幅いっぱいの細い帯（v4.162.0・利用者の指定）。地図を占有しないよう字を小さく行を詰め、地を薄くする。
+   ⚠ **1行に切り詰めたり横スクロールで隠したりしない。** 出典明示は利用条件（地理院の回答・docs/decisions.md 2026-10-06）。
+     全文を常に見せ、収まらなければ折り返す（390px で3行・横向きで1〜2行） */
 #map-attribution {
-  max-width: 60%;
-  padding: 3px 6px;
-  font-size: 9px;
-  line-height: 1.4;
+  /* 円柱のすぐ下（#map-bottom の下の余白の中）に重ねる。流れに置くと円柱が帯の分だけ上がり、
+     🏠・🏥がグラフ画面とずれる（★★★の決まり。smoke_home / smoke_favloop） */
+  position: absolute;
+  left: calc(8px + var(--sa-left)); right: var(--mb-pr);
+  top: calc(100% - var(--mb-pad) + 1px);
+  padding: 1px 6px;
+  font-size: 8.5px;
+  line-height: 1.25;
   color: #333;
-  background: rgba(255,255,255,0.82);
-  border-radius: 6px;
-  margin-left: auto;
+  background: rgba(255,255,255,0.55);
+  border-radius: 4px;
+  pointer-events: none;   /* 帯は地図の操作を邪魔しない（#map-bottom > * の auto を打ち消す） */
 }
-/* 出典のリンクだけ押せるようにする（#map-foot は pointer-events: none。枠全体に付けると地図の操作を邪魔する） */
+/* 出典のリンクだけ押せるようにする（帯自体は pointer-events: none。枠全体に付けると地図の操作を邪魔する） */
 #map-attribution a { pointer-events: auto; color: inherit; text-decoration: underline; }
 /* 選択中の地点（名前＋標高）。地図を閉じずに選べるようにしたので常に出す */
 #map-picked {
@@ -1165,7 +1194,7 @@ html, body {
 #map-fav-slot { min-width: 0; }
 #map-tools {
   position: absolute;
-  right: calc(8px + var(--sa-right));
+  right: calc(8px + var(--sa-right-tools));   /* ノッチの無い側では右端まで寄せる（applyNotchSide） */
   top: calc(60px + var(--sa-top));   /* 浮いた検索行の下から */
   z-index: 1100;
   display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
@@ -1208,8 +1237,8 @@ html, body {
 .map-round.map-emoji { font-size: 20px; line-height: 1; }
 
 /* --- 地図の上の情報を隠す（#185） ---
-   押すと地図だけを見られる。残すのは 出典（利用条件）・閉じる✕・縮尺・このボタン。
-   ⚠ display:none ではなく visibility で消す。ボタン列で戻すボタンの位置が動かず、
+   押すと地図だけを見られる。残すのは 出典（利用条件）・閉じる✕・縮尺・右のボタン列（6つ・v4.162.0 から）。
+   ⚠ display:none ではなく visibility で消す。
      下の帯の高さも変わらないので出典の位置も動かない。状態は覚えない（開くたびに表示へ戻す） */
 .dc-eye { fill: none; stroke: var(--text3); stroke-width: 2.2; stroke-linejoin: round; }
 .dc-pupil { fill: var(--text3); }
@@ -1227,8 +1256,8 @@ html, body {
 #map-stage.declutter #map-awake,
 #map-stage.declutter #map-time,
 #map-stage.declutter #map-picked,
-#map-stage.declutter #map-fav-slot,
-#map-stage.declutter #map-tools > :not(#btn-declutter) { visibility: hidden; pointer-events: none; }
+#map-stage.declutter #map-fav-slot { visibility: hidden; pointer-events: none; }
+/* ⚠ 右のボタン列（6つ）は隠さない（v4.162.0・利用者の指定）。隠すと地図だけ見ながら現在地・方位を操作できない */
 
 /* --- 方位バッジ --- */
 .orient-rim { fill: none; stroke: var(--text3); stroke-width: 1.8; }
@@ -1617,7 +1646,7 @@ html, body {
     --gps-col: #6aa8ff;   /* 暗い地に#1a73e8では沈むので明るめの青にする */
     background: #16181c;
   }
-  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
+  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.55); }
   #map-overlay #map-scale { background: rgba(12,14,17,0.82); }
   #map-overlay #map-scale-bar { border-color: #f2f4f7; }
   #map-overlay #map-scale-label { color: #f2f4f7; }
@@ -2503,7 +2532,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.161.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.162.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2526,8 +2555,9 @@ html, body {
 
   <!-- 最下段：🏠（自宅）＋お気に入り円柱（v4.105.0）。
        ⚠ **グラフと地図で🏠が同じ位置に来るようにする。** 器ごと地図の下へ引っ越す
-       （moveFavRotaryTo）。上下左右の余白はグラフ側（#fav-bar-slot）と地図側
-       （#map-bottom）で同じにしてある。片方だけ変えると🏠の位置がずれる -->
+       （moveFavRotaryTo）。左右の余白はグラフ側（#fav-bar-slot）と地図側（#map-bottom）で同じ。
+       下は v4.162.0 から式で合わせている（地図は器 46px・出典の帯を下の余白に重ねる。#map-bottom の --mb-pad）。
+       一致するのは下の safe-area がある端末（iPhone）だけ。片方だけ変えると🏠の位置がずれる -->
   <div id="fav-bar-slot">
     <div id="fav-bar">
       <button id="btn-home" class="spot-btn" type="button" onclick="goSpot('home')" aria-label="自宅" title="自宅（お気に入り一覧で設定）">🏠</button>
@@ -2591,11 +2621,12 @@ html, body {
         </div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
-          <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
-          <div id="map-attribution"></div>
         </div>
         <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
         <div id="map-fav-slot"></div>
+        <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと。
+             円柱の下に横幅いっぱいの細い帯で出す（v4.162.0。右下の箱は横向きで何行にも折り返して煩かった） -->
+        <div id="map-attribution"></div>
       </div>
 
       <div id="map-tools">
@@ -2636,8 +2667,8 @@ html, body {
                 aria-label="天気図" title="天気図"><span aria-hidden="true">🌐</span></button>
         <button id="btn-about" class="map-round map-emoji" onclick="location.href='about.html'"
                 aria-label="このアプリについて" title="このアプリについて（判定の基準・データの参照元・妥協点）"><span aria-hidden="true">ℹ️</span></button>
-        <!-- 地図の上の情報をいったん隠す（#185）。⚠ 列の**末尾**に置く。隠すときは visibility で消すので、
-             上のボタンが消えてもこのボタンの位置は動かない（display:none だと上へずれる） -->
+        <!-- 地図の上の情報をいったん隠す（#185）。列の末尾に置く。
+             v4.160.0 では列のほかのボタンも隠していたので位置が動かない末尾にした。v4.162.0 から列は隠さない -->
         <button id="btn-declutter" class="map-round" onclick="toggleMapDeclutter()" aria-pressed="false"
                 aria-label="地図の上の情報を隠す" title="地図の上の情報を隠す">
           <svg viewBox="0 0 44 44" aria-hidden="true">
@@ -11387,6 +11418,21 @@ function paintThunderIcons() {
 // 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
 const GSI_TILE_LIST_URL = 'https://maps.gsi.go.jp/development/ichiran.html';
 const GSI_DEM_CREDIT = '地理院タイル（標高タイル）を加工して作成';
+/* 出典の帯の実測の高さを #map-bottom の --attr-h に入れる（下の余白の計算に使う・v4.162.0）。
+   中身（選んだレイヤー）や画面の幅で行数が変わるので ResizeObserver で追う */
+function watchAttributionHeight() {
+  const el = document.getElementById('map-attribution');
+  const mb = document.getElementById('map-bottom');
+  if (!el || !mb) return;
+  const put = () => {
+    const h = el.getBoundingClientRect().height;
+    if (h > 0) mb.style.setProperty('--attr-h', Math.ceil(h) + 'px');
+  };
+  put();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(put).observe(el);
+}
+watchAttributionHeight();
+
 function updateMapAttribution() {
   const el = document.getElementById('map-attribution');
   if (!el) return;
@@ -12213,6 +12259,16 @@ function screenAngle() {
     return ((a % 360) + 360) % 360;
   } catch (e) { return 0; }
 }
+
+/* ノッチ（Dynamic Island）がどちら側にあるかで、右のボタン列の逃げ幅を変える。
+   回転角 90＝端末を反時計回りに倒した＝端末の上（ノッチ）が左。270 なら右（逃げ幅はそのまま） */
+function applyNotchSide() {
+  document.documentElement.classList.toggle('notch-left', screenAngle() === 90);
+}
+applyNotchSide();
+window.addEventListener('orientationchange', applyNotchSide);
+window.addEventListener('resize', applyNotchSide);
+try { if (screen.orientation) screen.orientation.addEventListener('change', applyNotchSide); } catch (e) {}
 
 function setHeading(deg) {
   headingDeg = ((deg % 360) + 360) % 360;

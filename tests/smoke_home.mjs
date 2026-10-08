@@ -81,6 +81,10 @@ for (const w of [390, 360]) {
     localStorage.setItem('sotoki_favs', JSON.stringify(favs));
     localStorage.setItem('sotoki_last', JSON.stringify(favs[1]));
   }, [FAVS]);
+  /* ⚠ iPhone と同じ下の余白（ホームバー 34px）で比べる。地図では出典の帯をこの余白に重ねるので、
+     余白があれば🏠は動かない（v4.162.0）。余白の無い端末は下の「余白0」の検査で見る */
+  await page.evaluate(() => document.documentElement.style.setProperty('--sa-bottom', '34px'));
+  await page.waitForTimeout(200);
   const onChart = await homeRect(page);
   // 見えていて押せる（読み込みの覆いなどの下に潜っていない）
   const hitChart = await page.evaluate(() => {
@@ -108,6 +112,16 @@ for (const w of [390, 360]) {
   const back = await homeRect(page);
   ok(Math.abs(back.x - onChart.x) <= 1 && Math.abs(back.y - onChart.y) <= 1,
     `(w=${w}) 地図を閉じたら元の位置へ戻る`, { back, onChart });
+  // 下の余白が無い端末（PC 等）：出典の帯が余白に入りきらない分だけ円柱が上がる。ずれは帯の高さまで
+  await page.evaluate(() => document.documentElement.style.setProperty('--sa-bottom', '0px'));
+  await page.waitForTimeout(200);
+  const chart0 = await homeRect(page);
+  await page.evaluate(() => openMap());
+  await page.waitForTimeout(500);
+  const map0 = await homeRect(page);
+  const attrH = await page.evaluate(() => document.getElementById('map-attribution').getBoundingClientRect().height);
+  ok(map0.x === chart0.x && chart0.y - map0.y >= 0 && chart0.y - map0.y <= Math.ceil(attrH),
+    `(w=${w}) 下の余白が無い端末では、🏠のずれは出典の帯の高さまで`, { chart0, map0, attrH });
   await page.close();
 }
 

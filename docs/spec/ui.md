@@ -34,8 +34,11 @@
 
 - ⚠⚠ **🏠はグラフと地図で同じ位置に出す**（利用者の要望）。器 `#fav-bar` ごと地図の
   `#map-fav-slot` へ引っ越す（`moveFavRotaryTo` / `restoreFavRotary`）。
-  **余白はグラフ側 `#fav-bar-slot` と地図側 `#map-bottom` で揃えてある**（左右8px・下 6px＋safe-area）。
-  片方だけ変えると🏠の位置がずれる。検査は `tests/smoke_home.mjs`（390/360px で1px以内）
+  左右8pxは両方で同じ。**下は v4.162.0 から式で合わせている**：グラフは器 52px・下 6px＋safe-area、
+  地図は器 46px・下 `max(9px＋safe-area, 出典の帯の高さ＋3px)`（出典の帯をこの余白に重ねるため）。
+  ⚠ **一致するのは下の safe-area がある端末（iPhone のホームバー 34px）だけ。** 余白の無い端末（PC 等）では
+  出典の帯の高さまで（1行で約7px・2行で約17px）地図の円柱が上がる（利用者が了承した案A）。
+  片方だけ変えると🏠の位置がずれる → `docs/spec/map.md`「出典表記」。検査は `tests/smoke_home.mjs`（safe-area 34px で1px以内・0px で帯の高さまで）
 - フッターの下の safe-area は `#fav-bar-slot` が持つ（フッターからは外した）
 - **自宅はお気に入りとは別に1地点だけ**（`localStorage` の `sotoki_home`。`loadHome` / `saveHome`）。
   設定はお気に入り一覧の上の欄か、各行の🏠（v4.107.0 から「移す」。下の項）。
