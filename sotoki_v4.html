@@ -2468,7 +2468,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.158.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.159.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2515,7 +2515,7 @@ html, body {
         <button id="btn-map-close" class="map-round" onclick="closeMap()"
                 aria-label="地図を閉じる">✕</button>
         <div id="map-search-row">
-          <input type="search" id="map-search-input" placeholder="山名 よみ 地名 住所 緯度経度 度分秒"
+          <input type="search" id="map-search-input" placeholder="山名 よみ 地名 住所 座標"
             enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off">
           <button id="map-search-btn" onclick="doMapSearch()">検索</button>
         </div>
@@ -12679,6 +12679,7 @@ async function doMapSearch() {
   const pc = parseCoordInput(q);
   if (pc) {
     if (pc.outOfRange) root.innerHTML = `<div class="map-result-msg">${COORD_OUT_MSG}</div>`;
+    else if (pc.bad) root.innerHTML = `<div class="map-result-msg">緯度帯の文字（${pc.band}）と北距が合いません（${pc.fmt}）</div>`;
     else goCoordPoint(pc.lat, pc.lon);
     return;
   }
@@ -12806,7 +12807,8 @@ function coordGoRow(pc) {
   nm.textContent = `📍 ${pc.lat.toFixed(5)}, ${pc.lon.toFixed(5)} へ移動`;
   const sub = document.createElement('div');
   sub.className = 'map-result-sub';
-  sub.textContent = pc.swapped ? '経度・緯度の順と読んで入れ替えました（世界測地系）' : '座標として読みました（世界測地系）';
+  sub.textContent = pc.swapped ? '経度・緯度の順と読んで入れ替えました（世界測地系）'
+    : (pc.fmt === 'UTM' || pc.fmt === 'MGRS') ? `${pc.fmt} として読みました（世界測地系）` : '座標として読みました（世界測地系）';
   el.append(nm, sub);
   el.addEventListener('click', () => goCoordPoint(pc.lat, pc.lon));
   return el;
@@ -12873,10 +12875,10 @@ function renderSearchHist() {
     .filter(({ h }) => !q || normalizeSearchName(h.name).includes(q));
   results.innerHTML = '';
   mapSearchItems = [];              // 並べ替えの札の対象を残さない
-  /* ⚠ 入力中は「範囲外」を出さない。打っている途中（35 1 → 35 13 → 35 139）は2つ目の数が育つまで
-     一時的に範囲外になるため。範囲外と言うのは Enter したときだけ */
+  /* ⚠ 入力中は「範囲外」も「帯の文字が合わない」も出さない。打っている途中（35 1 → 35 13 → 35 139）は2つ目の数が育つまで
+     一時的に範囲外になるため。理由を言うのは Enter したときだけ */
   const pc = parseCoordInput(raw);
-  if (pc && !pc.outOfRange) results.appendChild(coordGoRow(pc));
+  if (pc && pc.lat != null) results.appendChild(coordGoRow(pc));
 
   /* 手元の山（#171）を上に。空の窓では 山の履歴 → 地名の履歴 の順（決定3）。
      峰の一覧がまだ無ければ裏で作り、入力が変わっていなければ描き直す */
@@ -13433,6 +13435,27 @@ function fmtMGRS(u) {
   const pad5 = v => String(v % 100000).padStart(5, '0');
   return `${u.zone}${u.band} ${col}${row} ${pad5(e)} ${pad5(n)}`;
 }
+/* UTM → 緯度経度（v4.159.0・座標入力の第2段）。toUTM の逆（同じ WGS84・k0・クリューゲル級数の逆向き3項）。
+   ⚠ 北半球だけ（日本の範囲だけを受けるので、南半球の 10,000km の下駄は使わない）。
+   ⚠ 等角緯度から緯度へは級数を使わず反復で解く（toUTM の t の式をそのまま逆に解くので、往復が級数の打ち切りでずれない） */
+function fromUTM(zone, e, n) {
+  const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996;
+  const nn = f / (2 - f), n2 = nn * nn, n3 = n2 * nn;
+  const A = a / (1 + nn) * (1 + n2 / 4 + n2 * n2 / 64);
+  const be = [nn / 2 - 2 * n2 / 3 + 37 * n3 / 96, n2 / 48 + n3 / 15, 17 * n3 / 480];
+  const xi = n / (k0 * A), eta = (e - 500000) / (k0 * A);
+  let xp = xi, ep = eta;
+  for (let j = 1; j <= 3; j++) {
+    xp -= be[j - 1] * Math.sin(2 * j * xi) * Math.cosh(2 * j * eta);
+    ep -= be[j - 1] * Math.cos(2 * j * xi) * Math.sinh(2 * j * eta);
+  }
+  const t = Math.sin(xp) / Math.sqrt(Math.sinh(ep) ** 2 + Math.cos(xp) ** 2);   // 等角緯度の tan
+  const c = 2 * Math.sqrt(nn) / (1 + nn);                                         // 離心率（toUTM と同じ）
+  let s = t / Math.sqrt(1 + t * t);                                               // sinφ の初期値（等角緯度）
+  for (let i = 0; i < 8; i++) s = Math.tanh(Math.asinh(t) + c * Math.atanh(c * s));
+  return { lat: Math.asin(s) * 180 / Math.PI,
+    lon: (zone * 6 - 183) + Math.atan2(Math.sinh(ep), Math.cos(xp)) * 180 / Math.PI };
+}
 
 /* v はコピーする1行、parts は画面での行分け（緯度・経度を2行に）。
    見出しは利用者の指定した「UIでのおすすめ表記」 */
@@ -13474,9 +13497,10 @@ function coordFormats(lat, lon) {
 
 /* ============================================================
    座標の入力を読む（v4.158.0・findings-09 の B・第1段）
-   受けるのは十進度・度＋十進分・度分秒（記号・漢字）。本体の表示（coordFormats）を貼り戻せることを保証する。
-   UTM・MGRS は第2段。
-   返り値：{lat, lon, swapped, fmt}／{outOfRange:true}（座標の形だが日本の範囲の外）／null（座標ではない＝地名検索へ）
+   受けるのは十進度・度＋十進分・度分秒（記号・漢字）と、UTM・MGRS（v4.159.0・第2段）。本体の表示（coordFormats）を貼り戻せることを保証する。
+   返り値：{lat, lon, swapped, fmt}／{outOfRange:true}（座標の形だが日本の範囲の外）／
+           {bad:'band', band, fmt}（UTM・MGRS で緯度帯の文字と北距が合わない）／null（座標ではない＝地名検索へ）
+   ⚠ 呼び手は「lat があるときだけ移る」で見ること（outOfRange と bad は Enter で理由を言うだけ）
    ⚠ **世界測地系（JGD2011/WGS84）として読む。** 旧日本測地系の座標は約400mずれるが、入力からは見分けられない
    ⚠ 「数と記号だけで、ちょうど2つ」のときだけ座標とみなす。「三ノ沢 2」のような地名は null
    ⚠ NFKC で ″ は ′′（プライム2つ）にばらける。秒の記号として読む。º は o に化けるので受けない
@@ -13513,9 +13537,63 @@ function parseCoordComp(m, labelFirst) {
   if (/^(S|W|南緯|西経)$/.test(lab)) v = -v;
   return { v, kind, fmt };
 }
+/* ------ UTM・MGRS の入力（v4.159.0・第2段）------
+   緯度は**北距から出し、緯度帯の文字は確認にだけ使う**（findings-09 の B）。合わなければ {bad:'band'}。
+   ⚠ 帯の照合は**表示の精度の升目**で見る（UTM は1m、MGRS は桁に応じて1m〜10km）。帯の境（北緯32°・40°）は日本の中を通り、
+     1m 切り捨ての表示を貼り戻すと境の南に落ちることがある。升目の4隅の緯度の幅が帯と重なれば通す
+   ⚠ UTM の N は「北半球」の意味でも書かれる（GPS 機器）。N 帯（赤道〜8°）は日本の範囲に無いので、UTM の N は照合しない。
+     MGRS の文字は 2,000km の曖昧さを決めるのに使うので、N も緯度帯として読む
+   ⚠ 桁を決めて読む：UTM は東距6桁・北距7桁、MGRS は東・北が同じ桁で1〜5桁。打つ途中で誤った地点を出さないため */
+const UTM_IN = /^(\d{1,2})\s*([C-HJ-NP-X])[\s,、，]+(?:E\s*)?(\d{6}(?:\.\d+)?)[\s,、，]+(?:N\s*)?(\d{7}(?:\.\d+)?)$/;
+const MGRS_IN = /^(\d{1,2})\s*([C-HJ-NP-X])\s*([A-HJ-NP-Z])([A-HJ-NP-V])\s*(\d+)(?:\s+(\d+))?$/;
+const MGRS_ROWS = 'ABCDEFGHJKLMNPQRSTUV';
+function utmBandRange(band) {
+  const i = UTM_BANDS.indexOf(band);
+  return { min: -80 + 8 * i, max: band === 'X' ? 84 : -72 + 8 * i };
+}
+// 升目（南西の隅 e,n と一辺 cell）の4隅の緯度の幅が、緯度帯と重なるか
+function utmCellInBand(zone, e, n, cell, band) {
+  const lats = [[e, n], [e + cell, n], [e, n + cell], [e + cell, n + cell]].map(([x, y]) => fromUTM(zone, x, y).lat);
+  const { min, max } = utmBandRange(band), eps = 1e-7;
+  return Math.max(...lats) >= min - eps && Math.min(...lats) < max + eps;
+}
+function utmResult(zone, band, e, n, cell, fmt, skipBand) {
+  if (!(zone >= 1 && zone <= 60)) return null;
+  if (!skipBand && !utmCellInBand(zone, e, n, cell, band)) return { bad: 'band', band, fmt };
+  const { lat, lon } = fromUTM(zone, e, n);
+  if (!coordInJapan(lat, lon)) return { outOfRange: true };
+  return { lat, lon, swapped: false, fmt };
+}
+function parseUtmMgrs(s) {
+  const t = s.toUpperCase();
+  let m = UTM_IN.exec(t);
+  if (m) return utmResult(+m[1], m[2], +m[3], +m[4], 1, 'UTM', m[2] === 'N');
+  m = MGRS_IN.exec(t);
+  if (!m) return null;
+  const zone = +m[1], band = m[2];
+  let de, dn;
+  if (m[6] != null) { de = m[5]; dn = m[6]; }
+  else { if (m[5].length % 2) return null; de = m[5].slice(0, m[5].length / 2); dn = m[5].slice(m[5].length / 2); }
+  if (de.length !== dn.length || de.length < 1 || de.length > 5) return null;
+  if (!(zone >= 1 && zone <= 60)) return null;
+  const set = ((zone - 1) % 6) + 1;
+  const col = ['ABCDEFGH', 'JKLMNPQR', 'STUVWXYZ'][(set - 1) % 3].indexOf(m[3]);
+  if (col < 0) return null;
+  const cell = 10 ** (5 - de.length);
+  const e = (col + 1) * 100000 + (+de) * cell;
+  let n = ((MGRS_ROWS.indexOf(m[4]) - (set % 2 === 0 ? 5 : 0) + 20) % 20) * 100000 + (+dn) * cell;
+  // 2,000km の曖昧さは緯度帯の南端の北距（中央経線上が最小）で決める。升目が境をまたぐ分だけ余裕を見る
+  const minN = toUTM(utmBandRange(band).min, zone * 6 - 183);
+  if (!minN) return null;
+  while (n + cell <= minN.n - 1) n += 2000000;
+  return utmResult(zone, band, e, n, cell, 'MGRS', false);
+}
 function parseCoordInput(q) {
   let s = String(q || '').normalize('NFKC').trim();
   if (!s) return null;
+  // UTM・MGRS の書式に合えば、その結果をそのまま返す（緯度経度の読みには回さない。書式は重ならない）
+  const um = parseUtmMgrs(s);
+  if (um) return um;
   s = s.replace(/′′|″|”|“/g, '"').replace(/[′’‘]/g, "'");
   // 記号の付き方は先頭で見当を付け、読めなければ・範囲外ならもう一方でも読む（「33.08 E131.24」のような混在）
   const first = new RegExp(`^${COORD_LABEL}`, 'i').test(s);
