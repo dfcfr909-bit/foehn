@@ -62,6 +62,9 @@
      テストは変数を差し替えて全画面ぶんまとめて検査する。 */
   --sa-top: env(safe-area-inset-top, 0px);
   --sa-bottom: env(safe-area-inset-bottom, 0px);
+  /* 左右は横向きのノッチ用（#184）。縦向きでは 0 なので見た目は変わらない */
+  --sa-left: env(safe-area-inset-left, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
 
   --sky-dawn:  #f9a875;
   --sky-day:   #87ceeb;
@@ -828,13 +831,22 @@ html, body {
   background: var(--surface);
 }
 #map-overlay.open { display: flex; }
+/* 横向きでは地図だけ画面いっぱいに広げる（#184）。
+   ⚠ #app の幅（max-width 480px）は触らない。広げるとグラフが広い幅で組み直され、
+     閉じても resize が起きないので幅が合わなくなる。地図から開く画面（天気図・お気に入り・
+     ランキング・座標）も全幅になり、✕がノッチに潜る。fixed なら #app の外へ出られる
+     （#app・body に transform/filter/contain が無いことが前提）。
+   ⚠ 縦向きは absolute のまま。iOS のキーボード表示時に fixed がずれる癖を、縦の主な使い方に持ち込まない */
+@media (orientation: landscape) {
+  #map-overlay { position: fixed; inset: 0; }
+}
 
 /* 上に浮かぶ操作（閉じる＋検索）。
    ⚠**器は pointer-events:none。** 中身以外の場所は地図に触れるようにするため。
    これを外すと帯の下の地図が触れなくなり、全画面にした意味が無くなる。 */
 #map-top {
   position: absolute;
-  left: 8px; right: 8px;
+  left: calc(8px + var(--sa-left)); right: calc(8px + var(--sa-right));
   top: calc(8px + var(--sa-top));
   z-index: 1100;              /* Leaflet標準コントロール(1000)より上 */
   display: flex; align-items: flex-start; gap: 8px;
@@ -875,7 +887,7 @@ html, body {
 /* 検索結果も浮かせる。地図を隠しすぎないよう高さを抑える */
 #map-results {
   position: absolute;
-  left: 8px; right: 8px;
+  left: calc(8px + var(--sa-left)); right: calc(8px + var(--sa-right));
   top: calc(60px + var(--sa-top));
   /* ⚠ 右上の浮きボタン（#map-tools, 1100）より上、レイヤーパネル（1200）より下。
      同じ1100だと後ろに書いたボタンが一覧に被り、行の右端（履歴の✕）が押せない */
@@ -897,7 +909,7 @@ html, body {
    上に重ねると検索結果が読めなくなる（結果のほうが一時的で、優先される） */
 #map-topleft {
   position: absolute;
-  left: 8px;
+  left: calc(8px + var(--sa-left));
   top: calc(60px + var(--sa-top));
   z-index: 1090;
   pointer-events: none;
@@ -1001,7 +1013,7 @@ html, body {
   bottom: 0;
   z-index: 1100;
   display: flex; flex-direction: column; gap: 4px;
-  padding: 0 8px calc(6px + var(--sa-bottom));
+  padding: 0 calc(8px + var(--sa-right)) calc(6px + var(--sa-bottom)) calc(8px + var(--sa-left));
   pointer-events: none;
 }
 #map-bottom > * { pointer-events: auto; }
@@ -1153,7 +1165,7 @@ html, body {
 #map-fav-slot { min-width: 0; }
 #map-tools {
   position: absolute;
-  right: 8px;
+  right: calc(8px + var(--sa-right));
   top: calc(60px + var(--sa-top));   /* 浮いた検索行の下から */
   z-index: 1100;
   display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
@@ -1289,7 +1301,7 @@ html, body {
 #layer-panel.open { transform: translateY(0); }
 #layer-panel-head {
   display: flex; align-items: center;
-  padding: 10px 14px;
+  padding: 10px calc(14px + var(--sa-right)) 10px calc(14px + var(--sa-left));
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -1299,7 +1311,7 @@ html, body {
   border: none; background: none; cursor: pointer;
   font-size: 20px; color: var(--text);
 }
-#layer-panel-body { overflow-y: auto; padding: 4px 12px 14px; }
+#layer-panel-body { overflow-y: auto; padding: 4px calc(12px + var(--sa-right)) 14px calc(12px + var(--sa-left)); }
 /* パネルを開いている間は地図の浮きボタンを引っ込める。
    パネルの✕と現在地ボタンが重なって押し間違える（実機で指摘された）。
    どのみちパネルが地図を覆っているので、この間は地図の操作をしない */
@@ -2468,7 +2480,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.159.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.161.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -12126,10 +12138,22 @@ async function enableHeading() {
     if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
     else if (typeof e.alpha === 'number') h = 360 - e.alpha;
     if (h == null || isNaN(h)) return;
-    setHeading(h);
+    /* センサーの方位は端末の上端が基準。横向きでは画面の上＝端末の横の辺なので、
+       画面の回転ぶんを足す（#184）。⚠ GPS の進む向き（onGeoUpdate）には足さないので setHeading には入れない */
+    setHeading(h + screenAngle());
   };
   window.addEventListener('deviceorientation', headingHandler, true);
   return true;
+}
+
+/* 画面の回転角（度）。端末を反時計回りに回した角度（W3C の screen.orientation.angle）。
+   古い iOS は window.orientation（-90 は 270 と同じ）。取れなければ 0（縦） */
+function screenAngle() {
+  try {
+    const a = screen.orientation && typeof screen.orientation.angle === 'number'
+      ? screen.orientation.angle : (typeof window.orientation === 'number' ? window.orientation : 0);
+    return ((a % 360) + 360) % 360;
+  } catch (e) { return 0; }
 }
 
 function setHeading(deg) {

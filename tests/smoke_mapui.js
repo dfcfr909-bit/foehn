@@ -1186,6 +1186,79 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(envDirect.length === 0,
     'safe-area は --sa-top / --sa-bottom を通す（env()の直書きは検査をすり抜ける）', envDirect);
 
+  /* ================= 5d-3. 横向き（#184） =================
+     横向きでは地図だけ画面いっぱい（#map-overlay を fixed）。#app は 480px のまま。
+     左右のノッチは --sa-left / --sa-right（headless の env() は 0 なので差し替えて見る） */
+  const SA_SIDE = 47;
+  // グラフは横にスクロールする幅広の canvas なので、横向きにする前の幅と比べる
+  const chartWidths = () => page.evaluate(() => [...document.querySelectorAll('#app canvas')]
+    .filter(c => c.offsetParent && !c.closest('#map-overlay')).map(c => Math.round(c.getBoundingClientRect().width)).join(','));
+  const chartsBefore = await chartWidths();
+  await page.setViewportSize({ width: 844, height: 390 });
+  const land = await page.evaluate(async side => {
+    const root = document.documentElement;
+    root.style.setProperty('--sa-left', side + 'px');
+    root.style.setProperty('--sa-right', side + 'px');
+    if (!isMapOpen()) openMap();
+    await new Promise(r => setTimeout(r, 400));
+    const W = innerWidth;
+    const inside = el => { const r = el.getBoundingClientRect(); return r.left >= side - 0.5 && r.right <= W - side + 0.5; };
+    const hit = el => { const r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!t && (t === el || el.contains(t)); };
+    const ids = ['btn-map-close', 'map-search-row', 'map-topleft', 'map-tools', 'map-picked', 'map-attribution'];
+    const out = {
+      W, stageW: Math.round(document.getElementById('map-stage').getBoundingClientRect().width),
+      appW: Math.round(document.getElementById('app').getBoundingClientRect().width),
+      outside: ids.filter(id => !inside(document.getElementById(id))),
+      toolsHit: [...document.querySelectorAll('#map-tools > button')].filter(b => !hit(b)).map(b => b.id),
+    };
+    // レイヤーパネルの✕
+    toggleLayerPanel();
+    await new Promise(r => setTimeout(r, 350));
+    const lc = document.getElementById('btn-layer-close');
+    out.layerClose = { inside: inside(lc), hit: hit(lc) };
+    closeLayerPanel();
+    await new Promise(r => setTimeout(r, 300));
+    // 地図から開く画面は 480px の中央のまま。✕はノッチの外で、地図の上に出ている
+    const subs = [
+      ['wxmap', () => openWxMap(), 'btn-wxmap-close', 'wxmap-overlay', () => closeWxMap()],
+      ['fav', () => openFav(), 'btn-fav-close', 'fav-overlay', () => closeFav()],
+      ['rank', () => openRank(), 'btn-rank-close', 'rank-overlay', () => closeRank()],
+      ['coord', () => openCoordSheet(36.57, 137.65, '試験'), 'coord-sheet-close', 'coord-sheet', () => closeCoordSheet()],
+    ];
+    out.subs = [];
+    for (const [name, open, closeId, boxId, close] of subs) {
+      open();
+      await new Promise(r => setTimeout(r, 350));
+      const c = document.getElementById(closeId);
+      out.subs.push({ name, w: Math.round(document.getElementById(boxId).getBoundingClientRect().width),
+        inside: inside(c), hit: hit(c) });
+      close();
+      await new Promise(r => setTimeout(r, 300));
+    }
+    return out;
+  }, SA_SIDE);
+  ok(land.stageW === land.W, '★横向きでは地図が画面の幅いっぱいに広がる', land);
+  ok(land.appW <= 480, '横向きでも本体（#app）の幅は480pxのまま（グラフを広げない）', land.appW);
+  ok(land.outside.length === 0, '★横向きで地図の部品が左右のノッチに潜らない', land.outside);
+  ok(land.toolsHit.length === 0, '横向きで右のボタン列がすべて押せる', land.toolsHit);
+  ok(land.layerClose.inside && land.layerClose.hit, '横向きでレイヤーパネルの✕がノッチに潜らず押せる', land.layerClose);
+  const badSubs = land.subs.filter(s => s.w > 480 || !s.inside || !s.hit);
+  ok(badSubs.length === 0, '地図から開く画面は480pxのままで、✕がノッチに潜らず押せる', land.subs);
+  // 地図を開いたまま横にして閉じても、グラフは #app の幅に収まる
+  await page.evaluate(() => closeMap());
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForTimeout(500);
+  const chartsAfter = await chartWidths();
+  ok(chartsBefore.length > 0 && chartsAfter === chartsBefore,
+    '横向きのあと縦に戻すと、グラフの幅は元どおり', { chartsBefore, chartsAfter });
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.style.removeProperty('--sa-left'); root.style.removeProperty('--sa-right');
+    openMap();
+  });
+  await page.waitForTimeout(400);
+
   ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
   ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
   ok(rotary.gpsBtn && rotary.gpsH >= 44, '地図に「現在地」ボタンがある（44px以上）', rotary);
@@ -1442,6 +1515,27 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(heading.pressed === 'true', 'ヘディングアップ中だと分かる状態にする', heading.pressed);
   ok(heading.rimColor !== northRim, '★ヘディングアップでは方位環の色が変わる', { heading: heading.rimColor, north: northRim });
   ok(heading.rotating, '地図の実体を広げるクラスが付く');
+
+  /* 横向き（#184）：センサーの方位は端末の上端が基準なので、画面の回転ぶんを足す。
+     端末を反時計回りに90°（screen.orientation.angle=90）回して北を向くと、画面の上は東 */
+  const landHeading = await page.evaluate(async () => {
+    const fire = h => { const ev = new Event('deviceorientation'); ev.webkitCompassHeading = h; window.dispatchEvent(ev); };
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 90 }) });
+    fire(0);
+    await new Promise(r => setTimeout(r, 100));
+    const at90 = headingDeg;
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 270 }) });
+    fire(30);
+    await new Promise(r => setTimeout(r, 100));
+    const at270 = headingDeg;
+    delete screen.orientation;               // 元の getter（Screen.prototype）に戻す
+    fire(90);                                // 後の検査のため、東向き・縦に戻す
+    await new Promise(r => setTimeout(r, 100));
+    return { at90, at270, back: headingDeg, angleNow: screenAngle() };
+  });
+  ok(landHeading.at90 === 90 && landHeading.at270 === 300,
+    '横向きでは画面の回転ぶんを方位に足す（90°→+90・270°→+270）', landHeading);
+  ok(landHeading.back === 90 && landHeading.angleNow === 0, '縦に戻せば補正は0', landHeading);
 
   /* ★自位置は車のナビと同じ矢尻で描く（進行方向が一目で分かるように）。
      方位が取れたら丸（.me-dot）から矢尻（.me-arrow）へ入れ替わる。 */

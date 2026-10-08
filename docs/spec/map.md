@@ -714,6 +714,23 @@ JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-0
 - **地図を閉じたら追跡も止める**（電池のため）
 - モード設定は `setLocateMode(mode)`
 
+### 横向き（v4.161.0・#184）
+
+対応したのは**地図だけ**（グラフの横向きは別に依頼される予定）。`manifest` の `orientation` は `any`。
+
+- 横向きでは `#map-overlay` を **`position: fixed`** にして画面いっぱいに広げる（`@media (orientation: landscape)`）。
+  ⚠ **`#app` の幅（max-width 480px）は触らない。** 広げると、グラフが広い幅で組み直されたまま閉じても戻らない
+  （resize が起きない）。地図から開く画面（天気図・お気に入り・ランキング・座標）も全幅になり ✕ がノッチに潜る
+- ⚠ 縦向きは `absolute` のまま（iOS のキーボード表示時に fixed がずれる癖を縦に持ち込まない）
+- 地図から開く画面は **480px の中央**のまま（#app の中にあるため）
+- 左右のノッチは `--sa-left` / `--sa-right`（`env(safe-area-inset-left/right)`）。地図の浮いた部品
+  （`#map-top`・`#map-results`・`#map-topleft`・`#map-tools`・`#map-bottom`・レイヤーパネル）に効かせる。縦では 0
+- ヘディングアップの方位は、センサー（端末の上端基準）に**画面の回転角**（`screenAngle()`＝`screen.orientation.angle`、
+  無ければ `window.orientation`）を足す。足すのは `enableHeading` の handler だけ（GPS の進む向きには足さない）。
+  ⚠ 符号は W3C の定義からの推論。iOS の `webkitCompassHeading` が画面の向きを補正済みかは**実機で未確認**
+- ⚠ `@media (orientation: landscape)` は横長の画面すべてに当たる。PC のブラウザや iPad の横向きでも地図は全幅になる
+- 検査：`smoke_mapui`「5d-3. 横向き」（844×390・左右47px）と方位補正、`smoke_pwa`（`orientation` が `any`）
+
 ### 地図の向き（ヘディングアップ）
 
 - **`#map` を CSS で回して実現している**（Leaflet に回転機能は無い）。
