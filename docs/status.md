@@ -112,6 +112,8 @@
 | [#172](https://github.com/dfcfr909-bit/foehn/issues/172) | `areas.json` の久住山を主峰の久住山へ（1,786m）。PR でマージ前の確認待ち | 要確認 |
 | [#176](https://github.com/dfcfr909-bit/foehn/issues/176) | 山名検索：山頂名と主峰／最高峰を行に出す。v4.157.0 | 実機確認 |
 | [#173](https://github.com/dfcfr909-bit/foehn/issues/173) | 百名山レイヤー：主峰と最高峰を楕円で囲む（宿題） | 要判断 |
+| [#184](https://github.com/dfcfr909-bit/foehn/issues/184) | スマホの横向き表示に対応する（運用開始・宿題）。`manifest` は今 `portrait` 固定 | 要判断 |
+| [#185](https://github.com/dfcfr909-bit/foehn/issues/185) | 地図画面：情報をいったん隠すボタン（宿題） | 要判断 |
 
 > **この表は増やさない。** 新しい未確認が出たら Issue を立てて1行足す。
 > 運用は `docs/workflow.md`。
