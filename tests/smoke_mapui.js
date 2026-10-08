@@ -1201,6 +1201,36 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(full.searchHit, '検索欄が押せる', full.searchHit);
   ok(full.attrVisible, '出典表記が見えている（利用条件）', full.attrVisible);
   ok(full.attrLinkHit === true, '★出典のリンクは押せる（#map-foot の pointer-events: none を打ち消す。パネルを閉じた状態）', full.attrLinkHit);
+  /* 出典は円柱の下に横幅いっぱいの細い帯（v4.161.1）。⚠ 全文を出す（切り詰め・横スクロールで隠さない＝利用条件） */
+  const attrStrip = await page.evaluate(() => {
+    const el = document.getElementById('map-attribution');
+    const a = el.getBoundingClientRect(), fav = document.getElementById('map-fav-slot').getBoundingClientRect();
+    const st = document.getElementById('map-stage').getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const lh = parseFloat(cs.lineHeight);
+    const bgA = (cs.backgroundColor.match(/rgba?\(([^)]+)\)/) || [, '0,0,0,1'])[1].split(',').map(Number)[3] ?? 1;
+    // 帯の空いたところを突くと地図に抜ける（リンクの無い右端の少し内側）
+    const t = document.elementFromPoint(a.right - 3, a.bottom - 2);
+    return {
+      belowFav: a.top >= fav.bottom - 0.5,
+      inFoot: !!el.closest('#map-foot'),
+      widthRatio: +(a.width / st.width).toFixed(2),
+      lines: Math.round((a.height - 2) / lh),
+      clipped: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+      nowrap: cs.whiteSpace === 'nowrap', overflowX: cs.overflowX,
+      bgAlpha: bgA,
+      passThrough: !!t && !!t.closest('#map'),
+      bottomIn: a.bottom <= innerHeight + 0.5,
+    };
+  });
+  ok(attrStrip.belowFav && !attrStrip.inFoot, '★出典は円柱の下に置く（地点名の行から外した）', attrStrip);
+  ok(attrStrip.widthRatio >= 0.9, '出典は横幅いっぱいの帯', attrStrip.widthRatio);
+  ok(attrStrip.lines <= 3, '出典の帯は細い（390px で3行以内）', attrStrip);
+  ok(!attrStrip.clipped && !attrStrip.nowrap && attrStrip.overflowX !== 'scroll' && attrStrip.overflowX !== 'auto',
+    '★出典は全文を出す（切り詰め・横スクロールで隠さない。利用条件）', attrStrip);
+  ok(attrStrip.bgAlpha <= 0.6, '出典の地は薄い（透過）', attrStrip.bgAlpha);
+  ok(attrStrip.passThrough, '出典の帯の空いたところは地図に抜ける（帯がタップを食わない）', attrStrip);
+  ok(attrStrip.bottomIn, '出典の帯は画面の中に収まる', attrStrip);
   ok(full.rankOutside && full.favOverlayOutside,
     '★他の画面が地図の入れ子に紛れ込んでいない', full);
   ok(full.zoomCtl === 0, 'Leaflet標準の+/-は出さない（左上は閉じるボタン）', full.zoomCtl);
@@ -1289,6 +1319,11 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       appW: Math.round(document.getElementById('app').getBoundingClientRect().width),
       outside: ids.filter(id => !inside(document.getElementById(id))),
       toolsHit: [...document.querySelectorAll('#map-tools > button')].filter(b => !hit(b)).map(b => b.id),
+      // 出典の帯：横向きでは2行以内で、右のボタン列と重ならない
+      attr: (() => { const el = document.getElementById('map-attribution'), a = el.getBoundingClientRect();
+        const tools = document.getElementById('map-tools').getBoundingClientRect();
+        return { lines: Math.round((a.height - 2) / parseFloat(getComputedStyle(el).lineHeight)),
+                 overlapTools: a.top < tools.bottom && a.right > tools.left }; })(),
     };
     // レイヤーパネルの✕
     toggleLayerPanel();
@@ -1320,6 +1355,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(land.appW <= 480, '横向きでも本体（#app）の幅は480pxのまま（グラフを広げない）', land.appW);
   ok(land.outside.length === 0, '★横向きで地図の部品が左右のノッチに潜らない', land.outside);
   ok(land.toolsHit.length === 0, '横向きで右のボタン列がすべて押せる', land.toolsHit);
+  ok(land.attr.lines <= 2 && !land.attr.overlapTools, '横向きで出典の帯は2行以内・右のボタン列と重ならない', land.attr);
   ok(land.layerClose.inside && land.layerClose.hit, '横向きでレイヤーパネルの✕がノッチに潜らず押せる', land.layerClose);
   const badSubs = land.subs.filter(s => s.w > 480 || !s.inside || !s.hit);
   ok(badSubs.length === 0, '地図から開く画面は480pxのままで、✕がノッチに潜らず押せる', land.subs);

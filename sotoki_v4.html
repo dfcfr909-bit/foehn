@@ -1133,17 +1133,19 @@ html, body {
   white-space: nowrap;
 }
 /* 出典表記。常時表示（利用条件） */
+/* 円柱の下に横幅いっぱいの細い帯（v4.161.1・利用者の指定）。地図を占有しないよう字を小さく行を詰め、地を薄くする。
+   ⚠ **1行に切り詰めたり横スクロールで隠したりしない。** 出典明示は利用条件（地理院の回答・docs/decisions.md 2026-10-06）。
+     全文を常に見せ、収まらなければ折り返す（390px で3行・横向きで1〜2行） */
 #map-attribution {
-  max-width: 60%;
-  padding: 3px 6px;
-  font-size: 9px;
-  line-height: 1.4;
+  padding: 1px 6px;
+  font-size: 8.5px;
+  line-height: 1.25;
   color: #333;
-  background: rgba(255,255,255,0.82);
-  border-radius: 6px;
-  margin-left: auto;
+  background: rgba(255,255,255,0.55);
+  border-radius: 4px;
+  pointer-events: none;   /* 帯は地図の操作を邪魔しない（#map-bottom > * の auto を打ち消す） */
 }
-/* 出典のリンクだけ押せるようにする（#map-foot は pointer-events: none。枠全体に付けると地図の操作を邪魔する） */
+/* 出典のリンクだけ押せるようにする（帯自体は pointer-events: none。枠全体に付けると地図の操作を邪魔する） */
 #map-attribution a { pointer-events: auto; color: inherit; text-decoration: underline; }
 /* 選択中の地点（名前＋標高）。地図を閉じずに選べるようにしたので常に出す */
 #map-picked {
@@ -1617,7 +1619,7 @@ html, body {
     --gps-col: #6aa8ff;   /* 暗い地に#1a73e8では沈むので明るめの青にする */
     background: #16181c;
   }
-  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
+  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.55); }
   #map-overlay #map-scale { background: rgba(12,14,17,0.82); }
   #map-overlay #map-scale-bar { border-color: #f2f4f7; }
   #map-overlay #map-scale-label { color: #f2f4f7; }
@@ -2503,7 +2505,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.161.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.161.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -2591,11 +2593,12 @@ html, body {
         </div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
-          <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
-          <div id="map-attribution"></div>
         </div>
         <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
         <div id="map-fav-slot"></div>
+        <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと。
+             円柱の下に横幅いっぱいの細い帯で出す（v4.161.1。右下の箱は横向きで何行にも折り返して煩かった） -->
+        <div id="map-attribution"></div>
       </div>
 
       <div id="map-tools">
