@@ -1017,15 +1017,27 @@ html, body {
   bottom: 0;
   z-index: 1100;
   display: flex; flex-direction: column; gap: 4px;
-  padding: 0 calc(8px + var(--sa-right)) calc(6px + var(--sa-bottom)) calc(8px + var(--sa-left));
+  /* 右の余白（横向きでは下の @media でボタン列の分を足す）。出典の帯も同じ値を使う */
+  --mb-pr: calc(8px + var(--sa-right));
+  /* 下の余白。出典の帯（#map-attribution）は円柱の下のこの余白に重ねて置く（v4.162.0）。
+     ⚠ 🏠を「グラフと同じ位置」に保つ式：グラフでは🏠の下が (52−44)/2＋6＋safe-area＝10＋safe-area。
+       地図では円柱の器を 46px に削るので (46−44)/2＋余白＝1＋余白 → 余白＝9＋safe-area。
+       ただし帯が入りきらなければ帯の高さ＋3px まで広げる（その分だけ円柱が上がる。
+       iPhone はホームバーの分 safe-area が 34px あるので、2行の帯でも上がらない）。
+       --attr-h は JS（watchAttributionHeight）が帯の実測の高さを入れる */
+  --mb-pad: max(calc(9px + var(--sa-bottom)), calc(var(--attr-h, 14px) + 3px));
+  padding: 0 var(--mb-pr) var(--mb-pad) calc(8px + var(--sa-left));
   pointer-events: none;
 }
+/* 地図では円柱の器を少し削る（52→46px・利用者の指定）。ボタンは 44px のまま */
+#map-fav-slot #fav-bar { height: 46px; }
+#map-fav-slot #fav-rotary { height: 44px; }
 #map-bottom > * { pointer-events: auto; }
 /* 横向きでは下の帯（時刻・地点名・円柱・出典）を右のボタン列の手前で止める（v4.162.0）。
    背が低いので、ボタン列の下の方と帯が同じ高さに来て重なった（v4.161.0 の実機）。44px＝丸ボタンの幅。
    ⚠ 上の #map-bottom の padding より後ろに書くこと（先に書くと打ち消される） */
 @media (orientation: landscape) {
-  #map-bottom { padding-right: calc(8px + var(--sa-right-tools) + 44px + 8px); }
+  #map-bottom { --mb-pr: calc(8px + var(--sa-right-tools) + 44px + 8px); }
 }
 #map-foot {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
@@ -1147,6 +1159,11 @@ html, body {
    ⚠ **1行に切り詰めたり横スクロールで隠したりしない。** 出典明示は利用条件（地理院の回答・docs/decisions.md 2026-10-06）。
      全文を常に見せ、収まらなければ折り返す（390px で3行・横向きで1〜2行） */
 #map-attribution {
+  /* 円柱のすぐ下（#map-bottom の下の余白の中）に重ねる。流れに置くと円柱が帯の分だけ上がり、
+     🏠・🏥がグラフ画面とずれる（★★★の決まり。smoke_home / smoke_favloop） */
+  position: absolute;
+  left: calc(8px + var(--sa-left)); right: var(--mb-pr);
+  top: calc(100% - var(--mb-pad) + 1px);
   padding: 1px 6px;
   font-size: 8.5px;
   line-height: 1.25;
@@ -11400,6 +11417,21 @@ function paintThunderIcons() {
 // 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
 const GSI_TILE_LIST_URL = 'https://maps.gsi.go.jp/development/ichiran.html';
 const GSI_DEM_CREDIT = '地理院タイル（標高タイル）を加工して作成';
+/* 出典の帯の実測の高さを #map-bottom の --attr-h に入れる（下の余白の計算に使う・v4.162.0）。
+   中身（選んだレイヤー）や画面の幅で行数が変わるので ResizeObserver で追う */
+function watchAttributionHeight() {
+  const el = document.getElementById('map-attribution');
+  const mb = document.getElementById('map-bottom');
+  if (!el || !mb) return;
+  const put = () => {
+    const h = el.getBoundingClientRect().height;
+    if (h > 0) mb.style.setProperty('--attr-h', Math.ceil(h) + 'px');
+  };
+  put();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(put).observe(el);
+}
+watchAttributionHeight();
+
 function updateMapAttribution() {
   const el = document.getElementById('map-attribution');
   if (!el) return;
