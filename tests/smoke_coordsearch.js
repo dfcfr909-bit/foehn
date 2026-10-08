@@ -202,7 +202,7 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
        （旧「… 緯度経度 度分秒」247px も切れていた。UTM MGRS を足すと 334px）。受ける形式は仕様書に書く */
   ok(await page.evaluate(() => document.getElementById('map-search-input').placeholder) === '山名 よみ 地名 住所 座標',
     '★透過文字は「山名 よみ 地名 住所 座標」');
-  /* ⚠ 透過文字が窓に収まるか（390px）。はみ出すと末尾の UTM MGRS が切れて見えない */
+  /* ⚠ 透過文字が窓に収まるか（390px）。はみ出すと末尾が切れて見えない（形式を並べた案は 334px で切れた） */
   const ph = await page.evaluate(() => {
     const q = document.getElementById('map-search-input'), cs = getComputedStyle(q);
     const ctx = document.createElement('canvas').getContext('2d');
