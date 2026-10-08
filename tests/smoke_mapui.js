@@ -1202,7 +1202,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(full.searchHit, '検索欄が押せる', full.searchHit);
   ok(full.attrVisible, '出典表記が見えている（利用条件）', full.attrVisible);
   ok(full.attrLinkHit === true, '★出典のリンクは押せる（#map-foot の pointer-events: none を打ち消す。パネルを閉じた状態）', full.attrLinkHit);
-  /* 出典は円柱の下に横幅いっぱいの細い帯（v4.161.1）。⚠ 全文を出す（切り詰め・横スクロールで隠さない＝利用条件） */
+  /* 出典は円柱の下に横幅いっぱいの細い帯（v4.162.0）。⚠ 全文を出す（切り詰め・横スクロールで隠さない＝利用条件） */
   const attrStrip = await page.evaluate(() => {
     const el = document.getElementById('map-attribution');
     const a = el.getBoundingClientRect(), fav = document.getElementById('map-fav-slot').getBoundingClientRect();
