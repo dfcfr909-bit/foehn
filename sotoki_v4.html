@@ -973,6 +973,9 @@ html, body {
 .mtn-tag { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 700; color: #fff;
   background: var(--accent, #e2703a); border: none; border-radius: 4px; padding: 2px 6px;
   line-height: 1.3; cursor: pointer; }
+/* 主峰・最高峰（#176）。名山のチップと見分けるため輪郭だけ */
+.mtn-role { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--accent, #e2703a);
+  border: 1px solid var(--accent, #e2703a); border-radius: 4px; padding: 1px 5px; line-height: 1.3; }
 .mtn-elev { flex-shrink: 0; margin-left: auto; font-size: 13px; color: var(--text3); white-space: nowrap; }
 .mtn-sub { font-size: 12px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mtn-hist-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
@@ -2465,7 +2468,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.156.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.157.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -12993,19 +12996,43 @@ function mtnHistBoost(h, now = Date.now()) {
   return MTN_SEARCH.HIST_BOOST_MAX * decay * cnt;
 }
 
+/* 総称の中での立場（#176）。base＝峰の表示名（山頂名）、g＝groups の1件 {main, highest}。
+   ⚠ 純関数にしておく（#173 の楕円からも呼ぶ）。名前は山頂名で比べる。
+   返り値 roles＝['主峰','最高峰'] の部分集合、note＝「※最高峰は三本槍岳」のような注釈（無ければ ''） */
+function mtnRoleInfo(base, g) {
+  if (!g) return { roles: [], note: '' };
+  const roles = [];
+  if (g.main && g.main === base) roles.push('主峰');
+  if (g.highest && g.highest === base) roles.push('最高峰');
+  let note = '';
+  if (!roles.length && g.main && g.main === g.highest) note = `※主峰・最高峰は${g.main}`;
+  else {
+    const parts = [];
+    if (g.main && g.main !== base) parts.push(`主峰は${g.main}`);
+    if (g.highest && g.highest !== base) parts.push(`最高峰は${g.highest}`);
+    if (parts.length) note = '※' + parts.join('・');
+  }
+  return { roles, note };
+}
+
 /* 峰の一覧を作る。⚠ id は「山域id/山名」（areas.json は変えない・#171 の決定7）。
-   改名すると履歴の id が宙に浮くが、見つからない id は黙って捨てる */
+   改名すると履歴の id が宙に浮くが、見つからない id は黙って捨てる。
+   summit＝登録点の実際の山頂名（燧ヶ岳→柴安嵓）。表示と照合にだけ使い、選んだ地点名は areas.json の名前のまま（#176 の決定3） */
 function buildPeakIndex(areas, meta) {
   const out = [];
   const m = (meta && meta.peaks) || {};
+  const groups = (meta && meta.groups) || {};
   for (const area of (areas && areas.areas) || []) {
     for (const p of area.peaks || []) {
       const id = `${area.id}/${p.name}`;
       const x = m[id] || {};
       const base = String(p.name).replace(/[（(].*$/, '');
-      const words = [p.name, base, x.kana, ...(x.aliases || []), x.group, x.groupKana];
+      const words = [p.name, base, x.kana, x.summit, x.summitKana, ...(x.aliases || []), x.group, x.groupKana];
+      const summit = x.summit || null;
+      const { roles, note } = mtnRoleInfo(summit || base, x.group ? groups[x.group] : null);
       out.push({
         id, name: p.name, kana: x.kana || null, aliases: x.aliases || [],
+        summit, summitKana: x.summitKana || null, roles, roleNote: note,
         group: x.group || null, lat: p.lat, lon: p.lon, elevation: p.elev,
         pref: x.pref || [], areaName: area.name,
         // 決定4：hyakumeizan:true を「百」として出す。他のティアは今回は入れない（出典・版が未決定）
@@ -13087,9 +13114,11 @@ function mtnSearch(q, index = mtnIndex, hist = loadMtnHist(), now = Date.now()) 
   return out;
 }
 
-/* 山名順。⚠ 漢字のまま比べると文字コード順になる（悪沢岳・旭岳・塩見岳…）ので、読みがあれば読みで比べる */
+/* 山名順。⚠ 漢字のまま比べると文字コード順になる（悪沢岳・旭岳・塩見岳…）ので、読みがあれば読みで比べる。
+   表示名が山頂名なら山頂名の読みで（「大岳（八甲田山）」を「は」に並べない） */
 function mtnNameCmp(a, b) {
-  return (a.kana || a.name).localeCompare(b.kana || b.name, 'ja') || a.name.localeCompare(b.name, 'ja');
+  const k = p => p.summitKana || p.kana || p.name;
+  return k(a).localeCompare(k(b), 'ja') || a.name.localeCompare(b.name, 'ja');
 }
 // 並べ替え。同順位はおすすめの点数の降順、さらに同点は山名順
 function mtnSortList(list, mode, origin) {
@@ -13102,9 +13131,10 @@ function mtnSortList(list, mode, origin) {
   return arr;
 }
 
-// 表示名：総称があり山名と違えば「新山（鳥海山）」
+// 表示名：山頂名があればそれを使い、総称があって違えば「新山（鳥海山）」「柴安嵓（燧ヶ岳）」
 function mtnDisplayName(p) {
-  return (p.group && p.group !== p.name) ? `${p.name}（${p.group}）` : p.name;
+  const base = p.summit || p.name;
+  return (p.group && p.group !== base) ? `${base}（${p.group}）` : base;
 }
 
 // 選んで確定：山の履歴に残し、公称の標高を渡して飛ぶ（ADR-0006。△と同じ扱い）
@@ -13145,6 +13175,13 @@ function mtnRowEl(p, dist) {
   nm.className = 'mtn-name';
   nm.textContent = mtnDisplayName(p);
   l1.appendChild(nm);
+  // 主峰・最高峰（#176）。⚠ 名山のチップ（.mtn-tag）と別の見た目・別のクラスにする
+  for (const r of p.roles || []) {
+    const rc = document.createElement('span');
+    rc.className = 'mtn-role';
+    rc.textContent = r;
+    l1.appendChild(rc);
+  }
   const chip = mtnTagChip(p.tags);
   if (chip) l1.appendChild(chip);
   if (typeof p.elevation === 'number') {
@@ -13156,6 +13193,7 @@ function mtnRowEl(p, dist) {
   const l2 = document.createElement('div');
   l2.className = 'mtn-sub';
   const parts = [p.pref.length ? p.pref.join('・') : p.areaName];
+  if (p.roleNote) parts.unshift(p.roleNote);
   if (typeof dist === 'number' && isFinite(dist)) parts.push(dist < 10 ? `${dist.toFixed(1)}km` : `${Math.round(dist)}km`);
   l2.textContent = parts.join(' · ');
   el.append(l1, l2);
@@ -13270,9 +13308,10 @@ const MTN_DUP_KM = 1;
 function isShownMtn(name, lat, lon) {
   const want = normalizeSearchName(String(name).replace(/[（(].*$/, ''));
   if (!want) return false;
-  return mtnShown.some(p =>
-    normalizeSearchName(String(p.name).replace(/[（(].*$/, '')) === want &&
-    haversineKm(lat, lon, p.lat, p.lon) <= MTN_DUP_KM);
+  // areas.json の名前に加えて山頂名（雄山・柴安嵓など）でも同じ山とみなす（#176）
+  const same = p => [p.name, p.summit].filter(Boolean)
+    .some(n => normalizeSearchName(String(n).replace(/[（(].*$/, '')) === want);
+  return mtnShown.some(p => same(p) && haversineKm(lat, lon, p.lat, p.lon) <= MTN_DUP_KM);
 }
 
 /* ============================================================

@@ -26,6 +26,8 @@ const GORYU_FAR  = { place_id: 21, lat: '38.9000', lon: '140.1500', display_name
 const NOMINATIM = {
   '五竜岳': [GORYU_NEAR, GORYU_FAR],
   '月山': [{ place_id: 5, lat: '38.5489', lon: '140.0270', display_name: '月山, 山形県, 日本' }],
+  // 山頂名（#176）。手元の「雄山（立山）」と同じ山（1km以内）なので地名検索の側から外れる
+  '雄山': [{ place_id: 30, lat: '36.5760', lon: '137.6199', display_name: '雄山, 立山町, 富山県, 日本' }],
 };
 
 (async () => {
@@ -158,7 +160,7 @@ const NOMINATIM = {
   const clash = await page.evaluate(() => {
     const seen = new Map(), out = [];
     for (const p of mtnIndex) {
-      const ks = new Set([p.name, String(p.name).replace(/[（(].*$/, ''), p.kana, ...p.aliases].filter(Boolean).map(mtnKey));
+      const ks = new Set([p.name, String(p.name).replace(/[（(].*$/, ''), p.kana, p.summit, p.summitKana, ...p.aliases].filter(Boolean).map(mtnKey));
       for (const k of ks) {
         if (seen.has(k) && seen.get(k) !== p.id) out.push(`${k}: ${seen.get(k)} / ${p.id}`);
         seen.set(k, p.id);
@@ -166,7 +168,71 @@ const NOMINATIM = {
     }
     return out;
   });
-  ok(clash.length === 0, '★別の峰どうしで照合キー（名前・読み・別名）が一致しない', clash);
+  ok(clash.length === 0, '★別の峰どうしで照合キー（名前・読み・山頂名・別名）が一致しない', clash);
+
+  /* --- 主峰・最高峰（#176） --- */
+  // groups の打ち間違いを拾う。⚠ 名前の一覧をここに書き写さない（データ側の absent だけを頼る）
+  const gcheck = await page.evaluate(async () => {
+    const meta = await (await fetch('data/peak_meta.json')).json();
+    const groups = meta.groups || {}, bad = [];
+    const members = {};
+    for (const [id, x] of Object.entries(meta.peaks)) {
+      if (!x.group) continue;
+      const base = x.summit || id.split('/')[1].replace(/[（(].*$/, '');
+      (members[x.group] = members[x.group] || []).push(base);
+    }
+    for (const g of Object.keys(members)) if (!groups[g]) bad.push(`groups に無い総称: ${g}`);
+    for (const [g, v] of Object.entries(groups)) {
+      if (!members[g]) { bad.push(`使われていない総称: ${g}`); continue; }
+      for (const k of ['main', 'highest']) {
+        if (!v[k]) continue;   // main を書かない総称（大峰山など）は飛ばす
+        if (!members[g].includes(v[k]) && !(v.absent || []).includes(v[k])) bad.push(`${g}.${k}=${v[k]} が総称の峰にも absent にも無い`);
+      }
+      for (const a of v.absent || []) if (members[g].includes(a)) bad.push(`${g}: absent の ${a} が手元にある`);
+      for (const c of v.check || []) if (!['main', 'highest'].includes(c)) bad.push(`${g}: check の値 ${c}`);
+    }
+    return bad;
+  });
+  ok(gcheck.length === 0, '★★groups の総称・主峰・最高峰の名前が峰のデータと食い違わない', gcheck);
+
+  const roleRow = q => page.evaluate(q => {
+    const input = document.getElementById('map-search-input');
+    input.focus(); input.value = q; input.dispatchEvent(new Event('input'));
+    const el = document.querySelector('#mtn-results .mtn-item');
+    if (!el) return null;
+    return { name: el.querySelector('.mtn-name').textContent,
+      roles: [...el.querySelectorAll('.mtn-role')].map(e => e.textContent),
+      tags: [...el.querySelectorAll('.mtn-tag')].map(e => e.textContent),
+      sub: el.querySelector('.mtn-sub').textContent };
+  }, q);
+  for (const q of ['柴安嵓', 'しばやすぐら', '燧ヶ岳']) {
+    const r = await roleRow(q);
+    ok(r && r.name === '柴安嵓（燧ヶ岳）' && r.roles.join() === '主峰,最高峰' && r.tags.join() === '百',
+      `★★「${q}」で「柴安嵓（燧ヶ岳）」[主峰][最高峰][百]`, r);
+  }
+  let r = await roleRow('茶臼岳');
+  ok(r && r.name === '茶臼岳（那須岳）' && r.roles.join() === '主峰' && r.sub.startsWith('※最高峰は三本槍岳 · '),
+    '★★茶臼岳は [主峰]、2行目に「※最高峰は三本槍岳」', r);
+  r = await roleRow('三本槍岳');
+  ok(r && r.roles.join() === '最高峰' && r.sub.startsWith('※主峰は茶臼岳 · '), '★★三本槍岳は [最高峰]、「※主峰は茶臼岳」', r);
+  r = await roleRow('高田大岳');
+  ok(r && r.roles.length === 0 && r.sub.startsWith('※主峰・最高峰は大岳 · '), '★主峰も最高峰も違う峰は「※主峰・最高峰は大岳」', r);
+  r = await roleRow('久住山');
+  ok(r && r.roles.join() === '主峰' && r.sub.startsWith('※最高峰は中岳'), '★手元に無い最高峰（中岳）も注釈に出せる', r);
+  r = await roleRow('八経ヶ岳');
+  ok(r && r.roles.join() === '最高峰' && !r.sub.startsWith('※'), '主峰を書かない総称は [最高峰] だけ・注釈なし', r);
+  r = await roleRow('雄山');
+  ok(r && r.name === '雄山（立山）' && r.sub.startsWith('※最高峰は大汝山'), '★山頂名で表示「雄山（立山）」', r);
+  const info = await page.evaluate(() => ({
+    none: mtnRoleInfo('x', null), diff: mtnRoleInfo('乙', { main: '甲', highest: '丙' }) }));
+  ok(info.none.roles.length === 0 && info.none.note === '' && info.diff.note === '※主峰は甲・最高峰は丙',
+    'mtnRoleInfo は純関数（#173 からも呼べる）', info);
+  // 選んだあとの地点名は areas.json の名前のまま（決定3）
+  await roleRow('柴安嵓');
+  await page.evaluate(() => document.querySelector('#mtn-results .mtn-item').click());
+  ok(await page.evaluate(() => state.locationName === '燧ヶ岳' && state.summitElev === 2356),
+    '★選んだあとの地点名は areas.json の名前（燧ヶ岳）のまま');
+  await page.evaluate(() => localStorage.removeItem('mtnSearchHistory.v1'));
   const one = await typed('か');
   ok(one.length > 0 && one.length <= 8, '1文字（「か」）でも候補は上限8件以内', one.length);
 
@@ -262,7 +328,7 @@ const NOMINATIM = {
   const isSorted = (a, cmp) => a.every((v, i) => i === 0 || cmp(a[i - 1], v) <= 0);
   // 同点は読みの五十音順（漢字の文字コード順にしない）
   const tie = await page.evaluate(() => mtnSortList(mtnSearch('だけ'), 'rec', null)
-    .filter((r, i, a) => r.score === a[0].score).map(r => r.p.kana));
+    .filter((r, i, a) => r.score === a[0].score).map(r => r.p.summitKana || r.p.kana));   // 表示名が山頂名なら山頂名の読み
   ok(tie.length > 1 && tie.every((k, i) => i === 0 || tie[i - 1].localeCompare(k, 'ja') <= 0),
     '★同点は読みの五十音順', tie.slice(0, 5));
   ok(sorts.def === 'おすすめ', '★並べ替えの既定は「おすすめ」', sorts.def);
@@ -299,6 +365,15 @@ const NOMINATIM = {
   ok(enter.place.length === 1 && enter.place[0].includes('山形県'),
     '★★手元に出した五竜岳（1km以内）は地名検索の側から外し、遠い同名は残す', enter);
 
+  /* --- 山頂名でも同じ山を2行出さない（#176） --- */
+  const oyama = await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '雄山';
+    await doMapSearch();
+    return { mtn: [...document.querySelectorAll('#mtn-results .mtn-item .mtn-name')].map(e => e.textContent),
+      place: document.querySelectorAll('#place-results .map-result-item').length };
+  });
+  ok(oyama.mtn[0] === '雄山（立山）' && oyama.place === 0, '★地名検索の「雄山」は手元の「雄山（立山）」と同じ山なので外す', oyama);
+
   /* --- 地名検索が失敗しても手元の候補は残す --- */
   nominatimFail = true;
   const failed = await page.evaluate(async () => {
@@ -313,7 +388,7 @@ const NOMINATIM = {
   /* --- スマホ幅：はみ出さない --- */
   for (const w of [360, 390]) {
     await page.setViewportSize({ width: w, height: 760 });
-    await typed('おくほたか');
+    await typed(w === 360 ? 'しばやすぐら' : 'おくほたか');   // 360px は名前＋チップ3つの最長の行
     const of = await page.evaluate(() => {
       const box = document.getElementById('map-results');
       const items = [...document.querySelectorAll('#mtn-results .mtn-item')];
