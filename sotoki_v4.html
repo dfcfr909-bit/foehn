@@ -1195,6 +1195,29 @@ html, body {
 .map-round svg { width: 34px; height: 34px; display: block; overflow: visible; }
 .map-round.map-emoji { font-size: 20px; line-height: 1; }
 
+/* --- 地図の上の情報を隠す（#185） ---
+   押すと地図だけを見られる。残すのは 出典（利用条件）・閉じる✕・縮尺・このボタン。
+   ⚠ display:none ではなく visibility で消す。ボタン列で戻すボタンの位置が動かず、
+     下の帯の高さも変わらないので出典の位置も動かない。状態は覚えない（開くたびに表示へ戻す） */
+.dc-eye { fill: none; stroke: var(--text3); stroke-width: 2.2; stroke-linejoin: round; }
+.dc-pupil { fill: var(--text3); }
+.dc-slash { stroke: var(--text3); stroke-width: 2.4; stroke-linecap: round; display: none; }
+#btn-declutter[aria-pressed="true"] { background: var(--text); border-color: var(--text); }
+#btn-declutter[aria-pressed="true"] .dc-eye { stroke: var(--surface); }
+#btn-declutter[aria-pressed="true"] .dc-pupil { fill: var(--surface); }
+#btn-declutter[aria-pressed="true"] .dc-slash { display: inline; stroke: var(--surface); }
+#map-stage.declutter #map-search-row,
+#map-stage.declutter #map-results,
+#map-stage.declutter #map-when,
+#map-stage.declutter #map-hint,
+#map-stage.declutter #map-rain,
+#map-stage.declutter #map-trouble,
+#map-stage.declutter #map-awake,
+#map-stage.declutter #map-time,
+#map-stage.declutter #map-picked,
+#map-stage.declutter #map-fav-slot,
+#map-stage.declutter #map-tools > :not(#btn-declutter) { visibility: hidden; pointer-events: none; }
+
 /* --- 方位バッジ --- */
 .orient-rim { fill: none; stroke: var(--text3); stroke-width: 1.8; }
 /* Nは環の線の上に載るので、白フチを付けて線が文字を横切らないようにする */
@@ -2468,7 +2491,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.159.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.160.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2601,6 +2624,16 @@ html, body {
                 aria-label="天気図" title="天気図"><span aria-hidden="true">🌐</span></button>
         <button id="btn-about" class="map-round map-emoji" onclick="location.href='about.html'"
                 aria-label="このアプリについて" title="このアプリについて（判定の基準・データの参照元・妥協点）"><span aria-hidden="true">ℹ️</span></button>
+        <!-- 地図の上の情報をいったん隠す（#185）。⚠ 列の**末尾**に置く。隠すときは visibility で消すので、
+             上のボタンが消えてもこのボタンの位置は動かない（display:none だと上へずれる） -->
+        <button id="btn-declutter" class="map-round" onclick="toggleMapDeclutter()" aria-pressed="false"
+                aria-label="地図の上の情報を隠す" title="地図の上の情報を隠す">
+          <svg viewBox="0 0 44 44" aria-hidden="true">
+            <path class="dc-eye" d="M8 22 C13 14 31 14 36 22 C31 30 13 30 8 22 Z"/>
+            <circle class="dc-pupil" cx="22" cy="22" r="4"/>
+            <line class="dc-slash" x1="11" y1="33" x2="33" y2="11"/>
+          </svg>
+        </button>
       </div>
 
       <!-- レイヤーパネル（ボトムシート） -->
@@ -11447,6 +11480,7 @@ function restoreFavRotary() {
 
 function openMap() {
   document.getElementById('map-overlay').classList.add('open');
+  setMapDeclutter(false);   // 隠した状態は覚えない（#185）
   document.getElementById('map-results').innerHTML = '';   // 前回の検索結果をクリア
   document.getElementById('map-search-input').value = '';
   showMapHint();
@@ -11539,7 +11573,31 @@ function closeMap() {
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
   syncWakeLock();                           // 閉じたら画面の保持も手放す
   paintTileTrouble();                       // 閉じたら取得失敗の帯も畳む
+  setMapDeclutter(false);                   // 隠した状態は覚えない（開くたびに表示へ戻す・#185）
 }
+
+/* ------ 地図の上の情報を隠す（#185） ------
+   隠すもの・残すものは CSS（#map-stage.declutter）で決める。ここは切り替えだけ */
+let mapDeclutter = false;
+function setMapDeclutter(on) {
+  mapDeclutter = !!on;
+  const stage = document.getElementById('map-stage');
+  if (stage) stage.classList.toggle('declutter', mapDeclutter);
+  const b = document.getElementById('btn-declutter');
+  if (b) {
+    b.setAttribute('aria-pressed', String(mapDeclutter));
+    const label = mapDeclutter ? '地図の上の情報を戻す' : '地図の上の情報を隠す';
+    b.setAttribute('aria-label', label);
+    b.title = label;
+  }
+  /* 検索の途中で隠したら、キーボードも畳む。visibility で消しても入力中の状態は残る
+     （toggleLayerPanel と同じ理由） */
+  if (mapDeclutter) {
+    const q = document.getElementById('map-search-input');
+    if (q) q.blur();
+  }
+}
+function toggleMapDeclutter() { setMapDeclutter(!mapDeclutter); }
 function isMapOpen() {
   const el = document.getElementById('map-overlay');
   return !!el && el.classList.contains('open');
