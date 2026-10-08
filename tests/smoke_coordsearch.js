@@ -92,6 +92,36 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
   ok(round.length === POINTS.length * 4 && badRound.length === 0,
     '★★本体の表示（DD・DDM・DMS・読み）を貼り戻すと、表示の精度の内で元の地点に戻る', badRound);
 
+  /* ---------- 1b. UTM・MGRS の表示を貼り戻せる（v4.159.0・第2段） ----------
+     ⚠ 日本の帯 51〜56 すべてと、緯度帯の境（32°・40°）のすぐ北。境の北は 1m 切り捨ての北距から出すと
+       境の南に落ちることがあり、文字の照合を幅なしで行うと自分の表示が弾かれる（レビューの指摘）。
+     ⚠ 照合は本体の表示との往復（自分同士）。外の道具との突き合わせは smoke_coord.mjs の北半球の値で行う */
+  const UPOINTS = [
+    [24.4497, 122.9342],       // 51 与那国島付近
+    [26.2124, 127.6809],       // 52 那覇
+    [33.082187, 131.240871],   // 52 久住山（131°は52帯）
+    [35.0116, 135.7681],       // 53 京都
+    [36.9536, 139.2873],       // 54 燧ヶ岳
+    [44.0756, 145.1219],       // 55 知床
+    [24.2867, 153.9807],       // 56 南鳥島
+    [40.000005, 140.5],        // 緯度帯 S/T の境のすぐ北
+    [32.000005, 130.5],        // 緯度帯 R/S の境のすぐ北
+    [39.999995, 140.5],        // 境のすぐ南
+  ];
+  const uround = await page.evaluate(points => points.map(([lat, lon]) =>
+    coordFormats(lat, lon).filter(f => /UTM|MGRS/.test(f.k)).flatMap(f =>
+      [f.v, f.parts.join(' ')].map(v => {
+        const r = parseCoordInput(v);
+        const m = r && r.lat != null ? Math.hypot((r.lat - lat) * 111320, (r.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180)) : null;
+        return { k: f.k, v, lat, lon, r, m, z: f.v.slice(0, 2) };
+      }))).flat(), UPOINTS);
+  // 表示は 1m 切り捨て → 戻りは南西へ最大 √2 m
+  const badU = uround.filter(x => x.m == null || x.m > 1.5 || x.r.fmt !== (x.k === 'MGRS' ? 'MGRS' : 'UTM'));
+  ok(uround.length === UPOINTS.length * 4 && badU.length === 0,
+    '★★★UTM・MGRS の表示（1行・画面の2行の連結）を貼り戻すと 1.5m 以内で元の地点に戻る（帯51〜56・緯度帯の境の両側）', badU);
+  ok([...new Set(uround.map(x => x.z))].sort().join(',') === '51,52,53,54,55,56', '日本の帯 51〜56 をすべて通した',
+    [...new Set(uround.map(x => x.z))]);
+
   /* ---------- 2. 方言・入れ替え・範囲外・座標ではないもの ---------- */
   const cases = await page.evaluate(() => {
     const P = s => { const r = parseCoordInput(s); return r && !r.outOfRange
@@ -115,6 +145,22 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
       min60: P("33°60'N 131°00'E"),
       ordo: P('33º04 131'),
       neg: P('-33 131'),
+      // UTM・MGRS（v4.159.0）
+      mgrsNoSp: P('54suf4751091028'),
+      mgrsBandSp: P('54 S UF 47510 91028'),
+      mgrs2: P('54SUF4791'),                             // 2桁＝1km 升目の南西の隅
+      utmN: P('54N 347510 4091028'),                     // N を北半球の意味で書いたもの
+      utmComma: P('54S, 347510, 4091028'),
+      utmBad: parseCoordInput('54T 347510 4091028'),     // 北距は S 帯（緯度36.95）
+      mgrsBad: parseCoordInput('54TUF4751091028'),
+      mgrsN: parseCoordInput('54NUF4751091028'),         // MGRS の N は緯度帯（赤道付近）
+      mgrsIO: parseCoordInput('54SIF4751091028'),
+      mgrsOdd: parseCoordInput('54SUF475'),              // 打つ途中（数字が奇数）
+      mgrsUneven: parseCoordInput('54SUF 4751 091028'),
+      utmShort: parseCoordInput('54S 347510 409102'),     // 打つ途中（北距6桁）
+      utmNoBand: parseCoordInput('54 347510 4091028'),
+      utmZone0: parseCoordInput('0S 347510 4091028'),
+      utmZone33: parseCoordInput('33S 347510 4091028'),  // 書式は正しいが日本の外
     };
   });
   const near = (r, lat, lon) => r && Math.abs(r.lat - lat) < 1e-4 && Math.abs(r.lon - lon) < 1e-4;
@@ -133,12 +179,38 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
   ok(cases.name === null && cases.one === null && cases.three === null, '★★座標ではないもの（地名・数1つ・数3つ）は null＝地名検索へ', [cases.name, cases.one, cases.three]);
   ok(cases.min60 === null, '分が60以上は読まない', cases.min60);
   ok(cases.ordo === null && cases.neg === null, 'º（NFKC で o に化ける）・負の数は読まない', [cases.ordo, cases.neg]);
+  const HIUCHI = [36.953, 139.2873];
+  ok(near(cases.mgrsNoSp, ...HIUCHI) && cases.mgrsNoSp.fmt === 'MGRS', '★★MGRS：空白なし・小文字', cases.mgrsNoSp);
+  ok(near(cases.mgrsBandSp, ...HIUCHI), 'MGRS：帯の数と文字の間の空白', cases.mgrsBandSp);
+  ok(cases.mgrs2 && Math.abs(cases.mgrs2.lat - 36.9507) < 0.002 && cases.mgrs2.lat < HIUCHI[0] && cases.mgrs2.lon < HIUCHI[1],
+    '★MGRS の桁が少なければ升目の南西の隅（54SUF4791＝1km 升目）', cases.mgrs2);
+  ok(near(cases.utmN, ...HIUCHI) && cases.utmN.fmt === 'UTM', '★★UTM の N は北半球の意味として読む（N 帯は日本に無い）', cases.utmN);
+  ok(near(cases.utmComma, ...HIUCHI), 'UTM：カンマ区切り', cases.utmComma);
+  ok(cases.utmBad && cases.utmBad.bad === 'band' && cases.utmBad.band === 'T' && cases.utmBad.fmt === 'UTM',
+    '★★UTM：緯度帯の文字と北距が合わなければ {bad:band}（文字は確認にだけ使う）', cases.utmBad);
+  ok(cases.mgrsBad && cases.mgrsBad.bad === 'band' && cases.mgrsBad.fmt === 'MGRS', '★MGRS：帯の文字と北距が合わない', cases.mgrsBad);
+  ok(cases.mgrsN && cases.mgrsN.lat == null, 'MGRS の N は緯度帯として読む（日本の地点にはならない）', cases.mgrsN);
+  ok([cases.mgrsIO, cases.mgrsOdd, cases.mgrsUneven, cases.utmShort, cases.utmNoBand, cases.utmZone0].every(r => r === null),
+    '★★読まないもの（I・O・数字が奇数・東北の桁違い・北距6桁・帯の文字なし・帯0）は null＝地点を出さない',
+    [cases.mgrsIO, cases.mgrsOdd, cases.mgrsUneven, cases.utmShort, cases.utmNoBand, cases.utmZone0]);
+  ok(cases.utmZone33 && cases.utmZone33.outOfRange === true, '書式は正しいが日本の外の帯は「範囲外」', cases.utmZone33);
 
   /* ---------- 3. 画面：透過文字・入力中の先頭行 ---------- */
   await page.evaluate(() => openMap());
   await page.waitForTimeout(300);
-  ok(await page.evaluate(() => document.getElementById('map-search-input').placeholder) === '山名 よみ 地名 住所 緯度経度 度分秒',
-    '★透過文字は実際に検索できるものだけ（UTM・MGRS は第2段まで書かない）');
+  /* ⚠ 透過文字は「座標」の一語にまとめた（v4.159.0・利用者の決定）。形式を並べると 390px の窓からはみ出す
+       （旧「… 緯度経度 度分秒」247px も切れていた。UTM MGRS を足すと 334px）。受ける形式は仕様書に書く */
+  ok(await page.evaluate(() => document.getElementById('map-search-input').placeholder) === '山名 よみ 地名 住所 座標',
+    '★透過文字は「山名 よみ 地名 住所 座標」');
+  /* ⚠ 透過文字が窓に収まるか（390px）。はみ出すと末尾が切れて見えない（形式を並べた案は 334px で切れた） */
+  const ph = await page.evaluate(() => {
+    const q = document.getElementById('map-search-input'), cs = getComputedStyle(q);
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${cs.fontSize} ${cs.fontFamily}`;
+    return { text: Math.ceil(ctx.measureText(q.placeholder).width),
+      box: q.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) };
+  });
+  ok(ph.text <= ph.box, '★透過文字が 390px の窓に収まる', ph);
   const typeIn = v => page.evaluate(v => {
     const q = document.getElementById('map-search-input');
     q.focus(); q.value = v; q.dispatchEvent(new Event('input'));
@@ -157,6 +229,21 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
   });
   ok(!top || (!/coord-go/.test(top.cls) && !top.text.includes('範囲外')),
     '★入力中は範囲外を出さない（打っている途中の 35 1 で騒がない。範囲外と言うのは Enter のときだけ）', top);
+  for (const v of ['54S 347510 409102', '54SUF475', '54T 347510 4091028']) {
+    await typeIn(v);
+    top = await page.evaluate(() => {
+      const el = document.querySelector('#map-results > :first-child');
+      return el && { cls: el.className, text: el.textContent };
+    });
+    ok(!top || (!/coord-go/.test(top.cls) && !top.text.includes('範囲外') && !top.text.includes('合いません')),
+      `★★UTM・MGRS を打つ途中・帯の不一致（${v}）では、入力中に地点も理由も出さない`, top);
+  }
+  await typeIn('54SUF4751091028');
+  top = await page.evaluate(() => {
+    const el = document.querySelector('#map-results > :first-child');
+    return el && { cls: el.className, text: el.textContent };
+  });
+  ok(top && /coord-go/.test(top.cls) && top.text.includes('MGRS として読みました'), '★MGRS は「MGRS として読みました」', top);
 
   /* ---------- 4. Enter：外に投げずに移る・履歴に残る ---------- */
   await page.evaluate(() => localStorage.removeItem('sotoki_search_hist'));
@@ -184,6 +271,32 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
   st = await page.evaluate(() => document.getElementById('map-results').textContent);
   ok(st.includes('範囲外') && hits.search === 0 && hits.gsi === 0 && hits.reverse === 0,
     '★範囲外の Enter は外に何も投げず「範囲外」と出す', { st, hits });
+
+  Object.keys(hits).forEach(k => { hits[k] = 0; });
+  st = await page.evaluate(async () => {
+    const lat0 = state.lat;
+    document.getElementById('map-search-input').value = '54T 347510 4091028';
+    await doMapSearch();
+    return { text: document.getElementById('map-results').textContent, moved: state.lat !== lat0 };
+  });
+  ok(st.text.includes('緯度帯の文字（T）と北距が合いません（UTM）') && !st.moved && hits.search === 0 && hits.gsi === 0 && hits.reverse === 0,
+    '★★帯の文字が合わない Enter は、移らず・外に投げず理由を出す', { st, hits });
+
+  Object.keys(hits).forEach(k => { hits[k] = 0; });
+  st = await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '54SUF4751091028';
+    await doMapSearch();
+    await new Promise(r => setTimeout(r, 400));   // 逆ジオコーディングを待つ
+    return { lat: state.lat, lon: state.lon };
+  });
+  ok(Math.abs(st.lat - 36.953) < 1e-4 && Math.abs(st.lon - 139.2873) < 1e-4 && hits.search === 0 && hits.reverse === 1,
+    '★★MGRS の Enter でその地点へ移る（外の地名検索に投げない）', { st, hits });
+  await page.evaluate(() => localStorage.removeItem('sotoki_search_hist'));
+  await page.evaluate(async () => {
+    document.getElementById('map-search-input').value = '33.082187, 131.240871';
+    await doMapSearch();
+  });
+  await page.waitForTimeout(300);
 
   /* ---------- 5. 履歴の座標の行は、何度押しても打ったときと同じ動き ---------- */
   await page.evaluate(() => { state.lat = 36.0; state.lon = 139.0; });
