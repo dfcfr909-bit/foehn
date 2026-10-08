@@ -1056,9 +1056,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   });
   await page.waitForTimeout(300);
   const DC_HIDE = ['map-search-row', 'map-results', 'map-when', 'map-hint', 'map-rain', 'map-trouble',
-    'map-awake', 'map-time', 'map-picked', 'map-fav-slot',
+    'map-awake', 'map-time', 'map-picked', 'map-fav-slot'];
+  // 右のボタン列（6つ）は隠さない（v4.162.0・利用者の指定）
+  const DC_KEEP = ['map-attribution', 'btn-map-close', 'btn-declutter',
     'btn-layers', 'btn-orient', 'btn-locate', 'btn-wxmap', 'btn-about'];
-  const DC_KEEP = ['map-attribution', 'btn-map-close', 'btn-declutter'];
   const dcState = () => page.evaluate(({ hide, keep }) => {
     const vis = id => getComputedStyle(document.getElementById(id)).visibility;
     // 中心を突いて、そのボタン自身（か子）に当たるか
@@ -1093,9 +1094,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page.waitForTimeout(250);
   const dcOn = await dcState();
   ok(dcOn.pressed === 'true', '隠すボタンが押された状態になる', dcOn.pressed);
-  ok(JSON.stringify(dcOn.hidden) === JSON.stringify(DC_HIDE), '隠すものがすべて隠れる（時刻のつまみ・ボタン列を含む）',
+  ok(JSON.stringify(dcOn.hidden) === JSON.stringify(DC_HIDE), '隠すものがすべて隠れる（時刻のつまみを含む）',
     DC_HIDE.filter(id => !dcOn.hidden.includes(id)));
-  ok(dcOn.keptVisible.length === DC_KEEP.length, '出典・閉じる・戻すボタンは見えたまま', dcOn.keptVisible);
+  ok(dcOn.keptVisible.length === DC_KEEP.length, '★出典・閉じる・右のボタン列（6つ）は見えたまま', DC_KEEP.filter(id => !dcOn.keptVisible.includes(id)));
   ok(dcOn.btnHit, '隠している間も戻すボタンが押せる（elementFromPoint）', dcOn);
   ok(dcOn.closeHit, '隠している間も地図を閉じられる', dcOn);
   ok(dcOn.searchHitsMap, '隠した検索窓の位置は地図に抜ける', dcOn);
@@ -1319,6 +1320,16 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       appW: Math.round(document.getElementById('app').getBoundingClientRect().width),
       outside: ids.filter(id => !inside(document.getElementById(id))),
       toolsHit: [...document.querySelectorAll('#map-tools > button')].filter(b => !hit(b)).map(b => b.id),
+      // 下の帯（時刻・地点名・円柱・出典）は右のボタン列と重ならない（v4.161.0 の実機で重なった）
+      // ⚠ 列の外枠ではなくボタン1つずつと比べる（外枠は横長の「レイヤー」の幅を含み、丸ボタンの下の空きまで数えてしまう）
+      bottomOverTools: (() => { const btns = [...document.querySelectorAll('#map-tools > button')].map(b => b.getBoundingClientRect());
+        const out = [];
+        ['map-time', 'map-picked', 'map-fav-slot', 'map-attribution'].forEach(id => {
+          const el = document.getElementById(id); if (!el || el.offsetParent === null) return;
+          const r = el.getBoundingClientRect(); if (!r.width) return;
+          btns.forEach((t, i) => { if (r.right > t.left && r.left < t.right && r.top < t.bottom && r.bottom > t.top) out.push(id + '×' + i); });
+        });
+        return out; })(),
       // 出典の帯：横向きでは2行以内で、右のボタン列と重ならない
       attr: (() => { const el = document.getElementById('map-attribution'), a = el.getBoundingClientRect();
         const tools = document.getElementById('map-tools').getBoundingClientRect();
@@ -1356,6 +1367,22 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(land.outside.length === 0, '★横向きで地図の部品が左右のノッチに潜らない', land.outside);
   ok(land.toolsHit.length === 0, '横向きで右のボタン列がすべて押せる', land.toolsHit);
   ok(land.attr.lines <= 2 && !land.attr.overlapTools, '横向きで出典の帯は2行以内・右のボタン列と重ならない', land.attr);
+  ok(land.bottomOverTools.length === 0, '★横向きで下の帯が右のボタン列と重ならない', land.bottomOverTools);
+  // ノッチが左（回転角 90）なら右のボタン列は右端まで寄せる。右（270）なら逃げ幅を取る
+  const notchSide = await page.evaluate(async side => {
+    const tryAngle = async a => {
+      Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: a, addEventListener() {} }) });
+      applyNotchSide();
+      await new Promise(r => setTimeout(r, 100));
+      const t = document.getElementById('map-tools').getBoundingClientRect();
+      return Math.round(innerWidth - t.right);
+    };
+    const at90 = await tryAngle(90), at270 = await tryAngle(270);
+    delete screen.orientation; applyNotchSide();
+    return { at90, at270, side, cls: document.documentElement.className };
+  }, SA_SIDE);
+  ok(notchSide.at90 === 8, '★ノッチが左なら右のボタン列は右端（8px）まで寄せる', notchSide);
+  ok(notchSide.at270 === 8 + SA_SIDE, 'ノッチが右なら右のボタン列はノッチを避ける', notchSide);
   ok(land.layerClose.inside && land.layerClose.hit, '横向きでレイヤーパネルの✕がノッチに潜らず押せる', land.layerClose);
   const badSubs = land.subs.filter(s => s.w > 480 || !s.inside || !s.hit);
   ok(badSubs.length === 0, '地図から開く画面は480pxのままで、✕がノッチに潜らず押せる', land.subs);
