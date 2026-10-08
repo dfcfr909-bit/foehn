@@ -220,7 +220,10 @@ const NOMINATIM = {
   r = await roleRow('久住山');
   ok(r && r.roles.join() === '主峰' && r.sub.startsWith('※最高峰は中岳'), '★手元に無い最高峰（中岳）も注釈に出せる', r);
   r = await roleRow('八経ヶ岳');
-  ok(r && r.roles.join() === '最高峰' && !r.sub.startsWith('※'), '主峰を書かない総称は [最高峰] だけ・注釈なし', r);
+  ok(r && r.roles.join() === '主峰,最高峰' && !r.sub.startsWith('※'), '主峰＝最高峰の峰は [主峰][最高峰]・注釈なし（大峰山・#178）', r);
+  // 主峰を書かない総称の振る舞いは純関数で見る（いまの実データには無い）
+  r = await page.evaluate(() => mtnRoleInfo('甲岳', { highest: '甲岳' }));
+  ok(r.roles.join() === '最高峰' && r.note === '', '主峰を書かない総称は [最高峰] だけ・注釈なし', r);
   r = await roleRow('雄山');
   ok(r && r.name === '雄山（立山）' && r.sub.startsWith('※最高峰は大汝山'), '★山頂名で表示「雄山（立山）」', r);
   const info = await page.evaluate(() => ({

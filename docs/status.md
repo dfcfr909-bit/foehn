@@ -111,7 +111,6 @@
 | [#171](https://github.com/dfcfr909-bit/foehn/issues/171) | 山名検索の改善（第1段階）：読み・履歴・名山タグ・並べ替え。v4.156.0 で実装、実機確認待ち | 実機確認 |
 | [#172](https://github.com/dfcfr909-bit/foehn/issues/172) | `areas.json` の久住山が中岳を指している疑い → 主峰の久住山へ（標高 1,787／1,786 が未決） | 要判断 |
 | [#176](https://github.com/dfcfr909-bit/foehn/issues/176) | 山名検索：山頂名と主峰／最高峰を行に出す。v4.157.0 | 実機確認 |
-| [#178](https://github.com/dfcfr909-bit/foehn/issues/178) | 山名検索：大峰山・霧島山・荒川岳の主峰を決める（宿題） | 要判断 |
 | [#173](https://github.com/dfcfr909-bit/foehn/issues/173) | 百名山レイヤー：主峰と最高峰を楕円で囲む（宿題） | 要判断 |
 
 > **この表は増やさない。** 新しい未確認が出たら Issue を立てて1行足す。
