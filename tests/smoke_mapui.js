@@ -1323,7 +1323,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(land.layerClose.inside && land.layerClose.hit, '横向きでレイヤーパネルの✕がノッチに潜らず押せる', land.layerClose);
   const badSubs = land.subs.filter(s => s.w > 480 || !s.inside || !s.hit);
   ok(badSubs.length === 0, '地図から開く画面は480pxのままで、✕がノッチに潜らず押せる', land.subs);
-  // 地図を開いたまま横にして閉じても、グラフは #app の幅に収まる
+  // 地図を開いたまま横にして閉じ、縦に戻すと、グラフの幅は横にする前と同じ
   await page.evaluate(() => closeMap());
   await page.setViewportSize({ width: 390, height: 800 });
   await page.waitForTimeout(500);
