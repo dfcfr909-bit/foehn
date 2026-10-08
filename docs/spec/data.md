@@ -185,6 +185,10 @@ ADR-0011（`elevation` の意味が変わり判定が黙って甘くなった件
 - `reverseGeocode(lat, lon)` … 緯度経度→地点名
 - 地点名の表示は `updateLocationName()`、同一地点の判定は `sameLoc(a, b)`
 - 最後に見た地点は localStorage（`saveLast` / `loadLast`）
+- **起動の流れ**（`boot`）：前回の地点があればそこ（位置情報は使わない）。無ければ位置情報を求め、成功ならその地点、失敗・**時間切れ（`BOOT_GEO_WAIT_MS`=8秒・v4.159.1）**なら既定の地点（立山・黒部）
+  - ⚠ 許可の問いに誰も答えないと `getCurrentPosition` は成功も失敗も呼ばない（`timeout` は許可が出てから数える）。上限が無いと「GPS取得中…」のまま止まっていた
+  - ⚠ 成功・失敗・時間切れのうち**最初の1回だけ**が先へ進む。8秒を過ぎてから許可しても地点は動かない（GPS ボタンで取り直す）
+  - 検査は `tests/smoke_bootgeo.mjs`
 
 ## 気象庁のタイルと時刻表
 
