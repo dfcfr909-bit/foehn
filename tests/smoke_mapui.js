@@ -1008,7 +1008,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
 
   // 風の矢印（leaflet-velocityは使わない＝アニメーションなし）
   await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('windArrows'); });
-  await page.waitForTimeout(1200);
+  /* ⚠ 固定の待ち（1.2秒）だと手元で3回中2回落ちた（count:0・2026-10-08）。CIでは通っていた。
+     矢印が出るまで待つ。出なければ下の ok() に中身を出させる */
+  await page.waitForFunction(() => document.querySelectorAll('.wind-box').length > 0, null, { timeout: 10000 })
+    .catch(() => {});
   /* ⚠⚠ **画面上の向きで見ること。** 要素自身の transform だけを見ると、
      祖先（回転した #map と、文字を立てるため逆回転する .wind-box）を勘定できず、
      **ヘディングアップで矢印が地図と一緒に回っていなくても素通りする**。
@@ -1032,7 +1035,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     };
   });
   ok(wind.count > 0, '風の矢印が出る', wind);
-  ok(wind.rotated === wind.count, '矢印が風向に回っている', wind);
+  // count が0だと 0 === 0 で素通りするので、矢印があることも条件に入れる
+  ok(wind.count > 0 && wind.rotated === wind.count, '矢印が風向に回っている', wind);
   ok(!wind.usesVelocity, 'leaflet-velocityは使っていない（禁止ライブラリ）');
 
   // 気象レイヤーはSWのキャッシュ対象に入れない（時間で中身が変わるため）
