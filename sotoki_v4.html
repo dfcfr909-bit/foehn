@@ -2468,7 +2468,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.159.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.159.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -14630,6 +14630,11 @@ function escapeHtml(s) {
 }
 loadOutlook();
 
+/* 起動時（前回の地点が無いとき）に位置情報を待つ上限（v4.159.1）。
+   ⚠ **許可の問いに誰も答えないと getCurrentPosition は成功も失敗も呼ばない**（timeout は許可が出てから数える）。
+     上限が無いと「GPS取得中…」のまま通信0本で止まる（公開URLの検証 run 129 で 30.9 秒）。
+     上限を過ぎたら既定の地点（立山・黒部）で始め、あとから許可されても地点は動かさない（GPS ボタンで取り直せる） */
+const BOOT_GEO_WAIT_MS = 8000;
 (function boot() {
   hideLoading();
   const last = loadLast();
@@ -14641,11 +14646,18 @@ loadOutlook();
     fetchWeather(state.lat, state.lon);
     return;
   }
-  // 前回地点なし → GPS試行 → 失敗時はデフォルト地点
+  // 前回地点なし → GPS試行 → 失敗時・時間切れはデフォルト地点
   if (navigator.geolocation) {
     showLoading('GPS取得中…');
+    /* ⚠ 成功・失敗・時間切れのうち、最初の1回だけが先へ進む（BOOT_GEO_WAIT_MS の注記）。
+       遅れて届いた成功では地点を動かさず、逆ジオコーディングも叩かない */
+    let settled = false;
+    const toDefault = () => { if (settled) return; settled = true; clearTimeout(timer); fetchWeather(state.lat, state.lon); };
+    const timer = setTimeout(toDefault, BOOT_GEO_WAIT_MS);
     navigator.geolocation.getCurrentPosition(
       pos => {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
         state.lat = pos.coords.latitude;
         state.lon = pos.coords.longitude;
         reverseGeocode(state.lat, state.lon).then(name => {
@@ -14653,7 +14665,7 @@ loadOutlook();
           fetchWeather(state.lat, state.lon);
         });
       },
-      () => fetchWeather(state.lat, state.lon),
+      toDefault,
       { timeout: 5000, enableHighAccuracy: false }
     );
   } else {
