@@ -109,7 +109,7 @@
 | [#16](https://github.com/dfcfr909-bit/foehn/issues/16) | 山頂高度の風による判定が実際の予報と合うか（ADR-0006） | 実機確認 |
 | [#26](https://github.com/dfcfr909-bit/foehn/issues/26) | 気圧配置 → **天気図（PR #44）と信頼度（PR #54）で代替。計算した等圧線は撤去（ADR-0010）** | 要判断 |
 | [#171](https://github.com/dfcfr909-bit/foehn/issues/171) | 山名検索の改善（第1段階）：読み・履歴・名山タグ・並べ替え。v4.156.0 で実装、実機確認待ち | 実機確認 |
-| [#172](https://github.com/dfcfr909-bit/foehn/issues/172) | `areas.json` の久住山が中岳を指している疑い → 主峰の久住山へ（標高 1,787／1,786 が未決） | 要判断 |
+| [#172](https://github.com/dfcfr909-bit/foehn/issues/172) | `areas.json` の久住山を主峰の久住山へ（1,786m）。PR でマージ前の確認待ち | 要確認 |
 | [#176](https://github.com/dfcfr909-bit/foehn/issues/176) | 山名検索：山頂名と主峰／最高峰を行に出す。v4.157.0 | 実機確認 |
 | [#178](https://github.com/dfcfr909-bit/foehn/issues/178) | 山名検索：大峰山・霧島山・荒川岳の主峰を決める（宿題） | 要判断 |
 | [#173](https://github.com/dfcfr909-bit/foehn/issues/173) | 百名山レイヤー：主峰と最高峰を楕円で囲む（宿題） | 要判断 |
