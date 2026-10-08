@@ -2468,7 +2468,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.157.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.158.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2515,7 +2515,7 @@ html, body {
         <button id="btn-map-close" class="map-round" onclick="closeMap()"
                 aria-label="地図を閉じる">✕</button>
         <div id="map-search-row">
-          <input type="search" id="map-search-input" placeholder="山名・地名で検索"
+          <input type="search" id="map-search-input" placeholder="山名 よみ 地名 住所 緯度経度 度分秒"
             enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off">
           <button id="map-search-btn" onclick="doMapSearch()">検索</button>
         </div>
@@ -12672,7 +12672,16 @@ async function doMapSearch() {
   const q = input.value.trim();
   const root = document.getElementById('map-results');
   if (!q) { root.innerHTML = ''; return; }
+  /* ⚠ 通し番号は座標の判定より前に進める。地名の検索が途中のまま座標で Enter したとき、
+     遅れて届いた地名の結果が移動後の画面に描かれないように */
   const seq = ++mapSearchSeq;
+  // 座標の入力は外（Nominatim・地理院）に投げずに、その地点へ移る（v4.158.0）
+  const pc = parseCoordInput(q);
+  if (pc) {
+    if (pc.outOfRange) root.innerHTML = `<div class="map-result-msg">${COORD_OUT_MSG}</div>`;
+    else goCoordPoint(pc.lat, pc.lon);
+    return;
+  }
   /* 手元の山（#171）を上に残し、区切りの下に地名検索の結果を足す（決定2）。
      ⚠ 手元の一覧は同梱のファイルなので待っても短い。読めなければ地名検索だけになる */
   if (!mtnIndex) await ensureMtnIndex();
@@ -12777,6 +12786,32 @@ async function doMapSearch() {
   }
 }
 
+/* 座標の入力で移る（v4.158.0）。長押しのピンと同じ扱い（標高は DEM・地点名は逆ジオコーディング）。
+   ⚠ 長押しとちがい**検索として扱い、地名の履歴に残す**（印 coord。履歴から押しても同じ動きになる）
+   ⚠ ズームは打った地点が見える細かさまで寄せる（地名を選ぶときの 11 より細かく） */
+const COORD_GO_ZOOM = 14;
+const COORD_OUT_MSG = '日本の範囲外の座標です（緯度20〜46・経度122〜154）';
+function goCoordPoint(lat, lon) {
+  addSearchHist(`${lat.toFixed(5)}, ${lon.toFixed(5)}`, lat, lon, undefined, { coord: true });
+  document.getElementById('map-results').innerHTML = '';
+  mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : 11, COORD_GO_ZOOM));
+  pickPinPoint(lat, lon);
+}
+// 入力中の窓の先頭に出す「座標へ移動」の行（範囲外は出さない。renderSearchHist の注記）
+function coordGoRow(pc) {
+  const el = document.createElement('div');
+  el.className = 'map-result-item coord-go';
+  const nm = document.createElement('div');
+  nm.className = 'map-result-name';
+  nm.textContent = `📍 ${pc.lat.toFixed(5)}, ${pc.lon.toFixed(5)} へ移動`;
+  const sub = document.createElement('div');
+  sub.className = 'map-result-sub';
+  sub.textContent = pc.swapped ? '経度・緯度の順と読んで入れ替えました（世界測地系）' : '座標として読みました（世界測地系）';
+  el.append(nm, sub);
+  el.addEventListener('click', () => goCoordPoint(pc.lat, pc.lon));
+  return el;
+}
+
 // Enterキーで検索実行
 document.getElementById('map-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); doMapSearch(); }
@@ -12808,12 +12843,13 @@ function sameHistPlace(h, name, lat, lon) {
   return normalizeSearchName(h.name) === normalizeSearchName(name) &&
     Math.abs(h.lat - lat) < 0.01 && Math.abs(h.lon - lon) < 0.01;
 }
-function addSearchHist(name, lat, lon, elev) {
+function addSearchHist(name, lat, lon, elev, opts) {
   if (!name || !isFinite(lat) || !isFinite(lon)) return;
   // 同じ地点は重ねず先頭へ移す
   const list = loadSearchHist().filter(h => !sameHistPlace(h, name, lat, lon));
   const h = { name, lat: +lat.toFixed(5), lon: +lon.toFixed(5), t: Date.now() };
   if (typeof elev === 'number' && isFinite(elev)) h.elev = Math.round(elev);
+  if (opts && opts.coord) h.coord = true;   // 座標の入力（v4.158.0）。押すと goCoordPoint
   list.unshift(h);
   saveSearchHist(list.slice(0, SEARCH_HIST_MAX));
 }
@@ -12837,6 +12873,10 @@ function renderSearchHist() {
     .filter(({ h }) => !q || normalizeSearchName(h.name).includes(q));
   results.innerHTML = '';
   mapSearchItems = [];              // 並べ替えの札の対象を残さない
+  /* ⚠ 入力中は「範囲外」を出さない。打っている途中（35 1 → 35 13 → 35 139）は2つ目の数が育つまで
+     一時的に範囲外になるため。範囲外と言うのは Enter したときだけ */
+  const pc = parseCoordInput(raw);
+  if (pc && !pc.outOfRange) results.appendChild(coordGoRow(pc));
 
   /* 手元の山（#171）を上に。空の窓では 山の履歴 → 地名の履歴 の順（決定3）。
      峰の一覧がまだ無ければ裏で作り、入力が変わっていなければ描き直す */
@@ -12887,6 +12927,7 @@ function renderSearchHist() {
     /* ⚠ 標高は pickMapPoint の第4引数に渡さない（DEMの読みで公称値ではない。
        検索結果から選ぶときと同じ扱い） */
     el.addEventListener('click', () => {
+      if (h.coord) { goCoordPoint(h.lat, h.lon); return; }   // 打ったときと同じ動き（先頭へ移すのも中で行う）
       addSearchHist(h.name, h.lat, h.lon, h.elev);   // 使ったものを先頭へ
       pickMapPoint(h.lat, h.lon, h.name);
     });
@@ -13429,6 +13470,90 @@ function coordFormats(lat, lon) {
   };
   out.forEach(f => { [f.abbr, f.jp, f.note] = LOOK[f.k]; });
   return out;
+}
+
+/* ============================================================
+   座標の入力を読む（v4.158.0・findings-09 の B・第1段）
+   受けるのは十進度・度＋十進分・度分秒（記号・漢字）。本体の表示（coordFormats）を貼り戻せることを保証する。
+   UTM・MGRS は第2段。
+   返り値：{lat, lon, swapped, fmt}／{outOfRange:true}（座標の形だが日本の範囲の外）／null（座標ではない＝地名検索へ）
+   ⚠ **世界測地系（JGD2011/WGS84）として読む。** 旧日本測地系の座標は約400mずれるが、入力からは見分けられない
+   ⚠ 「数と記号だけで、ちょうど2つ」のときだけ座標とみなす。「三ノ沢 2」のような地名は null
+   ⚠ NFKC で ″ は ′′（プライム2つ）にばらける。秒の記号として読む。º は o に化けるので受けない
+   ============================================================ */
+const COORD_JP = { latMin: 20, latMax: 46, lonMin: 122, lonMax: 154 };
+/* 1成分＝度（と分・秒）。半球の記号は「前に付く形（N33 E131・北緯33 東経131）」と「後ろに付く形（33N 131E）」を
+   入力の先頭で決めて、どちらか一方だけを読む（間にある記号がどちらの数のものか迷わないように） */
+const COORD_NUM = String.raw`(?:(\d+)\.(\d{1,2})\.(\d{1,2}(?:\.\d+)?)` +              // スーパー地形のドット区切り 35.12.34(.5)
+  String.raw`|(\d+(?:\.\d+)?)(?:\s*[°度]\s*(?:(\d+(?:\.\d+)?)\s*['分]\s*` +           // 度・分
+  String.raw`(?:(\d+(?:\.\d+)?)\s*(?:"|秒))?)?)?)`;                                     // 秒
+const COORD_LABEL = '(北緯|南緯|東経|西経|[NSEW])';
+const COORD_COMP_PRE = new RegExp(`${COORD_LABEL}?\\s*${COORD_NUM}`, 'iy');
+const COORD_COMP_POST = new RegExp(`${COORD_NUM}\\s*${COORD_LABEL}?`, 'iy');
+const COORD_SEP = /[\s,、，/]*/y;
+function coordInJapan(lat, lon) {
+  return lat >= COORD_JP.latMin && lat <= COORD_JP.latMax && lon >= COORD_JP.lonMin && lon <= COORD_JP.lonMax;
+}
+function parseCoordComp(m, labelFirst) {
+  // 数のグループ：[ドット区切りの度・分・秒, 度, 分, 秒]。記号は前置きなら先頭、後置きなら末尾
+  const [dd, dm, ds, d, mi, se] = labelFirst ? m.slice(2, 8) : m.slice(1, 7);
+  const lab = ((labelFirst ? m[1] : m[7]) || '').toUpperCase();
+  let deg, min = 0, sec = 0, fmt = 'DD';
+  if (dd != null) { deg = +dd; min = +dm; sec = +ds; fmt = 'DMS'; }
+  else {
+    deg = +d;
+    if (mi != null) { min = +mi; fmt = 'DDM'; }
+    if (se != null) { sec = +se; fmt = 'DMS'; }
+    if (fmt !== 'DD' && !Number.isInteger(deg)) return null;      // 33.5°04' のような形は読まない
+    if (fmt === 'DMS' && !Number.isInteger(min)) return null;
+  }
+  if (min >= 60 || sec >= 60) return null;
+  let v = deg + min / 60 + sec / 3600;
+  const kind = /^(N|S|北緯|南緯)$/.test(lab) ? 'lat' : /^(E|W|東経|西経)$/.test(lab) ? 'lon' : null;
+  if (/^(S|W|南緯|西経)$/.test(lab)) v = -v;
+  return { v, kind, fmt };
+}
+function parseCoordInput(q) {
+  let s = String(q || '').normalize('NFKC').trim();
+  if (!s) return null;
+  s = s.replace(/′′|″|”|“/g, '"').replace(/[′’‘]/g, "'");
+  // 記号の付き方は先頭で見当を付け、読めなければ・範囲外ならもう一方でも読む（「33.08 E131.24」のような混在）
+  const first = new RegExp(`^${COORD_LABEL}`, 'i').test(s);
+  const tries = [first, !first].map(labelFirst => parseCoordWith(s, labelFirst)).filter(Boolean);
+  return tries.find(r => !r.outOfRange) || tries[0] || null;
+}
+function parseCoordWith(s, labelFirst) {
+  const COMP = labelFirst ? COORD_COMP_PRE : COORD_COMP_POST;
+  const comps = [];
+  let pos = 0;
+  while (pos < s.length) {
+    COORD_SEP.lastIndex = pos; COORD_SEP.exec(s); pos = COORD_SEP.lastIndex;
+    if (pos >= s.length) break;
+    COMP.lastIndex = pos;
+    const m = COMP.exec(s);
+    if (!m || COMP.lastIndex === pos) return null;
+    pos = COMP.lastIndex;
+    const c = parseCoordComp(m, labelFirst);
+    if (!c) return null;
+    comps.push(c);
+    if (comps.length > 2) return null;
+  }
+  if (comps.length !== 2) return null;
+  const [a, b] = comps;
+  let lat, lon, swapped = false;
+  if (a.kind && b.kind) {
+    if (a.kind === b.kind) return null;
+    [lat, lon] = a.kind === 'lat' ? [a.v, b.v] : [b.v, a.v];        // E が先でも記号で読む
+  } else if (a.kind || b.kind) {
+    [lat, lon] = (a.kind === 'lat' || b.kind === 'lon') ? [a.v, b.v] : [b.v, a.v];
+  } else {
+    [lat, lon] = [a.v, b.v];
+    // 記号が無く、経度・緯度の順で打たれたもの。日本の範囲は緯度と経度が重ならないので一意に決まる
+    if (!coordInJapan(lat, lon) && coordInJapan(lon, lat)) { [lat, lon] = [lon, lat]; swapped = true; }
+  }
+  if (!coordInJapan(lat, lon)) return { outOfRange: true };
+  const fmt = [a.fmt, b.fmt].includes('DMS') ? 'DMS' : [a.fmt, b.fmt].includes('DDM') ? 'DDM' : 'DD';
+  return { lat, lon, swapped, fmt };
 }
 // クリップボードへ。⚠ 使えない端末では選択してコピーする旧方式に落とす
 async function copyText(text) {

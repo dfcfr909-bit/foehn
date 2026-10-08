@@ -542,6 +542,7 @@ SW 側の実装は `sw.js` → `pwa.md`
 | `mapFlyTo(lat, lon, zoom)` | `flyTo` 0.8s（`setView` の瞬間移動は使わない） | 約 5908 |
 | `updatePinVisibility()` | 追跡中は選択地点のピンを出さない | 約 5941 |
 | `updateMapToolButtons()` | 右上3ボタンの状態 | 約 5948 |
+| `parseCoordInput()` / `goCoordPoint()` / `coordGoRow()` | **座標を打って移る**（v4.158.0）。十進度・DDM・DMS を読む純関数／長押しと同じく `pickPinPoint`・地名の履歴に印 `coord` で残す／入力中の先頭行。座標なら `doMapSearch` は外に投げない | 約 12790（移動）／約 13520（読む） |
 | `doMapSearch()` | 地名検索。OSMと地理院を同時に回す（Nominatimの中は直列）。`fetchJsonWithTimeout`（`SEARCH_TIMEOUT_MS`=5秒） | 約 8391 |
 | `renderSearchHist()` / `addSearchHist()` | **検索の窓の中身**（手元の山の候補・山の履歴 → 地名の履歴。空の窓で全件・打つと絞り込み）。地名の履歴は `sotoki_search_hist` に100件 | 約 8491 |
 | `mtnSearch()` / `mtnKey()` / `buildPeakIndex()` / `renderMtnSection()` | **手元の山の検索**（#171）。areas.json の110峰＋`data/peak_meta.json`（読み等）。一致度＋履歴＋名山（`MTN_SEARCH`）。山の履歴は `mtnSearchHistory.v1` に50件（`addMtnHist`）。選ぶと `pickMtn` が公称の標高を渡す | 約 13000 |
