@@ -28,6 +28,7 @@
   --warn-bg: #fdf3ef;
   --sa-l: env(safe-area-inset-left, 0px);
   --sa-r: env(safe-area-inset-right, 0px);
+  --sa-t: env(safe-area-inset-top, 0px);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -114,6 +115,24 @@ table.judge th[scope="row"] { background: none; white-space: normal; }
 }
 .cta.sub { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
 
+/* 右上に浮かぶ「戻る」（#193）。見出しの下の大きいボタンが画面外へ出たときだけ出す
+   （上端で二重に見せない）。ステータスバー・ノッチは safe-area で避ける。
+   ⚠ 隠すときは visibility も落とす（透明なまま本文の上で押されないように・Tab でも辿らない） */
+.back-float {
+  position: fixed; z-index: 10;
+  top: calc(var(--sa-t) + 10px); right: calc(var(--sa-r) + 12px);
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+  border-radius: 22px; box-shadow: 0 2px 10px rgba(0,0,0,.18);
+  font-size: 14px; font-weight: 700; text-decoration: none;
+  opacity: 0; visibility: hidden; transform: translateY(-6px);
+  transition: opacity .18s, transform .18s, visibility 0s linear .18s;
+}
+.back-float.show {
+  opacity: 1; visibility: visible; transform: none;
+  transition: opacity .18s, transform .18s, visibility 0s;
+}
+
 .issue { display: flex; gap: 10px; align-items: baseline; margin-bottom: 7px; }
 .issue .n { flex: 0 0 auto; font-variant-numeric: tabular-nums; color: var(--text3); font-size: 13px; }
 
@@ -133,8 +152,9 @@ footer {
     <strong>何をどこから引いていて、それをどう解釈して A / B / C になっているか。</strong>
     判定の基準・データの参照元・そして<strong>どこで妥協しているか</strong>をまとめてあります。
   </p>
-  <p><a class="cta" href="sotoki_v4.html">アプリに戻る</a></p>
+  <p><a class="cta" id="backTop" href="sotoki_v4.html">アプリに戻る</a></p>
 </header>
+<a class="back-float" id="backFloat" href="sotoki_v4.html">← アプリに戻る</a>
 
 <div class="note warn">
   <p style="margin-bottom:0">
@@ -502,5 +522,16 @@ footer {
 </footer>
 
 </div>
+<script>
+// 見出しの下の「アプリに戻る」が画面外に出たら、右上に浮かぶ「戻る」を出す（#193）
+(() => {
+  const top = document.getElementById('backTop');
+  const fl = document.getElementById('backFloat');
+  if (!top || !fl) return;
+  // 監視できない古い環境では常に出しておく（戻れなくなるよりよい）
+  if (!('IntersectionObserver' in window)) { fl.classList.add('show'); return; }
+  new IntersectionObserver(([e]) => fl.classList.toggle('show', !e.isIntersecting)).observe(top);
+})();
+</script>
 </body>
 </html>
