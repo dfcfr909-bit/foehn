@@ -1613,7 +1613,14 @@ html, body {
   -webkit-user-drag: none;
 }
 
-.layer-ov-op { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.layer-ov-op { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.layer-blend { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.layer-blend-btn {
+  min-height: 32px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text2);
+  font-family: var(--font-ui); font-size: 11px; cursor: pointer;
+}
+.layer-blend-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .layer-ov-op input[type=range] { width: 92px; height: 44px; }
 .layer-ov-op input[type=range]:disabled { opacity: 0.35; }
 .layer-op-val {
@@ -2532,7 +2539,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.162.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.163.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6763,6 +6770,15 @@ const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const MAP_LS_WIND_MODE = 'sotoki.map.windMode';   // 風の場：AUTO／手動の層（高度別の風の場）
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
+const MAP_LS_BLEND = 'sotoki.map.blend';           // 地形図ごとの重ね方（#194）：{ id: 'normal'|'multiply'|'screen' }
+const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', name: '乗算' }, { id: 'screen', name: 'スクリーン' }];
+/* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
+   赤色立体図風（composite）・時刻つき・点で描くものは、今の合成のまま触らない。 */
+const MAP_BLEND_KINDS_EXCLUDED = ['jmaNowcast', 'jmaSat', 'amedas', 'windArrows', 'snowHint', 'thunderHint', 'windFlow', 'windFlowGL', 'areas'];
+function isBlendable(def) {
+  return !!def && !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
+}
+function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || 'normal'; }
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -6923,6 +6939,16 @@ function loadMapPrefs() {
       else overlays[wf] = { id: 'windFlowGL', opacity: overlays[wf].opacity };
     }
   } catch (e) { /* 壊れていたらオーバーレイなし */ }
+  const blend = {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_BLEND) || '{}');
+    if (raw && typeof raw === 'object') {
+      for (const id of Object.keys(raw)) {
+        const def = findOverlay(id);
+        if (isBlendable(def) && MAP_BLEND_MODES.some(m => m.id === raw[id])) blend[id] = raw[id];
+      }
+    }
+  } catch (e) { /* 読めなければ通常 */ }
   let amedasElement = AMEDAS_ELEMENT_DEFAULT;
   try {
     const raw = localStorage.getItem(MAP_LS_AMEDAS_EL);
@@ -6939,7 +6965,7 @@ function loadMapPrefs() {
     const raw = localStorage.getItem(MAP_LS_WIND_MODE);
     if (raw && WIND_FIELD_MODES.some(m => m.id === raw)) windMode = raw;
   } catch (e) { /* 読めなければ既定 */ }
-  return { base, overlays, amedasElement, satBand, windMode };
+  return { base, overlays, amedasElement, satBand, windMode, blend };
 }
 function saveMapPrefs() {
   try {
@@ -6948,6 +6974,7 @@ function saveMapPrefs() {
     localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
     localStorage.setItem(MAP_LS_SAT_BAND, mapPrefs.satBand);
     localStorage.setItem(MAP_LS_WIND_MODE, mapPrefs.windMode);
+    localStorage.setItem(MAP_LS_BLEND, JSON.stringify(mapPrefs.blend));
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -6958,7 +6985,7 @@ let leafletMap = null;
 let leafletMarker = null;
 let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
                  // ⚠ WIND_MODE_DEFAULT はこの下で定義する。ここで参照すると読み込み時に止まる（TDZ）
-                 satBand: SAT_BAND_DEFAULT, windMode: 'auto' };
+                 satBand: SAT_BAND_DEFAULT, windMode: 'auto', blend: {} };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -7009,7 +7036,7 @@ function applyOverlays() {
     delete overlayTileLayers[id];
   });
   dropAllStaleWxLayers();          // 貼り替え待ちの置き去りも一緒に掃除する
-  mapPrefs.overlays.forEach(item => {
+  mapPrefs.overlays.forEach((item, idx) => {
     const def = findOverlay(item.id);
     if (!def || def.pending) return;
     if (def.composite) {
@@ -7018,9 +7045,12 @@ function applyOverlays() {
       addTimedTileLayer(def, item.opacity);
     } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
-    } else if (def.url) {
+    } else if (isBlendable(def)) {
+      // 重ね方はレイヤーごとの pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
+      // 並び順は z-index で決める（overlays の順。後ろほど上）。DOM は動かさない
+      const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
       const layer = L.tileLayer(def.url,
-        tileOpts(def, { pane: 'mapOverlays', opacity: item.opacity })).addTo(leafletMap);
+        tileOpts(def, { pane, opacity: item.opacity })).addTo(leafletMap);
       watchTileStatus(layer, def);     // 失敗を黙って空にしない
       overlayTileLayers[def.id] = layer;
     }
@@ -11467,6 +11497,34 @@ function setMapBase(id) {
   renderLayerPanel();
 }
 
+/* レイヤーごとの pane。親は地図の pane（createPane の第2引数なし）。
+   ⚠ 既存の pane を作り直さず取る（重複させない）。 */
+function overlayPane(id, z) {
+  const name = 'mapOv_' + id;
+  const pane = leafletMap.getPane(name) || leafletMap.createPane(name);
+  pane.style.zIndex = String(z);
+  pane.style.mixBlendMode = blendOf(id);
+  return name;
+}
+
+// 重ね方を変える。作り直さず pane の合成だけ差し替え、覚えてから表示を直す（#194）
+function setOverlayBlend(id, mode) {
+  const def = findOverlay(id);
+  if (!isBlendable(def) || !MAP_BLEND_MODES.some(m => m.id === mode)) return;
+  mapPrefs.blend[id] = mode;
+  saveMapPrefs();
+  const pane = leafletMap && leafletMap.getPane('mapOv_' + id);
+  if (pane) pane.style.mixBlendMode = mode;
+  renderLayerPanel();
+}
+
+function blendChips(id) {
+  const cur = blendOf(id);
+  return `<span class="layer-blend" role="radiogroup" aria-label="重ね方">` +
+    MAP_BLEND_MODES.map(m => `<button class="layer-blend-btn${m.id === cur ? ' active' : ''}" role="radio" aria-checked="${m.id === cur}" onclick="setOverlayBlend('${id}', '${m.id}')">${m.name}</button>`).join('') +
+    `</span>`;
+}
+
 function isOverlayOn(id) { return mapPrefs.overlays.some(o => o.id === id); }
 function overlayOpacity(id) {
   const cur = mapPrefs.overlays.find(o => o.id === id);
@@ -11556,8 +11614,7 @@ function openMap() {
         // 拡大縮小はピンチとダブルタップ＋上下ドラッグで足りる（v4.60.0）
         zoomControl: false,
       }).setView([state.lat, state.lon], 10);
-      // 重ね順：ベース(200) < オーバーレイ(350) < 赤色立体図風(360/361) < マーカー(600)
-      leafletMap.createPane('mapOverlays').style.zIndex = 350;
+      // 重ね順：ベース(200) < オーバーレイ(340〜349・overlayPane で overlays の順) < 赤色立体図風(360/361) < マーカー(600)
       leafletMap.createPane('rrimShade').style.zIndex = 360;
       const slopePane = leafletMap.createPane('rrimSlope');
       slopePane.style.zIndex = 361;
@@ -11756,6 +11813,7 @@ function renderLayerPanel() {
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
         </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}
         <div class="layer-ov-op">
+          ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
                  aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
                  oninput="setOverlayOpacity('${o.id}', this.value / 100)">

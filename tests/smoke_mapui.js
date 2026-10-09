@@ -2327,6 +2327,76 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     '★薄い雲の濃さが想定どおり（輝度→透明度がsRGBで計算されている）',
     { frac: +frac.toFixed(3), lOff: +lOff.toFixed(1), lOn: +lOn.toFixed(1), lFull: +lFull.toFixed(1) });
   await page6.close();
+  /* ================= 9. 重ね方（レイヤーごと・覚える・#194） =================
+     ⚠ 重ね方は pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
+     並び順は z-index（340〜）で決め、DOM は動かさない。外して入れ直しても覚えている。 */
+  const pageB = await newPage({
+    'sotoki.map.overlays': JSON.stringify([{ id: 'slope', opacity: 0.6 }, { id: 'relief', opacity: 0.8 }]),
+    'sotoki.map.blend': JSON.stringify({ slope: 'screen', rrimLike: 'multiply', bogus: 'multiply', relief: 'blur' }),
+  });
+  await pageB.click('#btn-map');
+  await pageB.waitForTimeout(700);
+  await pageB.click('#btn-layers');
+  await pageB.waitForTimeout(400);
+  const b0 = await pageB.evaluate(() => {
+    const mp = leafletMap.getPanes().mapPane;
+    const pane = id => leafletMap.getPane('mapOv_' + id);
+    return {
+      slope: { z: Number(pane('slope').style.zIndex), blend: pane('slope').style.mixBlendMode, parent: pane('slope').parentNode === mp },
+      relief: { z: Number(pane('relief').style.zIndex), blend: pane('relief').style.mixBlendMode, parent: pane('relief').parentNode === mp },
+      oldPane: !!leafletMap.getPane('mapOverlays'),
+      mapPrefsBlend: mapPrefs.blend,
+      chips: document.querySelectorAll('.layer-blend-btn').length,
+      // 行の右端が地図パネルの内側に収まるか（箱の中に収まる子では scrollWidth で見ても効かない）
+      fits: (() => {
+        const panel = document.getElementById('layer-overlays').getBoundingClientRect();
+        return [...document.querySelectorAll('.layer-ov-op')].every(e => e.getBoundingClientRect().right <= panel.right + 1);
+      })(),
+    };
+  });
+  ok(b0.slope.blend === 'screen', '保存された重ね方（スクリーン）が地形図のpaneに掛かる', b0);
+  ok(b0.relief.blend === 'normal', '不正な重ね方（blur）は通常に落ちる', b0.relief);
+  ok(b0.mapPrefsBlend.slope === 'screen' && !('rrimLike' in b0.mapPrefsBlend) && !('bogus' in b0.mapPrefsBlend),
+    '読み込み時、地形図でない・未知のIDの重ね方は捨てる', b0.mapPrefsBlend);
+  ok(b0.slope.parent && b0.relief.parent, '重ね方のpaneは地図の直下（mapOverlaysの子ではない）', b0);
+  ok(b0.slope.z >= 340 && b0.relief.z > b0.slope.z && b0.relief.z < 360,
+    '並び順は overlays の順（後ろほど上）で、赤色立体図風（360）より下', [b0.slope.z, b0.relief.z]);
+  ok(b0.oldPane === false, '旧 mapOverlays の pane は作らない');
+  ok(b0.chips === 6, '重ね方のボタンは on の通常の地形図にだけ出る（2枚×3）', b0.chips);
+  ok(b0.fits, '重ね方のボタンを足しても行が横にはみ出さない（390px）', b0);
+
+  await pageB.evaluate(() => setOverlayBlend('relief', 'multiply'));
+  await pageB.waitForTimeout(200);
+  const b1 = await pageB.evaluate(() => ({
+    pane: leafletMap.getPane('mapOv_relief').style.mixBlendMode,
+    saved: JSON.parse(localStorage.getItem('sotoki.map.blend') || '{}'),
+    activeMultiply: [...document.querySelectorAll('.layer-blend-btn.active')].map(b => b.textContent),
+  }));
+  ok(b1.pane === 'multiply' && b1.saved.relief === 'multiply', '重ね方を変えると、その場で pane が変わり保存される', b1);
+  ok(b1.activeMultiply.length === 2 && b1.activeMultiply.includes('乗算'), '選んでいるボタンが表示に出る', b1.activeMultiply);
+
+  // 外して入れ直しても重ね方は残る（#194の決定）
+  await pageB.evaluate(() => { toggleOverlay('slope'); toggleOverlay('slope'); });
+  await pageB.waitForTimeout(300);
+  const b2 = await pageB.evaluate(() => ({
+    slope: leafletMap.getPane('mapOv_slope').style.mixBlendMode,
+    saved: JSON.parse(localStorage.getItem('sotoki.map.blend') || '{}'),
+  }));
+  ok(b2.slope === 'screen' && b2.saved.slope === 'screen', '外して入れ直しても重ね方が残る', b2);
+
+  // 赤色立体図風の排他で外れた側も、重ね方は覚えている
+  await pageB.evaluate(() => { toggleOverlay('rrimLike'); });
+  await pageB.waitForTimeout(300);
+  const b3 = await pageB.evaluate(() => ({
+    ids: mapPrefs.overlays.map(o => o.id),
+    saved: JSON.parse(localStorage.getItem('sotoki.map.blend') || '{}'),
+    rrimBlend: getComputedStyle(leafletMap.getPane('rrimSlope')).mixBlendMode,
+  }));
+  ok(!b3.ids.includes('slope') && b3.saved.slope === 'screen',
+    '赤色立体図風の排他で外れても、傾斜量図の重ね方は覚えている', b3);
+  ok(b3.rrimBlend === 'multiply', '傾斜量図のpaneの合成指定は multiply のまま（マップ作成時の初期値。描画の見た目は実機で確認）', b3.rrimBlend);
+  await pageB.close();
+
   satTileMode = 'dark';
 
   await browser.close();
