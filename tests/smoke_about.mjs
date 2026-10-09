@@ -258,6 +258,56 @@ ok(tables > 0 && tws === tables,
   ok(seen.every(x => !x.aboutInFooter), 'フッターに説明の入口を二重に置かない', seen);
 }
 
+/* ============ 8. 「アプリに戻る」がスクロールに追従する（#193） ============
+   ⚠ 見出しの下のボタンだけだと、読み進めると画面外に消えて戻るのに最上段までスクロールし直す。
+   上端では浮かぶボタンを出さない（二重に見せない）、下へ行ったら右上に出て**押せる**こと。
+   明暗どちらでも、地と文字が同じ色にならないことも見る。 */
+{
+  const { chromium } = await import('playwright-core');
+  const browser = await chromium.launch({
+    executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', headless: true });
+  const seen = [];
+  for (const colorScheme of ['light', 'dark']) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 780 }, colorScheme });
+    await page.route('**/*', route => {
+      const u = route.request().url();
+      if (u === 'https://sotoki.test/about.html') return route.fulfill({ contentType: 'text/html', body: ABOUT });
+      return route.abort();
+    });
+    await page.goto('https://sotoki.test/about.html');
+    await page.waitForTimeout(300);
+    const probe = () => page.evaluate(() => {
+      const f = document.getElementById('backFloat');
+      const r = f.getBoundingClientRect();
+      const cs = getComputedStyle(f);
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        visible: cs.visibility === 'visible' && cs.opacity === '1',
+        hittable: !!hit && (hit === f || f.contains(hit)),
+        href: f.getAttribute('href'),
+        h: Math.round(r.height), top: Math.round(r.top), right: Math.round(innerWidth - r.right),
+        color: cs.color, bg: cs.backgroundColor,
+      };
+    });
+    const atTop = await probe();
+    await page.evaluate(() => scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(400);
+    const atBottom = await probe();
+    seen.push({ colorScheme, atTop, atBottom });
+    await page.close();
+  }
+  await browser.close();
+  ok(seen.every(x => !x.atTop.visible), '上端では浮かぶ「戻る」を出さない（見出しの下のボタンと二重にしない）', seen);
+  ok(seen.every(x => x.atBottom.visible && x.atBottom.hittable),
+    '★★一番下までスクロールしても「アプリに戻る」が見えて押せる', seen);
+  ok(seen.every(x => x.atBottom.href === 'sotoki_v4.html'), '★浮かぶ「戻る」の行き先はアプリ本体', seen);
+  ok(seen.every(x => x.atBottom.h >= 44), '浮かぶ「戻る」は高さ44px以上（押しやすさ）', seen);
+  ok(seen.every(x => x.atBottom.top >= 8 && x.atBottom.right >= 8), '浮かぶ「戻る」は画面の右上の内側にある', seen);
+  ok(seen.every(x => x.atBottom.color !== x.atBottom.bg), '明暗どちらでも文字と地が同じ色にならない', seen);
+  ok(/--sa-t:\s*env\(safe-area-inset-top/.test(ABOUT) && /\.back-float\s*\{[^}]*top:\s*calc\(var\(--sa-t\)/.test(ABOUT),
+    '★浮かぶ「戻る」はステータスバー・ノッチを safe-area で避ける');
+}
+
 if (fails.length) {
   console.log(`FAILED ${fails.length}件:`);
   for (const f of fails) console.log('  ✗ ' + f);
