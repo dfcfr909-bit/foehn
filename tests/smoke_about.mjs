@@ -258,10 +258,11 @@ ok(tables > 0 && tws === tables,
   ok(seen.every(x => !x.aboutInFooter), 'フッターに説明の入口を二重に置かない', seen);
 }
 
-/* ============ 8. 「アプリに戻る」がスクロールに追従する（#193） ============
-   ⚠ 見出しの下のボタンだけだと、読み進めると画面外に消えて戻るのに最上段までスクロールし直す。
-   上端では浮かぶボタンを出さない（二重に見せない）、下へ行ったら右上に出て**押せる**こと。
-   明暗どちらでも、地と文字が同じ色にならないことも見る。 */
+/* ============ 8. 「アプリに戻る」が右上に常にある（#193） ============
+   ⚠ 見出しの下のボタンだけだと、読み進めると画面外に消えて戻るのに最上段までスクロールし直した。
+   右上に常に浮かべる形に一本化した（実機で邪魔にならない位置と確認・2026-10-09）。
+   上端でも一番下でも見えて**押せる**こと、上端で見出しと重ならないこと、
+   明暗どちらでも地と文字が同じ色にならないことを見る。 */
 {
   const { chromium } = await import('playwright-core');
   const browser = await chromium.launch({
@@ -281,8 +282,11 @@ ok(tables > 0 && tws === tables,
       const r = f.getBoundingClientRect();
       const cs = getComputedStyle(f);
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const h1 = document.querySelector('h1').getBoundingClientRect();
+      const eb = document.querySelector('.eyebrow').getBoundingClientRect();
       return {
         visible: cs.visibility === 'visible' && cs.opacity === '1',
+        clearOfHead: [h1, eb].every(x => x.top >= r.bottom || x.bottom <= r.top || x.right <= r.left),
         hittable: !!hit && (hit === f || f.contains(hit)),
         href: f.getAttribute('href'),
         h: Math.round(r.height), top: Math.round(r.top), right: Math.round(innerWidth - r.right),
@@ -297,7 +301,9 @@ ok(tables > 0 && tws === tables,
     await page.close();
   }
   await browser.close();
-  ok(seen.every(x => !x.atTop.visible), '上端では浮かぶ「戻る」を出さない（見出しの下のボタンと二重にしない）', seen);
+  ok(seen.every(x => x.atTop.visible && x.atTop.hittable), '★上端でも右上の「戻る」が見えて押せる', seen);
+  ok(seen.every(x => x.atTop.clearOfHead), '★上端で右上の「戻る」が見出しに重ならない', seen);
+  ok((ABOUT.match(/href="sotoki_v4\.html"/g) || []).length === 1, '「アプリに戻る」は右上の1つだけ（二重に置かない）');
   ok(seen.every(x => x.atBottom.visible && x.atBottom.hittable),
     '★★一番下までスクロールしても「アプリに戻る」が見えて押せる', seen);
   ok(seen.every(x => x.atBottom.href === 'sotoki_v4.html'), '★浮かぶ「戻る」の行き先はアプリ本体', seen);
