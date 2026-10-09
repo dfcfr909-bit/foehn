@@ -349,11 +349,18 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
 - **赤色立体図風**（`buildRrimLayers`）は陰影起伏図（`RRIM_SHADE`）の上に
   傾斜量図（`RRIM_SLOPE`）を `mix-blend-mode: multiply` で重ねる。**pane 単位**で掛ける。
   単独トグル（`RRIM_CONFLICTS`）とは自動で排他にする
+- **重ね方**（v4.163.0・#194）：通常の地形図（`isBlendable`＝`def.url` があり、赤色立体図風・時刻つき・点で描くものを除く）は、
+  レイヤーごとの pane `mapOv_<id>`（親は地図の pane）に入る。重ね方（通常／乗算／スクリーン・`MAP_BLEND_MODES`）は
+  **pane に掛ける**（タイルの div に掛けると継ぎ目が出る）。`overlayPane()` が作り、並び順は z-index（340〜349・overlays の順。
+  後ろほど上）で決めて DOM は動かさない。切り替えは `setOverlayBlend()`（作り直さず pane の合成だけ差し替え、保存する）。
+  ボタンは on のときだけ、透過度スライダーの横に出す（`blendChips()`）。
+  重ね方は `mapPrefs.blend`（`MAP_LS_BLEND`）に**レイヤーごとに**覚え、外して入れ直しても残る。
+  読み込み時は、通常の地形図のIDと許す値（`normal`/`multiply`/`screen`）だけ通す。
 - `pending: true` のレイヤーは UI に出ない（URL が確認できていないものを推測で書かないため）
 - `unverified: true` はパネルに「要確認」バッジを出す
 
 適用は `applyBaseLayer()` / `applyOverlays()` / `setMapBase()` / `toggleOverlay()` /
-`setOverlayOpacity()` / `isOverlayOn()` / `overlayOpacity()`。
+`setOverlayOpacity()` / `setOverlayBlend()` / `isOverlayOn()` / `overlayOpacity()`。
 設定の永続化は `loadMapPrefs()` / `saveMapPrefs()`（`MAP_LS_*` キー）。
 
 パネルは `toggleLayerPanel()` / `closeLayerPanel()` / `renderLayerPanel()`。
