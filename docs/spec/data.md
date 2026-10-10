@@ -282,6 +282,15 @@ ADR-0011（`elevation` の意味が変わり判定が黙って甘くなった件
 - 出す要素は `AMEDAS_ELEMENTS` から選ぶ → `map.md`
 - 新雪ランキングも同じアメダスを使う（`snowRanking.js`）→ `docs/snow_ranking.md`
 
+## 施設（OSM）`data/poi.json`（#199）
+
+- 作り方：`scripts/buildPoi.mjs`（Actions「施設データ（OSM）を作る」・`poi.yml`。手動実行か、スクリプトを変えた push（main 以外）で走り、そのブランチにコミットする）
+- 取り方：`areas.json` の峰ごとに 8km 四方の矩形で Overpass に問い合わせ、峰から 8km の円の外は手元で落とす（around は重くて60分に収まらなかった）。node と way（way は中心）。重複は `n123`/`w123` で除く
+- 落とすもの：医療施設の名前（病院・医院・クリニック・診療所・歯科など）・私有の駐車場（`access=private|no|customers`）・名前の無い駐車場
+- 形：`{ source, license:'ODbL 1.0…', attribution, generated:'YYYY-MM-DD', note, types:[{id,key,name}], items:[[緯度,経度,種類id,名前?]] }`
+- ⚠ Overpass は時間切れでも 200 で `remark` を返す。`remark` に error/timeout があれば失敗にする。0件の山域は失敗にせず印だけ
+- ライセンス：ODbL 1.0。派生データベースとして公開リポジトリに置く（ODbL のまま・share-alike）
+
 ## 関連
 
 - 描画側 → `chart.md`
