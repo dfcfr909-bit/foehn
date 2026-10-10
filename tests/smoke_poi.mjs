@@ -143,7 +143,7 @@ const marks = () => page.evaluate(() => [...document.querySelectorAll('.poi-box'
     const before = JSON.stringify([state.lat, state.lon]);
     const m = weatherMarkers.find(x => x.getTooltip && x.getTooltip() && /作り物の登山口/.test(x.getTooltip().getContent()));
     if (!m) return { found: false };
-    m.fire('click'); m.openTooltip();
+    m.fire('click');   // 押すだけ（openTooltip は呼ばない。押して開くことを見る）
     const tip = document.querySelector('.leaflet-tooltip');
     return { found: true, tip: tip ? tip.textContent : null, same: before === JSON.stringify([state.lat, state.lon]) };
   });
@@ -159,6 +159,9 @@ const marks = () => page.evaluate(() => [...document.querySelectorAll('.poi-box'
   ok(!after.some(t => /作り物の駐車場/.test(t)) && after.length === 3, '★★駐車場を隠すと消える', after);
   const saved = await page.evaluate(() => localStorage.getItem('sotoki.map.poiHidden'));
   ok(saved === '["parking"]', '★隠した種類を key で覚える', saved);
+  // 覚えた値から読み直しても駐車場を描かない（再起動と同じ道）
+  const reread = await page.evaluate(() => { refreshWeatherPoints(); return [...document.querySelectorAll('.poi-box')].map(b => b.textContent); });
+  ok(!reread.some(t => /作り物の駐車場/.test(t)), '★覚えた値で描き直しても隠したまま', reread);
   const chips = await page.evaluate(() => document.querySelectorAll('#layer-overlays .amedas-el').length);
   ok(chips === 3, '★行が ON のとき種類のチップが出る', chips);
   await page.evaluate(() => togglePoiType('parking'));
