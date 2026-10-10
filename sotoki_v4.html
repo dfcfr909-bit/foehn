@@ -12529,6 +12529,8 @@ function renderLayerPanel() {
   }
   const wxWrap = document.getElementById('layer-weather');
   if (layerEditMode) {
+    const opRow = document.getElementById('layer-base-op');
+    if (opRow) opRow.innerHTML = '';     // 下地の透過率（#211）も編集モードでは出さない（CSS で隠すだけでなく中身ごと消す）
     baseWrap.innerHTML = layerEditRows('bases');
     ovWrap.innerHTML = layerEditRows('overlays');
     if (wxWrap) wxWrap.innerHTML = layerEditRows('weather');
