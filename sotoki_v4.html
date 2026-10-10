@@ -1367,6 +1367,11 @@ html, body {
 }
 #btn-layer-edit[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
 #layer-panel.editing #layer-bases { display: block; }
+#layer-panel.editing #layer-base-op { display: none; }
+/* 下地の透過率（#211）。地形図の行のスライダー（.layer-ov-op）と同じ見た目 */
+#layer-base-op { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 2px 0; }
+#layer-base-op .layer-base-op-name { flex: 1; font-size: 12px; font-weight: 700; color: var(--text2); }
+#map.base-faded { background: #fff; }   /* 下地を薄くしたときの地は白で固定（Leaflet 既定は灰 #ddd） */
 .layer-edit-row {
   display: flex; align-items: center; gap: 6px;
   padding: 2px 0; border-bottom: 1px solid var(--border);
@@ -2746,6 +2751,8 @@ html, body {
         <div id="layer-panel-body">
           <div class="layer-section-title" id="layer-bases-title">ベースマップ</div>
           <div id="layer-bases" role="radiogroup" aria-labelledby="layer-bases-title"></div>
+          <!-- 選んでいる下地の透過率（#211）。編集モードでは隠す -->
+          <div id="layer-base-op"></div>
           <div class="layer-section-title" id="layer-overlays-title">重ねる地形図</div>
           <div id="layer-overlays" aria-labelledby="layer-overlays-title"></div>
           <div class="layer-section-title" id="layer-weather-title">気象を重ねる</div>
@@ -12517,6 +12524,17 @@ function renderLayerPanel() {
     return;
   }
   const shown = sec => sectionLayers(sec).filter(d => !isLayerHidden(d.id));
+  const opWrap = document.getElementById('layer-base-op');
+  if (opWrap) {
+    const b = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT), op = baseOpacity(b.id);
+    opWrap.innerHTML = `
+      <span class="layer-base-op-name">${escapeHtml(b.name)}の透過率</span>
+      <span class="layer-ov-op">
+        <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
+               aria-label="${escapeHtml(b.name)}の透過率" oninput="setBaseOpacity(this.value / 100)">
+        <span class="layer-op-val" id="layer-base-op-val">${Math.round(op * 100)}%</span>
+      </span>`;
+  }
   baseWrap.innerHTML = shown('bases').map(b => `
     <button class="layer-base${b.id === mapPrefs.base ? ' active' : ''}"
             role="radio" aria-checked="${b.id === mapPrefs.base}"
