@@ -20,7 +20,6 @@ on:
           - jma-weekly-reliability
           - map-area-offices
           - wind-vs-report
-          - wind-elev-gap
           - wind-field
           - wind-seam
           - terrain-ref
@@ -82,10 +81,6 @@ jobs:
           PEAK: ${{ inputs.peak }}
           DATE: ${{ inputs.date }}
         run: node scripts/probeProfile.mjs | tee result.txt
-
-      - name: 安全弁に掛かっている峰を数える
-        if: ${{ inputs.target == 'wind-elev-gap' }}
-        run: node scripts/probeWindGap.mjs | tee result.txt
 
       - name: 高度別の風の場と自動選択の前提
         if: ${{ inputs.target == 'wind-field' }}

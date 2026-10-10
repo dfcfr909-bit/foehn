@@ -9506,6 +9506,11 @@ const WIND_BG = {
   SPEED_MIN_MODE: 'relative',   // 'relative'（C級の半分）または 'absolute'（絶対値）
   SPEED_MIN_RELATIVE: 5,         // 相対：C級（10m/s）の半分
   SPEED_MIN_ABSOLUTE: 3,         // 絶対：3m/s
+  /* 最小風速から上へ「最小×RAMP_FRAC」の幅で、濃さを 0 からなめらかに上げる（#219・v4.171.0）。
+     最小で透明→いちばん淡い色に一段で切り替えると、ちょうど最小をまたぐ所（風の極大の高さ）に
+     等高線に沿うくっきりした縁が出て「そこだけ風が強い」ように見えた（男体山・極大 3.0 m/s ＝ 絶対の最小）。
+     ⚠ 最小未満は今までどおり塗らない（透明） */
+  RAMP_FRAC: 0.5,                // 絶対 3→4.5 m/s・相対 5→7.5 m/s で濃さが満ちる
 };
 // 計測表示のスライダー（v4.139.0・利用者の要望「粒の数多すぎ、背景薄めに感じる。スライダーで別々に調整」）
 /* 粒のスライダー（v4.140.0 利用者の指定）：100〜10,000。500 までは 100 刻み、500 からは 500 刻み（段の並びを添字で動かす）。
@@ -9576,6 +9581,12 @@ function windBgRGB(ms) {
   }
   return C[C.length - 1].slice();
 }
+// 風速 → 背景の濃さの倍率 0〜1（最小未満は 0・最小から幅 RAMP_FRAC×最小 で smoothstep）
+function windBgFade(ms, minSpd) {
+  if (!(ms > minSpd)) return 0;
+  const t = Math.min(1, (ms - minSpd) / (minSpd * WIND_BG.RAMP_FRAC));
+  return t * t * (3 - 2 * t);
+}
 // 格子 → 背景のテクスチャ（乗算済みアルファ）。返り値の data は検査用
 function windGLBgTexture(g) {
   const gl = windGL.gl, n = g.cols * g.rows, data = new Uint8Array(n * 4), A = windBgAlpha();
@@ -9583,12 +9594,13 @@ function windGLBgTexture(g) {
   for (let k = 0; k < n; k++) {
     if (!g.ok[k]) continue;
     const ms = Math.hypot(g.u[k], g.v[k]);
-    if (ms < minSpd) {
+    const f = windBgFade(ms, minSpd);
+    if (f <= 0) {
       data[k * 4] = 0; data[k * 4 + 1] = 0; data[k * 4 + 2] = 0; data[k * 4 + 3] = 0;  // 透明
       continue;
     }
-    const c = windBgRGB(ms);
-    data[k * 4] = Math.round(c[0] * A); data[k * 4 + 1] = Math.round(c[1] * A); data[k * 4 + 2] = Math.round(c[2] * A); data[k * 4 + 3] = Math.round(255 * A);
+    const c = windBgRGB(ms), a = A * f;
+    data[k * 4] = Math.round(c[0] * a); data[k * 4 + 1] = Math.round(c[1] * a); data[k * 4 + 2] = Math.round(c[2] * a); data[k * 4 + 3] = Math.round(255 * a);
   }
   if (!windGL.bgTex) windGL.bgTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, windGL.bgTex);
