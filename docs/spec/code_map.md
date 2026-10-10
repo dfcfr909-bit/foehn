@@ -487,6 +487,8 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `isOverlayOn` / `overlayOpacity` / `toggleOverlay` / `setOverlayOpacity` | オーバーレイの操作 | 約 5542-5570 |
 | `moveFavRotaryTo(slot)` / `restoreFavRotary()` | **🏠＋円柱の器（`#fav-bar`）の引っ越し（DOMは1つだけ）** | 約 5592 / 5600 |
 | `toggleLayerPanel` / `closeLayerPanel` / `renderLayerPanel` | レイヤーパネル | 約 5689-5730 |
+| `orderLayers` / `layerSectionDefs` / `sanitizeLayerOrder` / `sanitizeLayerHiddenIds` | 一覧の並び（#205 段階1）。保存順＋版で足したものは末尾。⚠ 重ね順（`mapPrefs.overlays`）とは別 | `loadMapPrefs` の上 |
+| `toggleLayerEdit` / `moveLayer` / `toggleLayerHidden` / `resetLayerOrder` / `layerEditRows` / `layerHiddenSummary` | 並べ替え・隠すの編集モード（覚えない）。選択中の下地は隠せない | `renderLayerPanel` の上 |
 | `setMapDeclutter(on)` / `toggleMapDeclutter()` | 地図の上の情報を隠す（#185）。隠すものは CSS `#map-stage.declutter`。状態は覚えない | `closeMap` の直後 |
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |
