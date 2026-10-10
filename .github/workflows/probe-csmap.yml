@@ -1,0 +1,38 @@
+name: CS立体図の配信を調べる（実験）
+
+# 県版の CS立体図（G空間情報センター）の XYZ タイルの URL・ズーム範囲・利用条件を調べる（#112・#10）。
+# ⚠ 調べるだけ。何も変えない・何もコミットしない。
+# ⚠ 調査用ブランチ claude/csmap-probe だけで走らせる（main には入れない）。
+on:
+  push:
+    branches: [claude/csmap-probe]
+    paths:
+      - scripts/probeCsmap.mjs
+      - .github/workflows/probe-csmap.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: 調べる
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: 調べる
+        shell: bash
+        run: node scripts/probeCsmap.mjs | tee result.txt
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## CS立体図の配信'
+            echo
+            echo '```'
+            cat result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
