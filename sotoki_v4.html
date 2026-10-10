@@ -12295,7 +12295,7 @@ function bumpMapOpens(log, dayKey) {
   days[dayKey] = (days[dayKey] || 0) + 1;
   const limit = dayKeyToUtcMs(dayKey) - (MAP_OPENS_KEEP_DAYS - 1) * 86400e3;
   for (const k of Object.keys(days)) if (dayKeyToUtcMs(k) < limit) delete days[k];
-  return { since: (since && since <= dayKey) ? since : dayKey, days };
+  return { since: since || dayKey, days };   // 時計を戻しても数え始めは書き換えない
 }
 function summarizeMapOpens(log, dayKey) {
   const { since, days } = normalizeMapOpens(log);
@@ -12315,7 +12315,10 @@ function summarizeMapOpens(log, dayKey) {
            since: (since && elapsed < MAP_OPENS_WINDOW) ? since : null };
 }
 function loadMapOpens() {
-  try { return JSON.parse(localStorage.getItem(MAP_LS_OPENS) || 'null'); }
+  // ⚠ 読み出しの失敗（getItem の例外）は呼び手へ投げる。飲み込むと「0回」と出て、
+  //   「数えていない」と「読めない」の区別がつかなくなる。壊れた値だけを null にする
+  const raw = localStorage.getItem(MAP_LS_OPENS);
+  try { return JSON.parse(raw || 'null'); }
   catch (e) { return null; }
 }
 function recordMapOpen() {

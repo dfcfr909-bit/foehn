@@ -69,6 +69,8 @@ const r = await page.evaluate(() => {
   const far = bumpMapOpens({ since: '2026-07-01', days: { '2026-07-01': 9 } }, '2026-10-09');
   out.far = far;
   out.sumFar = summarizeMapOpens(far, '2026-10-09');
+  // 時計を戻しても数え始めは書き換えない
+  out.back = bumpMapOpens({ since: '2026-10-10', days: { '2026-10-10': 1 } }, '2026-10-08');
   // 壊れた値は捨てる
   out.junk = summarizeMapOpens({ since: 'x', days: { 'bad': 5, '2026-10-10': -2, '2026-10-09': 'a' } }, '2026-10-10');
   out.empty = summarizeMapOpens(null, '2026-10-10');
@@ -86,6 +88,7 @@ ok(!('2026-08-10' in r.trim.days) && !('2026-08-11' in r.trim.days) && r.trim.da
 ok(r.trim.since === '2026-01-01', '★★切り落としても数え始めは消えない', r.trim);
 ok(r.far.since === '2026-07-01' && r.sumFar.span === 30 && r.sumFar.sum30 === 1 && r.sumFar.perMonth === 1 && r.sumFar.since === null,
   '★★★長く空けた後に開いても平均が膨らまない（30日で割る）', r.sumFar);
+ok(r.back.since === '2026-10-10' && r.back.days['2026-10-08'] === 1, '時計を戻しても数え始めは消えない', r.back);
 ok(r.junk.sum30 === 0 && r.junk.today === 0 && r.junk.span === 1, '壊れた値は数えない', r.junk);
 ok(r.empty.today === 0 && r.empty.sum30 === 0, '記録が無くても要約できる', r.empty);
 
@@ -124,12 +127,12 @@ await page.evaluate(() => {
   Storage.prototype.setItem = function (k, v) { if (k === 'sotoki.map.openCount') throw new Error('blocked'); return s.call(this, k, v); };
 });
 const before = errors.length;
-await page.evaluate(() => { openMap(); toggleLayerPanel(); });
+await page.evaluate(() => { openMap(); toggleLayerPanel(); });   // getItem も setItem も投げる
 await page.waitForTimeout(300);
 const broken = await page.evaluate(() => ({ open: isMapOpen(), text: document.getElementById('layer-map-opens').textContent }));
 await page.evaluate(() => window.__restoreLS());
 ok(broken.open, '★localStorage が投げても地図は開く', broken);
-ok(/^今日 0回|回数を読めません/.test(broken.text), '★読めなくても表示が壊れない', broken.text);
+ok(broken.text === '回数を読めません', '★★読めないときは「0回」ではなく「読めません」と言う', broken.text);
 ok(errors.length === before, '例外を外に漏らさない', errors.slice(before));
 
 ok(outbound.length === 0, '★★数えたものを外へ送らない', outbound);
