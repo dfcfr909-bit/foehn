@@ -48,9 +48,9 @@ if (!lvSrc) die('sotoki_v4.html から WIND_LEVELS を読めない（本体の�
 const LEVELS = [...lvSrc[1].matchAll(/\[(\d+),\s*(\d+)\]/g)].map(m => [+m[1], +m[2]]);
 if (!LEVELS.length) die('WIND_LEVELS が空に見える');
 
-const riseSrc = html.match(/const WIND_LEVEL_MIN_RISE = (\d+)/);
-if (!riseSrc) die('sotoki_v4.html から WIND_LEVEL_MIN_RISE を読めない');
-const MIN_RISE = +riseSrc[1];
+/* ⚠ ADR-0011 で「山頂がモデル地形より MIN_RISE 以上高いときだけ気圧面へ」という弁を撤回した。
+   いまは山頂の標高だけで最寄りの層を選ぶ（JMA の windMethod 'table'）。WIND_LEVEL_MIN_RISE は本体から消えたので読まない（#219）。
+   ⚠ GSM の期間（層が null）は本体が上下の層を gh で按分するが、ここでは再現しない（null のまま出す） */
 
 const thSrc = html.match(/day:\s*\{\s*windA:\s*(\d+),\s*windB:\s*(\d+)\s*\}/);
 if (!thSrc) die('sotoki_v4.html から THRESH.day の風速閾値を読めない');
@@ -81,7 +81,7 @@ const MAIN = `windspeed_10m,winddirection_10m,${lvVars}`;
 console.log(`風の突き合わせ: ${PEAK}（${areaName}）${peak.elev}m  ${peak.lat}, ${peak.lon}`);
 console.log(`対象日: ${DATE}（JST）`);
 console.log(`本体から読んだ決まり: 層=${LEVELS.map(l => l[0]).join('/')}hPa`
-  + ` / 気圧面へ切り替える高さの差=${MIN_RISE}m / 風のABC閾値=${WIND_A}・${WIND_B} m/s`);
+  + ` / 層の選び方=山頂の標高の最寄り（ADR-0011） / 風のABC閾値=${WIND_A}・${WIND_B} m/s`);
 
 const j = await get(`${base}${MAIN}&models=jma_seamless`);
 // ⚠ 突風は JMAモデルが返さない。本体も models を指定しない別リクエストで取っている
@@ -95,11 +95,9 @@ for (let i = 0; i < jg.hourly.time.length; i++) {
 const modelElev = j.elevation;
 console.log(`\nモデル地形の標高: ${modelElev}m（山頂との差 ${Math.round(peak.elev - modelElev)}m）`);
 
-const useLevel = peak.elev > modelElev + MIN_RISE;
+const useLevel = true;   // ADR-0011：モデル地形の標高では分岐しない
 const [hPa, alt] = windLevelFor(peak.elev);
-console.log(useLevel
-  ? `→ アプリが判定に使う風: ${hPa}hPa（標準大気で約${alt}m）の風`
-  : `→ アプリが判定に使う風: 地上10m風（山頂がモデル地形より${MIN_RISE}m以上高くない）`);
+console.log(`→ アプリが判定に使う風: ${hPa}hPa（標準大気で約${alt}m）の風（JMA の場合）`);
 
 const h = j.hourly;
 const idx = [...h.time.keys()].filter(i => h.time[i].startsWith(DATE));
