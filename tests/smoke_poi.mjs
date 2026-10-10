@@ -30,6 +30,7 @@ const POI = JSON.stringify({
   ],
 });
 let poiFetches = 0;
+let poiFailFirst = true;   // 1回目は失敗させ、次の描き直しで取り直すことを確かめる
 const fails = [];
 const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefined ? ` … ${JSON.stringify(extra).slice(0, 300)}` : '')); };
 
@@ -79,7 +80,11 @@ await page.route('**/*', route => {
   if (url.includes('uPlot.min.css')) return route.fulfill({ contentType: 'text/css', body: UPLOT_CSS });
   if (url.includes('leaflet') && url.includes('.js')) return route.fulfill({ contentType: 'application/javascript', body: LEAFLET_JS });
   if (url.includes('leaflet') && url.includes('.css')) return route.fulfill({ contentType: 'text/css', body: LEAFLET_CSS });
-  if (url.endsWith('/data/poi.json')) { poiFetches++; return route.fulfill({ contentType: 'application/json', body: POI }); }
+  if (url.endsWith('/data/poi.json')) {
+    poiFetches++;
+    if (poiFailFirst) { poiFailFirst = false; return route.fulfill({ status: 503, body: '' }); }
+    return route.fulfill({ contentType: 'application/json', body: POI });
+  }
   if (url.endsWith('areas.json')) return route.fulfill({ contentType: 'application/json', body: AREAS });
   if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather()) });
   if (/\.(png|jpg)/.test(url)) return route.fulfill({ contentType: 'image/png', body: TILE });
@@ -105,6 +110,16 @@ const marks = () => page.evaluate(() => [...document.querySelectorAll('.poi-box'
   });
   ok(r.listed && r.on, '★一覧に出て ON にできる', r);
   await page.waitForTimeout(600);
+  // 1回目は 503 → 失敗を言う。チップは英字の key ではなく日本語の名前
+  const fail = await page.evaluate(() => ({ st: layerStatus.poi, failed: !!layerFailed.poi,
+    chips: [...document.querySelectorAll('#layer-overlays .amedas-el')].map(b => b.textContent) }));
+  ok(fail.failed && /取得できません/.test(fail.st || ''), '★★読めなければ失敗を言う', fail);
+  ok(fail.chips.some(c => /登山口/.test(c)) && !fail.chips.some(c => /trailhead/.test(c)), '★読めない間もチップは日本語', fail.chips);
+  // 次の描き直しで取り直す
+  await page.evaluate(() => refreshWeatherPoints());
+  await page.waitForTimeout(600);
+  const re = await page.evaluate(() => ({ loaded: !!poiData, failed: !!layerFailed.poi }));
+  ok(re.loaded && !re.failed, '★★失敗のあと、次の描き直しで取り直す', re);
 }
 
 /* 2. z10 では置かず、拡大すると出ると言う */
@@ -143,16 +158,34 @@ const marks = () => page.evaluate(() => [...document.querySelectorAll('.poi-box'
     const before = JSON.stringify([state.lat, state.lon]);
     const m = weatherMarkers.find(x => x.getTooltip && x.getTooltip() && /作り物の登山口/.test(x.getTooltip().getContent()));
     if (!m) return { found: false };
-    m.fire('click');   // 押すだけ（openTooltip は呼ばない。押して開くことを見る）
-    const tip = document.querySelector('.leaflet-tooltip');
-    return { found: true, tip: tip ? tip.textContent : null, same: before === JSON.stringify([state.lat, state.lon]) };
+    window.__poiBefore = before;
+    // 画面の上の位置を返し、実際にその場所を押す（Leaflet の札が押して開くかを見る）
+    const el = m.getElement().querySelector('.poi-box i').getBoundingClientRect();
+    return { found: true, x: el.left + el.width / 2, y: el.top + el.height / 2 };
   });
+  if (r.found) {
+    // ⚠ レイヤーパネルが開いていると地図の上を覆って押せない（先に閉じる）
+    await page.evaluate(() => closeLayerPanel());
+    await page.waitForTimeout(300);
+    Object.assign(r, await page.evaluate(() => {
+      const m = weatherMarkers.find(x => x.getTooltip && x.getTooltip() && /作り物の登山口/.test(x.getTooltip().getContent()));
+      const el = m.getElement().querySelector('.poi-box i').getBoundingClientRect();
+      return { x: el.left + el.width / 2, y: el.top + el.height / 2 };
+    }));
+    await page.mouse.click(r.x, r.y);
+    await page.waitForTimeout(300);
+    Object.assign(r, await page.evaluate(() => {
+      const tip = document.querySelector('.leaflet-tooltip');
+      return { tip: tip ? tip.textContent : null, same: window.__poiBefore === JSON.stringify([state.lat, state.lon]) };
+    }));
+  }
   ok(r.found && /作り物の登山口/.test(r.tip || '') && /登山口/.test(r.tip || ''), '★札に名前と種類が出る', r);
   ok(r.same, '★★押しても天気を見る地点は変わらない', r);
 }
 
 /* 6. 種類の絞り込み（key で覚える・読み込み直しても残る） */
 {
+  await page.evaluate(() => toggleLayerPanel());
   await page.evaluate(() => togglePoiType('parking'));
   await page.waitForTimeout(400);
   const after = await marks();
@@ -164,7 +197,17 @@ const marks = () => page.evaluate(() => [...document.querySelectorAll('.poi-box'
   ok(!reread.some(t => /作り物の駐車場/.test(t)), '★覚えた値で描き直しても隠したまま', reread);
   const chips = await page.evaluate(() => document.querySelectorAll('#layer-overlays .amedas-el').length);
   ok(chips === 3, '★行が ON のとき種類のチップが出る', chips);
+  // ページを開き直しても隠したまま（再起動と同じ）
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { openMap(); });
+  await page.waitForTimeout(800);
+  await page.evaluate(() => leafletMap.setView([36.571, 137.651], 14, { animate: false }));
+  await page.waitForTimeout(800);
+  const afterReload = await marks();
+  ok(afterReload.length === 3 && !afterReload.some(t => /作り物の駐車場/.test(t)), '★★開き直しても隠した種類は隠したまま', afterReload);
   await page.evaluate(() => togglePoiType('parking'));
+  await page.waitForTimeout(300);
 }
 
 /* 7. 出典に OpenStreetMap と取り出した日・下地が OSM でも重ねて出さない */
@@ -177,7 +220,7 @@ const marks = () => page.evaluate(() => [...document.querySelectorAll('.poi-box'
 }
 
 /* 8. 取りに行くのは1回だけ */
-ok(poiFetches === 1, '★data/poi.json は1回だけ取る', poiFetches);
+ok(poiFetches === 3, '★data/poi.json は 失敗1回＋成功1回＋開き直し1回 だけ取る（描き直しのたびに取らない）', poiFetches);
 
 ok(errors.length === 0, '★ページ内で例外が出ていない', errors);
 await browser.close();

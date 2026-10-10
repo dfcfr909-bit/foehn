@@ -11317,6 +11317,8 @@ const POI_THIN_PX = 48;          // z11〜12 の間引きの升目（画面の p
 const POI_MAX_MARKERS = 400;     // 1回に置く上限（重さの守り）
 const POI_LS_HIDDEN = 'sotoki.map.poiHidden';   // 隠した種類の key の配列
 const POI_ICONS = { trailhead: '🚩', parking: '🅿️', hut: '🛖', toilets: '🚻', water: '🚰', onsen: '♨️', shop: '🏪' };
+// データを読む前・読めないときのチップの名前（読めたら data の types の名前を使う）
+const POI_NAMES = { trailhead: '登山口', parking: '駐車場', hut: '山小屋', toilets: 'トイレ', water: '水場', onsen: '温泉', shop: '店' };
 let poiData = null;              // { generated, types:[{id,key,name}], items:[[lat,lon,typeId,name?]] }
 let poiLoading = null;           // 取得中の Promise（同時に2本走らせない）
 
@@ -11359,7 +11361,7 @@ function togglePoiType(key) {
 // 種類の絞り込みチップ（アメダスの要素チップと同じ見た目・複数選択）
 function poiTypeChips() {
   const h = poiHiddenSet();
-  const types = (poiData && poiData.types) || Object.keys(POI_ICONS).map(k => ({ key: k, name: k }));
+  const types = (poiData && poiData.types) || Object.keys(POI_ICONS).map(k => ({ key: k, name: POI_NAMES[k] }));
   return `<div class="amedas-els">` + types.filter(t => POI_ICONS[t.key]).map(t =>
     `<button class="amedas-el${h.has(t.key) ? '' : ' active'}"
              onclick="togglePoiType('${t.key}')">${POI_ICONS[t.key]}${escapeHtml(t.name)}</button>`).join('') + `</div>`;
@@ -11369,13 +11371,12 @@ function drawPoi(bounds, opacity) {
   if (!poiData) {
     // 前に失敗していたら、取り直しの間もエラーを見せたままにする（「取得中…」で上書きしない）
     if (!layerFailed.poi) setLayerNote('poi', '取得中…');
-    loadPoi()
-      .then(() => {
-        clearLayerStatus('poi'); updateMapAttribution(); refreshWeatherPoints();
-        const panel = document.getElementById('layer-panel');
-        if (panel && panel.classList.contains('open')) renderLayerPanel();   // 種類の名前をデータのものに
-      })
-      .catch(e => setLayerError('poi', `取得できません（${e.message}）`));
+    // ⚠ 2引数の then にする（描き直しの中の例外を「取得できません」と取り違えない）
+    loadPoi().then(() => {
+      clearLayerStatus('poi'); updateMapAttribution(); refreshWeatherPoints();
+      const panel = document.getElementById('layer-panel');
+      if (panel && panel.classList.contains('open')) renderLayerPanel();   // 種類の名前をデータのものに
+    }, e => setLayerError('poi', `取得できません（${e.message}）`));
     return;
   }
   const z = leafletMap.getZoom();
@@ -11407,6 +11408,8 @@ function drawPoi(bounds, opacity) {
       }),
     }).addTo(leafletMap);
     m.bindTooltip(`${name ? escapeHtml(name) + '<br>' : ''}${escapeHtml(t.name)}（OpenStreetMap）`);
+    // 押して開く（タッチ端末でマウスオーバーが無くても札が出るように明示する）。地点は変えない
+    m.on('click', () => m.openTooltip());
     weatherMarkers.push(m);
     placed++;
   }
