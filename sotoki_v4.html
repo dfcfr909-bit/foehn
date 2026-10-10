@@ -2539,7 +2539,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.164.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.165.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6722,6 +6722,19 @@ const MAP_OVERLAYS = [
     minNativeZoom: 4, maxNativeZoom: 17, opacity: 0.75,
     attribution: 'エコリス地図タイル（CS立体図）', unverified: true, mayBeEmpty: true,
     note: '曲率＋傾斜＋陰影の合成。配信範囲が限られている可能性あり' },
+  /* CS立体図（栃木県）：G空間情報センター「栃木県『微地形図（CS立体図）』」（csmap_tochigi）の XYZ（#112）。
+     規約は「栃木県 航空レーザ計測に基づく森林資源データの利用規約」（CC BY 4.0 互換・商用可）。
+     出典を書き、透過・重ね方を変えて見せるので「加工して作成」も書く（利用者の決定・2026-10-10）。
+     ⚠ 配信は栃木県内だけ。県外は群馬側が 403、福島側が透明の 200（Actions で確認）。
+       bounds（県を囲む長方形・データ範囲図とは未照合）で外のタイルを取りに行かず、
+       長方形の中の県外で出る 403 は partialCoverage で「失敗」にしない */
+  { id: 'csmapTochigi', name: 'CS立体図（栃木県）',
+    url: 'https://rinya-tochigi.geospatial.jp/2023/rinya/tile/csmap/{z}/{x}/{y}.png',
+    minNativeZoom: 8, maxNativeZoom: 18, opacity: 0.75,
+    bounds: [[36.15, 139.28], [37.20, 140.34]],
+    mayBeEmpty: true, partialCoverage: true,
+    attribution: '栃木県森林資源データ（令和3〜4年度計測）を加工して作成',
+    note: '栃木県内だけ。尾根＝赤・谷＝青・急斜面＝暗い' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
     minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
@@ -7003,6 +7016,8 @@ function tileOpts(def, extra) {
     minNativeZoom: def.minNativeZoom,
     maxNativeZoom: def.maxNativeZoom,
     crossOrigin: true,
+    // 配信が一部の地域だけのもの（CS立体図（栃木県））は、範囲の外のタイルを取りに行かない
+    ...(def.bounds ? { bounds: L.latLngBounds(def.bounds) } : {}),
   }, extra || {});
 }
 
@@ -7708,6 +7723,8 @@ function watchTileStatus(layer, def, hooks) {
       return;
     }
     if (errors / total < WX_FAIL_RATIO) { clearLayerStatus(def.id); return; }
+    // 配信の範囲が県の形で、外は 403 を返すもの（CS立体図（栃木県））。一部欠けは失敗ではない
+    if (def.partialCoverage) { setLayerNote(def.id, 'この範囲の一部は配信の範囲外'); return; }
     const pct = Math.round(errors / total * 100);
     setLayerError(def.id, `一部しか取得できません（${pct}%が取得不可・z${badZ}）`);
   };
