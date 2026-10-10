@@ -369,6 +369,21 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `addTimedTileLayer(def, op, replace)` | **時刻つきタイルの貼り替え**（新しいのが出るまで消さない） | 約 4957 |
 | `startWxRefresh` / `stopWxRefresh` / `refreshWeatherLayers` | 5分ごとの自動更新 | 約 4989-4998 |
 
+### CIマップ（栃木県）（#202・v4.168.0）
+
+栃木県の標高タイル（Terrain-RGB）から収束度（CI）を端末で計算して描く。仕様は `map.md`「CIマップ（栃木県）」。`applyOverlays` の直前。
+
+| 関数 | 役割 |
+|---|---|
+| `decodeTochigiDem` / `ciGaussBlur` / `ciAcos` / `ciMargin` / `ciAssembleGrid` / `computeCiTile` | 計算。⚠⚠ **Worker に `fn.toString()` で渡す**（`CI_WORKER_FNS`）。外の定数・ほかの関数を参照しない（定数は `CI_PRM` を引数で渡す）。足したら `CI_WORKER_FNS` にも足す |
+| `ciWorkerMain()` | Worker の本体（これも toString で渡す）。1枚ずつ順に、取り消しは飛ばす |
+| `getCiWorker()` / `ciBreakWorker()` | Worker を初回に作る。無い・壊れたら以後はメイン |
+| `ciFetchBlob(z,x,y)` | 標高タイルの取得は**メイン**（Service Worker のタイルキャッシュを通す）。通信の失敗は覚えない |
+| `ciComputeMain(job)` / `ciDecodeMain` | Worker が使えないときの計算（1枚ずつ譲る） |
+| `ciRenderTile` / `ciCancel` / `CiMapLayer` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す |
+| `updateCiZoomNote()` | z13 未満で「拡大すると表示（z13 から）」 |
+| `ciStats` | どちらの経路で何枚計算したか（検査用） |
+
 ## 雨の予告
 
 | 関数 | 役割 | 目安行 |

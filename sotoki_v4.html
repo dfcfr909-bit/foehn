@@ -2557,7 +2557,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.167.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.168.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6715,6 +6715,10 @@ const MAP_BASES = [
 ];
 const MAP_BASE_DEFAULT = 'pale';   // オーバーレイの下地として最も見やすい
 
+/* 栃木県の森林資源データの出典（CS立体図・CIマップで共通。同じ文字列なので出典欄では1つにまとまる）。
+   規約（航空レーザ計測に基づく森林資源データの利用規約）の記載例「…を加工して作成」に合わせる */
+const TOCHIGI_CREDIT = '栃木県森林資源データ（2021〜2022年度計測）を加工して作成';
+
 /* オーバーレイ（複数同時可）。opacityは既定の透過率 */
 const MAP_OVERLAYS = [
   /* 山域・百名山（areas.json から描く。タイルではないので配信元も利用条件も無い）。
@@ -6761,8 +6765,20 @@ const MAP_OVERLAYS = [
     minNativeZoom: 8, maxNativeZoom: 18, opacity: 0.75,
     bounds: [[36.15, 139.28], [37.20, 140.34]],
     mayBeEmpty: true, partialCoverage: true,
-    attribution: '栃木県森林資源データ（2021〜2022年度計測）を加工して作成',
+    attribution: TOCHIGI_CREDIT,
     note: '栃木県内だけ。尾根＝赤・谷＝青・急斜面＝暗い' },
+  /* CIマップ（栃木県）（#202）：栃木県の標高タイル（Terrain-RGB・dem05_tochigi）から、端末の中で
+     収束度（Convergence Index）を計算して描く。図法は中央開発の考案で、名称「CIマップ」と考案論文の
+     明記が頼み（about に書誌）。出典欄は短く「CIマップ（上原ほか）」と栃木県の加工の旨。
+     ⚠ iPhone では1タイル約1.2秒（試作の実測）。計算は Web Worker（使えなければメインで1枚ずつ譲る）。
+     ⚠ 計算は z13〜16（minZoom・maxNativeZoom）。z12 以下は「拡大すると表示」、z17 以上は z16 を引き伸ばす。
+     ⚠ 県外・東部の平地は描かない（地理院の標高でつながない。つなぎ目に偽の尾根・谷が出る） */
+  { id: 'ciMapTochigi', name: 'CIマップ（栃木県）', kind: 'ciMap', opacity: 0.75,
+    minZoom: 13, maxNativeZoom: 16,
+    bounds: [[36.15, 139.28], [37.20, 140.34]],
+    mayBeEmpty: true, partialCoverage: true,
+    attribution: ['CIマップ（上原ほか）', TOCHIGI_CREDIT],
+    note: '栃木県内・z13 から。尾根（発散）＝赤・谷（収束）＝青' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
     minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
@@ -6824,6 +6840,7 @@ const BLEND_DEFAULT = { rrimLike: 'multiply' };
 function isBlendable(def) {
   if (!def) return false;
   if (BLEND_HOST[def.id]) return true;
+  if (def.kind === 'ciMap') return true;   // 自前で描くタイル（#202）。pane に重ね方を掛けられる
   return !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
 }
 function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || BLEND_DEFAULT[id] || 'normal'; }
@@ -7077,6 +7094,283 @@ function buildRrimLayers(opacity) {
   ];
 }
 
+/* ------ CIマップ（栃木県）（#202） ------
+   栃木県の標高タイル（Terrain-RGB）から収束度（Convergence Index）を計算して描く。試作は experiments/relief/viewer.html。
+   ⚠⚠ **下の計算の関数（ci* と decodeTochigiDem）は Worker にも fn.toString() で渡す。**
+      外の定数・ほかの関数を参照しないこと（Worker の中でだけ ReferenceError になる）。
+      定数は prm（CI_PRM）で渡す。呼んでよいのは CI_WORKER_FNS の中の関数だけ。
+   ⚠ 取得はメインスレッド（fetch → Service Worker のタイルキャッシュを確実に通す。圏外でも一度見た範囲は描ける）。
+      復号と計算は Worker。Worker か OffscreenCanvas が無い・壊れたら、メインで1枚ずつ譲りながら計算する。
+   ⚠ CI の符号：＋＝発散＝尾根（赤）、−＝収束＝谷（青）。 */
+const CI_TERRAIN_URL = 'https://rinya-tochigi.geospatial.jp/2023/rinya/tile/terrainRGB/{z}/{x}/{y}.png';
+const CI_PRM = { tile: 256, radM: 30, sigM: 1.5, fullPct: 20 };   // 半径 R=30m・下ならし 1.5m・満色 ±20%（試作の既定）
+const CI_ZOOM_NOTE = '拡大すると表示（z13 から）';
+const CI_BLOB_MAX = 120;      // 標高タイルの Blob を覚えておく枚数（メイン側）
+const ciStats = { worker: 0, main: 0 };   // どちらの経路で何枚計算したか（検査用。Worker が黙って壊れていないかを見る）
+
+// 栃木の Terrain-RGB を標高（m）へ。標高＝−10000＋(R·65536＋G·256＋B)·0.1。A=0 は欠け（NaN）。全部欠けなら null
+function decodeTochigiDem(d, n) {
+  const out = new Float32Array(n * n); let valid = 0;
+  for (let i = 0, j = 0; i < out.length; i++, j += 4) {
+    if (d[j + 3] === 0) out[i] = NaN; else { out[i] = -10000 + (d[j] * 65536 + d[j + 1] * 256 + d[j + 2]) * 0.1; valid++; }
+  }
+  return valid ? out : null;
+}
+// 欠け（NaN）を除いた重み付きのならし。中心が欠けなら NaN のまま
+function ciGaussBlur(a, W, s) {
+  const k = Math.ceil(3 * s), ker = new Float32Array(k + 1);
+  for (let i = 0; i <= k; i++) ker[i] = Math.exp(-(i * i) / (2 * s * s));
+  const N = W * W, num = new Float32Array(N), den = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const v = a[i]; if (v === v) { num[i] = v; den[i] = 1; } }
+  const n2 = new Float32Array(N), d2 = new Float32Array(N);
+  const pass = (sn, sd, dn, dd, horiz) => {
+    const st = horiz ? 1 : W, ls = horiz ? W : 1;
+    for (let l = 0; l < W; l++) {
+      const base = l * ls;
+      for (let p = 0; p < W; p++) {
+        let a1 = 0, a2 = 0;
+        const lo = Math.max(0, p - k), hi = Math.min(W - 1, p + k);
+        for (let m = lo; m <= hi; m++) { const w = ker[Math.abs(m - p)], i = base + m * st; a1 += w * sn[i]; a2 += w * sd[i]; }
+        dn[base + p * st] = a1; dd[base + p * st] = a2;
+      }
+    }
+  };
+  pass(num, den, n2, d2, true);
+  pass(n2, d2, num, den, false);
+  const out = new Float32Array(N);
+  for (let i = 0; i < N; i++) out[i] = a[i] === a[i] ? num[i] / den[i] : NaN;
+  return out;
+}
+function ciAcos(v) {   // Abramowitz-Stegun 4.4.45（acos の近似）
+  const a = v < 0 ? -v : v, r = Math.sqrt(1 - (a > 1 ? 1 : a)) * (1.5707288 + a * (-0.2121144 + a * (0.0742610 - a * 0.0187293)));
+  return v < 0 ? Math.PI - r : r;
+}
+// タイル (z, y) の中心の緯度での、1画素の地上距離（m）
+function ciMetersPerPx(z, y, n) {
+  const t = Math.PI - 2 * Math.PI * (y + 0.5) / 2 ** z, lat = Math.atan(Math.sinh(t));
+  return 40075016.686 * Math.cos(lat) / (n * 2 ** z);
+}
+// 余白（升目の数）：R＋3σ。隣の1周（n 升目）まで
+function ciMargin(px, prm) { return Math.min(prm.tile, Math.ceil((prm.radM + 3 * prm.sigM) / px) + 2); }
+// 周り9枚（並びは y=-1..1 × x=-1..1）を、余白 M を付けた (W×W) の格子にする。欠けは NaN
+function ciAssembleGrid(tiles, M, n) {
+  const W = n + 2 * M, grid = new Float32Array(W * W).fill(NaN);
+  for (let k = 0; k < 9; k++) {
+    const t = tiles[k]; if (!t) continue;
+    const ox = k % 3 - 1, oy = Math.floor(k / 3) - 1;
+    const x0 = ox < 0 ? n - M : 0, x1 = ox > 0 ? M : n, y0 = oy < 0 ? n - M : 0, y1 = oy > 0 ? M : n;
+    const gx0 = ox < 0 ? 0 : ox === 0 ? M : M + n, gy0 = oy < 0 ? 0 : oy === 0 ? M : M + n;
+    for (let y = y0; y < y1; y++) grid.set(t.subarray(y * n + x0, y * n + x1), (gy0 + y - y0) * W + gx0);
+  }
+  return grid;
+}
+// 格子 → n×n の RGBA。欠けの升目は透明
+function computeCiTile(grid, M, px, prm) {
+  const n = prm.tile, W = n + 2 * M, out = new Uint8ClampedArray(n * n * 4);
+  const s = prm.sigM / px, Zc = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
+  const ux = new Float32Array(W * W), uy = new Float32Array(W * W);
+  for (let y = 1; y < W - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x, gx = (Zc[i + 1] - Zc[i - 1]) / (2 * px), gy = (Zc[i + W] - Zc[i - W]) / (2 * px);
+    const g = Math.hypot(gx, gy);
+    if (g === g && g > 1e-6) { ux[i] = -gx / g; uy[i] = -gy / g; } else if (g !== g) ux[i] = NaN;
+  }
+  // 半径 R の中の見る点（4つの半径 × 16方向）。全升目を舐めると重すぎるので間引く
+  const Rc = Math.max(prm.radM / px, 1.5), offX = [], offY = [], offD = [], offR = [];
+  for (let r = 1; r <= 4; r++) for (let a = 0; a < 16; a++) {
+    const th = (a + (r % 2) * 0.5) * Math.PI / 8, rr = Rc * r / 4;
+    const dx = Math.round(rr * Math.cos(th)), dy = Math.round(rr * Math.sin(th));
+    if (!dx && !dy) continue;
+    offX.push(dx); offY.push(dy); offD.push(dy * W + dx); offR.push(1 / Math.hypot(dx, dy));
+  }
+  const RAD = 180 / Math.PI, GRAY = [232, 232, 232], RIDGE = [238, 82, 40], VALLEY = [36, 78, 224];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = (y + M) * W + (x + M), j = (y * n + x) * 4;
+    if (Zc[i] !== Zc[i] || ux[i] !== ux[i]) continue;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k < offX.length; k++) {
+      const ii = i + offD[k], vx = ux[ii], vy = uy[ii];
+      if (vx !== vx) continue;
+      // 隣の升目の下り向きと、そこから中心へ向かう向きのなす角 θ（0°＝中心へ流れ込む）
+      const c = (vx * -offX[k] + vy * -offY[k]) * offR[k];
+      sum += vx === 0 && vy === 0 ? 90 : ciAcos(c) * RAD; cnt++;
+    }
+    if (!cnt) continue;
+    const ci = (sum / cnt - 90) / 0.9;   // −100〜+100 %
+    const t = Math.max(-1, Math.min(1, ci / prm.fullPct)), u = Math.abs(t), col = t >= 0 ? RIDGE : VALLEY;
+    out[j] = GRAY[0] + (col[0] - GRAY[0]) * u;
+    out[j + 1] = GRAY[1] + (col[1] - GRAY[1]) * u;
+    out[j + 2] = GRAY[2] + (col[2] - GRAY[2]) * u;
+    out[j + 3] = Math.round(255 * Math.max(0, Math.min(1, 0.2 + 1.1 * u)));
+  }
+  return out;
+}
+// Worker の本体（これも toString で渡す）。依頼は1枚ずつ順に処理し、取り消された依頼は飛ばす
+function ciWorkerMain() {
+  const cache = new Map(), MAX = 120, queue = []; let busy = false, cv = null, cx = null;
+  async function dem(key, blob) {
+    if (cache.has(key)) { const v = cache.get(key); cache.delete(key); cache.set(key, v); return v; }
+    const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+    if (!cv) { cv = new OffscreenCanvas(256, 256); cx = cv.getContext('2d', { willReadFrequently: true }); }
+    cx.clearRect(0, 0, 256, 256); cx.drawImage(bmp, 0, 0); bmp.close();
+    const v = decodeTochigiDem(cx.getImageData(0, 0, 256, 256).data, 256);
+    cache.set(key, v);
+    if (cache.size > MAX) cache.delete(cache.keys().next().value);
+    return v;
+  }
+  async function pump() {
+    if (busy) return; busy = true;
+    while (queue.length) {
+      const m = queue.shift();
+      try {
+        const tiles = await Promise.all(m.keys.map((k, i) => m.blobs[i] ? dem(k, m.blobs[i]) : null));
+        if (!tiles[4]) { self.postMessage({ id: m.id, empty: true }); continue; }
+        const M = ciMargin(m.px, m.prm);
+        const pix = computeCiTile(ciAssembleGrid(tiles, M, m.prm.tile), M, m.px, m.prm);
+        self.postMessage({ id: m.id, pix }, [pix.buffer]);
+      } catch (e) { self.postMessage({ id: m.id, error: String(e && e.message || e) }); }
+    }
+    busy = false;
+  }
+  self.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'cancel') { const i = queue.findIndex(q => q.id === m.id); if (i >= 0) { queue.splice(i, 1); self.postMessage({ id: m.id, cancelled: true }); } return; }
+    queue.push(m); pump();
+  };
+}
+const CI_WORKER_FNS = [decodeTochigiDem, ciGaussBlur, ciAcos, ciMargin, ciAssembleGrid, computeCiTile];
+
+let ciWorker = null, ciWorkerBroken = false, ciSeq = 0;
+const ciPending = new Map();   // id -> { resolve, reject }
+function getCiWorker() {
+  if (ciWorkerBroken) return null;
+  if (ciWorker) return ciWorker;
+  try {
+    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') throw new Error('unsupported');
+    const src = CI_WORKER_FNS.map(f => f.toString()).join('\n') + '\n(' + ciWorkerMain.toString() + ')();';
+    ciWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    ciWorker.onmessage = e => {
+      const m = e.data, p = ciPending.get(m.id);
+      if (!p) return;
+      ciPending.delete(m.id);
+      if (m.error) { ciBreakWorker(); p.reject(new Error(m.error)); }
+      else p.resolve(m.cancelled ? undefined : (m.empty ? null : m.pix));
+    };
+    ciWorker.onerror = () => ciBreakWorker();
+  } catch (e) { ciWorkerBroken = true; ciWorker = null; }
+  return ciWorker;
+}
+// Worker が使えない・壊れた：以後はメインで計算する。待っている依頼はメインでやり直す（reject で知らせる）
+function ciBreakWorker() {
+  ciWorkerBroken = true;
+  if (ciWorker) { try { ciWorker.terminate(); } catch (e) { /* 無視 */ } }
+  ciWorker = null;
+  for (const p of ciPending.values()) p.reject(new Error('worker'));
+  ciPending.clear();
+}
+
+// 標高タイルの Blob（メインで取得。Service Worker のタイルキャッシュを通る）。無い・403 は null
+const ciBlobCache = new Map();
+function ciTileKey(z, x, y) { return `${z}/${x}/${y}`; }
+function ciFetchBlob(z, x, y) {
+  const n = 2 ** z;
+  if (y < 0 || y >= n) return Promise.resolve(null);
+  x = ((x % n) + n) % n;
+  const key = ciTileKey(z, x, y);
+  if (ciBlobCache.has(key)) { const v = ciBlobCache.get(key); ciBlobCache.delete(key); ciBlobCache.set(key, v); return v; }
+  const url = CI_TERRAIN_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  const p = fetch(url)
+    .then(r => (r.ok ? r.blob() : null))
+    .catch(() => { ciBlobCache.delete(key); return null; });   // 通信の失敗は覚えない（圏内に戻ったら取り直す）
+  ciBlobCache.set(key, p);
+  if (ciBlobCache.size > CI_BLOB_MAX) ciBlobCache.delete(ciBlobCache.keys().next().value);
+  return p;
+}
+
+// メインで計算するとき（Worker が使えない）の復号。標高をメモリに覚える
+const ciDemCache = new Map();
+let ciCv = null, ciCx = null;
+async function ciDecodeMain(key, blob) {
+  if (ciDemCache.has(key)) return ciDemCache.get(key);
+  const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  if (!ciCv) { ciCv = document.createElement('canvas'); ciCv.width = ciCv.height = 256; ciCx = ciCv.getContext('2d', { willReadFrequently: true }); }
+  ciCx.clearRect(0, 0, 256, 256); ciCx.drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+  const v = decodeTochigiDem(ciCx.getImageData(0, 0, 256, 256).data, 256);
+  ciDemCache.set(key, v);
+  if (ciDemCache.size > CI_BLOB_MAX) ciDemCache.delete(ciDemCache.keys().next().value);
+  return v;
+}
+// メインの計算は1枚ずつ直列に、間でブラウザへ譲る（地図の操作を挟めるように。試作と同じ）
+let ciMainChain = Promise.resolve();
+function ciComputeMain(job) {
+  const run = ciMainChain.then(() => new Promise(r => setTimeout(r, 0))).then(async () => {
+    if (job.cancelled) return undefined;
+    const tiles = await Promise.all(job.keys.map((k, i) => job.blobs[i] ? ciDecodeMain(k, job.blobs[i]) : null));
+    if (!tiles[4]) return null;
+    const M = ciMargin(job.px, CI_PRM);
+    const pix = computeCiTile(ciAssembleGrid(tiles, M, CI_PRM.tile), M, job.px, CI_PRM);
+    ciStats.main++;
+    return pix;
+  });
+  ciMainChain = run.catch(() => {});
+  return run;
+}
+
+// 1枚ぶん：周り9枚の標高を取り、Worker（だめならメイン）で計算する。中心が無ければ null
+async function ciRenderTile(coords, job) {
+  const { x, y, z } = coords, keys = [], reqs = [];
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    keys.push(ciTileKey(z, x + ox, y + oy)); reqs.push(ciFetchBlob(z, x + ox, y + oy));
+  }
+  const blobs = await Promise.all(reqs);
+  if (job.cancelled) return undefined;
+  if (!blobs[4]) return null;
+  job.keys = keys; job.blobs = blobs; job.px = ciMetersPerPx(z, y, CI_PRM.tile);
+  const w = getCiWorker();
+  if (w) {
+    try {
+      const pix = await new Promise((resolve, reject) => {
+        ciPending.set(job.id, { resolve, reject });
+        w.postMessage({ id: job.id, keys, blobs, px: job.px, prm: CI_PRM });
+      });
+      if (pix) ciStats.worker++;
+      return pix;
+    } catch (e) { /* Worker が壊れた：メインでやり直す */ }
+  }
+  return ciComputeMain(job);
+}
+function ciCancel(tile) {
+  const job = tile && tile._ciJob;
+  if (!job || job.done) return;
+  job.cancelled = true;
+  if (ciWorker && ciPending.has(job.id)) ciWorker.postMessage({ type: 'cancel', id: job.id });
+}
+
+const CiMapLayer = L.GridLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = CI_PRM.tile;
+    const job = { id: ++ciSeq, cancelled: false, done: false };
+    tile._ciJob = job;
+    ciRenderTile(coords, job).then(pix => {
+      job.done = true;
+      if (pix === undefined) return;                       // 取り消された（地図から外れた）
+      if (!pix) { done(new Error('範囲外'), tile); return; } // 配信の範囲外・欠け → watchTileStatus が文言を決める
+      tile.getContext('2d').putImageData(new ImageData(pix, CI_PRM.tile, CI_PRM.tile), 0, 0);
+      done(null, tile);
+    }).catch(e => { job.done = true; done(e, tile); });
+    return tile;
+  },
+});
+
+// z13 未満で CIマップを入れているときは「拡大すると表示」。z13 以上に戻ったら消す
+function updateCiZoomNote() {
+  if (!leafletMap) return;
+  const def = findOverlay('ciMapTochigi');
+  if (!def || !mapPrefs.overlays.some(o => o.id === def.id)) return;
+  if (leafletMap.getZoom() < def.minZoom) setLayerNote(def.id, CI_ZOOM_NOTE);
+  else if (layerStatus[def.id] === CI_ZOOM_NOTE) clearLayerStatus(def.id);
+}
+
 function applyOverlays() {
   if (!leafletMap) return;
   // いったん全部外してから、有効なものだけ積み直す（重ね順を毎回そろえるため）
@@ -7095,6 +7389,14 @@ function applyOverlays() {
       addTimedTileLayer(def, item.opacity);
     } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas' || def.kind === 'poi') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
+    } else if (def.kind === 'ciMap') {
+      // ⚠ isBlendable の分岐より前に置く（url が無いので L.tileLayer にすると壊れる）
+      const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
+      const layer = new CiMapLayer(tileOpts(def, { pane, opacity: item.opacity, minZoom: def.minZoom }));
+      layer.on('tileunload', e => ciCancel(e.tile));
+      layer.addTo(leafletMap);
+      watchTileStatus(layer, def);
+      overlayTileLayers[def.id] = layer;
     } else if (isBlendable(def)) {
       // 重ね方はレイヤーごとの pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
       // 並び順は z-index で決める（overlays の順。後ろほど上）。DOM は動かさない
@@ -7107,6 +7409,7 @@ function applyOverlays() {
   });
   orderNowcastBoxes();
   refreshWeatherPoints();
+  updateCiZoomNote();
   updateMapAttribution();
 }
 
@@ -11646,7 +11949,8 @@ function updateMapAttribution() {
       if (i >= 0) parts[i] = t; else if (!parts.includes(t)) parts.push(t);
       return;
     }
-    if (def && def.attribution && !parts.includes(def.attribution)) parts.push(def.attribution);
+    // 文字列か、文字列の配列（CIマップ：名称と栃木県の加工の旨）。同じ文字列は1つにまとめる
+    if (def && def.attribution) [].concat(def.attribution).forEach(t => { if (!parts.includes(t)) parts.push(t); });
   });
   // 地理院の回答（2026-10）：地図は「地理院タイル＋URL」、加工した標高タイルは「地理院タイル（標高タイル）を加工して作成」。
   // 標高タイルはレイヤーの選択に関係なく使う（地点の標高・風の地形補正）ので、加工の表記は常に出す
@@ -11839,6 +12143,7 @@ function openMap() {
       leafletMap.on('move zoom zoomend', updateMeSpotlight);
       // 縮尺は倍率だけでなく緯度でも変わるので、動かしたときも測り直す
       leafletMap.on('moveend zoomend', updateMapScale);
+      leafletMap.on('zoomend', updateCiZoomNote);   // CIマップの「拡大すると表示」（#202）
       applyBaseLayer();
       applyOverlays();
       /* ⚠ **ピンはタップを一切受けない。** Leaflet の既定のピンは `<img>` なので、
