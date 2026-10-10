@@ -362,6 +362,11 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
   読み込み時は、選べるIDと許す値（`normal`/`multiply`/`screen`）だけ通す。
   ⚠ 雨雲と雷は**別々の箱**（`mapNowcastMask` と `mapThunderMask`・z380／381。上下は `orderNowcastBoxes()` が overlays の順で決める）。現在地のくり抜き（`SPOT_PANES`）は両方に掛ける。
   雷の泡の表示（雷マーク）は別の pane（`mapWeather`）なので、重ね方の影響を受けない。
+- **CS立体図（栃木県）**（`csmapTochigi`・v4.165.0・#112）：G空間情報センター `csmap_tochigi` の XYZ（z8〜18）。
+  配信は**栃木県内だけ**。`bounds`（県を囲む長方形）を `tileOpts` が Leaflet に渡し、外のタイルは取りに行かない。
+  長方形の中の県外（群馬側は 403・福島側は透明の 200）で欠けても、`partialCoverage` で「この範囲の一部は配信の範囲外」（失敗ではない知らせ）にする。
+  出典は「栃木県森林資源データ（2021〜2022年度計測）を加工して作成」（透過・重ね方を変えて見せるため）。重ね方は通常の地形図と同じく選べる。
+  エコリスの `csmap`（保留中・#10）とは別の行
 - `pending: true` のレイヤーは UI に出ない（URL が確認できていないものを推測で書かないため）
 - `unverified: true` はパネルに「要確認」バッジを出す
 

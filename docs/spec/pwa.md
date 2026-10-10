@@ -91,7 +91,8 @@ HTML・静的ファイル・タイルの3つとも `res.ok` を見てから保�
 cyberjapandata.gsi.go.jp    国土地理院
 tile.openstreetmap.org      OSM
 server.arcgisonline.com     Esri
-map.ecoris.info             CS立体図
+map.ecoris.info             CS立体図（保留中・#10）
+rinya-tochigi.geospatial.jp CS立体図（栃木県）
 ```
 
 **ここに無いホストは一切触らない。**

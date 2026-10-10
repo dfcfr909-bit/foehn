@@ -646,7 +646,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       defined: !!def,
       pending: !!(def && def.pending),
       shown: usableOverlays().some(o => o.id === 'csmap'),
-      inPanel: /CS立体図/.test(document.getElementById('layer-overlays').innerHTML),
+      // ⚠ 名前で見ない。「CS立体図（栃木県）」（csmapTochigi）は別の行としてパネルに出る（v4.165.0）
+      inPanel: !!document.querySelector('#layer-overlays [data-id="csmap"]'),
       // 保存済みの設定に残っていても復元しない
       restored: (() => {
         localStorage.setItem('sotoki.map.overlays', JSON.stringify([{ id: 'csmap', opacity: 0.7 }]));
@@ -659,6 +660,35 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(csmap.defined && csmap.pending, 'CS立体図は定義を残したまま保留（pending）', csmap);
   ok(!csmap.shown && !csmap.inPanel, '保留中はレイヤー一覧に出さない', csmap);
   ok(!csmap.restored, '保存済みに残っていても保留中のレイヤーは復元しない', csmap.restored);
+
+  /* CS立体図（栃木県）（v4.165.0・#112）：県内だけの配信。bounds で外を取りに行かず、
+     長方形の中の県外の 403 は「失敗」にしない（partialCoverage） */
+  const csTochigi = await page.evaluate(() => {
+    const def = MAP_OVERLAYS.find(o => o.id === 'csmapTochigi');
+    const opts = tileOpts(def);
+    const plain = tileOpts(MAP_OVERLAYS.find(o => o.id === 'slope'));
+    // 一部だけ欠けたときの扱い（偽のレイヤーに tileload / tileerror を流す）
+    const fake = L.tileLayer('');
+    watchTileStatus(fake, def);
+    for (let i = 0; i < 6; i++) fake.fire('tileload');
+    for (let i = 0; i < 6; i++) fake.fire('tileerror', { coords: { z: 14 } });
+    return {
+      shown: usableOverlays().some(o => o.id === 'csmapTochigi'),
+      blendable: isBlendable(def),
+      hasBounds: !!opts.bounds && opts.bounds.contains([36.765, 139.491]) && !opts.bounds.contains([37.05, 138.9]),
+      plainNoBounds: plain.bounds === undefined,
+      attribution: def.attribution,
+      wait: WX_FAIL_SETTLE_MS,
+    };
+  });
+  ok(csTochigi.shown, 'CS立体図（栃木県）はレイヤー一覧に出る', csTochigi);
+  ok(csTochigi.blendable, 'CS立体図（栃木県）は重ね方を選べる', csTochigi);
+  ok(csTochigi.hasBounds && csTochigi.plainNoBounds, 'bounds は CS立体図（栃木県）にだけ付く', csTochigi);
+  ok(/栃木県森林資源データ/.test(csTochigi.attribution) && /加工して作成/.test(csTochigi.attribution),
+    '出典に栃木県森林資源データと加工の旨', csTochigi.attribution);
+  await page.waitForTimeout(csTochigi.wait + 300);
+  const csPartial = await page.evaluate(() => ({ text: layerStatus.csmapTochigi, failed: !!layerFailed.csmapTochigi }));
+  ok(/配信の範囲外/.test(csPartial.text || '') && !csPartial.failed, '県境で一部欠けても失敗（赤帯）にしない', csPartial);
 
   /* ★ふつうのオーバーレイでも、タイルが取れなければ理由をパネルに出すこと。
      時刻つきタイルにしか報告を付けていなかったため、CS立体図が失敗しても
