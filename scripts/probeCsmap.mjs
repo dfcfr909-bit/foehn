@@ -55,9 +55,18 @@ function showPackage(p) {
   if (p.notes) console.log(`説明文（先頭600字）:\n${p.notes.replace(/\s+/g, ' ').slice(0, 600)}`);
 }
 
-// リソースから XYZ のテンプレートを拾う（{z}/{x}/{y} を含むもの）
+// リソースから XYZ のテンプレートを拾う（{z}/{x}/{y} を含むもの）。
+// ⚠ 栃木県は url 欄が空で、説明欄に URL が書いてある（2026-10-10 の1回目で判明）
 function xyzTemplates(p) {
-  return (p.resources || []).map(r => r.url || '').filter(u => /\{z\}/.test(u) && /\{x\}/.test(u));
+  const out = new Set();
+  for (const r of p.resources || []) {
+    for (const t of [r.url || '', r.description || '']) {
+      for (const m of t.match(/https?:\/\/[^\s"'<>）)]+/g) || []) {
+        if (/\{z\}/.test(m) && /\{x\}/.test(m)) out.add(m);
+      }
+    }
+  }
+  return [...out];
 }
 
 async function probeTile(tpl, z, x, y) {

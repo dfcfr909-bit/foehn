@@ -26,6 +26,14 @@ jobs:
       - name: 調べる
         shell: bash
         run: node scripts/probeCsmap.mjs | tee result.txt
+      # 栃木県の利用規約（PDF）の本文を読む（リソース「栃木県_利用規約」）
+      - name: 利用規約を読む
+        continue-on-error: true
+        shell: bash
+        run: |
+          (command -v pdftotext >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils)) >/dev/null
+          curl -sSfL -o terms.pdf 'https://www.geospatial.jp/ckan/dataset/486b4a66-6f9b-4327-b841-87e83b5c131a/resource/4dffe2ac-511f-49eb-87c4-29c936ed2cb7/download/.pdf'
+          { echo; echo '## ② 栃木県_利用規約（PDF の本文）'; pdftotext -layout terms.pdf - ; } | tee -a result.txt
       - name: 結果をサマリーへ
         if: always()
         run: |
