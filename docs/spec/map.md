@@ -376,6 +376,18 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
 
 パネルは `toggleLayerPanel()` / `closeLayerPanel()` / `renderLayerPanel()`。
 
+## 施設（OSM）レイヤー（`poi` / `drawPoi`・v4.166.0・#199）
+
+- データは `data/poi.json`（`scripts/buildPoi.mjs` を Actions「施設データ（OSM）を作る」で走らせて作る）。**実行中に OSM へは問い合わせない**。`sw.js` の PRECACHE に入れてあるので圏外でも出る
+- 種類は 登山口🚩・駐車場🅿️（名前のあるもの）・山小屋🛖・トイレ🚻・水場🚰・温泉♨️・店🏪（`POI_ICONS`）
+- z11 未満は出さない（「拡大すると出ます」）。z11〜12 は画面の 48px の升目ごとに種類ごとに1つへ間引く。z13 から名前を添える。1回に置くのは400まで
+- 押すと札（名前・種類・OpenStreetMap）。**地点は変えない**（`pickMapPoint` を呼ばない）
+- ⚠ 名前は OSM の誰でも書き換えられる値なので、HTML に入れる前に必ず `escapeHtml` に通す
+- 種類の絞り込み：行が ON のときチップ（`poiTypeChips`）。隠した種類の **key**（`trailhead` など）を `sotoki.map.poiHidden` に覚える（番号は作り直しで変わりうるので使わない）
+- 出典：`poiAttribution()` が「© OpenStreetMap contributors（ODbL・施設は YYYY-MM-DD 時点）」を組み立てる。下地が OSM のときは下地の出典と1つにまとめる
+- 読み込みに失敗したら `setLayerError`。次の描き直しでもう一度取りに行く（取り直しの間もエラーは見せたまま）
+- 判定・ABC 評価には使わない
+
 ## 山域・百名山レイヤー（`areas` / `drawAreas`）
 
 `areas.json` から描く。**タイルではないので配信元も利用条件も無く、通信は

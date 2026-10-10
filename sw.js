@@ -27,6 +27,8 @@ const PRECACHE = [
   './areas.json',
   './snowRanking.js',
   './data/spots.json',
+  // 施設（OSM・#199）。山では圏外がふつうなので、最初にまとめて入れる（約75KB）
+  './data/poi.json',
   './vendor/uPlot.iife.min.js',
   './vendor/uPlot.min.css',
   './icons/icon-192.png',

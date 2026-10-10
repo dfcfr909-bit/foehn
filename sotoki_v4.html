@@ -1498,6 +1498,21 @@ html, body {
   padding: 0 3px; border-radius: 4px;
   background: rgba(var(--surface-rgb), 0.78);
 }
+/* 施設（OSM・#199）。記号と、z13 から名前 */
+.poi-box {
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
+  display: inline-flex; flex-direction: column; align-items: center;
+  line-height: 1; white-space: nowrap;
+}
+.poi-box i {
+  font-style: normal; font-size: 13px;
+  text-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 3px rgba(255,255,255,0.8);
+}
+.poi-box span {
+  font-size: 8px; font-weight: 600; color: var(--text);
+  padding: 0 3px; border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.78);
+}
 
 .wind-box {
   transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
@@ -2539,7 +2554,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.165.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.166.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6699,6 +6714,11 @@ const MAP_OVERLAYS = [
      ここで描くのは**ランキングの評価単位そのもの**なので、地図と一覧が必ず一致する。 */
   { id: 'areas', name: '山域・百名山', kind: 'areas', opacity: 0.45,
     note: '山域の範囲と百名山。ランキングを開いた後は判定の色になる' },
+  /* 施設（OSM・#199）。data/poi.json（scripts/buildPoi.mjs で前もって取り出したもの）から描く。
+     出典は updateMapAttribution が poiAttribution() で組み立てる（取り出した日を添える） */
+  { id: 'poi', name: '施設（OSM）', kind: 'poi', opacity: 0.9,
+    attribution: '© OpenStreetMap contributors（ODbL）',
+    note: '登山口・駐車場・山小屋・トイレ・水場・温泉・店。z11 から' },
   { id: 'rrimLike',  name: '赤色立体図風', composite: true, opacity: 0.70,
     minNativeZoom: 3, maxNativeZoom: 15, attribution: '地理院タイル（陰影起伏図・傾斜量図）',
     note: '陰影起伏図に傾斜量図を乗算合成' },
@@ -6787,7 +6807,7 @@ const MAP_LS_BLEND = 'sotoki.map.blend';           // 地形図ごとの重ね�
 const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', name: '乗算' }, { id: 'screen', name: 'スクリーン' }];
 /* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
    赤色立体図風（composite）・時刻つき・点で描くものは、今の合成のまま触らない。 */
-const MAP_BLEND_KINDS_EXCLUDED = ['jmaNowcast', 'jmaSat', 'amedas', 'windArrows', 'snowHint', 'thunderHint', 'windFlow', 'windFlowGL', 'areas'];
+const MAP_BLEND_KINDS_EXCLUDED = ['jmaNowcast', 'jmaSat', 'amedas', 'windArrows', 'snowHint', 'thunderHint', 'windFlow', 'windFlowGL', 'areas', 'poi'];
 /* 重ね方を選べるタイル系（#194・v4.164.0）。値は「どの pane（合成の箱）に掛けるか」。
    赤色立体図風は傾斜量図の pane（乗算が既定）。雨雲と雷は別々の箱。衛星は輝度→透明度で抜く方式のため対象外。 */
 const BLEND_HOST = { rrimLike: 'rrimSlope', radar: 'mapNowcastMask', thunder: 'mapThunderMask' };
@@ -7064,7 +7084,7 @@ function applyOverlays() {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
     } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
       addTimedTileLayer(def, item.opacity);
-    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas') {
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas' || def.kind === 'poi') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
     } else if (isBlendable(def)) {
       // 重ね方はレイヤーごとの pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
@@ -11285,11 +11305,125 @@ function drawAreas(bounds, opacity) {
   else if (!areaGradeById) setLayerNote('areas', 'ランキングを開くと判定の色になります');
 }
 
+/* ------ 施設（OSM）レイヤー（#199・v4.166.0） ------
+   data/poi.json（scripts/buildPoi.mjs が Actions で前もって取り出したもの。ODbL）から描く。
+   実行中に OSM へは問い合わせない（圏外でも出る。sw.js の PRECACHE に入れてある）。
+   ・z11 未満は出さない ・z11〜12 は画面の升目ごとに種類ごとに1つへ間引く ・z13 から名前を添える
+   ・押すと札（名前・種類）。**地点は変えない**（pickMapPoint を呼ばない。施設で天気を見る地点を動かさない）
+   ⚠ 名前は OSM の誰でも書き換えられる値。HTML に入れる前に必ず escapeHtml に通す */
+const POI_MIN_ZOOM = 11;
+const POI_NAME_MIN_ZOOM = 13;
+const POI_THIN_PX = 48;          // z11〜12 の間引きの升目（画面の px）
+const POI_MAX_MARKERS = 400;     // 1回に置く上限（重さの守り）
+const POI_LS_HIDDEN = 'sotoki.map.poiHidden';   // 隠した種類の key の配列
+const POI_ICONS = { trailhead: '🚩', parking: '🅿️', hut: '🛖', toilets: '🚻', water: '🚰', onsen: '♨️', shop: '🏪' };
+// データを読む前・読めないときのチップの名前（読めたら data の types の名前を使う）
+const POI_NAMES = { trailhead: '登山口', parking: '駐車場', hut: '山小屋', toilets: 'トイレ', water: '水場', onsen: '温泉', shop: '店' };
+let poiData = null;              // { generated, types:[{id,key,name}], items:[[lat,lon,typeId,name?]] }
+let poiLoading = null;           // 取得中の Promise（同時に2本走らせない）
+
+// 取得。失敗したら覚えず、次の描き直しでもう一度取りに行く
+function loadPoi() {
+  if (poiData) return Promise.resolve(poiData);
+  if (poiLoading) return poiLoading;
+  poiLoading = fetch('data/poi.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => {
+      if (!d || !Array.isArray(d.items) || !Array.isArray(d.types)) throw new Error('形が違う');
+      poiData = d;
+      return d;
+    })
+    .finally(() => { poiLoading = null; });
+  return poiLoading;
+}
+
+// 出典。取り出した日が分かれば添える（読み込む前は日付なし）
+function poiAttribution() {
+  const g = poiData && /^\d{4}-\d{2}-\d{2}$/.test(poiData.generated || '') ? poiData.generated : '';
+  return '© OpenStreetMap contributors（ODbL' + (g ? `・施設は ${g} 時点` : '') + '）';
+}
+
+// 隠した種類（key の集合）。知らない key は描くときに無視されるだけ
+function poiHiddenSet() {
+  try {
+    const a = JSON.parse(localStorage.getItem(POI_LS_HIDDEN) || '[]');
+    return new Set(Array.isArray(a) ? a.filter(k => typeof k === 'string' && POI_ICONS[k]) : []);
+  } catch (e) { return new Set(); }
+}
+function togglePoiType(key) {
+  if (!POI_ICONS[key]) return;
+  const h = poiHiddenSet();
+  if (h.has(key)) h.delete(key); else h.add(key);
+  try { localStorage.setItem(POI_LS_HIDDEN, JSON.stringify([...h])); } catch (e) { /* 覚えられなくても動く */ }
+  refreshWeatherPoints();
+  renderLayerPanel();
+}
+// 種類の絞り込みチップ（アメダスの要素チップと同じ見た目・複数選択）
+function poiTypeChips() {
+  const h = poiHiddenSet();
+  const types = (poiData && poiData.types) || Object.keys(POI_ICONS).map(k => ({ key: k, name: POI_NAMES[k] }));
+  return `<div class="amedas-els">` + types.filter(t => POI_ICONS[t.key]).map(t =>
+    `<button class="amedas-el${h.has(t.key) ? '' : ' active'}"
+             onclick="togglePoiType('${t.key}')">${POI_ICONS[t.key]}${escapeHtml(t.name)}</button>`).join('') + `</div>`;
+}
+
+function drawPoi(bounds, opacity) {
+  if (!poiData) {
+    // 前に失敗していたら、取り直しの間もエラーを見せたままにする（「取得中…」で上書きしない）
+    if (!layerFailed.poi) setLayerNote('poi', '取得中…');
+    // ⚠ 2引数の then にする（描き直しの中の例外を「取得できません」と取り違えない）
+    loadPoi().then(() => {
+      clearLayerStatus('poi'); updateMapAttribution(); refreshWeatherPoints();
+      const panel = document.getElementById('layer-panel');
+      if (panel && panel.classList.contains('open')) renderLayerPanel();   // 種類の名前をデータのものに
+    }, e => setLayerError('poi', `取得できません（${e.message}）`));
+    return;
+  }
+  const z = leafletMap.getZoom();
+  if (z < POI_MIN_ZOOM) { setLayerNote('poi', `拡大すると出ます（z${POI_MIN_ZOOM} から）`); return; }
+  const hidden = poiHiddenSet();
+  const typeById = new Map(poiData.types.map(t => [t.id, t]));
+  const thin = z < POI_NAME_MIN_ZOOM;
+  const seen = new Set();
+  let placed = 0, over = false;
+  for (const it of poiData.items) {
+    const [lat, lon, typeId, name] = it;
+    const t = typeById.get(typeId);
+    if (!t || !POI_ICONS[t.key] || hidden.has(t.key)) continue;
+    if (!bounds.contains([lat, lon])) continue;
+    if (thin) {
+      const pt = leafletMap.latLngToContainerPoint([lat, lon]);
+      const cell = `${t.key}:${Math.floor(pt.x / POI_THIN_PX)}:${Math.floor(pt.y / POI_THIN_PX)}`;
+      if (seen.has(cell)) continue;
+      seen.add(cell);
+    }
+    if (placed >= POI_MAX_MARKERS) { over = true; break; }
+    const label = !thin && name ? `<span>${escapeHtml(name)}</span>` : '';
+    const m = L.marker([lat, lon], {
+      pane: 'mapWeather', opacity,
+      icon: L.divIcon({
+        className: 'poi-mark',
+        html: `<div class="poi-box"><i>${POI_ICONS[t.key]}</i>${label}</div>`,
+        iconSize: null,
+      }),
+    }).addTo(leafletMap);
+    m.bindTooltip(`${name ? escapeHtml(name) + '<br>' : ''}${escapeHtml(t.name)}（OpenStreetMap）`);
+    // 押して開く（タッチ端末でマウスオーバーが無くても札が出るように明示する）。地点は変えない
+    m.on('click', () => m.openTooltip());
+    weatherMarkers.push(m);
+    placed++;
+  }
+  if (over) setLayerNote('poi', '多すぎるので一部だけ表示しています（拡大すると増えます）');
+  else if (!placed) setLayerNote('poi', 'この範囲に施設がありません');
+  else clearLayerStatus('poi');
+}
+
 function refreshWeatherPoints() {
   if (!leafletMap) return;
   clearWeatherMarkers();
   const bounds = leafletMap.getBounds();
   if (isOverlayOn('areas')) drawAreas(bounds, overlayOpacity('areas'));
+  if (isOverlayOn('poi')) drawPoi(bounds, overlayOpacity('poi'));
   updateMapWhen();
   if (isOverlayOn('amedas')) drawAmedas(bounds, overlayOpacity('amedas'));
   // 風：矢印と流れは同じ場（ensureWindField）から描く
@@ -11496,6 +11630,13 @@ function updateMapAttribution() {
   if (base) parts.push(base.attribution);
   mapPrefs.overlays.forEach(item => {
     const def = findOverlay(item.id);
+    if (def && def.id === 'poi') {
+      // 施設は取り出した日を添える。下地の OSM と同じ出典なので1つにまとめる（重ねて出さない）
+      const t = poiAttribution();
+      const i = parts.indexOf('© OpenStreetMap contributors');
+      if (i >= 0) parts[i] = t; else if (!parts.includes(t)) parts.push(t);
+      return;
+    }
     if (def && def.attribution && !parts.includes(def.attribution)) parts.push(def.attribution);
   });
   // 地理院の回答（2026-10）：地図は「地理院タイル＋URL」、加工した標高タイルは「地理院タイル（標高タイル）を加工して作成」。
@@ -11606,7 +11747,8 @@ function setOverlayOpacity(id, value) {
     layer.setOpacity(item.opacity);
   }
   const def = findOverlay(id);
-  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint')) refreshWeatherPoints();
+  // ⚠ 点で描くものは描き直さないと透過率が効かない（'areas' は v4.166.0 まで漏れていた）
+  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'areas' || def.kind === 'poi')) refreshWeatherPoints();
   if (def && def.kind === 'windFlow' && windFlow.cv) windFlow.cv.style.opacity = String(item.opacity);
   if (def && def.kind === 'windFlowGL' && windGL.cv) windGL.cv.style.opacity = String(item.opacity);
   const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
@@ -11853,7 +11995,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}
         <div class="layer-ov-op">
           ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
