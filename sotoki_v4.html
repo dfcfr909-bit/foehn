@@ -2539,7 +2539,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.163.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.164.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6775,10 +6775,16 @@ const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', nam
 /* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
    赤色立体図風（composite）・時刻つき・点で描くものは、今の合成のまま触らない。 */
 const MAP_BLEND_KINDS_EXCLUDED = ['jmaNowcast', 'jmaSat', 'amedas', 'windArrows', 'snowHint', 'thunderHint', 'windFlow', 'windFlowGL', 'areas'];
+/* 重ね方を選べるタイル系（#194・v4.164.0）。値は「どの pane（合成の箱）に掛けるか」。
+   赤色立体図風は傾斜量図の pane（乗算が既定）。雨雲と雷は別々の箱。衛星は輝度→透明度で抜く方式のため対象外。 */
+const BLEND_HOST = { rrimLike: 'rrimSlope', radar: 'mapNowcastMask', thunder: 'mapThunderMask' };
+const BLEND_DEFAULT = { rrimLike: 'multiply' };
 function isBlendable(def) {
-  return !!def && !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
+  if (!def) return false;
+  if (BLEND_HOST[def.id]) return true;
+  return !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
 }
-function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || 'normal'; }
+function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || BLEND_DEFAULT[id] || 'normal'; }
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -7130,7 +7136,7 @@ function dropAllStaleWxLayers() {
    マスク用の入れ物（z-indexつき）がその境になるので、その内側に掛けても
    ベースマップとは混ざらず、黒いままになる。
    そのため合成するレイヤーは専用のpane（mapSat）に分けてある。 */
-function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'; }
+function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : def.id === 'thunder' ? 'mapThunder' : 'mapNowcast'; }
 /* 合成モードはマスク用の入れ物（z-indexを持つ外側）に掛ける。内側だと下と混ざらない。
    ⚠**合成の前に黒レベルを切り捨てること（floor）。** ひまわりの画像はタイルごとに
    暗部の水準がわずかに違う（特に夜のカラーバンドは可視光がほぼ無く、その差が支配的）。
@@ -7241,6 +7247,7 @@ async function addTimedTileLayer(def, opacity, replace) {
     // 雷はべた塗りで境目が固いので、レイヤーごとぼかす（paneに掛けると雨雲まで滲む）
     if (def.glow && layer.getContainer()) layer.getContainer().classList.add('wx-glow');
     applyWxBlend(def);                           // 衛星の雲は暗い所を透かす合成にする
+    if (isBlendable(def)) applyBlendHost(def.id); // 雨雲・雷は選んだ重ね方を箱に掛ける（既定は通常）
     overlayTileLayers[def.id] = layer;
   } catch (e) {
     const cur = replace ? overlayTileLayers[def.id] : null;
@@ -11507,14 +11514,20 @@ function overlayPane(id, z) {
   return name;
 }
 
-// 重ね方を変える。作り直さず pane の合成だけ差し替え、覚えてから表示を直す（#194）
+/* 重ね方を、その地形図・気象レイヤーの合成の箱に掛ける（作り直さない）。
+   ⚠ 合成は必ず「タイルの div」ではなく箱（pane）に掛ける。内側に掛けると下の地図と混ざらない（wxPaneFor）。 */
+function applyBlendHost(id) {
+  if (!leafletMap) return;
+  const host = BLEND_HOST[id] ? leafletMap.getPane(BLEND_HOST[id]) : leafletMap.getPane('mapOv_' + id);
+  if (host) host.style.mixBlendMode = blendOf(id);
+}
+// 重ね方を変える。作り直さず箱の合成だけ差し替え、覚えてから表示を直す（#194）
 function setOverlayBlend(id, mode) {
   const def = findOverlay(id);
   if (!isBlendable(def) || !MAP_BLEND_MODES.some(m => m.id === mode)) return;
   mapPrefs.blend[id] = mode;
   saveMapPrefs();
-  const pane = leafletMap && leafletMap.getPane('mapOv_' + id);
-  if (pane) pane.style.mixBlendMode = mode;
+  applyBlendHost(id);
   renderLayerPanel();
 }
 
@@ -11618,7 +11631,7 @@ function openMap() {
       leafletMap.createPane('rrimShade').style.zIndex = 360;
       const slopePane = leafletMap.createPane('rrimSlope');
       slopePane.style.zIndex = 361;
-      slopePane.style.mixBlendMode = 'multiply';
+      slopePane.style.mixBlendMode = blendOf('rrimLike');   // 既定は乗算（#194）
       /* ナウキャスト（雨雲・衛星・雷）は別pane。現在地まわりだけ薄くするマスクを掛ける。
          マーカーと同じpaneに入れると、現在地マーカーごと消えてしまう。
          ⚠**マスクは「実寸のある箱」にしか効かない。** Leafletのpaneは0×0なので、
@@ -11632,6 +11645,8 @@ function openMap() {
       leafletMap.createPane('mapSat', satMask);
       leafletMap.createPane('mapNowcastMask').style.zIndex = 380;
       leafletMap.createPane('mapNowcast', leafletMap.getPane('mapNowcastMask'));
+      leafletMap.createPane('mapThunderMask').style.zIndex = 381;   // 雷は雨雲と別の箱（重ね方を別に選べる）
+      leafletMap.createPane('mapThunder', leafletMap.getPane('mapThunderMask'));
       // 風の流れ（粒子）。ナウキャスト（380）より上、点のマーカー（400）より下
       leafletMap.createPane('mapWind').style.zIndex = 390;
       leafletMap.getPane('mapWind').style.pointerEvents = 'none';
@@ -12399,7 +12414,7 @@ function updateMeSpotlight() {
   spotRaf = requestAnimationFrame(() => { spotRaf = null; paintMeSpotlight(); });
 }
 // マスクを掛ける組（外＝実寸の箱／内＝タイルの入る所）。雨雲・雷と衛星で1組ずつ
-const SPOT_PANES = [['mapNowcastMask', 'mapNowcast'], ['mapSatMask', 'mapSat']];
+const SPOT_PANES = [['mapNowcastMask', 'mapNowcast'], ['mapThunderMask', 'mapThunder'], ['mapSatMask', 'mapSat']];
 function paintMeSpotlight() {
   if (!leafletMap) return;
   for (const [hostName, tilesName] of SPOT_PANES) {

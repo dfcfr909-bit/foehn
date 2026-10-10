@@ -2332,7 +2332,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
      並び順は z-index（340〜）で決め、DOM は動かさない。外して入れ直しても覚えている。 */
   const pageB = await newPage({
     'sotoki.map.overlays': JSON.stringify([{ id: 'slope', opacity: 0.6 }, { id: 'relief', opacity: 0.8 }]),
-    'sotoki.map.blend': JSON.stringify({ slope: 'screen', rrimLike: 'multiply', bogus: 'multiply', relief: 'blur' }),
+    'sotoki.map.blend': JSON.stringify({ slope: 'screen', rrimLike: 'screen', radar: 'multiply', satellite: 'screen', bogus: 'multiply', relief: 'blur' }),
   });
   await pageB.click('#btn-map');
   await pageB.waitForTimeout(700);
@@ -2345,6 +2345,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       slope: { z: Number(pane('slope').style.zIndex), blend: pane('slope').style.mixBlendMode, parent: pane('slope').parentNode === mp },
       relief: { z: Number(pane('relief').style.zIndex), blend: pane('relief').style.mixBlendMode, parent: pane('relief').parentNode === mp },
       oldPane: !!leafletMap.getPane('mapOverlays'),
+      thunderBox: (() => { const h = leafletMap.getPane('mapThunderMask'); const t = leafletMap.getPane('mapThunder'); return !!h && !!t && t.parentNode === h && h.parentNode === mp && Number(h.style.zIndex) === 381; })(),
       mapPrefsBlend: mapPrefs.blend,
       chips: document.querySelectorAll('.layer-blend-btn').length,
       // 行の右端が地図パネルの内側に収まるか（箱の中に収まる子では scrollWidth で見ても効かない）
@@ -2356,13 +2357,16 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   });
   ok(b0.slope.blend === 'screen', '保存された重ね方（スクリーン）が地形図のpaneに掛かる', b0);
   ok(b0.relief.blend === 'normal', '不正な重ね方（blur）は通常に落ちる', b0.relief);
-  ok(b0.mapPrefsBlend.slope === 'screen' && !('rrimLike' in b0.mapPrefsBlend) && !('bogus' in b0.mapPrefsBlend),
-    '読み込み時、地形図でない・未知のIDの重ね方は捨てる', b0.mapPrefsBlend);
+  ok(b0.mapPrefsBlend.slope === 'screen' && b0.mapPrefsBlend.rrimLike === 'screen' && b0.mapPrefsBlend.radar === 'multiply',
+    '読み込み時、重ね方を選べるもの（地形図・赤色立体図風・雨雲）は残す', b0.mapPrefsBlend);
+  ok(!('satellite' in b0.mapPrefsBlend) && !('bogus' in b0.mapPrefsBlend),
+    '読み込み時、衛星（対象外）・未知のIDの重ね方は捨てる', b0.mapPrefsBlend);
   ok(b0.slope.parent && b0.relief.parent, '重ね方のpaneは地図の直下（mapOverlaysの子ではない）', b0);
   ok(b0.slope.z >= 340 && b0.relief.z > b0.slope.z && b0.relief.z < 360,
     '並び順は overlays の順（後ろほど上）で、赤色立体図風（360）より下', [b0.slope.z, b0.relief.z]);
   ok(b0.oldPane === false, '旧 mapOverlays の pane は作らない');
-  ok(b0.chips === 6, '重ね方のボタンは on の通常の地形図にだけ出る（2枚×3）', b0.chips);
+  ok(b0.thunderBox, '雷は雨雲と別の箱（mapThunderMask・z381）に入る', b0.thunderBox);
+  ok(b0.chips === 6, '重ね方のボタンは on の重ね方を選べるレイヤーにだけ出る（2枚×3）', b0.chips);
   ok(b0.fits, '重ね方のボタンを足しても行が横にはみ出さない（390px）', b0);
 
   await pageB.evaluate(() => setOverlayBlend('relief', 'multiply'));
@@ -2394,7 +2398,24 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(!b3.ids.includes('slope') && b3.saved.slope === 'screen',
     '赤色立体図風の排他で外れても、傾斜量図の重ね方は覚えている', b3);
-  ok(b3.rrimBlend === 'multiply', '傾斜量図のpaneの合成指定は multiply のまま（マップ作成時の初期値。描画の見た目は実機で確認）', b3.rrimBlend);
+  ok(b3.rrimBlend === 'screen', '傾斜量図の箱は保存された重ね方（スクリーン）に従う（既定の乗算は保存が無いときだけ）', b3.rrimBlend);
+
+  // 雨雲と雷は、on のときそれぞれ重ね方のボタンを出す（雨雲と雷は別々に選べる）
+  await pageB.evaluate(() => { toggleOverlay('radar'); toggleOverlay('thunder'); });
+  await pageB.waitForTimeout(300);
+  const b4 = await pageB.evaluate(() => {
+    const rows = [...document.querySelectorAll('.layer-ov.on')].filter(r => r.querySelector('.layer-blend'));
+    return rows.map(r => r.querySelector('.layer-ov-name').textContent.trim().slice(0, 4));
+  });
+  ok(b4.some(t => t.startsWith('降雨')) && b4.some(t => t.startsWith('雷')),
+    '雨雲と雷は、on のとき重ね方のボタンを出す', b4);
+  await pageB.evaluate(() => { setOverlayBlend('radar', 'screen'); setOverlayBlend('thunder', 'multiply'); });
+  const b5 = await pageB.evaluate(() => ({
+    thunder: leafletMap.getPane('mapThunderMask').style.mixBlendMode,
+    radar: leafletMap.getPane('mapNowcastMask').style.mixBlendMode,
+  }));
+  ok(b5.thunder === 'multiply' && b5.radar === 'screen',
+    '雷の重ね方は雨雲と別に掛かる（雷は乗算・雨雲はスクリーン）', b5);
   await pageB.close();
 
   satTileMode = 'dark';
