@@ -7349,7 +7349,12 @@ function ciCancel(tile) {
   if (ciWorker && ciPending.has(job.id)) ciWorker.postMessage({ type: 'cancel', id: job.id });
 }
 
-const CiMapLayer = L.GridLayer.extend({
+/* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet は CDN なので、取れないと
+   本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
+let ciMapLayerClass = null;
+function CiMapLayerClass() {
+  if (ciMapLayerClass) return ciMapLayerClass;
+  ciMapLayerClass = L.GridLayer.extend({
   createTile(coords, done) {
     const tile = document.createElement('canvas');
     tile.width = tile.height = CI_PRM.tile;
@@ -7364,7 +7369,9 @@ const CiMapLayer = L.GridLayer.extend({
     }).catch(e => { job.done = true; done(e, tile); });
     return tile;
   },
-});
+  });
+  return ciMapLayerClass;
+}
 
 // z13 未満で CIマップを入れているときは「拡大すると表示」。z13 以上に戻ったら消す
 function updateCiZoomNote() {
@@ -7396,7 +7403,7 @@ function applyOverlays() {
     } else if (def.kind === 'ciMap') {
       // ⚠ isBlendable の分岐より前に置く（url が無いので L.tileLayer にすると壊れる）
       const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
-      const layer = new CiMapLayer(tileOpts(def, { pane, opacity: item.opacity, minZoom: def.minZoom }));
+      const layer = new (CiMapLayerClass())(tileOpts(def, { pane, opacity: item.opacity, minZoom: def.minZoom }));
       layer.on('tileunload', e => ciCancel(e.tile));
       layer.addTo(leafletMap);
       watchTileStatus(layer, def);

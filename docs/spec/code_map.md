@@ -380,7 +380,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `getCiWorker()` / `ciBreakWorker()` | Worker を初回に作る。無い・壊れたら以後はメイン |
 | `ciFetchBlob(z,x,y)` | 標高タイルの取得は**メイン**（Service Worker のタイルキャッシュを通す）。通信の失敗は覚えない |
 | `ciComputeMain(job)` / `ciDecodeMain` | Worker が使えないときの計算（1枚ずつ譲る） |
-| `ciRenderTile` / `ciCancel` / `CiMapLayer` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す |
+| `ciRenderTile` / `ciCancel` / `CiMapLayerClass()` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す。⚠ GridLayer の派生は**使うときに作る**（最上位で `L.` を呼ぶと、Leaflet が取れないとき本体ごと止まる） |
 | `updateCiZoomNote()` | z13 未満で「拡大すると表示（z13 から）」 |
 | `ciStats` | どちらの経路で何枚計算したか（検査用） |
 

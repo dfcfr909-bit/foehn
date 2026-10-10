@@ -4,9 +4,9 @@
 > 関数・定数を足す・消す・改名したら作り直す（`tests/smoke_codeindex.mjs` が顔ぶれのずれで落とす。行番号のずれでは落とさない）。
 > 説明・地雷・「なぜ」は手書きの [`code_map.md`](code_map.md) と `docs/adr/`。ここは「どこに何があり、誰が使うか」だけ。
 
-- `sotoki_v4.html`：15,461行／本体の `<script>` は 2834〜15458 行
-- トップレベルの宣言 906（関数 646・定数と状態 260）／ブロック 39
-- `code_map.md` に説明があるもの：506／906（📝 印）
+- `sotoki_v4.html`：15,468行／本体の `<script>` は 2834〜15465 行
+- トップレベルの宣言 907（関数 647・定数と状態 260）／ブロック 39
+- `code_map.md` に説明があるもの：507／907（📝 印）
 - **参照元**＝その名前を使っているトップレベルの関数（推定。文字列の中の `onclick="名前()"` も数える。コメントは除く）。
   変更の影響範囲を見るときの手がかりで、網羅は保証しない。`（HTML）` は `<script>` の外（マークアップ）、`（トップレベル）` は関数の外の文（起動時の登録など）からの参照
 - 参照元が 0 のもの＝どこからも呼ばれていない候補（起動時に1回だけ動くものや、テストからだけ使うものもある）
@@ -26,29 +26,29 @@
 - 行 6259：PARTICLES (雨・雪エフェクト)（5）
 - 行 6349：時刻選択（17）
 - 行 6694：MAP — レイヤー定義（46）
-- 行 7046：MAP — 本体（66）
-- 行 7867：レーダー実況とモデル予報の突き合わせ（v4.98.0）（23）
-- 行 8130：点で描く気象レイヤー（アメダス実測・風の矢印）（11）
-- 行 8238：高度別の風の場（Wind Field Engine）— ADR-0012（36）
-- 行 8767：降雪の目安（段階2・#131）→ docs/requirements_snow_thunder_hint.md（10）
-- 行 8885：雷雨の目安（段階3・#138）→ docs/requirements_snow_thunder_hint.md（14）
-- 行 9038：風の流れ（Particle Engine）（13）
-- 行 9219：風の流れ（実験・WebGL）— PoC（v4.120.0・ADR-0013）（39）
-- 行 9730：段階3a：風下の遮蔽（v4.133.0〜・実験・**既定は切**。計測表示の「補正」で入れる）（13）
-- 行 9935：段階2：地形の構造の抽出（尾根・沢・鞍部）— 検証用（v4.122.0〜v4.124.0）（156）
-- 行 12335：標高タイル（国土地理院 dem_png）から選択地点の標高を読む（33）
-- 行 12696：現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）（58）
-- 行 13605：検索の履歴（選んだ地点）（8）
-- 行 13733：手元の山の検索（#171・第1段階）（33）
-- 行 14143：座標の表記（DD・DMS・DDM・度分秒）— v4.109.0（11）
-- 行 14281：座標の入力を読む（v4.158.0・findings-09 の B・第1段）（21）
-- 行 14495：FAVORITES（7）
-- 行 14685：RANKING（全国山域ランキング）（21）
-- 行 15022：新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）（9）
-- 行 15176：LOCALSTORAGE – 最終地点（2）
-- 行 15187：LOADING OVERLAY（2）
-- 行 15241：天気図（気象庁の速報天気図・予想天気図）（13）
-- 行 15383：AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）（4）
+- 行 7046：MAP — 本体（67）
+- 行 7874：レーダー実況とモデル予報の突き合わせ（v4.98.0）（23）
+- 行 8137：点で描く気象レイヤー（アメダス実測・風の矢印）（11）
+- 行 8245：高度別の風の場（Wind Field Engine）— ADR-0012（36）
+- 行 8774：降雪の目安（段階2・#131）→ docs/requirements_snow_thunder_hint.md（10）
+- 行 8892：雷雨の目安（段階3・#138）→ docs/requirements_snow_thunder_hint.md（14）
+- 行 9045：風の流れ（Particle Engine）（13）
+- 行 9226：風の流れ（実験・WebGL）— PoC（v4.120.0・ADR-0013）（39）
+- 行 9737：段階3a：風下の遮蔽（v4.133.0〜・実験・**既定は切**。計測表示の「補正」で入れる）（13）
+- 行 9942：段階2：地形の構造の抽出（尾根・沢・鞍部）— 検証用（v4.122.0〜v4.124.0）（156）
+- 行 12342：標高タイル（国土地理院 dem_png）から選択地点の標高を読む（33）
+- 行 12703：現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）（58）
+- 行 13612：検索の履歴（選んだ地点）（8）
+- 行 13740：手元の山の検索（#171・第1段階）（33）
+- 行 14150：座標の表記（DD・DMS・DDM・度分秒）— v4.109.0（11）
+- 行 14288：座標の入力を読む（v4.158.0・findings-09 の B・第1段）（21）
+- 行 14502：FAVORITES（7）
+- 行 14692：RANKING（全国山域ランキング）（21）
+- 行 15029：新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）（9）
+- 行 15183：LOCALSTORAGE – 最終地点（2）
+- 行 15194：LOADING OVERLAY（2）
+- 行 15248：天気図（気象庁の速報天気図・予想天気図）（13）
+- 行 15390：AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）（4）
 
 ## STATE
 
@@ -456,7 +456,7 @@
 | `applyBaseLayer` 📝 | 関数 | 7070 | 2：`openMap`、`setMapBase` |
 | `buildRrimLayers` 📝 | 関数 | 7084 | 1：`applyOverlays` |
 | `CI_TERRAIN_URL` | 定数 | 7105 | 1：`ciFetchBlob` |
-| `CI_PRM` 📝 | 定数 | 7106 | 3：`ciComputeMain`、`ciRenderTile`、（トップレベル） |
+| `CI_PRM` 📝 | 定数 | 7106 | 3：`CiMapLayerClass`、`ciComputeMain`、`ciRenderTile` |
 | `CI_ZOOM_NOTE` | 定数 | 7107 | 1：`updateCiZoomNote` |
 | `CI_BLOB_MAX` | 定数 | 7108 | 2：`ciDecodeMain`、`ciFetchBlob` |
 | `ciStats` 📝 | 状態 | 7109 | 2：`ciComputeMain`、`ciRenderTile` |
@@ -475,736 +475,737 @@
 | `ciFetchBlob` 📝 | 関数 | 7275 | 1：`ciRenderTile` |
 | `ciDecodeMain` 📝 | 関数 | 7296 | 1：`ciComputeMain` |
 | `ciComputeMain` 📝 | 関数 | 7308 | 1：`ciRenderTile` |
-| `ciRenderTile` 📝 | 関数 | 7323 | 1：（トップレベル） |
+| `ciRenderTile` 📝 | 関数 | 7323 | 1：`CiMapLayerClass` |
 | `ciCancel` 📝 | 関数 | 7345 | 1：`applyOverlays` |
-| `updateCiZoomNote` 📝 | 関数 | 7370 | 2：`applyOverlays`、`openMap` |
-| `applyOverlays` 📝 | 関数 | 7378 | 2：`openMap`、`toggleOverlay` |
-| `wxTimesPromises` | 状態 | 7424 | 2：`clearWxTimes`、`jmaTimesList` |
-| `jmaTimesList` 📝 | 関数 | 7426 | 2：`jmaTimes`、`readNowcastSeriesRaw` |
-| `latestObsTime` 📝 | 関数 | 7441 | 2：`jmaTimes`、`nowcastSeries` |
-| `jmaTimes` 📝 | 関数 | 7449 | 1：`addTimedTileLayer` |
-| `clearWxTimes` 📝 | 関数 | 7453 | 1：`refreshWeatherLayers` |
-| `timedTileUrl` 📝 | 関数 | 7456 | 2：`addTimedTileLayer`、`readNowcastSeriesRaw` |
-| `WX_DROP_MS` 📝 | 定数 | 7473 | 1：`addTimedTileLayer` |
-| `dropStaleWxLayer` 📝 | 関数 | 7475 | 1：`addTimedTileLayer` |
-| `dropAllStaleWxLayers` 📝 | 関数 | 7480 | 2：`applyOverlays`、`closeMap` |
-| `wxPaneFor` 📝 | 関数 | 7491 | 1：`addTimedTileLayer` |
-| `SVG_NS` | 定数 | 7520 | 1：`buildSatFilter` |
-| `buildSatFilter` 📝 | 関数 | 7522 | 2：`applyWxBlend`、（HTML） |
-| `applyWxBlend` 📝 | 関数 | 7567 | 1：`addTimedTileLayer` |
-| `addTimedTileLayer` 📝 | 関数 | 7582 | 3：`applyOverlays`、`refreshWeatherLayers`、`setSatBand` |
-| `startWxRefresh` 📝 | 関数 | 7615 | 1：`openMap` |
-| `stopWxRefresh` 📝 | 関数 | 7619 | 1：`closeMap` |
-| `refreshWeatherLayers` 📝 | 関数 | 7624 | 2：`openMap`、`startWxRefresh` |
-| `RAIN_MM` | 定数 | 7649 | 2：`radarNoteText`、`rainOutlookHourly` |
-| `RAIN_LOOK_H` | 定数 | 7650 | 1：`rainOutlookHourly` |
-| `JMA_BANDS` | 定数 | 7653 | 1：`timeBandWord` |
-| `timeBandWord` 📝 | 関数 | 7654 | 1：`rainOutlookHourly` |
-| `dayWord` 📝 | 関数 | 7656 | 1：`rainOutlookHourly` |
-| `rainOutlookHourly` 📝 | 関数 | 7667 | 1：`updateRainOutlook` |
-| `NOWC_TILE_Z` | 定数 | 7692 | 1：`readNowcastSeriesRaw` |
-| `NOWC_ALPHA_MIN` | 定数 | 7693 | 1：`readNowcastSeriesRaw` |
-| `NOWC_MAX_STEPS` | 定数 | 7694 | 1：`readNowcastSeriesRaw` |
-| `NOWC_STEP_MIN` | 定数 | 7695 | 3：`drawCloudPrecip`、`radarWetAt`、`rainOutlookNowcast` |
-| `tilePixelAt` 📝 | 関数 | 7698 | 1：`readNowcastSeriesRaw` |
-| `parseJmaTime` 📝 | 関数 | 7709 | 1：`readNowcastSeriesRaw` |
-| `nowcastSeries` 📝 | 関数 | 7716 | 1：`readNowcastSeriesRaw` |
-| `probeTileAlpha` 📝 | 関数 | 7727 | 1：`readNowcastSeriesRaw` |
-| `tileReachable` | 関数 | 7742 | 1：`readNowcastSeriesRaw` |
-| `loadTileImage` 📝 | 関数 | 7747 | 1：`readNowcastSeriesRaw` |
-| `NOWC_CACHE_MS` | 定数 | 7770 | 1：`readNowcastSeries` |
-| `readNowcastSeries` | 関数 | 7773 | 2：`rainOutlookNowcast`、`refreshRadarCheck` |
-| `readNowcastSeriesRaw` | 関数 | 7787 | 1：`readNowcastSeries` |
-| `rainOutlookNowcast` 📝 | 関数 | 7850 | 1：`updateRainOutlook` |
+| `CiMapLayerClass` 📝 | 関数 | 7355 | 1：`applyOverlays` |
+| `updateCiZoomNote` 📝 | 関数 | 7377 | 2：`applyOverlays`、`openMap` |
+| `applyOverlays` 📝 | 関数 | 7385 | 2：`openMap`、`toggleOverlay` |
+| `wxTimesPromises` | 状態 | 7431 | 2：`clearWxTimes`、`jmaTimesList` |
+| `jmaTimesList` 📝 | 関数 | 7433 | 2：`jmaTimes`、`readNowcastSeriesRaw` |
+| `latestObsTime` 📝 | 関数 | 7448 | 2：`jmaTimes`、`nowcastSeries` |
+| `jmaTimes` 📝 | 関数 | 7456 | 1：`addTimedTileLayer` |
+| `clearWxTimes` 📝 | 関数 | 7460 | 1：`refreshWeatherLayers` |
+| `timedTileUrl` 📝 | 関数 | 7463 | 2：`addTimedTileLayer`、`readNowcastSeriesRaw` |
+| `WX_DROP_MS` 📝 | 定数 | 7480 | 1：`addTimedTileLayer` |
+| `dropStaleWxLayer` 📝 | 関数 | 7482 | 1：`addTimedTileLayer` |
+| `dropAllStaleWxLayers` 📝 | 関数 | 7487 | 2：`applyOverlays`、`closeMap` |
+| `wxPaneFor` 📝 | 関数 | 7498 | 1：`addTimedTileLayer` |
+| `SVG_NS` | 定数 | 7527 | 1：`buildSatFilter` |
+| `buildSatFilter` 📝 | 関数 | 7529 | 2：`applyWxBlend`、（HTML） |
+| `applyWxBlend` 📝 | 関数 | 7574 | 1：`addTimedTileLayer` |
+| `addTimedTileLayer` 📝 | 関数 | 7589 | 3：`applyOverlays`、`refreshWeatherLayers`、`setSatBand` |
+| `startWxRefresh` 📝 | 関数 | 7622 | 1：`openMap` |
+| `stopWxRefresh` 📝 | 関数 | 7626 | 1：`closeMap` |
+| `refreshWeatherLayers` 📝 | 関数 | 7631 | 2：`openMap`、`startWxRefresh` |
+| `RAIN_MM` | 定数 | 7656 | 2：`radarNoteText`、`rainOutlookHourly` |
+| `RAIN_LOOK_H` | 定数 | 7657 | 1：`rainOutlookHourly` |
+| `JMA_BANDS` | 定数 | 7660 | 1：`timeBandWord` |
+| `timeBandWord` 📝 | 関数 | 7661 | 1：`rainOutlookHourly` |
+| `dayWord` 📝 | 関数 | 7663 | 1：`rainOutlookHourly` |
+| `rainOutlookHourly` 📝 | 関数 | 7674 | 1：`updateRainOutlook` |
+| `NOWC_TILE_Z` | 定数 | 7699 | 1：`readNowcastSeriesRaw` |
+| `NOWC_ALPHA_MIN` | 定数 | 7700 | 1：`readNowcastSeriesRaw` |
+| `NOWC_MAX_STEPS` | 定数 | 7701 | 1：`readNowcastSeriesRaw` |
+| `NOWC_STEP_MIN` | 定数 | 7702 | 3：`drawCloudPrecip`、`radarWetAt`、`rainOutlookNowcast` |
+| `tilePixelAt` 📝 | 関数 | 7705 | 1：`readNowcastSeriesRaw` |
+| `parseJmaTime` 📝 | 関数 | 7716 | 1：`readNowcastSeriesRaw` |
+| `nowcastSeries` 📝 | 関数 | 7723 | 1：`readNowcastSeriesRaw` |
+| `probeTileAlpha` 📝 | 関数 | 7734 | 1：`readNowcastSeriesRaw` |
+| `tileReachable` | 関数 | 7749 | 1：`readNowcastSeriesRaw` |
+| `loadTileImage` 📝 | 関数 | 7754 | 1：`readNowcastSeriesRaw` |
+| `NOWC_CACHE_MS` | 定数 | 7777 | 1：`readNowcastSeries` |
+| `readNowcastSeries` | 関数 | 7780 | 2：`rainOutlookNowcast`、`refreshRadarCheck` |
+| `readNowcastSeriesRaw` | 関数 | 7794 | 1：`readNowcastSeries` |
+| `rainOutlookNowcast` 📝 | 関数 | 7857 | 1：`updateRainOutlook` |
 
 ## レーダー実況とモデル予報の突き合わせ（v4.98.0）
 
-行 7867〜
+行 7874〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `RADAR_MAX_AGE_MS` | 定数 | 7884 | 1：`radarUsable` |
-| `RADAR_REFRESH_MS` | 定数 | 7885 | 1：`startRadarWatch` |
-| `radarAgeMs` | 関数 | 7890 | 1：`radarUsable` |
-| `radarUsable` | 関数 | 7894 | 4：`drawCloudPrecip`、`radarNoteText`、`radarNowWet`、`radarWetAt` |
-| `radarWetAt` | 関数 | 7899 | 0 |
-| `radarNowWet` | 関数 | 7938 | 1：`radarNoteText` |
-| `refreshRadarCheck` | 関数 | 7946 | 2：`applyWeatherJson`、`startRadarWatch` |
-| `startRadarWatch` | 関数 | 7959 | 1：`applyWeatherJson` |
-| `radarNoteText` | 関数 | 7968 | 1：`paintRadarNote` |
-| `paintRadarNote` | 関数 | 8000 | 3：`applyWeatherJson`、`refreshRadarCheck`、（HTML） |
-| `setRainText` 📝 | 関数 | 8010 | 1：`updateRainOutlook` |
-| `updateRainOutlook` 📝 | 関数 | 8017 | 4：`applyWeatherJson`、`openMap`、`pickPinPoint`、`refreshWeatherLayers` |
-| `WX_FAIL_MIN_TILES` | 定数 | 8046 | 1：`watchTileStatus` |
-| `WX_FAIL_RATIO` | 定数 | 8047 | 1：`watchTileStatus` |
-| `WX_FAIL_SETTLE_MS` | 定数 | 8048 | 1：`watchTileStatus` |
-| `watchTileStatus` 📝 | 関数 | 8049 | 3：`addTimedTileLayer`、`applyBaseLayer`、`applyOverlays` |
-| `layerStatus` | 状態 | 8085 | 4：`applyLayerStatus`、`paintTileTrouble`、`renderLayerPanel`、`updateCiZoomNote` |
-| `layerFailed` 📝 | 状態 | 8086 | 3：`applyLayerStatus`、`drawPoi`、`paintTileTrouble` |
-| `setLayerError` 📝 | 関数 | 8097 | 7：`addTimedTileLayer`、`drawAmedas`、`drawAreas`、`drawPoi`、`makeHintEngine`、`watchTileStatus` ほか1 |
-| `setLayerNote` 📝 | 関数 | 8098 | 8：`drawAmedas`、`drawAreas`、`drawPoi`、`makeHintEngine`、`updateCiZoomNote`、`updateWindFlowGL` ほか2 |
-| `clearLayerStatus` 📝 | 関数 | 8099 | 8：`applyBaseLayer`、`drawAmedas`、`drawAreas`、`drawPoi`、`makeHintEngine`、`updateCiZoomNote` ほか2 |
-| `applyLayerStatus` | 関数 | 8100 | 3：`clearLayerStatus`、`setLayerError`、`setLayerNote` |
-| `paintTileTrouble` 📝 | 関数 | 8114 | 2：`applyLayerStatus`、`closeMap` |
+| `RADAR_MAX_AGE_MS` | 定数 | 7891 | 1：`radarUsable` |
+| `RADAR_REFRESH_MS` | 定数 | 7892 | 1：`startRadarWatch` |
+| `radarAgeMs` | 関数 | 7897 | 1：`radarUsable` |
+| `radarUsable` | 関数 | 7901 | 4：`drawCloudPrecip`、`radarNoteText`、`radarNowWet`、`radarWetAt` |
+| `radarWetAt` | 関数 | 7906 | 0 |
+| `radarNowWet` | 関数 | 7945 | 1：`radarNoteText` |
+| `refreshRadarCheck` | 関数 | 7953 | 2：`applyWeatherJson`、`startRadarWatch` |
+| `startRadarWatch` | 関数 | 7966 | 1：`applyWeatherJson` |
+| `radarNoteText` | 関数 | 7975 | 1：`paintRadarNote` |
+| `paintRadarNote` | 関数 | 8007 | 3：`applyWeatherJson`、`refreshRadarCheck`、（HTML） |
+| `setRainText` 📝 | 関数 | 8017 | 1：`updateRainOutlook` |
+| `updateRainOutlook` 📝 | 関数 | 8024 | 4：`applyWeatherJson`、`openMap`、`pickPinPoint`、`refreshWeatherLayers` |
+| `WX_FAIL_MIN_TILES` | 定数 | 8053 | 1：`watchTileStatus` |
+| `WX_FAIL_RATIO` | 定数 | 8054 | 1：`watchTileStatus` |
+| `WX_FAIL_SETTLE_MS` | 定数 | 8055 | 1：`watchTileStatus` |
+| `watchTileStatus` 📝 | 関数 | 8056 | 3：`addTimedTileLayer`、`applyBaseLayer`、`applyOverlays` |
+| `layerStatus` | 状態 | 8092 | 4：`applyLayerStatus`、`paintTileTrouble`、`renderLayerPanel`、`updateCiZoomNote` |
+| `layerFailed` 📝 | 状態 | 8093 | 3：`applyLayerStatus`、`drawPoi`、`paintTileTrouble` |
+| `setLayerError` 📝 | 関数 | 8104 | 7：`addTimedTileLayer`、`drawAmedas`、`drawAreas`、`drawPoi`、`makeHintEngine`、`watchTileStatus` ほか1 |
+| `setLayerNote` 📝 | 関数 | 8105 | 8：`drawAmedas`、`drawAreas`、`drawPoi`、`makeHintEngine`、`updateCiZoomNote`、`updateWindFlowGL` ほか2 |
+| `clearLayerStatus` 📝 | 関数 | 8106 | 8：`applyBaseLayer`、`drawAmedas`、`drawAreas`、`drawPoi`、`makeHintEngine`、`updateCiZoomNote` ほか2 |
+| `applyLayerStatus` | 関数 | 8107 | 3：`clearLayerStatus`、`setLayerError`、`setLayerNote` |
+| `paintTileTrouble` 📝 | 関数 | 8121 | 2：`applyLayerStatus`、`closeMap` |
 
 ## 点で描く気象レイヤー（アメダス実測・風の矢印）
 
-行 8130〜
+行 8137〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WIND_CACHE_MS` | 定数 | 8145 | 1：`windRecord` |
-| `WIND_CACHE_MAX` | 定数 | 8146 | 1：`fetchWindColumns` |
-| `WIND_FETCH_DELAY_MS` | 定数 | 8147 | 1：`ensureWindField` |
-| `WIND_BACKOFF_MS` | 定数 | 8148 | 3：`ensureWindField`、`fetchWindColumns`、`makeHintEngine` |
-| `WIND_FETCH_MAX_POINTS` | 定数 | 8151 | 1：`ensureWindField` |
-| `weatherMarkers` | 状態 | 8155 | 7：`clearWeatherMarkers`、`drawAmedas`、`drawAreas`、`drawPoi`、`drawSnowHint`、`drawThunderHint` ほか1 |
-| `AMEDAS_MIN_ZOOM` | 定数 | 8156 | 1：`drawAmedas` |
-| `WIND_MIN_ZOOM` | 定数 | 8157 | 2：`ensureWindField`、`makeHintEngine` |
-| `clearWeatherMarkers` 📝 | 関数 | 8159 | 1：`refreshWeatherPoints` |
-| `loadAmedas` 📝 | 関数 | 8165 | 1：`drawAmedas` |
-| `drawAmedas` 📝 | 関数 | 8193 | 1：`refreshWeatherPoints` |
+| `WIND_CACHE_MS` | 定数 | 8152 | 1：`windRecord` |
+| `WIND_CACHE_MAX` | 定数 | 8153 | 1：`fetchWindColumns` |
+| `WIND_FETCH_DELAY_MS` | 定数 | 8154 | 1：`ensureWindField` |
+| `WIND_BACKOFF_MS` | 定数 | 8155 | 3：`ensureWindField`、`fetchWindColumns`、`makeHintEngine` |
+| `WIND_FETCH_MAX_POINTS` | 定数 | 8158 | 1：`ensureWindField` |
+| `weatherMarkers` | 状態 | 8162 | 7：`clearWeatherMarkers`、`drawAmedas`、`drawAreas`、`drawPoi`、`drawSnowHint`、`drawThunderHint` ほか1 |
+| `AMEDAS_MIN_ZOOM` | 定数 | 8163 | 1：`drawAmedas` |
+| `WIND_MIN_ZOOM` | 定数 | 8164 | 2：`ensureWindField`、`makeHintEngine` |
+| `clearWeatherMarkers` 📝 | 関数 | 8166 | 1：`refreshWeatherPoints` |
+| `loadAmedas` 📝 | 関数 | 8172 | 1：`drawAmedas` |
+| `drawAmedas` 📝 | 関数 | 8200 | 1：`refreshWeatherPoints` |
 
 ## 高度別の風の場（Wind Field Engine）— ADR-0012
 
-行 8238〜
+行 8245〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WIND_FIELD_LEVELS` 📝 | 定数 | 8253 | 5：`WIND_FIELD_MODES`、`fetchWindColumns`、`windColumnAt`、`windModeNote`、`windTraceText` |
-| `wfVars` | 関数 | 8261 | 2：`fetchWindColumns`、`windColumnAt` |
-| `WIND_FIELD_MODES` 📝 | 定数 | 8265 | 3：`loadMapPrefs`、`windModeChips`、`windModeDef` |
-| `WIND_MODE_DEFAULT` | 定数 | 8267 | 2：`ensureWindField`、`loadMapPrefs` |
-| `windModeDef` | 関数 | 8268 | 2：`setWindMode`、`windModeNote` |
-| `WIND_GRID` | 定数 | 8270 | 2：`buildWindField`、`windFieldLattice` |
-| `WIND_BANDS` | 定数 | 8271 | 1：`windBand` |
-| `windBand` | 関数 | 8272 | 1：`windFieldLattice` |
-| `WIND_SPANS` | 定数 | 8274 | 1：`fetchWindColumns` |
-| `windUV` | 関数 | 8276 | 1：`windColumnAt` |
-| `windSpdDir` | 関数 | 8277 | 5：`drawWindArrows`、`terrainColText`、`terrainProbeCenter`、`terrainVerifyRow`、`windTraceText` |
-| `windLerp` | 関数 | 8278 | 1：（トップレベル） |
-| `windDirName` | 関数 | 8280 | 2：`terrainColText`、`windTraceText` |
-| `loadTerrainRef` 📝 | 関数 | 8286 | 2：`ensureWindField`、`makeHintEngine` |
-| `zRefAt` 📝 | 関数 | 8296 | 3：`resolveWindAt`、`snowHintAt`、`windGLTerrainHeight` |
-| `zMaxAt` | 関数 | 8301 | 1：`resolveWindAt` |
-| `windFieldLattice` 📝 | 関数 | 8376 | 2：`buildWindField`、`makeHintEngine` |
-| `windRecord` | 関数 | 8393 | 1：`buildWindField` |
-| `fetchWindColumns` 📝 | 関数 | 8398 | 1：`ensureWindField` |
-| `windColumnAt` | 関数 | 8437 | 1：`resolveWindAt` |
-| `resolveWindAt` 📝 | 関数 | 8445 | 1：`buildWindField` |
-| `buildWindField` 📝 | 関数 | 8464 | 1：`ensureWindField` |
-| `sampleWindField` 📝 | 関数 | 8484 | 2：`buildFlowGrid`、`buildGLGrid` |
-| `windTraceText` 📝 | 関数 | 8501 | 1：`drawWindArrows` |
-| `windModeNote` | 関数 | 8553 | 1：`ensureWindField` |
-| `WIND_LAYER_IDS` | 定数 | 8567 | 1：`windLayersOn` |
-| `windLayersOn` | 関数 | 8568 | 4：`windAnyOn`、`windClear`、`windError`、`windNote` |
-| `windAnyOn` | 関数 | 8569 | 3：`ensureWindField`、`pointHintAnyOn`、`refreshWeatherPoints` |
-| `pointHintAnyOn` | 関数 | 8571 | 2：`loadTerrainRef`、`updateMapTime` |
-| `windNote` | 関数 | 8572 | 1：`ensureWindField` |
-| `windError` | 関数 | 8573 | 1：`ensureWindField` |
-| `windClear` | 関数 | 8574 | 1：`ensureWindField` |
-| `ensureWindField` 📝 | 関数 | 8578 | 1：`refreshWeatherPoints` |
-| `drawWindArrows` 📝 | 関数 | 8631 | 1：`refreshWeatherPoints` |
-| `makeHintEngine` 📝 | 関数 | 8659 | 1：（トップレベル） |
-| `hintModelText` 📝 | 関数 | 8763 | 2：`snowHintText`、`thunderHintText` |
+| `WIND_FIELD_LEVELS` 📝 | 定数 | 8260 | 5：`WIND_FIELD_MODES`、`fetchWindColumns`、`windColumnAt`、`windModeNote`、`windTraceText` |
+| `wfVars` | 関数 | 8268 | 2：`fetchWindColumns`、`windColumnAt` |
+| `WIND_FIELD_MODES` 📝 | 定数 | 8272 | 3：`loadMapPrefs`、`windModeChips`、`windModeDef` |
+| `WIND_MODE_DEFAULT` | 定数 | 8274 | 2：`ensureWindField`、`loadMapPrefs` |
+| `windModeDef` | 関数 | 8275 | 2：`setWindMode`、`windModeNote` |
+| `WIND_GRID` | 定数 | 8277 | 2：`buildWindField`、`windFieldLattice` |
+| `WIND_BANDS` | 定数 | 8278 | 1：`windBand` |
+| `windBand` | 関数 | 8279 | 1：`windFieldLattice` |
+| `WIND_SPANS` | 定数 | 8281 | 1：`fetchWindColumns` |
+| `windUV` | 関数 | 8283 | 1：`windColumnAt` |
+| `windSpdDir` | 関数 | 8284 | 5：`drawWindArrows`、`terrainColText`、`terrainProbeCenter`、`terrainVerifyRow`、`windTraceText` |
+| `windLerp` | 関数 | 8285 | 1：（トップレベル） |
+| `windDirName` | 関数 | 8287 | 2：`terrainColText`、`windTraceText` |
+| `loadTerrainRef` 📝 | 関数 | 8293 | 2：`ensureWindField`、`makeHintEngine` |
+| `zRefAt` 📝 | 関数 | 8303 | 3：`resolveWindAt`、`snowHintAt`、`windGLTerrainHeight` |
+| `zMaxAt` | 関数 | 8308 | 1：`resolveWindAt` |
+| `windFieldLattice` 📝 | 関数 | 8383 | 2：`buildWindField`、`makeHintEngine` |
+| `windRecord` | 関数 | 8400 | 1：`buildWindField` |
+| `fetchWindColumns` 📝 | 関数 | 8405 | 1：`ensureWindField` |
+| `windColumnAt` | 関数 | 8444 | 1：`resolveWindAt` |
+| `resolveWindAt` 📝 | 関数 | 8452 | 1：`buildWindField` |
+| `buildWindField` 📝 | 関数 | 8471 | 1：`ensureWindField` |
+| `sampleWindField` 📝 | 関数 | 8491 | 2：`buildFlowGrid`、`buildGLGrid` |
+| `windTraceText` 📝 | 関数 | 8508 | 1：`drawWindArrows` |
+| `windModeNote` | 関数 | 8560 | 1：`ensureWindField` |
+| `WIND_LAYER_IDS` | 定数 | 8574 | 1：`windLayersOn` |
+| `windLayersOn` | 関数 | 8575 | 4：`windAnyOn`、`windClear`、`windError`、`windNote` |
+| `windAnyOn` | 関数 | 8576 | 3：`ensureWindField`、`pointHintAnyOn`、`refreshWeatherPoints` |
+| `pointHintAnyOn` | 関数 | 8578 | 2：`loadTerrainRef`、`updateMapTime` |
+| `windNote` | 関数 | 8579 | 1：`ensureWindField` |
+| `windError` | 関数 | 8580 | 1：`ensureWindField` |
+| `windClear` | 関数 | 8581 | 1：`ensureWindField` |
+| `ensureWindField` 📝 | 関数 | 8585 | 1：`refreshWeatherPoints` |
+| `drawWindArrows` 📝 | 関数 | 8638 | 1：`refreshWeatherPoints` |
+| `makeHintEngine` 📝 | 関数 | 8666 | 1：（トップレベル） |
+| `hintModelText` 📝 | 関数 | 8770 | 2：`snowHintText`、`thunderHintText` |
 
 ## 降雪の目安（段階2・#131）→ docs/requirements_snow_thunder_hint.md
 
-行 8767〜
+行 8774〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `SNOW_HINT` 📝 | 定数 | 8782 | 6：`snowHintAt`、`snowHintLegend`、`snowHintText`、`snowTempAt`、`snowTypeOf`、（トップレベル） |
-| `SNOW_TYPES` | 定数 | 8795 | 3：`drawSnowHint`、`snowHintLegend`、`snowHintText` |
-| `snowTypeOf` 📝 | 関数 | 8799 | 1：`snowHintAt` |
-| `snowTempAt` 📝 | 関数 | 8803 | 1：`snowHintAt` |
-| `snowHintAt` 📝 | 関数 | 8812 | 1：（トップレベル） |
-| `snowHintStateNote` | 関数 | 8826 | 1：（トップレベル） |
-| `ensureSnowHint` 📝 | 関数 | 8841 | 1：`refreshWeatherPoints` |
-| `snowHintText` | 関数 | 8843 | 1：`drawSnowHint` |
-| `drawSnowHint` 📝 | 関数 | 8859 | 1：`refreshWeatherPoints` |
-| `snowHintLegend` 📝 | 関数 | 8875 | 1：`renderLayerPanel` |
+| `SNOW_HINT` 📝 | 定数 | 8789 | 6：`snowHintAt`、`snowHintLegend`、`snowHintText`、`snowTempAt`、`snowTypeOf`、（トップレベル） |
+| `SNOW_TYPES` | 定数 | 8802 | 3：`drawSnowHint`、`snowHintLegend`、`snowHintText` |
+| `snowTypeOf` 📝 | 関数 | 8806 | 1：`snowHintAt` |
+| `snowTempAt` 📝 | 関数 | 8810 | 1：`snowHintAt` |
+| `snowHintAt` 📝 | 関数 | 8819 | 1：（トップレベル） |
+| `snowHintStateNote` | 関数 | 8833 | 1：（トップレベル） |
+| `ensureSnowHint` 📝 | 関数 | 8848 | 1：`refreshWeatherPoints` |
+| `snowHintText` | 関数 | 8850 | 1：`drawSnowHint` |
+| `drawSnowHint` 📝 | 関数 | 8866 | 1：`refreshWeatherPoints` |
+| `snowHintLegend` 📝 | 関数 | 8882 | 1：`renderLayerPanel` |
 
 ## 雷雨の目安（段階3・#138）→ docs/requirements_snow_thunder_hint.md
 
-行 8885〜
+行 8892〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `THUNDER_HINT` | 定数 | 8899 | 5：`thunderHintAt`、`thunderHintLegend`、`thunderHintStateNote`、`thunderLevelOf`、（トップレベル） |
-| `THUNDER_LEVELS` | 定数 | 8913 | 2：`thunderHintLegend`、`thunderHintText` |
-| `thunderLevelOf` 📝 | 関数 | 8922 | 1：`thunderHintAt` |
-| `THERMO` | 定数 | 8929 | 2：`moistAscentC`、`showalterIndex` |
-| `satVapPressure` | 関数 | 8930 | 1：`moistAscentC` |
-| `lclTempK` 📝 | 関数 | 8931 | 1：`showalterIndex` |
-| `moistAscentC` 📝 | 関数 | 8933 | 1：`showalterIndex` |
-| `showalterIndex` 📝 | 関数 | 8948 | 1：`thunderHintAt` |
-| `thunderHintAt` 📝 | 関数 | 8963 | 1：（トップレベル） |
-| `thunderHintStateNote` | 関数 | 8978 | 1：（トップレベル） |
-| `ensureThunderHint` 📝 | 関数 | 8993 | 1：`refreshWeatherPoints` |
-| `thunderHintText` | 関数 | 8995 | 1：`drawThunderHint` |
-| `drawThunderHint` 📝 | 関数 | 9011 | 1：`refreshWeatherPoints` |
-| `thunderHintLegend` 📝 | 関数 | 9026 | 1：`renderLayerPanel` |
+| `THUNDER_HINT` | 定数 | 8906 | 5：`thunderHintAt`、`thunderHintLegend`、`thunderHintStateNote`、`thunderLevelOf`、（トップレベル） |
+| `THUNDER_LEVELS` | 定数 | 8920 | 2：`thunderHintLegend`、`thunderHintText` |
+| `thunderLevelOf` 📝 | 関数 | 8929 | 1：`thunderHintAt` |
+| `THERMO` | 定数 | 8936 | 2：`moistAscentC`、`showalterIndex` |
+| `satVapPressure` | 関数 | 8937 | 1：`moistAscentC` |
+| `lclTempK` 📝 | 関数 | 8938 | 1：`showalterIndex` |
+| `moistAscentC` 📝 | 関数 | 8940 | 1：`showalterIndex` |
+| `showalterIndex` 📝 | 関数 | 8955 | 1：`thunderHintAt` |
+| `thunderHintAt` 📝 | 関数 | 8970 | 1：（トップレベル） |
+| `thunderHintStateNote` | 関数 | 8985 | 1：（トップレベル） |
+| `ensureThunderHint` 📝 | 関数 | 9000 | 1：`refreshWeatherPoints` |
+| `thunderHintText` | 関数 | 9002 | 1：`drawThunderHint` |
+| `drawThunderHint` 📝 | 関数 | 9018 | 1：`refreshWeatherPoints` |
+| `thunderHintLegend` 📝 | 関数 | 9033 | 1：`renderLayerPanel` |
 
 ## 風の流れ（Particle Engine）
 
-行 9038〜
+行 9045〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WIND_FLOW` 📝 | 定数 | 9051 | 10：`WIND_GL`、`buildFlowGrid`、`placeWindFlowCanvas`、`spawnParticle`、`updateWindFlow`、`windBgRGB` ほか4 |
-| `windFlow` 📝 | 状態 | 9070 | 18：`MAP_BLEND_KINDS_EXCLUDED`、`MAP_WEATHER`、`WIND_LAYER_IDS`、`applyOverlays`、`buildFlowGrid`、`loadMapPrefs` ほか12 |
-| `windFlowCanvas` | 関数 | 9072 | 1：`placeWindFlowCanvas` |
-| `placeWindFlowCanvas` | 関数 | 9083 | 1：`updateWindFlow` |
-| `windFlowPx` | 関数 | 9096 | 0 |
-| `buildFlowGrid` 📝 | 関数 | 9098 | 1：`updateWindFlow` |
-| `flowAt` 📝 | 関数 | 9113 | 2：`spawnParticle`、`windFlowFrame` |
-| `spawnParticle` | 関数 | 9125 | 2：`updateWindFlow`、`windFlowFrame` |
-| `stopWindFlow` 📝 | 関数 | 9138 | 5：`closeMap`、`pauseWindFlow`、`refreshWeatherPoints`、`updateWindFlow`、（トップレベル） |
-| `pauseWindFlow` 📝 | 関数 | 9144 | 1：`openMap` |
-| `updateWindFlow` 📝 | 関数 | 9146 | 2：`refreshWeatherPoints`、（トップレベル） |
-| `windFlowColorIndex` | 関数 | 9158 | 1：`windFlowFrame` |
-| `windFlowFrame` 📝 | 関数 | 9162 | 1：`updateWindFlow` |
+| `WIND_FLOW` 📝 | 定数 | 9058 | 10：`WIND_GL`、`buildFlowGrid`、`placeWindFlowCanvas`、`spawnParticle`、`updateWindFlow`、`windBgRGB` ほか4 |
+| `windFlow` 📝 | 状態 | 9077 | 18：`MAP_BLEND_KINDS_EXCLUDED`、`MAP_WEATHER`、`WIND_LAYER_IDS`、`applyOverlays`、`buildFlowGrid`、`loadMapPrefs` ほか12 |
+| `windFlowCanvas` | 関数 | 9079 | 1：`placeWindFlowCanvas` |
+| `placeWindFlowCanvas` | 関数 | 9090 | 1：`updateWindFlow` |
+| `windFlowPx` | 関数 | 9103 | 0 |
+| `buildFlowGrid` 📝 | 関数 | 9105 | 1：`updateWindFlow` |
+| `flowAt` 📝 | 関数 | 9120 | 2：`spawnParticle`、`windFlowFrame` |
+| `spawnParticle` | 関数 | 9132 | 2：`updateWindFlow`、`windFlowFrame` |
+| `stopWindFlow` 📝 | 関数 | 9145 | 5：`closeMap`、`pauseWindFlow`、`refreshWeatherPoints`、`updateWindFlow`、（トップレベル） |
+| `pauseWindFlow` 📝 | 関数 | 9151 | 1：`openMap` |
+| `updateWindFlow` 📝 | 関数 | 9153 | 2：`refreshWeatherPoints`、（トップレベル） |
+| `windFlowColorIndex` | 関数 | 9165 | 1：`windFlowFrame` |
+| `windFlowFrame` 📝 | 関数 | 9169 | 1：`updateWindFlow` |
 
 ## 風の流れ（実験・WebGL）— PoC（v4.120.0・ADR-0013）
 
-行 9219〜
+行 9226〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WIND_GL` 📝 | 定数 | 9241 | 9：`buildGLGrid`、`glWindAt`、`placeGLCanvas`、`windGLFrame`、`windGLParticleCount`、`windGLRender` ほか3 |
-| `windGL` 📝 | 状態 | 9260 | 47：`glView`、`glWindAt`、`placeGLCanvas`、`setOverlayOpacity`、`stopWindFlowGL`、`terrainDraw` ほか41 |
-| `windPref` 📝 | 状態 | 9278 | 15：`windBgAbsolute`、`windBgAlpha`、`windBgToggleSpeedMinMode`、`windGLInit`、`windGLParticleCount`、`windGLSetBgAlpha` ほか9 |
-| `windGLParticleCount` 📝 | 関数 | 9282 | 4：`updateWindFlowGL`、`windFlowSettings`、`windFlowSettingsSync`、`windGLScaleCount` |
-| `WIND_GL_SEG_VS` | 定数 | 9293 | 1：`windGLInit` |
-| `WIND_GL_SEG_FS` | 定数 | 9318 | 1：`windGLInit` |
-| `WIND_GL_QUAD_VS` | 定数 | 9331 | 1：`windGLInit` |
-| `WIND_GL_QUAD_FS` | 定数 | 9337 | 1：`windGLInit` |
-| `WIND_BG` 📝 | 定数 | 9358 | 4：`windBgAlpha`、`windBgMinSpeed`、`windBgRGB`、`windSpeedPos` |
-| `WIND_SLIDER` 📝 | 定数 | 9368 | 9：`windBgAlpha`、`windFlowSettings`、`windGLParticleCount`、`windGLSetBgAlpha`、`windGLSetCount`、`windGLSetPAlpha` ほか3 |
-| `WIND_COUNT_STEPS` | 定数 | 9371 | 2：`windCountIndex`、`windFlowSettings` |
-| `windCountIndex` | 関数 | 9372 | 2：`windFlowSettings`、`windFlowSettingsSync` |
-| `windBgAlpha` 📝 | 関数 | 9373 | 4：`windFlowSettings`、`windFlowSettingsSync`、`windGLBgTexture`、`windGLHudText` |
-| `windBgAbsolute` | 関数 | 9378 | 5：`windBgMinSpeed`、`windBgSpeedLabel`、`windBgToggleSpeedMinMode`、`windFlowSettings`、`windFlowSettingsSync` |
-| `windBgMinSpeed` | 関数 | 9379 | 2：`windBgSpeedLabel`、`windGLBgTexture` |
-| `windBgSpeedLabel` | 関数 | 9380 | 2：`windFlowSettings`、`windFlowSettingsSync` |
-| `windBgToggleSpeedMinMode` | 関数 | 9381 | 1：`windFlowSettings` |
-| `windPWidth` | 関数 | 9387 | 3：`windFlowSettings`、`windFlowSettingsSync`、`windGLRender` |
-| `windPAlpha` | 関数 | 9392 | 3：`windFlowSettings`、`windFlowSettingsSync`、`windGLRender` |
-| `windGLSetWidth` | 関数 | 9396 | 1：`windFlowSettings` |
-| `windGLSetPAlpha` | 関数 | 9401 | 1：`windFlowSettings` |
-| `windGLSetCount` 📝 | 関数 | 9406 | 2：`windFlowSettings`、`windGLScaleCount` |
-| `windGLSetBgAlpha` 📝 | 関数 | 9412 | 1：`windFlowSettings` |
-| `windSpeedPos` | 関数 | 9419 | 1：`windGLStep` |
-| `windBgRGB` 📝 | 関数 | 9426 | 1：`windGLBgTexture` |
-| `windGLBgTexture` 📝 | 関数 | 9435 | 4：`updateWindFlowGL`、`windBgToggleSpeedMinMode`、`windGLSetBgAlpha`、`windGLToggleColor` |
-| `WIND_GL_BG_VS` 📝 | 定数 | 9458 | 1：`windGLInit` |
-| `WIND_GL_BG_FS` | 定数 | 9468 | 1：`windGLInit` |
-| `windGLProgram` | 関数 | 9473 | 1：`windGLInit` |
-| `windGLInit` 📝 | 関数 | 9489 | 1：`updateWindFlowGL` |
-| `windGLFail` 📝 | 関数 | 9542 | 1：`windGLInit` |
-| `windGLFallback` | 関数 | 9549 | 1：`windFlowWanted` |
-| `windFlowWanted` 📝 | 関数 | 9550 | 2：`updateWindFlow`、（トップレベル） |
-| `buildGLGrid` 📝 | 関数 | 9554 | 1：`updateWindFlowGL` |
-| `WIND_TERRAIN` 📝 | 定数 | 9596 | 2：`windDemTile`、`windGLTerrainHeight` |
-| `windDem` | 状態 | 9604 | 2：`windDemTile`、`windGLMeasure` |
-| `windDemTile` 📝 | 関数 | 9606 | 2：`terrainDemBlock`、`windDemAt` |
-| `windDemAt` 📝 | 関数 | 9648 | 2：`terrainProbeCenter`、`windGLTerrainHeight` |
-| `windGLTerrainHeight` 📝 | 関数 | 9657 | 1：`updateWindFlowGL` |
+| `WIND_GL` 📝 | 定数 | 9248 | 9：`buildGLGrid`、`glWindAt`、`placeGLCanvas`、`windGLFrame`、`windGLParticleCount`、`windGLRender` ほか3 |
+| `windGL` 📝 | 状態 | 9267 | 47：`glView`、`glWindAt`、`placeGLCanvas`、`setOverlayOpacity`、`stopWindFlowGL`、`terrainDraw` ほか41 |
+| `windPref` 📝 | 状態 | 9285 | 15：`windBgAbsolute`、`windBgAlpha`、`windBgToggleSpeedMinMode`、`windGLInit`、`windGLParticleCount`、`windGLSetBgAlpha` ほか9 |
+| `windGLParticleCount` 📝 | 関数 | 9289 | 4：`updateWindFlowGL`、`windFlowSettings`、`windFlowSettingsSync`、`windGLScaleCount` |
+| `WIND_GL_SEG_VS` | 定数 | 9300 | 1：`windGLInit` |
+| `WIND_GL_SEG_FS` | 定数 | 9325 | 1：`windGLInit` |
+| `WIND_GL_QUAD_VS` | 定数 | 9338 | 1：`windGLInit` |
+| `WIND_GL_QUAD_FS` | 定数 | 9344 | 1：`windGLInit` |
+| `WIND_BG` 📝 | 定数 | 9365 | 4：`windBgAlpha`、`windBgMinSpeed`、`windBgRGB`、`windSpeedPos` |
+| `WIND_SLIDER` 📝 | 定数 | 9375 | 9：`windBgAlpha`、`windFlowSettings`、`windGLParticleCount`、`windGLSetBgAlpha`、`windGLSetCount`、`windGLSetPAlpha` ほか3 |
+| `WIND_COUNT_STEPS` | 定数 | 9378 | 2：`windCountIndex`、`windFlowSettings` |
+| `windCountIndex` | 関数 | 9379 | 2：`windFlowSettings`、`windFlowSettingsSync` |
+| `windBgAlpha` 📝 | 関数 | 9380 | 4：`windFlowSettings`、`windFlowSettingsSync`、`windGLBgTexture`、`windGLHudText` |
+| `windBgAbsolute` | 関数 | 9385 | 5：`windBgMinSpeed`、`windBgSpeedLabel`、`windBgToggleSpeedMinMode`、`windFlowSettings`、`windFlowSettingsSync` |
+| `windBgMinSpeed` | 関数 | 9386 | 2：`windBgSpeedLabel`、`windGLBgTexture` |
+| `windBgSpeedLabel` | 関数 | 9387 | 2：`windFlowSettings`、`windFlowSettingsSync` |
+| `windBgToggleSpeedMinMode` | 関数 | 9388 | 1：`windFlowSettings` |
+| `windPWidth` | 関数 | 9394 | 3：`windFlowSettings`、`windFlowSettingsSync`、`windGLRender` |
+| `windPAlpha` | 関数 | 9399 | 3：`windFlowSettings`、`windFlowSettingsSync`、`windGLRender` |
+| `windGLSetWidth` | 関数 | 9403 | 1：`windFlowSettings` |
+| `windGLSetPAlpha` | 関数 | 9408 | 1：`windFlowSettings` |
+| `windGLSetCount` 📝 | 関数 | 9413 | 2：`windFlowSettings`、`windGLScaleCount` |
+| `windGLSetBgAlpha` 📝 | 関数 | 9419 | 1：`windFlowSettings` |
+| `windSpeedPos` | 関数 | 9426 | 1：`windGLStep` |
+| `windBgRGB` 📝 | 関数 | 9433 | 1：`windGLBgTexture` |
+| `windGLBgTexture` 📝 | 関数 | 9442 | 4：`updateWindFlowGL`、`windBgToggleSpeedMinMode`、`windGLSetBgAlpha`、`windGLToggleColor` |
+| `WIND_GL_BG_VS` 📝 | 定数 | 9465 | 1：`windGLInit` |
+| `WIND_GL_BG_FS` | 定数 | 9475 | 1：`windGLInit` |
+| `windGLProgram` | 関数 | 9480 | 1：`windGLInit` |
+| `windGLInit` 📝 | 関数 | 9496 | 1：`updateWindFlowGL` |
+| `windGLFail` 📝 | 関数 | 9549 | 1：`windGLInit` |
+| `windGLFallback` | 関数 | 9556 | 1：`windFlowWanted` |
+| `windFlowWanted` 📝 | 関数 | 9557 | 2：`updateWindFlow`、（トップレベル） |
+| `buildGLGrid` 📝 | 関数 | 9561 | 1：`updateWindFlowGL` |
+| `WIND_TERRAIN` 📝 | 定数 | 9603 | 2：`windDemTile`、`windGLTerrainHeight` |
+| `windDem` | 状態 | 9611 | 2：`windDemTile`、`windGLMeasure` |
+| `windDemTile` 📝 | 関数 | 9613 | 2：`terrainDemBlock`、`windDemAt` |
+| `windDemAt` 📝 | 関数 | 9655 | 2：`terrainProbeCenter`、`windGLTerrainHeight` |
+| `windGLTerrainHeight` 📝 | 関数 | 9664 | 1：`updateWindFlowGL` |
 
 ## 段階3a：風下の遮蔽（v4.133.0〜・実験・**既定は切**。計測表示の「補正」で入れる）
 
-行 9730〜
+行 9737〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WIND_SHELTER` 📝 | 定数 | 9748 | 5：`shelterFactor`、`terrainSx`、`windShelterActive`、`windShelterHudText`、`windShelterProbeLines` |
-| `WIND_COL` 📝 | 定数 | 9758 | 4：`colBoostFactor`、`windColMinDepth`、`windGLShelter`、`windShelterProbeLines` |
-| `WIND_CONV` 📝 | 定数 | 9771 | 2：`windGLShelter`、`windShelterProbeLines` |
-| `turnDeg` 📝 | 関数 | 9777 | 1：`windGLShelter` |
-| `windColMinDepth` 📝 | 関数 | 9778 | 3：`colBoostFactor`、`windGLShelter`、`windShelterProbeLines` |
-| `colBoostFactor` 📝 | 関数 | 9780 | 1：`windGLShelter` |
-| `shelterFactor` 📝 | 関数 | 9788 | 1：`windGLShelter` |
-| `terrainGridBil` | 関数 | 9795 | 1：`terrainSx` |
-| `terrainSx` 📝 | 関数 | 9803 | 1：`windGLShelter` |
-| `windShelterGrid` | 関数 | 9818 | 1：`windGLShelter` |
-| `windGLShelter` 📝 | 関数 | 9829 | 1：`updateWindFlowGL` |
-| `windShelterProbeLines` 📝 | 関数 | 9904 | 2：`terrainProbeCenter`、`windShelterProbe` |
-| `windShelterProbe` | 関数 | 9929 | 1：`windGLHud` |
+| `WIND_SHELTER` 📝 | 定数 | 9755 | 5：`shelterFactor`、`terrainSx`、`windShelterActive`、`windShelterHudText`、`windShelterProbeLines` |
+| `WIND_COL` 📝 | 定数 | 9765 | 4：`colBoostFactor`、`windColMinDepth`、`windGLShelter`、`windShelterProbeLines` |
+| `WIND_CONV` 📝 | 定数 | 9778 | 2：`windGLShelter`、`windShelterProbeLines` |
+| `turnDeg` 📝 | 関数 | 9784 | 1：`windGLShelter` |
+| `windColMinDepth` 📝 | 関数 | 9785 | 3：`colBoostFactor`、`windGLShelter`、`windShelterProbeLines` |
+| `colBoostFactor` 📝 | 関数 | 9787 | 1：`windGLShelter` |
+| `shelterFactor` 📝 | 関数 | 9795 | 1：`windGLShelter` |
+| `terrainGridBil` | 関数 | 9802 | 1：`terrainSx` |
+| `terrainSx` 📝 | 関数 | 9810 | 1：`windGLShelter` |
+| `windShelterGrid` | 関数 | 9825 | 1：`windGLShelter` |
+| `windGLShelter` 📝 | 関数 | 9836 | 1：`updateWindFlowGL` |
+| `windShelterProbeLines` 📝 | 関数 | 9911 | 2：`terrainProbeCenter`、`windShelterProbe` |
+| `windShelterProbe` | 関数 | 9936 | 1：`windGLHud` |
 
 ## 段階2：地形の構造の抽出（尾根・沢・鞍部）— 検証用（v4.122.0〜v4.124.0）
 
-行 9935〜
+行 9942〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `TERRAIN_SCALES` 📝 | 定数 | 9959 | 1：`terrainProbeCenter` |
-| `TERRAIN_AN` 📝 | 定数 | 9965 | 3：`terrainAnalyzeScale`、`terrainDraw`、`terrainProbeCenter` |
-| `COL` 📝 | 定数 | 9974 | 8：`terrainAn`、`terrainColText`、`terrainCycleShowMin`、`terrainDemGrid`、`terrainFindCols`、`terrainProbeCenter` ほか2 |
-| `terrainAn` 📝 | 状態 | 9990 | 19：`stopWindFlowGL`、`terrainClearMarkers`、`terrainCycleBand`、`terrainCycleShowMin`、`terrainDraw`、`terrainDrawBands` ほか13 |
-| `demPxM` | 関数 | 9991 | 3：`terrainAnalyzeScale`、`terrainDemGrid`、`terrainProbeCenter` |
-| `terrainDemBlock` | 関数 | 9994 | 2：`terrainAnalyzeScale`、`terrainDemGrid` |
-| `terrainGauss` | 関数 | 10017 | 1：`terrainAnalyzeScale` |
-| `terrainView` | 関数 | 10045 | 4：`terrainAnalyze`、`terrainDraw`、`terrainProbeCenter`、`windShelterGrid` |
-| `terrainAnalyzeScale` 📝 | 関数 | 10051 | 1：`terrainProbeCenter` |
-| `terrainDemGrid` 📝 | 関数 | 10096 | 2：`terrainAnalyze`、`windShelterGrid` |
-| `terrainGridIndex` 📝 | 関数 | 10122 | 1：`terrainProbeCenter` |
-| `terrainFindCols` 📝 | 関数 | 10129 | 2：`terrainAnalyze`、`windShelterGrid` |
-| `FLOW` 📝 | 定数 | 10228 | 4：`terrainCycleBand`、`terrainFlow`、`terrainProbeCenter`、`terrainRidgeWhy` |
-| `RIDGE_SRC` 📝 | 定数 | 10243 | 3：`terrainFlow`、`terrainRidgeWhy`、`terrainVectorize` |
-| `terrainFlow` 📝 | 関数 | 10244 | 1：`terrainAnalyze` |
-| `terrainLinkColsToRidges` 📝 | 関数 | 10443 | 1：`terrainAnalyze` |
-| `terrainAnalyze` 📝 | 関数 | 10460 | 1：`terrainRefresh` |
-| `terrainCellAt` | 関数 | 10472 | 1：`terrainProbeCenter` |
-| `terrainWindAt` | 関数 | 10480 | 5：`terrainColText`、`terrainDraw`、`terrainProbeCenter`、`terrainVerifyCols`、`terrainVerifyRow` |
-| `terrainCrossAngle` | 関数 | 10487 | 5：`terrainColText`、`terrainDraw`、`terrainProbeCenter`、`terrainVerifyRow`、`windGLShelter` |
-| `bearingOf` | 関数 | 10492 | 7：`geoBearing`、`terrainColText`、`terrainFlow`、`terrainProbeCenter`、`terrainRidgeWhy`、`terrainVerifyRow` ほか1 |
-| `geoDist` | 関数 | 10493 | 2：`terrainNearestCols`、`terrainRidgeWhy` |
-| `geoBearing` | 関数 | 10494 | 3：`terrainColText`、`terrainProbeCenter`、`terrainVerifyRow` |
-| `DIR8` | 定数 | 10495 | 2：`dir8`、`terrainRidgeWhy` |
-| `dir8` | 関数 | 10496 | 4：`terrainColText`、`terrainProbeCenter`、`terrainRidgeWhy`、`terrainVerifyRow` |
-| `VEC` | 定数 | 10511 | 4：`smoothPath`、`terrainDrawBands`、`terrainDrawLines`、`terrainVectorize` |
-| `thinMask` | 関数 | 10524 | 1：`terrainVectorize` |
-| `skeletonEdges` | 関数 | 10553 | 1：`terrainVectorize` |
-| `pruneEdges` | 関数 | 10586 | 1：`terrainVectorize` |
-| `dpSimplify` | 関数 | 10614 | 1：`smoothPath` |
-| `smoothPath` | 関数 | 10632 | 1：`terrainVectorize` |
-| `terrainVectorize` | 関数 | 10645 | 1：`terrainAnalyze` |
-| `strokeSmooth` | 関数 | 10675 | 1：`terrainDrawLines` |
-| `terrainDrawLines` | 関数 | 10685 | 1：`terrainDraw` |
-| `BAND_COLORS` | 定数 | 10708 | 1：`terrainDrawBands` |
-| `terrainDrawBands` | 関数 | 10709 | 1：`terrainDraw` |
-| `terrainDraw` 📝 | 関数 | 10741 | 6：`stopWindFlowGL`、`terrainCycleBand`、`terrainCycleShowMin`、`terrainRefresh`、`terrainToggleBands`、`terrainToggleLines` |
-| `terrainClearMarkers` | 関数 | 10788 | 1：`terrainDraw` |
-| `terrainColText` 📝 | 関数 | 10792 | 1：`terrainDraw` |
-| `terrainNearestCols` | 関数 | 10810 | 2：`terrainProbeCenter`、`terrainVerifyRow` |
-| `RIDGE_WHY_R` | 定数 | 10817 | 1：`terrainRidgeWhy` |
-| `terrainRidgeWhy` 📝 | 関数 | 10818 | 1：`terrainProbeCenter` |
-| `terrainProbeCenter` 📝 | 関数 | 10843 | 1：`windGLHud` |
-| `TERRAIN_VERIFY_COLS` 📝 | 定数 | 10893 | 1：`terrainVerifyCols` |
-| `VERIFY_ZOOM` | 定数 | 10903 | 1：`terrainVerifyCols` |
-| `terrainVerifyRow` | 関数 | 10904 | 1：`terrainVerifyCols` |
-| `TERRAIN_VERIFY_HEAD` | 定数 | 10922 | 1：`terrainVerifyCols` |
-| `terrainWaitReady` | 関数 | 10924 | 1：`terrainVerifyCols` |
-| `terrainVerifyCols` 📝 | 関数 | 10937 | 1：`windGLHud` |
-| `terrainKey` | 関数 | 10959 | 3：`terrainRefresh`、`terrainWaitReady`、`windShelterGrid` |
-| `terrainRefresh` 📝 | 関数 | 10963 | 4：`terrainToggle`、`terrainVerifyCols`、`terrainWaitReady`、`updateWindFlowGL` |
-| `terrainToggle` | 関数 | 10972 | 3：`terrainVerifyCols`、`windGLHud`、`windGLSetHud` |
-| `terrainCycleBand` 📝 | 関数 | 10979 | 1：`windGLHud` |
-| `terrainToggleBands` | 関数 | 10984 | 1：`windGLHud` |
-| `terrainToggleLines` | 関数 | 10985 | 1：`windGLHud` |
-| `terrainCycleShowMin` | 関数 | 10986 | 1：`windGLHud` |
-| `terrainHudText` | 関数 | 10991 | 1：`windGLHudText` |
-| `glGridSample` 📝 | 関数 | 11006 | 5：`glWindAt`、`terrainWindAt`、`windGLShelter`、`windGLSpawn`、`windGLStep` |
-| `glWindAt` 📝 | 関数 | 11021 | 1：`windGLStep` |
-| `glView` 📝 | 関数 | 11035 | 2：`windGLAlloc`、`windGLFrame` |
-| `placeGLCanvas` | 関数 | 11039 | 2：`updateWindFlowGL`、`windGLFrame` |
-| `windGLTrailTextures` | 関数 | 11052 | 1：`placeGLCanvas` |
-| `windGLZoomAnim` 📝 | 関数 | 11072 | 1：`windGLInit` |
-| `windGLAlloc` | 関数 | 11082 | 2：`updateWindFlowGL`、`windGLSetCount` |
-| `windGLSpawn` | 関数 | 11091 | 2：`windGLAlloc`、`windGLStep` |
-| `windGLStep` 📝 | 関数 | 11105 | 1：`windGLFrame` |
-| `windGLRender` 📝 | 関数 | 11132 | 1：`windGLFrame` |
-| `windGLFrame` 📝 | 関数 | 11228 | 1：`updateWindFlowGL` |
-| `updateWindFlowGL` 📝 | 関数 | 11246 | 5：`refreshWeatherPoints`、`windDemTile`、`windGLToggleShelter`、`windGLToggleTerrain`、（トップレベル） |
-| `stopWindFlowGL` 📝 | 関数 | 11286 | 5：`closeMap`、`refreshWeatherPoints`、`updateWindFlowGL`、`windGLFail`、（トップレベル） |
-| `windFlowStat` 📝 | 関数 | 11298 | 2：`windFlowFrame`、`windGLFrame` |
-| `windFlowStats` | 状態 | 11310 | 3：`windFlowFrame`、`windGLHudText`、`windGLMeasure` |
-| `windGLTimerBegin` | 関数 | 11312 | 1：`windGLFrame` |
-| `windGLTimerEnd` | 関数 | 11317 | 1：`windGLFrame` |
-| `windGLHud` | 関数 | 11327 | 3：`stopWindFlowGL`、`updateWindFlowGL`、`windGLSetHud` |
-| `windFlowSettingsSync` 📝 | 関数 | 11355 | 1：`windGLHudText` |
-| `windGLHudText` | 関数 | 11384 | 11：`terrainDraw`、`windBgToggleSpeedMinMode`、`windFlowStat`、`windGLHud`、`windGLSetBgAlpha`、`windGLSetCount` ほか5 |
-| `windGLTerrainText` 📝 | 関数 | 11415 | 2：`windGLHudText`、`windGLMeasure` |
-| `windShelterHudText` | 関数 | 11424 | 1：`windGLHudText` |
-| `windGLSetHud` 📝 | 関数 | 11434 | 1：`windFlowSettings` |
-| `windGLToggleColor` 📝 | 関数 | 11439 | 1：`windFlowSettings` |
-| `windShelterActive` | 関数 | 11447 | 4：`updateWindFlowGL`、`windGLHudText`、`windShelterHudText`、`windShelterProbeLines` |
-| `windGLToggleShelter` 📝 | 関数 | 11448 | 1：`windFlowSettings` |
-| `windGLToggleTerrain` 📝 | 関数 | 11454 | 1：`windFlowSettings` |
-| `windGLHudMin` | 関数 | 11461 | 1：`windGLHud` |
-| `windGLScaleCount` | 関数 | 11468 | 1：`windFlowSettings` |
-| `windGLMeasure` 📝 | 関数 | 11470 | 1：`windGLHud` |
-| `windGLCopy` | 関数 | 11495 | 1：`windGLHud` |
-| `AREA_LABEL_MIN_ZOOM` | 定数 | 11510 | 1：`drawAreas` |
-| `PEAK_NAME_MIN_ZOOM` | 定数 | 11511 | 1：`drawAreas` |
-| `AREA_PAD_KM` | 定数 | 11512 | 1：`areaShape` |
-| `AREA_MIN_R_KM` | 定数 | 11513 | 1：`areaShape` |
-| `haversineKm` 📝 | 関数 | 11517 | 5：`areaShape`、`isShownMtn`、`loadWxCache`、`mtnSortList`、`renderMtnSection` |
-| `areaShape` 📝 | 関数 | 11526 | 1：`drawAreas` |
-| `updateMapWhen` 📝 | 関数 | 11538 | 1：`refreshWeatherPoints` |
-| `drawAreas` 📝 | 関数 | 11554 | 1：`refreshWeatherPoints` |
-| `POI_MIN_ZOOM` | 定数 | 11630 | 1：`drawPoi` |
-| `POI_NAME_MIN_ZOOM` | 定数 | 11631 | 1：`drawPoi` |
-| `POI_THIN_PX` | 定数 | 11632 | 1：`drawPoi` |
-| `POI_MAX_MARKERS` | 定数 | 11633 | 1：`drawPoi` |
-| `POI_LS_HIDDEN` | 定数 | 11634 | 2：`poiHiddenSet`、`togglePoiType` |
-| `POI_ICONS` | 定数 | 11635 | 4：`drawPoi`、`poiHiddenSet`、`poiTypeChips`、`togglePoiType` |
-| `POI_NAMES` | 定数 | 11637 | 1：`poiTypeChips` |
-| `loadPoi` | 関数 | 11642 | 1：`drawPoi` |
-| `poiAttribution` | 関数 | 11657 | 1：`updateMapAttribution` |
-| `poiHiddenSet` | 関数 | 11663 | 3：`drawPoi`、`poiTypeChips`、`togglePoiType` |
-| `togglePoiType` | 関数 | 11669 | 1：`poiTypeChips` |
-| `poiTypeChips` | 関数 | 11678 | 1：`renderLayerPanel` |
-| `drawPoi` | 関数 | 11686 | 1：`refreshWeatherPoints` |
-| `refreshWeatherPoints` 📝 | 関数 | 11737 | 16：`applyOverlays`、`drawAmedas`、`drawAreas`、`drawPoi`、`ensureWindField`、`loadTerrainRef` ほか10 |
-| `mapTimeLabel` | 関数 | 11775 | 2：`onMapTimeInput`、`updateMapTime` |
-| `updateMapTime` 📝 | 関数 | 11783 | 2：`refreshWeatherPoints`、（HTML） |
-| `onMapTimeInput` | 関数 | 11800 | 1：（HTML） |
-| `setMapTime` 📝 | 関数 | 11805 | 3：`mapTimeNow`、`onMapTimeCommit`、`stepMapTime` |
-| `onMapTimeCommit` | 関数 | 11811 | 1：（HTML） |
-| `stepMapTime` | 関数 | 11812 | 1：（HTML） |
-| `mapTimeNow` | 関数 | 11813 | 1：（HTML） |
-| `THUNDER_CELL_PX` | 定数 | 11825 | 1：`paintThunderIcons` |
-| `THUNDER_MIN_HITS` | 定数 | 11826 | 1：`paintThunderIcons` |
-| `THUNDER_MAX_ICONS` | 定数 | 11827 | 1：`paintThunderIcons` |
-| `THUNDER_SCAN_SCALE` | 定数 | 11834 | 1：`paintThunderIcons` |
-| `releaseThunderScan` 📝 | 関数 | 11838 | 2：`closeMap`、`paintThunderIcons` |
-| `THUNDER_BOLT` | 定数 | 11843 | 1：`paintThunderIcons` |
-| `thunderMarkers` | 状態 | 11846 | 2：`clearThunderIcons`、`paintThunderIcons` |
-| `clearThunderIcons` 📝 | 関数 | 11849 | 1：`paintThunderIcons` |
-| `THUNDER_DEBOUNCE_MS` | 定数 | 11855 | 1：`updateThunderIcons` |
-| `updateThunderIcons` 📝 | 関数 | 11856 | 2：`addTimedTileLayer`、`refreshWeatherPoints` |
-| `paintThunderIcons` 📝 | 関数 | 11861 | 1：`updateThunderIcons` |
-| `GSI_TILE_LIST_URL` | 定数 | 11924 | 1：`updateMapAttribution` |
-| `GSI_DEM_CREDIT` | 定数 | 11925 | 1：`updateMapAttribution` |
-| `watchAttributionHeight` | 関数 | 11928 | 1：（トップレベル） |
-| `updateMapAttribution` 📝 | 関数 | 11941 | 4：`applyBaseLayer`、`applyOverlays`、`drawPoi`、`renderLayerPanel` |
-| `setMapBase` 📝 | 関数 | 11975 | 1：`renderLayerPanel` |
-| `overlayPane` | 関数 | 11985 | 1：`applyOverlays` |
-| `orderNowcastBoxes` | 関数 | 11997 | 1：`applyOverlays` |
-| `applyBlendHost` | 関数 | 12004 | 2：`addTimedTileLayer`、`setOverlayBlend` |
-| `setOverlayBlend` | 関数 | 12010 | 1：`blendChips` |
-| `blendChips` | 関数 | 12019 | 1：`renderLayerPanel` |
-| `isOverlayOn` 📝 | 関数 | 12026 | 19：`addTimedTileLayer`、`makeHintEngine`、`paintThunderIcons`、`placeWindFlowCanvas`、`pointHintAnyOn`、`refreshRanking` ほか13 |
-| `overlayOpacity` 📝 | 関数 | 12027 | 6：`placeGLCanvas`、`placeWindFlowCanvas`、`refreshWeatherPoints`、`renderLayerPanel`、`setSatBand`、`toggleOverlay` |
-| `toggleOverlay` 📝 | 関数 | 12034 | 2：`renderLayerPanel`、`terrainVerifyCols` |
-| `setOverlayOpacity` 📝 | 関数 | 12054 | 1：`renderLayerPanel` |
-| `moveFavRotaryTo` 📝 | 関数 | 12080 | 2：`openMap`、（HTML） |
-| `restoreFavRotary` 📝 | 関数 | 12088 | 1：`closeMap` |
-| `openMap` 📝 | 関数 | 12096 | 1：（HTML） |
-| `closeMap` 📝 | 関数 | 12181 | 1：（HTML） |
-| `setMapDeclutter` 📝 | 関数 | 12200 | 3：`closeMap`、`openMap`、`toggleMapDeclutter` |
-| `toggleMapDeclutter` 📝 | 関数 | 12218 | 1：（HTML） |
-| `isMapOpen` 📝 | 関数 | 12219 | 22：`ensureWindField`、`fetchGPS`、`hideLoading`、`loadTerrainRef`、`makeHintEngine`、`openMap` ほか16 |
-| `toggleLayerPanel` 📝 | 関数 | 12225 | 1：（HTML） |
-| `closeLayerPanel` 📝 | 関数 | 12242 | 3：`closeMap`、`toggleLayerPanel`、（HTML） |
-| `amedasElementChips` 📝 | 関数 | 12249 | 1：`renderLayerPanel` |
-| `satBandChips` 📝 | 関数 | 12256 | 1：`renderLayerPanel` |
-| `windModeChips` | 関数 | 12270 | 1：`renderLayerPanel` |
-| `windFlowSettings` 📝 | 関数 | 12278 | 1：`renderLayerPanel` |
-| `renderLayerPanel` 📝 | 関数 | 12295 | 10：`drawPoi`、`openMap`、`setAmedasElement`、`setMapBase`、`setOverlayBlend`、`setSatBand` ほか4 |
+| `TERRAIN_SCALES` 📝 | 定数 | 9966 | 1：`terrainProbeCenter` |
+| `TERRAIN_AN` 📝 | 定数 | 9972 | 3：`terrainAnalyzeScale`、`terrainDraw`、`terrainProbeCenter` |
+| `COL` 📝 | 定数 | 9981 | 8：`terrainAn`、`terrainColText`、`terrainCycleShowMin`、`terrainDemGrid`、`terrainFindCols`、`terrainProbeCenter` ほか2 |
+| `terrainAn` 📝 | 状態 | 9997 | 19：`stopWindFlowGL`、`terrainClearMarkers`、`terrainCycleBand`、`terrainCycleShowMin`、`terrainDraw`、`terrainDrawBands` ほか13 |
+| `demPxM` | 関数 | 9998 | 3：`terrainAnalyzeScale`、`terrainDemGrid`、`terrainProbeCenter` |
+| `terrainDemBlock` | 関数 | 10001 | 2：`terrainAnalyzeScale`、`terrainDemGrid` |
+| `terrainGauss` | 関数 | 10024 | 1：`terrainAnalyzeScale` |
+| `terrainView` | 関数 | 10052 | 4：`terrainAnalyze`、`terrainDraw`、`terrainProbeCenter`、`windShelterGrid` |
+| `terrainAnalyzeScale` 📝 | 関数 | 10058 | 1：`terrainProbeCenter` |
+| `terrainDemGrid` 📝 | 関数 | 10103 | 2：`terrainAnalyze`、`windShelterGrid` |
+| `terrainGridIndex` 📝 | 関数 | 10129 | 1：`terrainProbeCenter` |
+| `terrainFindCols` 📝 | 関数 | 10136 | 2：`terrainAnalyze`、`windShelterGrid` |
+| `FLOW` 📝 | 定数 | 10235 | 4：`terrainCycleBand`、`terrainFlow`、`terrainProbeCenter`、`terrainRidgeWhy` |
+| `RIDGE_SRC` 📝 | 定数 | 10250 | 3：`terrainFlow`、`terrainRidgeWhy`、`terrainVectorize` |
+| `terrainFlow` 📝 | 関数 | 10251 | 1：`terrainAnalyze` |
+| `terrainLinkColsToRidges` 📝 | 関数 | 10450 | 1：`terrainAnalyze` |
+| `terrainAnalyze` 📝 | 関数 | 10467 | 1：`terrainRefresh` |
+| `terrainCellAt` | 関数 | 10479 | 1：`terrainProbeCenter` |
+| `terrainWindAt` | 関数 | 10487 | 5：`terrainColText`、`terrainDraw`、`terrainProbeCenter`、`terrainVerifyCols`、`terrainVerifyRow` |
+| `terrainCrossAngle` | 関数 | 10494 | 5：`terrainColText`、`terrainDraw`、`terrainProbeCenter`、`terrainVerifyRow`、`windGLShelter` |
+| `bearingOf` | 関数 | 10499 | 7：`geoBearing`、`terrainColText`、`terrainFlow`、`terrainProbeCenter`、`terrainRidgeWhy`、`terrainVerifyRow` ほか1 |
+| `geoDist` | 関数 | 10500 | 2：`terrainNearestCols`、`terrainRidgeWhy` |
+| `geoBearing` | 関数 | 10501 | 3：`terrainColText`、`terrainProbeCenter`、`terrainVerifyRow` |
+| `DIR8` | 定数 | 10502 | 2：`dir8`、`terrainRidgeWhy` |
+| `dir8` | 関数 | 10503 | 4：`terrainColText`、`terrainProbeCenter`、`terrainRidgeWhy`、`terrainVerifyRow` |
+| `VEC` | 定数 | 10518 | 4：`smoothPath`、`terrainDrawBands`、`terrainDrawLines`、`terrainVectorize` |
+| `thinMask` | 関数 | 10531 | 1：`terrainVectorize` |
+| `skeletonEdges` | 関数 | 10560 | 1：`terrainVectorize` |
+| `pruneEdges` | 関数 | 10593 | 1：`terrainVectorize` |
+| `dpSimplify` | 関数 | 10621 | 1：`smoothPath` |
+| `smoothPath` | 関数 | 10639 | 1：`terrainVectorize` |
+| `terrainVectorize` | 関数 | 10652 | 1：`terrainAnalyze` |
+| `strokeSmooth` | 関数 | 10682 | 1：`terrainDrawLines` |
+| `terrainDrawLines` | 関数 | 10692 | 1：`terrainDraw` |
+| `BAND_COLORS` | 定数 | 10715 | 1：`terrainDrawBands` |
+| `terrainDrawBands` | 関数 | 10716 | 1：`terrainDraw` |
+| `terrainDraw` 📝 | 関数 | 10748 | 6：`stopWindFlowGL`、`terrainCycleBand`、`terrainCycleShowMin`、`terrainRefresh`、`terrainToggleBands`、`terrainToggleLines` |
+| `terrainClearMarkers` | 関数 | 10795 | 1：`terrainDraw` |
+| `terrainColText` 📝 | 関数 | 10799 | 1：`terrainDraw` |
+| `terrainNearestCols` | 関数 | 10817 | 2：`terrainProbeCenter`、`terrainVerifyRow` |
+| `RIDGE_WHY_R` | 定数 | 10824 | 1：`terrainRidgeWhy` |
+| `terrainRidgeWhy` 📝 | 関数 | 10825 | 1：`terrainProbeCenter` |
+| `terrainProbeCenter` 📝 | 関数 | 10850 | 1：`windGLHud` |
+| `TERRAIN_VERIFY_COLS` 📝 | 定数 | 10900 | 1：`terrainVerifyCols` |
+| `VERIFY_ZOOM` | 定数 | 10910 | 1：`terrainVerifyCols` |
+| `terrainVerifyRow` | 関数 | 10911 | 1：`terrainVerifyCols` |
+| `TERRAIN_VERIFY_HEAD` | 定数 | 10929 | 1：`terrainVerifyCols` |
+| `terrainWaitReady` | 関数 | 10931 | 1：`terrainVerifyCols` |
+| `terrainVerifyCols` 📝 | 関数 | 10944 | 1：`windGLHud` |
+| `terrainKey` | 関数 | 10966 | 3：`terrainRefresh`、`terrainWaitReady`、`windShelterGrid` |
+| `terrainRefresh` 📝 | 関数 | 10970 | 4：`terrainToggle`、`terrainVerifyCols`、`terrainWaitReady`、`updateWindFlowGL` |
+| `terrainToggle` | 関数 | 10979 | 3：`terrainVerifyCols`、`windGLHud`、`windGLSetHud` |
+| `terrainCycleBand` 📝 | 関数 | 10986 | 1：`windGLHud` |
+| `terrainToggleBands` | 関数 | 10991 | 1：`windGLHud` |
+| `terrainToggleLines` | 関数 | 10992 | 1：`windGLHud` |
+| `terrainCycleShowMin` | 関数 | 10993 | 1：`windGLHud` |
+| `terrainHudText` | 関数 | 10998 | 1：`windGLHudText` |
+| `glGridSample` 📝 | 関数 | 11013 | 5：`glWindAt`、`terrainWindAt`、`windGLShelter`、`windGLSpawn`、`windGLStep` |
+| `glWindAt` 📝 | 関数 | 11028 | 1：`windGLStep` |
+| `glView` 📝 | 関数 | 11042 | 2：`windGLAlloc`、`windGLFrame` |
+| `placeGLCanvas` | 関数 | 11046 | 2：`updateWindFlowGL`、`windGLFrame` |
+| `windGLTrailTextures` | 関数 | 11059 | 1：`placeGLCanvas` |
+| `windGLZoomAnim` 📝 | 関数 | 11079 | 1：`windGLInit` |
+| `windGLAlloc` | 関数 | 11089 | 2：`updateWindFlowGL`、`windGLSetCount` |
+| `windGLSpawn` | 関数 | 11098 | 2：`windGLAlloc`、`windGLStep` |
+| `windGLStep` 📝 | 関数 | 11112 | 1：`windGLFrame` |
+| `windGLRender` 📝 | 関数 | 11139 | 1：`windGLFrame` |
+| `windGLFrame` 📝 | 関数 | 11235 | 1：`updateWindFlowGL` |
+| `updateWindFlowGL` 📝 | 関数 | 11253 | 5：`refreshWeatherPoints`、`windDemTile`、`windGLToggleShelter`、`windGLToggleTerrain`、（トップレベル） |
+| `stopWindFlowGL` 📝 | 関数 | 11293 | 5：`closeMap`、`refreshWeatherPoints`、`updateWindFlowGL`、`windGLFail`、（トップレベル） |
+| `windFlowStat` 📝 | 関数 | 11305 | 2：`windFlowFrame`、`windGLFrame` |
+| `windFlowStats` | 状態 | 11317 | 3：`windFlowFrame`、`windGLHudText`、`windGLMeasure` |
+| `windGLTimerBegin` | 関数 | 11319 | 1：`windGLFrame` |
+| `windGLTimerEnd` | 関数 | 11324 | 1：`windGLFrame` |
+| `windGLHud` | 関数 | 11334 | 3：`stopWindFlowGL`、`updateWindFlowGL`、`windGLSetHud` |
+| `windFlowSettingsSync` 📝 | 関数 | 11362 | 1：`windGLHudText` |
+| `windGLHudText` | 関数 | 11391 | 11：`terrainDraw`、`windBgToggleSpeedMinMode`、`windFlowStat`、`windGLHud`、`windGLSetBgAlpha`、`windGLSetCount` ほか5 |
+| `windGLTerrainText` 📝 | 関数 | 11422 | 2：`windGLHudText`、`windGLMeasure` |
+| `windShelterHudText` | 関数 | 11431 | 1：`windGLHudText` |
+| `windGLSetHud` 📝 | 関数 | 11441 | 1：`windFlowSettings` |
+| `windGLToggleColor` 📝 | 関数 | 11446 | 1：`windFlowSettings` |
+| `windShelterActive` | 関数 | 11454 | 4：`updateWindFlowGL`、`windGLHudText`、`windShelterHudText`、`windShelterProbeLines` |
+| `windGLToggleShelter` 📝 | 関数 | 11455 | 1：`windFlowSettings` |
+| `windGLToggleTerrain` 📝 | 関数 | 11461 | 1：`windFlowSettings` |
+| `windGLHudMin` | 関数 | 11468 | 1：`windGLHud` |
+| `windGLScaleCount` | 関数 | 11475 | 1：`windFlowSettings` |
+| `windGLMeasure` 📝 | 関数 | 11477 | 1：`windGLHud` |
+| `windGLCopy` | 関数 | 11502 | 1：`windGLHud` |
+| `AREA_LABEL_MIN_ZOOM` | 定数 | 11517 | 1：`drawAreas` |
+| `PEAK_NAME_MIN_ZOOM` | 定数 | 11518 | 1：`drawAreas` |
+| `AREA_PAD_KM` | 定数 | 11519 | 1：`areaShape` |
+| `AREA_MIN_R_KM` | 定数 | 11520 | 1：`areaShape` |
+| `haversineKm` 📝 | 関数 | 11524 | 5：`areaShape`、`isShownMtn`、`loadWxCache`、`mtnSortList`、`renderMtnSection` |
+| `areaShape` 📝 | 関数 | 11533 | 1：`drawAreas` |
+| `updateMapWhen` 📝 | 関数 | 11545 | 1：`refreshWeatherPoints` |
+| `drawAreas` 📝 | 関数 | 11561 | 1：`refreshWeatherPoints` |
+| `POI_MIN_ZOOM` | 定数 | 11637 | 1：`drawPoi` |
+| `POI_NAME_MIN_ZOOM` | 定数 | 11638 | 1：`drawPoi` |
+| `POI_THIN_PX` | 定数 | 11639 | 1：`drawPoi` |
+| `POI_MAX_MARKERS` | 定数 | 11640 | 1：`drawPoi` |
+| `POI_LS_HIDDEN` | 定数 | 11641 | 2：`poiHiddenSet`、`togglePoiType` |
+| `POI_ICONS` | 定数 | 11642 | 4：`drawPoi`、`poiHiddenSet`、`poiTypeChips`、`togglePoiType` |
+| `POI_NAMES` | 定数 | 11644 | 1：`poiTypeChips` |
+| `loadPoi` | 関数 | 11649 | 1：`drawPoi` |
+| `poiAttribution` | 関数 | 11664 | 1：`updateMapAttribution` |
+| `poiHiddenSet` | 関数 | 11670 | 3：`drawPoi`、`poiTypeChips`、`togglePoiType` |
+| `togglePoiType` | 関数 | 11676 | 1：`poiTypeChips` |
+| `poiTypeChips` | 関数 | 11685 | 1：`renderLayerPanel` |
+| `drawPoi` | 関数 | 11693 | 1：`refreshWeatherPoints` |
+| `refreshWeatherPoints` 📝 | 関数 | 11744 | 16：`applyOverlays`、`drawAmedas`、`drawAreas`、`drawPoi`、`ensureWindField`、`loadTerrainRef` ほか10 |
+| `mapTimeLabel` | 関数 | 11782 | 2：`onMapTimeInput`、`updateMapTime` |
+| `updateMapTime` 📝 | 関数 | 11790 | 2：`refreshWeatherPoints`、（HTML） |
+| `onMapTimeInput` | 関数 | 11807 | 1：（HTML） |
+| `setMapTime` 📝 | 関数 | 11812 | 3：`mapTimeNow`、`onMapTimeCommit`、`stepMapTime` |
+| `onMapTimeCommit` | 関数 | 11818 | 1：（HTML） |
+| `stepMapTime` | 関数 | 11819 | 1：（HTML） |
+| `mapTimeNow` | 関数 | 11820 | 1：（HTML） |
+| `THUNDER_CELL_PX` | 定数 | 11832 | 1：`paintThunderIcons` |
+| `THUNDER_MIN_HITS` | 定数 | 11833 | 1：`paintThunderIcons` |
+| `THUNDER_MAX_ICONS` | 定数 | 11834 | 1：`paintThunderIcons` |
+| `THUNDER_SCAN_SCALE` | 定数 | 11841 | 1：`paintThunderIcons` |
+| `releaseThunderScan` 📝 | 関数 | 11845 | 2：`closeMap`、`paintThunderIcons` |
+| `THUNDER_BOLT` | 定数 | 11850 | 1：`paintThunderIcons` |
+| `thunderMarkers` | 状態 | 11853 | 2：`clearThunderIcons`、`paintThunderIcons` |
+| `clearThunderIcons` 📝 | 関数 | 11856 | 1：`paintThunderIcons` |
+| `THUNDER_DEBOUNCE_MS` | 定数 | 11862 | 1：`updateThunderIcons` |
+| `updateThunderIcons` 📝 | 関数 | 11863 | 2：`addTimedTileLayer`、`refreshWeatherPoints` |
+| `paintThunderIcons` 📝 | 関数 | 11868 | 1：`updateThunderIcons` |
+| `GSI_TILE_LIST_URL` | 定数 | 11931 | 1：`updateMapAttribution` |
+| `GSI_DEM_CREDIT` | 定数 | 11932 | 1：`updateMapAttribution` |
+| `watchAttributionHeight` | 関数 | 11935 | 1：（トップレベル） |
+| `updateMapAttribution` 📝 | 関数 | 11948 | 4：`applyBaseLayer`、`applyOverlays`、`drawPoi`、`renderLayerPanel` |
+| `setMapBase` 📝 | 関数 | 11982 | 1：`renderLayerPanel` |
+| `overlayPane` | 関数 | 11992 | 1：`applyOverlays` |
+| `orderNowcastBoxes` | 関数 | 12004 | 1：`applyOverlays` |
+| `applyBlendHost` | 関数 | 12011 | 2：`addTimedTileLayer`、`setOverlayBlend` |
+| `setOverlayBlend` | 関数 | 12017 | 1：`blendChips` |
+| `blendChips` | 関数 | 12026 | 1：`renderLayerPanel` |
+| `isOverlayOn` 📝 | 関数 | 12033 | 19：`addTimedTileLayer`、`makeHintEngine`、`paintThunderIcons`、`placeWindFlowCanvas`、`pointHintAnyOn`、`refreshRanking` ほか13 |
+| `overlayOpacity` 📝 | 関数 | 12034 | 6：`placeGLCanvas`、`placeWindFlowCanvas`、`refreshWeatherPoints`、`renderLayerPanel`、`setSatBand`、`toggleOverlay` |
+| `toggleOverlay` 📝 | 関数 | 12041 | 2：`renderLayerPanel`、`terrainVerifyCols` |
+| `setOverlayOpacity` 📝 | 関数 | 12061 | 1：`renderLayerPanel` |
+| `moveFavRotaryTo` 📝 | 関数 | 12087 | 2：`openMap`、（HTML） |
+| `restoreFavRotary` 📝 | 関数 | 12095 | 1：`closeMap` |
+| `openMap` 📝 | 関数 | 12103 | 1：（HTML） |
+| `closeMap` 📝 | 関数 | 12188 | 1：（HTML） |
+| `setMapDeclutter` 📝 | 関数 | 12207 | 3：`closeMap`、`openMap`、`toggleMapDeclutter` |
+| `toggleMapDeclutter` 📝 | 関数 | 12225 | 1：（HTML） |
+| `isMapOpen` 📝 | 関数 | 12226 | 22：`ensureWindField`、`fetchGPS`、`hideLoading`、`loadTerrainRef`、`makeHintEngine`、`openMap` ほか16 |
+| `toggleLayerPanel` 📝 | 関数 | 12232 | 1：（HTML） |
+| `closeLayerPanel` 📝 | 関数 | 12249 | 3：`closeMap`、`toggleLayerPanel`、（HTML） |
+| `amedasElementChips` 📝 | 関数 | 12256 | 1：`renderLayerPanel` |
+| `satBandChips` 📝 | 関数 | 12263 | 1：`renderLayerPanel` |
+| `windModeChips` | 関数 | 12277 | 1：`renderLayerPanel` |
+| `windFlowSettings` 📝 | 関数 | 12285 | 1：`renderLayerPanel` |
+| `renderLayerPanel` 📝 | 関数 | 12302 | 10：`drawPoi`、`openMap`、`setAmedasElement`、`setMapBase`、`setOverlayBlend`、`setSatBand` ほか4 |
 
 ## 標高タイル（国土地理院 dem_png）から選択地点の標高を読む
 
-行 12335〜
+行 12342〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `DEM_TILE_URL` | 定数 | 12338 | 2：`readDemElevation`、`windDemTile` |
-| `DEM_ZOOM` | 定数 | 12339 | 2：`COL`、`readDemElevation` |
-| `lonLatToTilePixel` 📝 | 関数 | 12342 | 1：`readDemElevation` |
-| `decodeDemPixel` 📝 | 関数 | 12356 | 2：`readDemElevation`、`windDemTile` |
-| `demKey` | 関数 | 12364 | 1：`readDemElevation` |
-| `readDemElevation` | 関数 | 12370 | 2：`doMapSearch`、`fetchPointElevation` |
-| `fetchPointElevation` 📝 | 関数 | 12397 | 3：`fetchGPS`、`fetchWeather`、`pickPinPoint` |
-| `displayElevation` 📝 | 関数 | 12406 | 2：`drawAxisGutter`、`drawCloudOverlay` |
-| `updateElevationLabel` 📝 | 関数 | 12410 | 1：`fetchPointElevation` |
-| `wantsWakeLock` 📝 | 関数 | 12437 | 1：`syncWakeLock` |
-| `syncWakeLock` 📝 | 関数 | 12441 | 4：`closeMap`、`toggleWakeLock`、`updateMapToolButtons`、（トップレベル） |
-| `toggleWakeLock` 📝 | 関数 | 12462 | 1：（HTML） |
-| `paintWakeBadge` 📝 | 関数 | 12468 | 1：`syncWakeLock` |
-| `MAP_SCALE_MAX_PX` 📝 | 定数 | 12507 | 1：`updateMapScale` |
-| `niceScaleMeters` 📝 | 関数 | 12511 | 1：`updateMapScale` |
-| `updateMapScale` 📝 | 関数 | 12518 | 2：`openMap`、`setHeadingUp` |
-| `swMessage` 📝 | 関数 | 12543 | 2：`clearTileCache`、`refreshTileCacheUsage` |
-| `formatBytes` 📝 | 関数 | 12553 | 1：`refreshTileCacheUsage` |
-| `refreshTileCacheUsage` 📝 | 関数 | 12557 | 3：`clearTileCache`、`openMap`、`toggleLayerPanel` |
-| `MAP_OPENS_KEEP_DAYS` | 定数 | 12582 | 1：`bumpMapOpens` |
-| `MAP_OPENS_WINDOW` | 定数 | 12583 | 1：`summarizeMapOpens` |
-| `localDayKey` 📝 | 関数 | 12584 | 2：`recordMapOpen`、`refreshMapOpensView` |
-| `dayKeyToUtcMs` | 関数 | 12588 | 2：`bumpMapOpens`、`summarizeMapOpens` |
-| `normalizeMapOpens` | 関数 | 12592 | 2：`bumpMapOpens`、`summarizeMapOpens` |
-| `bumpMapOpens` 📝 | 関数 | 12602 | 1：`recordMapOpen` |
-| `summarizeMapOpens` 📝 | 関数 | 12609 | 1：`refreshMapOpensView` |
-| `loadMapOpens` | 関数 | 12631 | 2：`recordMapOpen`、`refreshMapOpensView` |
-| `recordMapOpen` 📝 | 関数 | 12638 | 1：`openMap` |
-| `refreshMapOpensView` 📝 | 関数 | 12645 | 1：`toggleLayerPanel` |
-| `clearTileCache` 📝 | 関数 | 12658 | 1：（HTML） |
-| `pickMapPoint` 📝 | 関数 | 12667 | 4：`drawAreas`、`pickMtn`、`renderMapResults`、`renderSearchHist` |
-| `setPickedName` 📝 | 関数 | 12681 | 7：`fetchGPS`、`hideLoading`、`openMap`、`pickMapPoint`、`pickPinPoint`、`selectFav` ほか1 |
-| `mapFlyTo` 📝 | 関数 | 12688 | 5：`fetchGPS`、`goCoordPoint`、`pickMapPoint`、`selectFav`、`setLocateMode` |
+| `DEM_TILE_URL` | 定数 | 12345 | 2：`readDemElevation`、`windDemTile` |
+| `DEM_ZOOM` | 定数 | 12346 | 2：`COL`、`readDemElevation` |
+| `lonLatToTilePixel` 📝 | 関数 | 12349 | 1：`readDemElevation` |
+| `decodeDemPixel` 📝 | 関数 | 12363 | 2：`readDemElevation`、`windDemTile` |
+| `demKey` | 関数 | 12371 | 1：`readDemElevation` |
+| `readDemElevation` | 関数 | 12377 | 2：`doMapSearch`、`fetchPointElevation` |
+| `fetchPointElevation` 📝 | 関数 | 12404 | 3：`fetchGPS`、`fetchWeather`、`pickPinPoint` |
+| `displayElevation` 📝 | 関数 | 12413 | 2：`drawAxisGutter`、`drawCloudOverlay` |
+| `updateElevationLabel` 📝 | 関数 | 12417 | 1：`fetchPointElevation` |
+| `wantsWakeLock` 📝 | 関数 | 12444 | 1：`syncWakeLock` |
+| `syncWakeLock` 📝 | 関数 | 12448 | 4：`closeMap`、`toggleWakeLock`、`updateMapToolButtons`、（トップレベル） |
+| `toggleWakeLock` 📝 | 関数 | 12469 | 1：（HTML） |
+| `paintWakeBadge` 📝 | 関数 | 12475 | 1：`syncWakeLock` |
+| `MAP_SCALE_MAX_PX` 📝 | 定数 | 12514 | 1：`updateMapScale` |
+| `niceScaleMeters` 📝 | 関数 | 12518 | 1：`updateMapScale` |
+| `updateMapScale` 📝 | 関数 | 12525 | 2：`openMap`、`setHeadingUp` |
+| `swMessage` 📝 | 関数 | 12550 | 2：`clearTileCache`、`refreshTileCacheUsage` |
+| `formatBytes` 📝 | 関数 | 12560 | 1：`refreshTileCacheUsage` |
+| `refreshTileCacheUsage` 📝 | 関数 | 12564 | 3：`clearTileCache`、`openMap`、`toggleLayerPanel` |
+| `MAP_OPENS_KEEP_DAYS` | 定数 | 12589 | 1：`bumpMapOpens` |
+| `MAP_OPENS_WINDOW` | 定数 | 12590 | 1：`summarizeMapOpens` |
+| `localDayKey` 📝 | 関数 | 12591 | 2：`recordMapOpen`、`refreshMapOpensView` |
+| `dayKeyToUtcMs` | 関数 | 12595 | 2：`bumpMapOpens`、`summarizeMapOpens` |
+| `normalizeMapOpens` | 関数 | 12599 | 2：`bumpMapOpens`、`summarizeMapOpens` |
+| `bumpMapOpens` 📝 | 関数 | 12609 | 1：`recordMapOpen` |
+| `summarizeMapOpens` 📝 | 関数 | 12616 | 1：`refreshMapOpensView` |
+| `loadMapOpens` | 関数 | 12638 | 2：`recordMapOpen`、`refreshMapOpensView` |
+| `recordMapOpen` 📝 | 関数 | 12645 | 1：`openMap` |
+| `refreshMapOpensView` 📝 | 関数 | 12652 | 1：`toggleLayerPanel` |
+| `clearTileCache` 📝 | 関数 | 12665 | 1：（HTML） |
+| `pickMapPoint` 📝 | 関数 | 12674 | 4：`drawAreas`、`pickMtn`、`renderMapResults`、`renderSearchHist` |
+| `setPickedName` 📝 | 関数 | 12688 | 7：`fetchGPS`、`hideLoading`、`openMap`、`pickMapPoint`、`pickPinPoint`、`selectFav` ほか1 |
+| `mapFlyTo` 📝 | 関数 | 12695 | 5：`fetchGPS`、`goCoordPoint`、`pickMapPoint`、`selectFav`、`setLocateMode` |
 
 ## 現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）
 
-行 12696〜
+行 12703〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `updatePinVisibility` 📝 | 関数 | 12721 | 5：`openMap`、`releaseFollow`、`setLocateMode`、`startTracking`、`stopTracking` |
-| `updateMapToolButtons` 📝 | 関数 | 12728 | 5：`releaseFollow`、`setHeadingUp`、`setLocateMode`、`startTracking`、`stopTracking` |
-| `paintCompass` 📝 | 関数 | 12750 | 2：`applyMapRotation`、`updateMapToolButtons` |
-| `cycleLocate` 📝 | 関数 | 12767 | 1：（HTML） |
-| `setLocateMode` 📝 | 関数 | 12773 | 2：`cycleLocate`、`toggleOrientation` |
-| `startTracking` 📝 | 関数 | 12788 | 1：`setLocateMode` |
-| `releaseFollow` 📝 | 関数 | 12807 | 3：`pickMapPoint`、`pickPinPoint`、`selectFav` |
-| `stopTracking` 📝 | 関数 | 12819 | 3：`closeMap`、`setLocateMode`、`startTracking` |
-| `onGeoUpdate` 📝 | 関数 | 12834 | 1：`startTracking` |
-| `drawMe` 📝 | 関数 | 12844 | 3：`applyMapRotation`、`onGeoUpdate`、`setHeading` |
-| `enableHeading` 📝 | 関数 | 12877 | 1：`toggleOrientation` |
-| `screenAngle` | 関数 | 12900 | 2：`applyNotchSide`、`enableHeading` |
-| `applyNotchSide` | 関数 | 12910 | 1：（トップレベル） |
-| `setHeading` 📝 | 関数 | 12918 | 2：`enableHeading`、`onGeoUpdate` |
-| `applyMapRotation` 📝 | 関数 | 12925 | 2：`setHeading`、`setHeadingUp` |
-| `toggleOrientation` 📝 | 関数 | 12937 | 1：（HTML） |
-| `setHeadingUp` 📝 | 関数 | 12945 | 3：`releaseFollow`、`stopTracking`、`toggleOrientation` |
-| `ME_DOT_R` 📝 | 定数 | 12978 | 2：`SPOT_CLEAR_PX`、`SPOT_FADE_PX` |
-| `SPOT_CLEAR_PX` | 定数 | 12979 | 1：`paintSpotlightPane` |
-| `SPOT_FADE_PX` | 定数 | 12980 | 1：`paintSpotlightPane` |
-| `updateMeSpotlight` 📝 | 関数 | 12983 | 3：`onGeoUpdate`、`openMap`、`stopTracking` |
-| `SPOT_PANES` | 定数 | 12989 | 1：`paintMeSpotlight` |
-| `paintMeSpotlight` 📝 | 関数 | 12990 | 1：`updateMeSpotlight` |
-| `paintSpotlightPane` 📝 | 関数 | 12996 | 1：`paintMeSpotlight` |
-| `DTAP_MS` 📝 | 定数 | 13038 | 2：`bindDoubleTapZoom`、`flashPinHint` |
-| `DTAP_SLOP_PX` 📝 | 定数 | 13039 | 1：`bindDoubleTapZoom` |
-| `DTAP_PX_PER_ZOOM` 📝 | 定数 | 13040 | 1：`bindDoubleTapZoom` |
-| `zoomAnchor` 📝 | 関数 | 13046 | 1：`bindDoubleTapZoom` |
-| `bindDoubleTapZoom` 📝 | 関数 | 13051 | 1：`openMap` |
-| `PIN_HOLD_MS` 📝 | 定数 | 13125 | 2：`bindPinLongPress`、`showPinHold` |
-| `PIN_HOLD_SLOP_PX` 📝 | 定数 | 13126 | 1：`bindPinLongPress` |
-| `showPinHold` 📝 | 関数 | 13131 | 1：`bindPinLongPress` |
-| `hidePinHold` 📝 | 関数 | 13143 | 2：`bindPinLongPress`、`cancelPinHold` |
-| `cancelPinHold` 📝 | 関数 | 13147 | 2：`bindPinLongPress`、`closeMap` |
-| `flashPinHint` 📝 | 関数 | 13155 | 1：`bindPinLongPress` |
-| `MAP_HINT_MS` 📝 | 定数 | 13172 | 1：`showMapHint` |
-| `showMapHint` 📝 | 関数 | 13173 | 1：`openMap` |
-| `pickPinPoint` 📝 | 関数 | 13187 | 2：`bindPinLongPress`、`goCoordPoint` |
-| `bindPinLongPress` 📝 | 関数 | 13205 | 1：`openMap` |
-| `patchRotatedInput` 📝 | 関数 | 13257 | 1：`openMap` |
-| `NAME_VARIANT_GROUPS` | 定数 | 13278 | 2：`nameSearchVariants`、`normalizeSearchName` |
-| `SEARCH_VARIANT_MAX` | 定数 | 13282 | 1：`nameSearchVariants` |
-| `nameSearchVariants` | 関数 | 13286 | 1：`doMapSearch` |
-| `KANJI_VARIANT_PAIRS` | 定数 | 13305 | 2：`mtnKey`、`normalizeSearchName` |
-| `normalizeSearchName` | 関数 | 13308 | 5：`doMapSearch`、`findHyakumeizan`、`isShownMtn`、`renderSearchHist`、`sameHistPlace` |
-| `HYAKU_MATCH_KM` | 定数 | 13321 | 1：`findHyakumeizan` |
-| `findHyakumeizan` | 関数 | 13322 | 1：`renderMapResults` |
-| `gsiPlaceSearch` | 関数 | 13348 | 1：`doMapSearch` |
-| `mapSearchItems` | 状態 | 13365 | 3：`doMapSearch`、`renderMapResults`、`renderSearchHist` |
-| `setMapSearchSort` | 関数 | 13368 | 1：`renderMapResults` |
-| `renderMapResults` | 関数 | 13374 | 2：`doMapSearch`、`setMapSearchSort` |
-| `SEARCH_TIMEOUT_MS` 📝 | 定数 | 13435 | 1：`fetchJsonWithTimeout` |
-| `fetchJsonWithTimeout` 📝 | 関数 | 13436 | 2：`doMapSearch`、`gsiPlaceSearch` |
-| `doMapSearch` 📝 | 関数 | 13453 | 2：（HTML）、（トップレベル） |
-| `COORD_GO_ZOOM` | 定数 | 13576 | 1：`goCoordPoint` |
-| `COORD_OUT_MSG` | 定数 | 13577 | 1：`doMapSearch` |
-| `goCoordPoint` 📝 | 関数 | 13578 | 3：`coordGoRow`、`doMapSearch`、`renderSearchHist` |
-| `coordGoRow` 📝 | 関数 | 13585 | 1：`renderSearchHist` |
+| `updatePinVisibility` 📝 | 関数 | 12728 | 5：`openMap`、`releaseFollow`、`setLocateMode`、`startTracking`、`stopTracking` |
+| `updateMapToolButtons` 📝 | 関数 | 12735 | 5：`releaseFollow`、`setHeadingUp`、`setLocateMode`、`startTracking`、`stopTracking` |
+| `paintCompass` 📝 | 関数 | 12757 | 2：`applyMapRotation`、`updateMapToolButtons` |
+| `cycleLocate` 📝 | 関数 | 12774 | 1：（HTML） |
+| `setLocateMode` 📝 | 関数 | 12780 | 2：`cycleLocate`、`toggleOrientation` |
+| `startTracking` 📝 | 関数 | 12795 | 1：`setLocateMode` |
+| `releaseFollow` 📝 | 関数 | 12814 | 3：`pickMapPoint`、`pickPinPoint`、`selectFav` |
+| `stopTracking` 📝 | 関数 | 12826 | 3：`closeMap`、`setLocateMode`、`startTracking` |
+| `onGeoUpdate` 📝 | 関数 | 12841 | 1：`startTracking` |
+| `drawMe` 📝 | 関数 | 12851 | 3：`applyMapRotation`、`onGeoUpdate`、`setHeading` |
+| `enableHeading` 📝 | 関数 | 12884 | 1：`toggleOrientation` |
+| `screenAngle` | 関数 | 12907 | 2：`applyNotchSide`、`enableHeading` |
+| `applyNotchSide` | 関数 | 12917 | 1：（トップレベル） |
+| `setHeading` 📝 | 関数 | 12925 | 2：`enableHeading`、`onGeoUpdate` |
+| `applyMapRotation` 📝 | 関数 | 12932 | 2：`setHeading`、`setHeadingUp` |
+| `toggleOrientation` 📝 | 関数 | 12944 | 1：（HTML） |
+| `setHeadingUp` 📝 | 関数 | 12952 | 3：`releaseFollow`、`stopTracking`、`toggleOrientation` |
+| `ME_DOT_R` 📝 | 定数 | 12985 | 2：`SPOT_CLEAR_PX`、`SPOT_FADE_PX` |
+| `SPOT_CLEAR_PX` | 定数 | 12986 | 1：`paintSpotlightPane` |
+| `SPOT_FADE_PX` | 定数 | 12987 | 1：`paintSpotlightPane` |
+| `updateMeSpotlight` 📝 | 関数 | 12990 | 3：`onGeoUpdate`、`openMap`、`stopTracking` |
+| `SPOT_PANES` | 定数 | 12996 | 1：`paintMeSpotlight` |
+| `paintMeSpotlight` 📝 | 関数 | 12997 | 1：`updateMeSpotlight` |
+| `paintSpotlightPane` 📝 | 関数 | 13003 | 1：`paintMeSpotlight` |
+| `DTAP_MS` 📝 | 定数 | 13045 | 2：`bindDoubleTapZoom`、`flashPinHint` |
+| `DTAP_SLOP_PX` 📝 | 定数 | 13046 | 1：`bindDoubleTapZoom` |
+| `DTAP_PX_PER_ZOOM` 📝 | 定数 | 13047 | 1：`bindDoubleTapZoom` |
+| `zoomAnchor` 📝 | 関数 | 13053 | 1：`bindDoubleTapZoom` |
+| `bindDoubleTapZoom` 📝 | 関数 | 13058 | 1：`openMap` |
+| `PIN_HOLD_MS` 📝 | 定数 | 13132 | 2：`bindPinLongPress`、`showPinHold` |
+| `PIN_HOLD_SLOP_PX` 📝 | 定数 | 13133 | 1：`bindPinLongPress` |
+| `showPinHold` 📝 | 関数 | 13138 | 1：`bindPinLongPress` |
+| `hidePinHold` 📝 | 関数 | 13150 | 2：`bindPinLongPress`、`cancelPinHold` |
+| `cancelPinHold` 📝 | 関数 | 13154 | 2：`bindPinLongPress`、`closeMap` |
+| `flashPinHint` 📝 | 関数 | 13162 | 1：`bindPinLongPress` |
+| `MAP_HINT_MS` 📝 | 定数 | 13179 | 1：`showMapHint` |
+| `showMapHint` 📝 | 関数 | 13180 | 1：`openMap` |
+| `pickPinPoint` 📝 | 関数 | 13194 | 2：`bindPinLongPress`、`goCoordPoint` |
+| `bindPinLongPress` 📝 | 関数 | 13212 | 1：`openMap` |
+| `patchRotatedInput` 📝 | 関数 | 13264 | 1：`openMap` |
+| `NAME_VARIANT_GROUPS` | 定数 | 13285 | 2：`nameSearchVariants`、`normalizeSearchName` |
+| `SEARCH_VARIANT_MAX` | 定数 | 13289 | 1：`nameSearchVariants` |
+| `nameSearchVariants` | 関数 | 13293 | 1：`doMapSearch` |
+| `KANJI_VARIANT_PAIRS` | 定数 | 13312 | 2：`mtnKey`、`normalizeSearchName` |
+| `normalizeSearchName` | 関数 | 13315 | 5：`doMapSearch`、`findHyakumeizan`、`isShownMtn`、`renderSearchHist`、`sameHistPlace` |
+| `HYAKU_MATCH_KM` | 定数 | 13328 | 1：`findHyakumeizan` |
+| `findHyakumeizan` | 関数 | 13329 | 1：`renderMapResults` |
+| `gsiPlaceSearch` | 関数 | 13355 | 1：`doMapSearch` |
+| `mapSearchItems` | 状態 | 13372 | 3：`doMapSearch`、`renderMapResults`、`renderSearchHist` |
+| `setMapSearchSort` | 関数 | 13375 | 1：`renderMapResults` |
+| `renderMapResults` | 関数 | 13381 | 2：`doMapSearch`、`setMapSearchSort` |
+| `SEARCH_TIMEOUT_MS` 📝 | 定数 | 13442 | 1：`fetchJsonWithTimeout` |
+| `fetchJsonWithTimeout` 📝 | 関数 | 13443 | 2：`doMapSearch`、`gsiPlaceSearch` |
+| `doMapSearch` 📝 | 関数 | 13460 | 2：（HTML）、（トップレベル） |
+| `COORD_GO_ZOOM` | 定数 | 13583 | 1：`goCoordPoint` |
+| `COORD_OUT_MSG` | 定数 | 13584 | 1：`doMapSearch` |
+| `goCoordPoint` 📝 | 関数 | 13585 | 3：`coordGoRow`、`doMapSearch`、`renderSearchHist` |
+| `coordGoRow` 📝 | 関数 | 13592 | 1：`renderSearchHist` |
 
 ## 検索の履歴（選んだ地点）
 
-行 13605〜
+行 13612〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `SEARCH_HIST_KEY` | 定数 | 13613 | 2：`loadSearchHist`、`saveSearchHist` |
-| `SEARCH_HIST_MAX` | 定数 | 13614 | 1：`addSearchHist` |
-| `loadSearchHist` | 関数 | 13616 | 3：`addSearchHist`、`removeSearchHist`、`renderSearchHist` |
-| `saveSearchHist` | 関数 | 13623 | 3：`addSearchHist`、`mtnClearButton`、`removeSearchHist` |
-| `sameHistPlace` | 関数 | 13627 | 1：`addSearchHist` |
-| `addSearchHist` 📝 | 関数 | 13631 | 3：`goCoordPoint`、`renderMapResults`、`renderSearchHist` |
-| `removeSearchHist` | 関数 | 13641 | 1：`renderSearchHist` |
-| `renderSearchHist` 📝 | 関数 | 13650 | 3：`mtnClearButton`、`renderMtnSection`、（トップレベル） |
+| `SEARCH_HIST_KEY` | 定数 | 13620 | 2：`loadSearchHist`、`saveSearchHist` |
+| `SEARCH_HIST_MAX` | 定数 | 13621 | 1：`addSearchHist` |
+| `loadSearchHist` | 関数 | 13623 | 3：`addSearchHist`、`removeSearchHist`、`renderSearchHist` |
+| `saveSearchHist` | 関数 | 13630 | 3：`addSearchHist`、`mtnClearButton`、`removeSearchHist` |
+| `sameHistPlace` | 関数 | 13634 | 1：`addSearchHist` |
+| `addSearchHist` 📝 | 関数 | 13638 | 3：`goCoordPoint`、`renderMapResults`、`renderSearchHist` |
+| `removeSearchHist` | 関数 | 13648 | 1：`renderSearchHist` |
+| `renderSearchHist` 📝 | 関数 | 13657 | 3：`mtnClearButton`、`renderMtnSection`、（トップレベル） |
 
 ## 手元の山の検索（#171・第1段階）
 
-行 13733〜
+行 13740〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `MTN_SEARCH` 📝 | 定数 | 13741 | 7：`addMtnHist`、`mtnHistBoost`、`mtnMatchKey`、`mtnTagChip`、`mtnTierBoost`、`mtnTopTier` ほか1 |
-| `MTN_HIST_KEY` | 定数 | 13751 | 2：`loadMtnHist`、`saveMtnHist` |
-| `MTN_KA_GROUP` | 定数 | 13759 | 1：`mtnKey` |
-| `mtnKey` 📝 | 関数 | 13760 | 2：`buildPeakIndex`、`mtnSearch` |
-| `editDistance` | 関数 | 13770 | 1：`mtnMatchKey` |
-| `mtnMatchKey` | 関数 | 13785 | 1：`mtnMatchScore` |
-| `mtnMatchScore` | 関数 | 13800 | 1：`mtnSearch` |
-| `mtnTopTier` | 関数 | 13807 | 3：`mtnTagChip`、`mtnTierBoost`、`renderMtnSection` |
-| `mtnTierBoost` | 関数 | 13811 | 1：`mtnSearch` |
-| `mtnHistBoost` | 関数 | 13817 | 1：`mtnSearch` |
-| `mtnRoleInfo` | 関数 | 13828 | 1：`buildPeakIndex` |
-| `buildPeakIndex` 📝 | 関数 | 13847 | 1：`ensureMtnIndex` |
-| `loadPeakMeta` | 関数 | 13875 | 1：`ensureMtnIndex` |
-| `ensureMtnIndex` | 関数 | 13882 | 2：`doMapSearch`、`renderSearchHist` |
-| `mtnById` | 関数 | 13892 | 1：`renderMtnSection` |
-| `loadMtnHist` | 関数 | 13897 | 4：`addMtnHist`、`mtnSearch`、`removeMtnHist`、`renderMtnSection` |
-| `saveMtnHist` | 関数 | 13904 | 3：`addMtnHist`、`mtnClearButton`、`removeMtnHist` |
-| `addMtnHist` 📝 | 関数 | 13907 | 1：`pickMtn` |
-| `removeMtnHist` | 関数 | 13915 | 1：`renderMtnSection` |
-| `mtnDistOrigin` | 関数 | 13921 | 1：`renderMtnSection` |
-| `mtnSearch` 📝 | 関数 | 13930 | 1：`renderMtnSection` |
-| `mtnNameCmp` | 関数 | 13945 | 2：`mtnSortList`、`renderMtnSection` |
-| `mtnSortList` | 関数 | 13950 | 1：`renderMtnSection` |
-| `mtnDisplayName` | 関数 | 13961 | 1：`mtnRowEl` |
-| `pickMtn` 📝 | 関数 | 13967 | 1：`mtnRowEl` |
-| `mtnTagChip` | 関数 | 13977 | 1：`mtnRowEl` |
-| `mtnRowEl` | 関数 | 13994 | 1：`renderMtnSection` |
-| `mtnHead` | 関数 | 14030 | 1：`renderMtnSection` |
-| `mtnClearButton` | 関数 | 14040 | 2：`renderMtnSection`、`renderSearchHist` |
-| `mtnShown` | 状態 | 14056 | 2：`isShownMtn`、`renderMtnSection` |
-| `renderMtnSection` 📝 | 関数 | 14057 | 2：`doMapSearch`、`renderSearchHist` |
-| `MTN_DUP_KM` | 定数 | 14133 | 1：`isShownMtn` |
-| `isShownMtn` | 関数 | 14134 | 1：`doMapSearch` |
+| `MTN_SEARCH` 📝 | 定数 | 13748 | 7：`addMtnHist`、`mtnHistBoost`、`mtnMatchKey`、`mtnTagChip`、`mtnTierBoost`、`mtnTopTier` ほか1 |
+| `MTN_HIST_KEY` | 定数 | 13758 | 2：`loadMtnHist`、`saveMtnHist` |
+| `MTN_KA_GROUP` | 定数 | 13766 | 1：`mtnKey` |
+| `mtnKey` 📝 | 関数 | 13767 | 2：`buildPeakIndex`、`mtnSearch` |
+| `editDistance` | 関数 | 13777 | 1：`mtnMatchKey` |
+| `mtnMatchKey` | 関数 | 13792 | 1：`mtnMatchScore` |
+| `mtnMatchScore` | 関数 | 13807 | 1：`mtnSearch` |
+| `mtnTopTier` | 関数 | 13814 | 3：`mtnTagChip`、`mtnTierBoost`、`renderMtnSection` |
+| `mtnTierBoost` | 関数 | 13818 | 1：`mtnSearch` |
+| `mtnHistBoost` | 関数 | 13824 | 1：`mtnSearch` |
+| `mtnRoleInfo` | 関数 | 13835 | 1：`buildPeakIndex` |
+| `buildPeakIndex` 📝 | 関数 | 13854 | 1：`ensureMtnIndex` |
+| `loadPeakMeta` | 関数 | 13882 | 1：`ensureMtnIndex` |
+| `ensureMtnIndex` | 関数 | 13889 | 2：`doMapSearch`、`renderSearchHist` |
+| `mtnById` | 関数 | 13899 | 1：`renderMtnSection` |
+| `loadMtnHist` | 関数 | 13904 | 4：`addMtnHist`、`mtnSearch`、`removeMtnHist`、`renderMtnSection` |
+| `saveMtnHist` | 関数 | 13911 | 3：`addMtnHist`、`mtnClearButton`、`removeMtnHist` |
+| `addMtnHist` 📝 | 関数 | 13914 | 1：`pickMtn` |
+| `removeMtnHist` | 関数 | 13922 | 1：`renderMtnSection` |
+| `mtnDistOrigin` | 関数 | 13928 | 1：`renderMtnSection` |
+| `mtnSearch` 📝 | 関数 | 13937 | 1：`renderMtnSection` |
+| `mtnNameCmp` | 関数 | 13952 | 2：`mtnSortList`、`renderMtnSection` |
+| `mtnSortList` | 関数 | 13957 | 1：`renderMtnSection` |
+| `mtnDisplayName` | 関数 | 13968 | 1：`mtnRowEl` |
+| `pickMtn` 📝 | 関数 | 13974 | 1：`mtnRowEl` |
+| `mtnTagChip` | 関数 | 13984 | 1：`mtnRowEl` |
+| `mtnRowEl` | 関数 | 14001 | 1：`renderMtnSection` |
+| `mtnHead` | 関数 | 14037 | 1：`renderMtnSection` |
+| `mtnClearButton` | 関数 | 14047 | 2：`renderMtnSection`、`renderSearchHist` |
+| `mtnShown` | 状態 | 14063 | 2：`isShownMtn`、`renderMtnSection` |
+| `renderMtnSection` 📝 | 関数 | 14064 | 2：`doMapSearch`、`renderSearchHist` |
+| `MTN_DUP_KM` | 定数 | 14140 | 1：`isShownMtn` |
+| `isShownMtn` | 関数 | 14141 | 1：`doMapSearch` |
 
 ## 座標の表記（DD・DMS・DDM・度分秒）— v4.109.0
 
-行 14143〜
+行 14150〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `coordParts` | 関数 | 14148 | 3：`fmtDDM`、`fmtDMS`、`fmtJpDMS` |
-| `fmtDMS` | 関数 | 14153 | 1：`coordFormats` |
-| `fmtDDM` | 関数 | 14158 | 1：`coordFormats` |
-| `fmtJpDMS` | 関数 | 14162 | 1：`coordFormats` |
-| `UTM_BANDS` | 定数 | 14173 | 2：`toUTM`、`utmBandRange` |
-| `utmZone` | 関数 | 14174 | 1：`toUTM` |
-| `toUTM` 📝 | 関数 | 14186 | 2：`coordFormats`、`parseUtmMgrs` |
-| `fmtUTM` | 関数 | 14207 | 1：`coordFormats` |
-| `fmtMGRS` | 関数 | 14210 | 1：`coordFormats` |
-| `fromUTM` 📝 | 関数 | 14224 | 2：`utmCellInBand`、`utmResult` |
-| `coordFormats` | 関数 | 14245 | 1：`openCoordSheet` |
+| `coordParts` | 関数 | 14155 | 3：`fmtDDM`、`fmtDMS`、`fmtJpDMS` |
+| `fmtDMS` | 関数 | 14160 | 1：`coordFormats` |
+| `fmtDDM` | 関数 | 14165 | 1：`coordFormats` |
+| `fmtJpDMS` | 関数 | 14169 | 1：`coordFormats` |
+| `UTM_BANDS` | 定数 | 14180 | 2：`toUTM`、`utmBandRange` |
+| `utmZone` | 関数 | 14181 | 1：`toUTM` |
+| `toUTM` 📝 | 関数 | 14193 | 2：`coordFormats`、`parseUtmMgrs` |
+| `fmtUTM` | 関数 | 14214 | 1：`coordFormats` |
+| `fmtMGRS` | 関数 | 14217 | 1：`coordFormats` |
+| `fromUTM` 📝 | 関数 | 14231 | 2：`utmCellInBand`、`utmResult` |
+| `coordFormats` | 関数 | 14252 | 1：`openCoordSheet` |
 
 ## 座標の入力を読む（v4.158.0・findings-09 の B・第1段）
 
-行 14281〜
+行 14288〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `COORD_JP` | 定数 | 14291 | 1：`coordInJapan` |
-| `COORD_NUM` | 定数 | 14294 | 2：`COORD_COMP_POST`、`COORD_COMP_PRE` |
-| `COORD_LABEL` | 定数 | 14297 | 3：`COORD_COMP_POST`、`COORD_COMP_PRE`、`parseCoordInput` |
-| `COORD_COMP_PRE` | 定数 | 14298 | 1：`parseCoordWith` |
-| `COORD_COMP_POST` | 定数 | 14299 | 1：`parseCoordWith` |
-| `COORD_SEP` | 定数 | 14300 | 1：`parseCoordWith` |
-| `coordInJapan` | 関数 | 14301 | 2：`parseCoordWith`、`utmResult` |
-| `parseCoordComp` | 関数 | 14304 | 1：`parseCoordWith` |
-| `UTM_IN` | 定数 | 14330 | 1：`parseUtmMgrs` |
-| `MGRS_IN` | 定数 | 14331 | 1：`parseUtmMgrs` |
-| `MGRS_ROWS` | 定数 | 14332 | 1：`parseUtmMgrs` |
-| `utmBandRange` | 関数 | 14333 | 2：`parseUtmMgrs`、`utmCellInBand` |
-| `utmCellInBand` 📝 | 関数 | 14338 | 1：`utmResult` |
-| `utmResult` | 関数 | 14343 | 1：`parseUtmMgrs` |
-| `parseUtmMgrs` 📝 | 関数 | 14350 | 1：`parseCoordInput` |
-| `parseCoordInput` 📝 | 関数 | 14374 | 2：`doMapSearch`、`renderSearchHist` |
-| `parseCoordWith` | 関数 | 14386 | 1：`parseCoordInput` |
-| `copyText` | 関数 | 14420 | 1：`openCoordSheet` |
-| `flashCopied` | 関数 | 14433 | 1：`openCoordSheet` |
-| `openCoordSheet` | 関数 | 14441 | 2：`renderFavList`、`renderSearchHist` |
-| `closeCoordSheet` | 関数 | 14483 | 1：（HTML） |
+| `COORD_JP` | 定数 | 14298 | 1：`coordInJapan` |
+| `COORD_NUM` | 定数 | 14301 | 2：`COORD_COMP_POST`、`COORD_COMP_PRE` |
+| `COORD_LABEL` | 定数 | 14304 | 3：`COORD_COMP_POST`、`COORD_COMP_PRE`、`parseCoordInput` |
+| `COORD_COMP_PRE` | 定数 | 14305 | 1：`parseCoordWith` |
+| `COORD_COMP_POST` | 定数 | 14306 | 1：`parseCoordWith` |
+| `COORD_SEP` | 定数 | 14307 | 1：`parseCoordWith` |
+| `coordInJapan` | 関数 | 14308 | 2：`parseCoordWith`、`utmResult` |
+| `parseCoordComp` | 関数 | 14311 | 1：`parseCoordWith` |
+| `UTM_IN` | 定数 | 14337 | 1：`parseUtmMgrs` |
+| `MGRS_IN` | 定数 | 14338 | 1：`parseUtmMgrs` |
+| `MGRS_ROWS` | 定数 | 14339 | 1：`parseUtmMgrs` |
+| `utmBandRange` | 関数 | 14340 | 2：`parseUtmMgrs`、`utmCellInBand` |
+| `utmCellInBand` 📝 | 関数 | 14345 | 1：`utmResult` |
+| `utmResult` | 関数 | 14350 | 1：`parseUtmMgrs` |
+| `parseUtmMgrs` 📝 | 関数 | 14357 | 1：`parseCoordInput` |
+| `parseCoordInput` 📝 | 関数 | 14381 | 2：`doMapSearch`、`renderSearchHist` |
+| `parseCoordWith` | 関数 | 14393 | 1：`parseCoordInput` |
+| `copyText` | 関数 | 14427 | 1：`openCoordSheet` |
+| `flashCopied` | 関数 | 14440 | 1：`openCoordSheet` |
+| `openCoordSheet` | 関数 | 14448 | 2：`renderFavList`、`renderSearchHist` |
+| `closeCoordSheet` | 関数 | 14490 | 1：（HTML） |
 
 ## FAVORITES
 
-行 14495〜
+行 14502〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `loadFavs` 📝 | 関数 | 14498 | 8：`assignSpot`、`migrateSpotsOutOfFavs`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav`、`sortedFavs` ほか2 |
-| `saveFavs` 📝 | 関数 | 14502 | 6：`assignSpot`、`migrateSpotsOutOfFavs`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav`、`toggleFavStar` |
-| `toggleFavSpots` | 関数 | 14512 | 1：（HTML） |
-| `openFav` 📝 | 関数 | 14516 | 1：（HTML） |
-| `closeFav` 📝 | 関数 | 14521 | 2：`renderFavList`、（HTML） |
-| `renderFavList` 📝 | 関数 | 14525 | 3：`openFav`、`saveCurrentAsFav`、`toggleFavSpots` |
-| `saveCurrentAsFav` 📝 | 関数 | 14674 | 1：（HTML） |
+| `loadFavs` 📝 | 関数 | 14505 | 8：`assignSpot`、`migrateSpotsOutOfFavs`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav`、`sortedFavs` ほか2 |
+| `saveFavs` 📝 | 関数 | 14509 | 6：`assignSpot`、`migrateSpotsOutOfFavs`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav`、`toggleFavStar` |
+| `toggleFavSpots` | 関数 | 14519 | 1：（HTML） |
+| `openFav` 📝 | 関数 | 14523 | 1：（HTML） |
+| `closeFav` 📝 | 関数 | 14528 | 2：`renderFavList`、（HTML） |
+| `renderFavList` 📝 | 関数 | 14532 | 3：`openFav`、`saveCurrentAsFav`、`toggleFavSpots` |
+| `saveCurrentAsFav` 📝 | 関数 | 14681 | 1：（HTML） |
 
 ## RANKING（全国山域ランキング）
 
-行 14685〜
+行 14692〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `RANK_WINDOW_START` 📝 | 定数 | 14691 | 1：`rankHourWindow` |
-| `RANK_WINDOW_END` | 定数 | 14692 | 1：`rankHourWindow` |
-| `RANK_MAX_AHEAD` | 定数 | 14693 | 1：`openRank` |
-| `rankFetchCache` | 状態 | 14696 | 1：`fetchRankData` |
-| `rankDates` | 状態 | 14697 | 4：`openRank`、`refreshRanking`、`setRankDate`、`updateMapWhen` |
-| `loadAreas` 📝 | 関数 | 14700 | 6：`buildRanking`、`doMapSearch`、`drawAreas`、`ensureMtnIndex`、`fetchRankData`、`fillReliability` |
-| `fmtDateISO` | 関数 | 14709 | 7：`fillReliability`、`judgePeakDay`、`openRank`、`rankHourWindow`、`refreshRanking`、`resolveRankDates` ほか1 |
-| `resolveRankDates` 📝 | 関数 | 14714 | 2：`openRank`、`setRankDate` |
-| `fetchRankData` 📝 | 関数 | 14739 | 1：`buildRanking` |
-| `rankHourWindow` 📝 | 関数 | 14782 | 3：`judgePeakDay`、`refreshRanking`、`updateMapWhen` |
-| `judgePeakDay` 📝 | 関数 | 14791 | 1：`buildRanking` |
-| `buildRanking` 📝 | 関数 | 14814 | 1：`refreshRanking` |
-| `rankGradeChar` | 関数 | 14852 | 2：`refreshRanking`、`renderRankList` |
-| `rankDowChar` | 関数 | 14853 | 2：`renderRankList`、`updateMapWhen` |
-| `bestPeakOf` 📝 | 関数 | 14858 | 1：`renderRankList` |
-| `renderRankList` 📝 | 関数 | 14868 | 1：`refreshRanking` |
-| `gotoPeak` 📝 | 関数 | 14952 | 2：`renderRankList`、`renderSnowList` |
-| `refreshRanking` 📝 | 関数 | 14961 | 2：`openRank`、`setRankDate` |
-| `setRankDate` 📝 | 関数 | 14996 | 1：（HTML） |
-| `openRank` 📝 | 関数 | 15006 | 1：（HTML） |
-| `closeRank` 📝 | 関数 | 15018 | 2：`gotoPeak`、（HTML） |
+| `RANK_WINDOW_START` 📝 | 定数 | 14698 | 1：`rankHourWindow` |
+| `RANK_WINDOW_END` | 定数 | 14699 | 1：`rankHourWindow` |
+| `RANK_MAX_AHEAD` | 定数 | 14700 | 1：`openRank` |
+| `rankFetchCache` | 状態 | 14703 | 1：`fetchRankData` |
+| `rankDates` | 状態 | 14704 | 4：`openRank`、`refreshRanking`、`setRankDate`、`updateMapWhen` |
+| `loadAreas` 📝 | 関数 | 14707 | 6：`buildRanking`、`doMapSearch`、`drawAreas`、`ensureMtnIndex`、`fetchRankData`、`fillReliability` |
+| `fmtDateISO` | 関数 | 14716 | 7：`fillReliability`、`judgePeakDay`、`openRank`、`rankHourWindow`、`refreshRanking`、`resolveRankDates` ほか1 |
+| `resolveRankDates` 📝 | 関数 | 14721 | 2：`openRank`、`setRankDate` |
+| `fetchRankData` 📝 | 関数 | 14746 | 1：`buildRanking` |
+| `rankHourWindow` 📝 | 関数 | 14789 | 3：`judgePeakDay`、`refreshRanking`、`updateMapWhen` |
+| `judgePeakDay` 📝 | 関数 | 14798 | 1：`buildRanking` |
+| `buildRanking` 📝 | 関数 | 14821 | 1：`refreshRanking` |
+| `rankGradeChar` | 関数 | 14859 | 2：`refreshRanking`、`renderRankList` |
+| `rankDowChar` | 関数 | 14860 | 2：`renderRankList`、`updateMapWhen` |
+| `bestPeakOf` 📝 | 関数 | 14865 | 1：`renderRankList` |
+| `renderRankList` 📝 | 関数 | 14875 | 1：`refreshRanking` |
+| `gotoPeak` 📝 | 関数 | 14959 | 2：`renderRankList`、`renderSnowList` |
+| `refreshRanking` 📝 | 関数 | 14968 | 2：`openRank`、`setRankDate` |
+| `setRankDate` 📝 | 関数 | 15003 | 1：（HTML） |
+| `openRank` 📝 | 関数 | 15013 | 1：（HTML） |
+| `closeRank` 📝 | 関数 | 15025 | 2：`gotoPeak`、（HTML） |
 
 ## 新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）
 
-行 15022〜
+行 15029〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `setRankTab` 📝 | 関数 | 15033 | 1：（HTML） |
-| `setWindMode` | 関数 | 15042 | 1：`windModeChips` |
-| `setAmedasElement` 📝 | 関数 | 15049 | 1：`amedasElementChips` |
-| `setSatBand` 📝 | 関数 | 15057 | 1：`satBandChips` |
-| `setSnowFilter` 📝 | 関数 | 15065 | 1：（HTML） |
-| `loadSnowSpots` 📝 | 関数 | 15073 | 1：`refreshSnowRanking` |
-| `refreshSnowRanking` 📝 | 関数 | 15082 | 1：`setRankTab` |
-| `renderSnowList` 📝 | 関数 | 15111 | 2：`refreshSnowRanking`、`setSnowFilter` |
-| `degToDir` 📝 | 関数 | 15169 | 1：`renderSnowList` |
+| `setRankTab` 📝 | 関数 | 15040 | 1：（HTML） |
+| `setWindMode` | 関数 | 15049 | 1：`windModeChips` |
+| `setAmedasElement` 📝 | 関数 | 15056 | 1：`amedasElementChips` |
+| `setSatBand` 📝 | 関数 | 15064 | 1：`satBandChips` |
+| `setSnowFilter` 📝 | 関数 | 15072 | 1：（HTML） |
+| `loadSnowSpots` 📝 | 関数 | 15080 | 1：`refreshSnowRanking` |
+| `refreshSnowRanking` 📝 | 関数 | 15089 | 1：`setRankTab` |
+| `renderSnowList` 📝 | 関数 | 15118 | 2：`refreshSnowRanking`、`setSnowFilter` |
+| `degToDir` 📝 | 関数 | 15176 | 1：`renderSnowList` |
 
 ## LOCALSTORAGE – 最終地点
 
-行 15176〜
+行 15183〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `saveLast` 📝 | 関数 | 15179 | 1：`applyWeatherJson` |
-| `loadLast` 📝 | 関数 | 15182 | 1：（トップレベル） |
+| `saveLast` 📝 | 関数 | 15186 | 1：`applyWeatherJson` |
+| `loadLast` 📝 | 関数 | 15189 | 1：（トップレベル） |
 
 ## LOADING OVERLAY
 
-行 15187〜
+行 15194〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `showLoading` 📝 | 関数 | 15190 | 3：`fetchGPS`、`fetchWeather`、（トップレベル） |
-| `hideLoading` 📝 | 関数 | 15196 | 4：`fetchGPS`、`fetchWeather`、`render`、（トップレベル） |
+| `showLoading` 📝 | 関数 | 15197 | 3：`fetchGPS`、`fetchWeather`、（トップレベル） |
+| `hideLoading` 📝 | 関数 | 15203 | 4：`fetchGPS`、`fetchWeather`、`render`、（トップレベル） |
 
 ## 天気図（気象庁の速報天気図・予想天気図）
 
-行 15241〜
+行 15248〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WXMAP_LIST_URL` | 定数 | 15257 | 1：`loadWxMapList` |
-| `WXMAP_PNG_BASE` | 定数 | 15258 | 1：`renderWxMap` |
-| `isWxMapOpen` | 関数 | 15268 | 1：`renderWxMap` |
-| `openWxMap` | 関数 | 15273 | 1：（HTML） |
-| `closeWxMap` | 関数 | 15277 | 1：（HTML） |
-| `setWxMapWhen` | 関数 | 15280 | 1：（HTML） |
-| `setWxMapArea` | 関数 | 15286 | 1：（HTML） |
-| `loadWxMapList` | 関数 | 15294 | 1：`renderWxMap` |
-| `wxMapParseName` | 関数 | 15310 | 1：`wxMapPick` |
-| `wxMapJst` | 関数 | 15320 | 1：`renderWxMap` |
-| `wxMapPick` | 関数 | 15329 | 1：`renderWxMap` |
-| `toggleWxMapZoom` | 関数 | 15344 | 2：`renderWxMap`、（HTML） |
-| `renderWxMap` | 関数 | 15354 | 3：`openWxMap`、`setWxMapArea`、`setWxMapWhen` |
+| `WXMAP_LIST_URL` | 定数 | 15264 | 1：`loadWxMapList` |
+| `WXMAP_PNG_BASE` | 定数 | 15265 | 1：`renderWxMap` |
+| `isWxMapOpen` | 関数 | 15275 | 1：`renderWxMap` |
+| `openWxMap` | 関数 | 15280 | 1：（HTML） |
+| `closeWxMap` | 関数 | 15284 | 1：（HTML） |
+| `setWxMapWhen` | 関数 | 15287 | 1：（HTML） |
+| `setWxMapArea` | 関数 | 15293 | 1：（HTML） |
+| `loadWxMapList` | 関数 | 15301 | 1：`renderWxMap` |
+| `wxMapParseName` | 関数 | 15317 | 1：`wxMapPick` |
+| `wxMapJst` | 関数 | 15327 | 1：`renderWxMap` |
+| `wxMapPick` | 関数 | 15336 | 1：`renderWxMap` |
+| `toggleWxMapZoom` | 関数 | 15351 | 2：`renderWxMap`、（HTML） |
+| `renderWxMap` | 関数 | 15361 | 3：`openWxMap`、`setWxMapArea`、`setWxMapWhen` |
 
 ## AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）
 
-行 15383〜
+行 15390〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `toggleOutlook` 📝 | 関数 | 15386 | 1：（HTML） |
-| `loadOutlook` 📝 | 関数 | 15389 | 1：（トップレベル） |
-| `escapeHtml` 📝 | 関数 | 15410 | 9：`drawAmedas`、`drawAreas`、`drawPoi`、`loadOutlook`、`poiTypeChips`、`renderLayerPanel` ほか3 |
-| `BOOT_GEO_WAIT_MS` 📝 | 定数 | 15420 | 1：（トップレベル） |
+| `toggleOutlook` 📝 | 関数 | 15393 | 1：（HTML） |
+| `loadOutlook` 📝 | 関数 | 15396 | 1：（トップレベル） |
+| `escapeHtml` 📝 | 関数 | 15417 | 9：`drawAmedas`、`drawAreas`、`drawPoi`、`loadOutlook`、`poiTypeChips`、`renderLayerPanel` ほか3 |
+| `BOOT_GEO_WAIT_MS` 📝 | 定数 | 15427 | 1：（トップレベル） |
 
