@@ -53,7 +53,7 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 const demReqs = [];
-let demMode = 'cone';   // 'cone' | '403' | 'half'
+let demMode = 'cone';   // 'cone' | '403' | 'half' | '504'
 await page.route('**/*', async route => {
   const url = route.request().url();
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
@@ -66,6 +66,7 @@ await page.route('**/*', async route => {
   if (m) {
     const [z, x, y] = m.slice(1).map(Number);
     demReqs.push({ z, x, y });
+    if (demMode === '504') return route.fulfill({ status: 504, body: '' });   // 圏外（Service Worker が返す形）
     if (demMode === '403' || (demMode === 'half' && x % 2)) return route.fulfill({ status: 403, body: '' });
     return route.fulfill({ contentType: 'image/png', body: await demPng(z, x, y),
       headers: { 'Access-Control-Allow-Origin': '*' } });
@@ -192,6 +193,16 @@ const all403 = await freshLayerAt('403', 36.70, 139.40);
 ok(/表示なし/.test(all403.text || '') && !all403.failed, '★全部 403 なら「表示なし」（赤帯にしない）', all403);
 const half = await freshLayerAt('half', 36.72, 139.42);
 ok(/配信の範囲外/.test(half.text || '') && !half.failed, '★一部 403 なら「一部は配信の範囲外」（赤帯にしない）', half);
+
+/* ============ 4b. 圏外（504）は覚えない：圏内に戻れば描ける ============ */
+await freshLayerAt('504', 36.7656, 139.4937);
+const offline = await page.evaluate(() => [...ciBlobCache.keys()].length);
+demMode = 'cone';
+await page.evaluate(() => { toggleOverlay('ciMapTochigi'); clearLayerStatus('ciMapTochigi'); toggleOverlay('ciMapTochigi'); });
+await page.waitForTimeout(5000);
+const back = await shownPixels();
+ok(offline === 0, '★★圏外（504）の「無い」を覚えない', offline);
+ok(back.n > 0 && back.colored === back.n, '★★圏内に戻ると同じ場所が描ける', back);
 
 /* ============ 5. Worker が使えないときはメインで描く ============ */
 demMode = 'cone';

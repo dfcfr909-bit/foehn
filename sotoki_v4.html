@@ -6768,8 +6768,8 @@ const MAP_OVERLAYS = [
     attribution: TOCHIGI_CREDIT,
     note: '栃木県内だけ。尾根＝赤・谷＝青・急斜面＝暗い' },
   /* CIマップ（栃木県）（#202）：栃木県の標高タイル（Terrain-RGB・dem05_tochigi）から、端末の中で
-     収束度（Convergence Index）を計算して描く。図法は中央開発の考案で、名称「CIマップ」と考案論文の
-     明記が頼み（about に書誌）。出典欄は短く「CIマップ（上原ほか）」と栃木県の加工の旨。
+     収束度（Convergence Index）を計算して描く。図法と名称「CIマップ」は考案論文による（書誌は about）。
+     出典欄は短く「CIマップ（上原ほか）」と栃木県の加工の旨。
      ⚠ iPhone では1タイル約1.2秒（試作の実測）。計算は Web Worker（使えなければメインで1枚ずつ譲る）。
      ⚠ 計算は z13〜16（minZoom・maxNativeZoom）。z12 以下は「拡大すると表示」、z17 以上は z16 を引き伸ばす。
      ⚠ 県外・東部の平地は描かない（地理院の標高でつながない。つなぎ目に偽の尾根・谷が出る） */
@@ -7252,7 +7252,8 @@ function getCiWorker() {
       const m = e.data, p = ciPending.get(m.id);
       if (!p) return;
       ciPending.delete(m.id);
-      if (m.error) { ciBreakWorker(); p.reject(new Error(m.error)); }
+      // 1枚の失敗（壊れた PNG など）では Worker を捨てない。その1枚だけメインでやり直す
+      if (m.error) p.reject(new Error(m.error));
       else p.resolve(m.cancelled ? undefined : (m.empty ? null : m.pix));
     };
     ciWorker.onerror = () => ciBreakWorker();
@@ -7278,9 +7279,12 @@ function ciFetchBlob(z, x, y) {
   const key = ciTileKey(z, x, y);
   if (ciBlobCache.has(key)) { const v = ciBlobCache.get(key); ciBlobCache.delete(key); ciBlobCache.set(key, v); return v; }
   const url = CI_TERRAIN_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  /* 覚えてよい「無い」は 403・404（配信の範囲外）だけ。通信の失敗は覚えない（圏内に戻ったら取り直す）。
+     ⚠ 圏外では例外ではなく、Service Worker が作る 504 が届く（sw.js）。これも覚えない */
+  const forget = () => { if (ciBlobCache.get(key) === p) ciBlobCache.delete(key); return null; };
   const p = fetch(url)
-    .then(r => (r.ok ? r.blob() : null))
-    .catch(() => { ciBlobCache.delete(key); return null; });   // 通信の失敗は覚えない（圏内に戻ったら取り直す）
+    .then(r => (r.ok ? r.blob() : (r.status === 403 || r.status === 404) ? null : forget()))
+    .catch(forget);
   ciBlobCache.set(key, p);
   if (ciBlobCache.size > CI_BLOB_MAX) ciBlobCache.delete(ciBlobCache.keys().next().value);
   return p;
