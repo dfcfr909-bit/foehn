@@ -3,7 +3,7 @@
  *
  *   areas.json  →  Overpass API（OpenStreetMap）  →  data/poi.json
  *
- * 山域ごとに、山域の円を囲む矩形（＋余白）で登山口・駐車場・山小屋・トイレ・
+ * areas.json の峰ごとに半径8kmの円で登山口・駐車場（名前のあるもの）・山小屋・トイレ・
  * 水場・温泉・店を取り出す。ランタイムでは Overpass を叩かない（生成物だけを読む）。
  *
  * ⚠ 開発環境からは Overpass に届かない。GitHub Actions「施設データ（OSM）を作る」で走らせる
@@ -11,7 +11,7 @@
  * ⚠ このリポジトリは public。医療施設の名前（○○病院駐車場など）は山の用途に要らないので落とす
  *
  *   node scripts/buildPoi.mjs            … 生成する
- *   node scripts/buildPoi.mjs --dry-run  … 通信せず、山域ごとの矩形と問い合わせ文だけ出す
+ *   node scripts/buildPoi.mjs --dry-run  … 通信せず、山域ごとの峰の数と問い合わせ文だけ出す
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -26,11 +26,9 @@ const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const USER_AGENT = 'NagiNavi-buildPoi/1.0 (+https://dfcfr909-bit.github.io/foehn/)';
 const OVERPASS_INTERVAL_MS = 3000;   // 相手は公共の無料API。山域ごとに間をあける
 
-// 山域の円（sotoki_v4.html の areaShape・AREA_PAD_KM・AREA_MIN_R_KM を写したもの。
-// 向こうを変えたらここも直す）＋ 施設を拾う余白
-const AREA_PAD_KM = 4;
-const AREA_MIN_R_KM = 5;
-const POI_MARGIN_KM = 10;
+// 峰ごとに、この半径の円の中を拾う（利用者の決定・2026-10-10）。
+// 山域の円（重心＋最遠の峰）だと、峰の離れた山域（石鎚・剣山 91km）で町まで入った
+const PEAK_RADIUS_M = 8000;
 const COORD_DECIMALS = 5;            // 約1m
 
 /* 種類。id は出力の typeId（数字が短いので容量が減る）。並びは表示の並び */
@@ -49,49 +47,37 @@ const MEDICAL_RE = /病院|医院|クリニック|診療所|歯科|医療セン�
 
 /* ---------------- 純粋関数 ---------------- */
 
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371, rad = d => d * Math.PI / 180;
-  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
-  const x = Math.sin(dLat / 2) ** 2 +
-    Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(x));
-}
-
-// 山域の円（中心と半径 km）。sotoki_v4.html の areaShape と同じ式
-export function areaCircle(area) {
-  const n = area.peaks.length;
-  const lat = area.peaks.reduce((s, p) => s + p.lat, 0) / n;
-  const lon = area.peaks.reduce((s, p) => s + p.lon, 0) / n;
-  const far = Math.max(...area.peaks.map(p => haversineKm(lat, lon, p.lat, p.lon)));
-  return { lat, lon, radiusKm: Math.max(AREA_MIN_R_KM, far + AREA_PAD_KM) };
-}
-
-// 円＋余白を囲む矩形 [s, w, n, e]
-export function areaBbox(area) {
-  const c = areaCircle(area);
-  const r = c.radiusKm + POI_MARGIN_KM;
-  const dLat = r / 111.32;
-  const dLon = r / (111.32 * Math.cos(c.lat * Math.PI / 180));
-  const f = v => Number(v.toFixed(4));
-  return [f(c.lat - dLat), f(c.lon - dLon), f(c.lat + dLat), f(c.lon + dLon)];
-}
-
-export function buildPoiQuery(bbox) {
-  const b = bbox.join(',');
-  const nw = sel => `  nw${sel}(${b});`;
+// 峰ごとの円（around）で、種類ごとに問い合わせる。山域の円の式は持たない（本体の areaShape と二重にしない）
+export function buildPoiQuery(peaks) {
+  const sels = [
+    '["highway"="trailhead"]',
+    '["amenity"="parking"]["name"]',          // 名前のある駐車場だけ（名前の無い町中の駐車場が9割だった）
+    '["tourism"~"^(alpine_hut|wilderness_hut)$"]',
+    '["amenity"="toilets"]',
+    '["amenity"="drinking_water"]',
+    '["natural"="spring"]',
+    '["natural"="hot_spring"]',
+    '["amenity"="public_bath"]',
+    '["shop"~"^(convenience|supermarket|outdoor)$"]',
+  ];
+  const lines = [];
+  for (const p of peaks) {
+    for (const sel of sels) lines.push(`  nw${sel}(around:${PEAK_RADIUS_M},${p.lat},${p.lon});`);
+  }
   return `[out:json][timeout:120];
 (
-${nw('["highway"="trailhead"]')}
-${nw('["amenity"="parking"]')}
-${nw('["tourism"~"^(alpine_hut|wilderness_hut)$"]')}
-${nw('["amenity"="toilets"]')}
-${nw('["amenity"="drinking_water"]')}
-${nw('["natural"="spring"]')}
-${nw('["natural"="hot_spring"]')}
-${nw('["amenity"="public_bath"]')}
-${nw('["shop"~"^(convenience|supermarket|outdoor)$"]')}
+${lines.join('\n')}
 );
 out center tags;`;
+}
+
+/* Overpass は時間切れでも 200 で空の elements と remark を返す（1回目で「北アルプス中部 0件」）。
+   それを成功と見なさない */
+export function checkOverpass(json) {
+  if (!json || !Array.isArray(json.elements)) throw new Error('応答の形が違う');
+  if (json.remark && /error|timeout|timed out|runtime/i.test(json.remark)) throw new Error(`remark: ${json.remark}`);
+  if (!json.elements.length) throw new Error('0件（時間切れの疑い）');
+  return json;
 }
 
 // タグから種類（typeId）を決める。当てはまらなければ null
@@ -113,6 +99,7 @@ export function dropReason(tags, typeId) {
   const name = [t.name, t['name:ja'], t.operator].filter(Boolean).join(' ');
   if (MEDICAL_RE.test(name)) return 'medical';
   if (typeId === 1 && /^(private|no|customers)$/.test(t.access || '')) return 'private';
+  if (typeId === 1 && !(t['name:ja'] || t.name || '').trim()) return 'noname';
   return null;
 }
 
@@ -142,15 +129,15 @@ export function extractItems(json, seen, stats) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function fetchOverpass(bbox, tries = 4) {
-  const body = new URLSearchParams({ data: buildPoiQuery(bbox) });
+async function fetchOverpass(peaks, tries = 4) {
+  const body = new URLSearchParams({ data: buildPoiQuery(peaks) });
   let last;
   for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(OVERPASS_URL, {
         method: 'POST', body, headers: { 'User-Agent': USER_AGENT },
       });
-      if (res.ok) return await res.json();
+      if (res.ok) return checkOverpass(await res.json());
       last = new Error(`HTTP ${res.status}`);
       // 429/504 は相手が混んでいる。長めに待つ
       await sleep((res.status === 429 || res.status === 504 ? 30000 : 5000) * (i + 1));
@@ -173,10 +160,9 @@ async function main() {
   const failed = [];
 
   for (const area of areas) {
-    const bbox = areaBbox(area);
-    if (dryRun) { console.log(`${area.id}\t${bbox.join(',')}`); continue; }
+    if (dryRun) { console.log(`${area.id}\t峰${area.peaks.length}`); continue; }
     try {
-      const got = extractItems(await fetchOverpass(bbox), seen, stats);
+      const got = extractItems(await fetchOverpass(area.peaks), seen, stats);
       items.push(...got);
       console.log(`${area.id}\t${got.length}件`);
     } catch (e) {
@@ -185,7 +171,7 @@ async function main() {
     }
     await sleep(OVERPASS_INTERVAL_MS);
   }
-  if (dryRun) { console.log(buildPoiQuery(areaBbox(areas[0]))); return; }
+  if (dryRun) { console.log(buildPoiQuery(areas[0].peaks)); return; }
 
   // ⚠ 欠けたデータはコミットしない
   if (failed.length) {
@@ -199,7 +185,7 @@ async function main() {
     license: 'ODbL 1.0（https://opendatacommons.org/licenses/odbl/1-0/）',
     attribution: '© OpenStreetMap contributors',
     generated: new Date().toISOString().slice(0, 10),
-    note: 'areas.json の山域ごとに取り出したもの。scripts/buildPoi.mjs で作る。items は [緯度, 経度, 種類id, 名前（あれば）]',
+    note: 'areas.json の峰ごとに半径8kmで取り出したもの。scripts/buildPoi.mjs で作る。items は [緯度, 経度, 種類id, 名前（あれば）]',
     types: POI_TYPES.map(({ id, key, name }) => ({ id, key, name })),
     items,
   };
@@ -213,7 +199,7 @@ async function main() {
     console.log(`  ${t.name}\t${n}件（名前あり ${named}）`);
   }
   console.log(`  合計\t${items.length}件`);
-  console.log(`落とした件数: 医療施設の名前 ${stats.dropped.medical || 0} / 私有の駐車場 ${stats.dropped.private || 0}`);
+  console.log(`落とした件数: 医療施設の名前 ${stats.dropped.medical || 0} / 私有の駐車場 ${stats.dropped.private || 0} / 名前の無い駐車場 ${stats.dropped.noname || 0}`);
   const kb = n => (n / 1024).toFixed(1) + ' KB';
   console.log(`大きさ: ${kb(Buffer.byteLength(text))}（gzip 後 ${kb(gzipSync(text).length)}）`);
 }
