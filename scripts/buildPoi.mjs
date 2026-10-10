@@ -47,7 +47,24 @@ const MEDICAL_RE = /病院|医院|クリニック|診療所|歯科|医療セン�
 
 /* ---------------- 純粋関数 ---------------- */
 
-// 峰ごとの円（around）で、種類ごとに問い合わせる。山域の円の式は持たない（本体の areaShape と二重にしない）
+// 峰ごとの矩形（8km 四方の外接）で問い合わせ、円の外は手元で落とす（peakDistanceOk）。
+// ⚠ around は Overpass 側で重く、1山域に1〜4分かかって51山域が60分に収まらなかった（2回目・2026-10-10）
+export function peakBbox(p) {
+  const dLat = PEAK_RADIUS_M / 111320;
+  const dLon = PEAK_RADIUS_M / (111320 * Math.cos(p.lat * Math.PI / 180));
+  const f = v => Number(v.toFixed(4));
+  return [f(p.lat - dLat), f(p.lon - dLon), f(p.lat + dLat), f(p.lon + dLon)];
+}
+function distM(lat1, lon1, lat2, lon2) {
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+// どれかの峰から PEAK_RADIUS_M 以内か
+export function peakDistanceOk(peaks, lat, lon) {
+  return peaks.some(p => distM(p.lat, p.lon, lat, lon) <= PEAK_RADIUS_M);
+}
 export function buildPoiQuery(peaks) {
   const sels = [
     '["highway"="trailhead"]',
@@ -62,7 +79,8 @@ export function buildPoiQuery(peaks) {
   ];
   const lines = [];
   for (const p of peaks) {
-    for (const sel of sels) lines.push(`  nw${sel}(around:${PEAK_RADIUS_M},${p.lat},${p.lon});`);
+    const b = peakBbox(p).join(',');
+    for (const sel of sels) lines.push(`  nw${sel}(${b});`);
   }
   return `[out:json][timeout:120];
 (
@@ -76,7 +94,6 @@ out center tags;`;
 export function checkOverpass(json) {
   if (!json || !Array.isArray(json.elements)) throw new Error('応答の形が違う');
   if (json.remark && /error|timeout|timed out|runtime/i.test(json.remark)) throw new Error(`remark: ${json.remark}`);
-  if (!json.elements.length) throw new Error('0件（時間切れの疑い）');
   return json;
 }
 
@@ -104,7 +121,7 @@ export function dropReason(tags, typeId) {
 }
 
 /* Overpass の結果を [lat, lon, typeId, name] に。seen（`n123`/`w123`）で山域をまたぐ重複を除く */
-export function extractItems(json, seen, stats) {
+export function extractItems(json, seen, stats, peaks) {
   const out = [];
   for (const el of (json && json.elements) || []) {
     const key = (el.type === 'node' ? 'n' : el.type === 'way' ? 'w' : 'r') + el.id;
@@ -112,6 +129,7 @@ export function extractItems(json, seen, stats) {
     const lat = el.type === 'node' ? el.lat : el.center && el.center.lat;
     const lon = el.type === 'node' ? el.lon : el.center && el.center.lon;
     if (typeof lat !== 'number' || typeof lon !== 'number') continue;
+    if (peaks && !peakDistanceOk(peaks, lat, lon)) continue;   // 矩形の角（円の外）を落とす
     const typeId = classify(el.tags);
     if (typeId === null) continue;
     seen.add(key);
@@ -162,9 +180,10 @@ async function main() {
   for (const area of areas) {
     if (dryRun) { console.log(`${area.id}\t峰${area.peaks.length}`); continue; }
     try {
-      const got = extractItems(await fetchOverpass(area.peaks), seen, stats);
+      const got = extractItems(await fetchOverpass(area.peaks), seen, stats, area.peaks);
       items.push(...got);
-      console.log(`${area.id}\t${got.length}件`);
+      // 0件は失敗にしない（小さい山域では本当に0件がありうる）が、目で見られるように印を付ける
+      console.log(`${area.id}\t${got.length}件${got.length ? '' : '  ⚠ 0件'}`);
     } catch (e) {
       failed.push(area.id);
       console.log(`${area.id}\t✗ ${e.message}`);

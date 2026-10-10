@@ -27,7 +27,7 @@ jobs:
   build:
     name: 作る
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
 
