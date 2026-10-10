@@ -1515,6 +1515,17 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(fly.calls[0] && fly.calls[0].o && fly.calls[0].o.duration > 0, 'アニメーション時間が指定されている', fly.calls[0]);
   ok(fly.open, '円柱で選んでも地図は開いたまま');
   await page.waitForTimeout(1200);
+  // #216：選んだら FAV_GO_ZOOM まで寄る。すでにそれより拡大していれば縮めない
+  const favZoom = await page.evaluate(async () => {
+    const z1 = leafletMap.getZoom();
+    leafletMap.setZoom(17, { animate: false });
+    selectFav(36.2899, 137.6480, '常念岳');
+    await new Promise(r => setTimeout(r, 1200));
+    const z2 = leafletMap.getZoom();
+    return { z1, z2, go: FAV_GO_ZOOM };
+  });
+  ok(favZoom.z1 === favZoom.go, '★円柱で選ぶと FAV_GO_ZOOM まで寄る（#216）', favZoom);
+  ok(favZoom.z2 === 17, '★すでに拡大していれば縮めない', favZoom);
 
   // 閉じると円柱は元の場所（グラフ画面の最下段 #fav-bar-slot。v4.105.0 でヘッダーから移した）へ戻る
   await page.evaluate(() => closeMap());
