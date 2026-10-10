@@ -75,6 +75,7 @@
 | `gazo1`–`gazo4` | 過去空中写真 | `https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg` 他 | 地域差あり | 100% | 林相・地形変化 |
 | `volcano` | 火山土地条件図 | **実装前に要確認** | 火山域限定 | 60% | 那須・燧・火打 |
 | `csmap` | CS立体図 | `https://map.ecoris.info/tiles/csmap/{z}/{x}/{y}.png`（**第三者配信・未確認**） | 4–17 | 75% | 谷筋・微地形の判読。**v4.63.1で保留（`pending`）**、§25 |
+| `csmapTochigi` | CS立体図（栃木県） | `https://rinya-tochigi.geospatial.jp/2023/rinya/tile/csmap/{z}/{x}/{y}.png`（G空間情報センター `csmap_tochigi`。v4.165.0・#112） | 8–18 | 75% | 谷筋・微地形の判読。**栃木県内だけ**（`bounds`＝県を囲む長方形・範囲内の県外は 403 か透明。`partialCoverage` で失敗扱いしない） |
 
 ### 4.1 ズーム範囲外の扱い
 - 各レイヤーに `maxNativeZoom` / `minNativeZoom` を設定する。

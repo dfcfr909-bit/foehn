@@ -76,7 +76,8 @@ const TILE_HOSTS = [
   'cyberjapandata.gsi.go.jp',
   'tile.openstreetmap.org',
   'server.arcgisonline.com',
-  'map.ecoris.info',           // CS立体図
+  'map.ecoris.info',           // CS立体図（保留中・#10）
+  'rinya-tochigi.geospatial.jp',  // CS立体図（栃木県）・#112
 ];
 function isTileRequest(url) {
   return TILE_HOSTS.includes(url.hostname);
