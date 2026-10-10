@@ -12443,7 +12443,7 @@ function layerEditRows(sec) {
         <button type="button" class="layer-edit-btn" aria-label="${name}を下へ" ${i === list.length - 1 ? 'disabled' : ''}
                 onclick="moveLayer('${sec}', '${d.id}', 1)">▼</button>
         <button type="button" class="layer-edit-btn layer-edit-eye" aria-pressed="${hidden}"
-                aria-label="${name}を${hidden ? '一覧に戻す' : '一覧から隠す'}${lock ? '（選択中の下地は隠せません）' : ''}"
+                aria-label="${name}を一覧から隠す${lock ? '（選択中の下地は隠せません）' : ''}"
                 ${lock ? 'disabled' : ''} onclick="toggleLayerHidden('${d.id}')">${hidden ? '🙈' : '👁'}</button>
       </div>`;
   }).join('');
