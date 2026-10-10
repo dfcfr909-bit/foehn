@@ -1358,6 +1358,37 @@ html, body {
   flex-shrink: 0;
 }
 #layer-panel-head h3 { flex: 1; font-size: 14px; }
+/* 並べ替え・隠す（#205 段階1） */
+#btn-layer-edit {
+  min-height: 44px; padding: 0 12px; margin-right: 4px;
+  border: 2px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text2);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700; cursor: pointer;
+}
+#btn-layer-edit[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+#layer-panel.editing #layer-bases { display: block; }
+.layer-edit-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 0; border-bottom: 1px solid var(--border);
+}
+.layer-edit-row.is-hidden .layer-edit-name { opacity: 0.4; text-decoration: line-through; }
+.layer-edit-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+.layer-edit-on {
+  font-style: normal; font-size: 9px; font-weight: 700; color: var(--text2);
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; vertical-align: 1px;
+}
+.layer-edit-btn {
+  min-width: 44px; min-height: 44px; flex-shrink: 0;
+  border: 2px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); font-size: 14px; cursor: pointer;
+}
+.layer-edit-btn:disabled { opacity: 0.3; cursor: default; }
+.layer-edit-reset {
+  margin: 6px 0 2px; min-height: 44px; padding: 0 12px;
+  border: 1px dashed var(--border); border-radius: 10px;
+  background: none; color: var(--text2); font-family: var(--font-ui); font-size: 12px; cursor: pointer;
+}
+.layer-hidden-sum { grid-column: 1 / -1; font-size: 10px; color: var(--text3); padding: 4px 2px; }
 #btn-layer-close {
   min-width: 44px; min-height: 44px;
   border: none; background: none; cursor: pointer;
@@ -2708,6 +2739,8 @@ html, body {
       <div id="layer-panel" role="dialog" aria-label="地図レイヤー">
         <div id="layer-panel-head">
           <h3>地図レイヤー</h3>
+          <!-- 並べ替え・隠す（#205 段階1）。押すと編集モード（ON/OFF・透過率は出さない）。もう一度で「完了」 -->
+          <button id="btn-layer-edit" type="button" onclick="toggleLayerEdit()" aria-pressed="false">並べ替え</button>
           <button id="btn-layer-close" onclick="closeLayerPanel()" aria-label="閉じる">✕</button>
         </div>
         <div id="layer-panel-body">
@@ -12286,6 +12319,7 @@ function isMapOpen() {
 }
 
 /* ------ レイヤーパネル（ボトムシート） ------ */
+let layerEditMode = false;       // 並べ替え・隠すの編集モード（#205 段階1。覚えない）
 function toggleLayerPanel() {
   const el = document.getElementById('layer-panel');
   if (el.classList.contains('open')) closeLayerPanel();
@@ -12305,6 +12339,7 @@ function toggleLayerPanel() {
 }
 function closeLayerPanel() {
   document.getElementById('layer-panel').classList.remove('open');
+  layerEditMode = false;          // 編集モードは覚えない（次に開いたら通常の一覧）
   const stage = document.getElementById('map-stage');
   if (stage) stage.classList.remove('panel-open');
 }
@@ -12356,11 +12391,92 @@ function windFlowSettings() {
     `<label class="wind-set-hud"><input type="checkbox" id="wind-set-hud" ${windGL.hudOn ? 'checked' : ''} onchange="windGLSetHud(this.checked)"> 計測表示（開発用）</label>` +
     `</div>`;
 }
+/* ------ 一覧の並べ替え・隠す（#205 段階1） ------
+   ⚠ **一覧の見た目だけ。** 重ね順（mapPrefs.overlays の配列順）は変えない。並べ替えで地図の見え方は変わらない。
+   ⚠ 隠しても ON/OFF はそのまま（ON のまま一覧から消えるだけ）。区分の末尾に件数を出して所在を失わせない。
+   ⚠ 選択中の下地は隠せない（排他選択なので、隠すと一覧に選択中の印が無くなる） */
+function toggleLayerEdit() {
+  layerEditMode = !layerEditMode;
+  renderLayerPanel();
+}
+function sectionLayers(sec) { return orderLayers(layerSectionDefs(sec), (mapPrefs.layerOrder || {})[sec]); }
+function isLayerHidden(id) { return (mapPrefs.layerHiddenIds || []).includes(id); }
+// 区分の中で1つ上（dir=-1）／下（+1）へ。編集モードでは隠した行も出しているので、その並びの中で入れ替える
+function moveLayer(sec, id, dir) {
+  const ids = sectionLayers(sec).map(d => d.id);
+  const i = ids.indexOf(id), j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  mapPrefs.layerOrder = Object.assign({}, mapPrefs.layerOrder, { [sec]: ids });
+  saveMapPrefs();
+  renderLayerPanel();
+}
+function toggleLayerHidden(id) {
+  if (id === mapPrefs.base) return;
+  const set = new Set(mapPrefs.layerHiddenIds || []);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  mapPrefs.layerHiddenIds = [...set];
+  saveMapPrefs();
+  renderLayerPanel();
+}
+// 並びだけ定義表の順に戻す（隠した項目はそのまま）
+function resetLayerOrder(sec) {
+  const order = Object.assign({}, mapPrefs.layerOrder);
+  delete order[sec];
+  mapPrefs.layerOrder = order;
+  saveMapPrefs();
+  renderLayerPanel();
+}
+// 編集モードの行。⚠ ボタンを layer-ov-toggle（行全体のボタン）の中に入れない（入れ子のボタンは押した先が外へ抜ける）
+function layerEditRows(sec) {
+  const list = sectionLayers(sec);
+  const rows = list.map((d, i) => {
+    const hidden = isLayerHidden(d.id);
+    const on = sec === 'bases' ? d.id === mapPrefs.base : isOverlayOn(d.id);
+    const name = escapeHtml(d.name);
+    const lock = sec === 'bases' && on;
+    return `
+      <div class="layer-edit-row${hidden ? ' is-hidden' : ''}" data-id="${d.id}">
+        <span class="layer-edit-name">${name}${on ? ' <em class="layer-edit-on">' + (sec === 'bases' ? '選択中' : 'ON') + '</em>' : ''}</span>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を上へ" ${i === 0 ? 'disabled' : ''}
+                onclick="moveLayer('${sec}', '${d.id}', -1)">▲</button>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を下へ" ${i === list.length - 1 ? 'disabled' : ''}
+                onclick="moveLayer('${sec}', '${d.id}', 1)">▼</button>
+        <button type="button" class="layer-edit-btn layer-edit-eye" aria-pressed="${hidden}"
+                aria-label="${name}を${hidden ? '一覧に戻す' : '一覧から隠す'}${lock ? '（選択中の下地は隠せません）' : ''}"
+                ${lock ? 'disabled' : ''} onclick="toggleLayerHidden('${d.id}')">${hidden ? '🙈' : '👁'}</button>
+      </div>`;
+  }).join('');
+  return rows + `<button type="button" class="layer-edit-reset" onclick="resetLayerOrder('${sec}')">初期の並びに戻す</button>`;
+}
+// 通常時、区分の末尾に隠している件数を出す（ON のまま隠したものがどこへ行ったか分からなくならないように）
+function layerHiddenSummary(sec) {
+  const hid = layerSectionDefs(sec).filter(d => isLayerHidden(d.id));
+  if (!hid.length) return '';
+  const onN = sec === 'bases' ? 0 : hid.filter(d => isOverlayOn(d.id)).length;
+  return `<div class="layer-hidden-sum">隠している項目 ${hid.length}件${onN ? `（うちON ${onN}件）` : ''}。「並べ替え」で戻せます</div>`;
+}
 function renderLayerPanel() {
   const baseWrap = document.getElementById('layer-bases');
   const ovWrap = document.getElementById('layer-overlays');
   if (!baseWrap || !ovWrap) return;
-  baseWrap.innerHTML = MAP_BASES.map(b => `
+  const panel = document.getElementById('layer-panel');
+  if (panel) panel.classList.toggle('editing', layerEditMode);
+  const editBtn = document.getElementById('btn-layer-edit');
+  if (editBtn) {
+    editBtn.textContent = layerEditMode ? '完了' : '並べ替え';
+    editBtn.setAttribute('aria-pressed', String(layerEditMode));
+  }
+  const wxWrap = document.getElementById('layer-weather');
+  if (layerEditMode) {
+    baseWrap.innerHTML = layerEditRows('bases');
+    ovWrap.innerHTML = layerEditRows('overlays');
+    if (wxWrap) wxWrap.innerHTML = layerEditRows('weather');
+    updateMapAttribution();
+    return;
+  }
+  const shown = sec => sectionLayers(sec).filter(d => !isLayerHidden(d.id));
+  baseWrap.innerHTML = shown('bases').map(b => `
     <button class="layer-base${b.id === mapPrefs.base ? ' active' : ''}"
             role="radio" aria-checked="${b.id === mapPrefs.base}"
             onclick="setMapBase('${b.id}')">
@@ -12389,10 +12505,10 @@ function renderLayerPanel() {
         </div>
       </div>`;
   };
-  ovWrap.innerHTML = usableOverlays().map(row).join('');
-
-  const wxWrap = document.getElementById('layer-weather');
-  if (wxWrap) wxWrap.innerHTML = usableWeather().filter(o => !o.hidden).map(row).join('');   // hidden … 予備の層（Canvas 版の風の流れ）
+  baseWrap.insertAdjacentHTML('beforeend', layerHiddenSummary('bases'));
+  ovWrap.innerHTML = shown('overlays').map(row).join('') + layerHiddenSummary('overlays');
+  // 予備の層（定義表の hidden。Canvas 版の風の流れ）は layerSectionDefs が外している
+  if (wxWrap) wxWrap.innerHTML = shown('weather').map(row).join('') + layerHiddenSummary('weather');
   updateMapAttribution();
 }
 
