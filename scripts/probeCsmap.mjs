@@ -23,8 +23,12 @@ const SPOTS = [
   { name: '日光白根山',       lat: 36.7986, lon: 139.3758, inside: true },   // 群馬県境の近く
   { name: '県外：尾瀬ヶ原（群馬）', lat: 36.9350, lon: 139.2300, inside: false },
   { name: '県外：会津駒ヶ岳（福島）', lat: 37.0480, lon: 139.3550, inside: false },
+  // 2回目：県を囲む長方形に入る県外（茨城の西・群馬の東）
+  { name: '県外：筑西（茨城）',   lat: 36.3070, lon: 139.9830, inside: false },
+  { name: '県外：館林（群馬）',   lat: 36.2450, lon: 139.5420, inside: false },
+  { name: '県外：片品（群馬）',   lat: 36.7800, lon: 139.2300, inside: false },
 ];
-const ZOOMS = [8, 10, 12, 14, 15, 16, 17, 18];
+const ZOOMS = [8, 10, 11, 12, 14, 16, 18];
 
 const tileX = (lon, z) => Math.floor((lon + 180) / 360 * 2 ** z);
 const tileY = (lat, z) => {
