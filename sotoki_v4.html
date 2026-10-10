@@ -12298,7 +12298,12 @@ function bumpMapOpens(log, dayKey) {
   return { since: since || dayKey, days };   // 時計を戻しても数え始めは書き換えない
 }
 function summarizeMapOpens(log, dayKey) {
-  const { since, days } = normalizeMapOpens(log);
+  const norm = normalizeMapOpens(log);
+  const days = norm.days;
+  // 時計を戻して数え始めが今日より後になったら、表の今日以前の最古の日を数え始めとみなす
+  // （そのままだと割る日数が1日になり、平均が膨らむ）
+  let since = norm.since;
+  if (since && since > dayKey) since = Object.keys(days).filter(k => k <= dayKey).sort()[0] || dayKey;
   const todayMs = dayKeyToUtcMs(dayKey);
   const from = todayMs - (MAP_OPENS_WINDOW - 1) * 86400e3;
   let sum30 = 0;

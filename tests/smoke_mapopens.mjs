@@ -71,6 +71,8 @@ const r = await page.evaluate(() => {
   out.sumFar = summarizeMapOpens(far, '2026-10-09');
   // 時計を戻しても数え始めは書き換えない
   out.back = bumpMapOpens({ since: '2026-10-10', days: { '2026-10-10': 1 } }, '2026-10-08');
+  // 時計を戻して数え始めが未来：表の最古の日から数える（平均を膨らませない・未来の日付を出さない）
+  out.sumBack = summarizeMapOpens({ since: '2026-10-10', days: { '2026-09-01': 20, '2026-10-01': 5 } }, '2026-10-08');
   // 壊れた値は捨てる
   out.junk = summarizeMapOpens({ since: 'x', days: { 'bad': 5, '2026-10-10': -2, '2026-10-09': 'a' } }, '2026-10-10');
   out.empty = summarizeMapOpens(null, '2026-10-10');
@@ -89,6 +91,8 @@ ok(r.trim.since === '2026-01-01', '★★切り落としても数え始めは消
 ok(r.far.since === '2026-07-01' && r.sumFar.span === 30 && r.sumFar.sum30 === 1 && r.sumFar.perMonth === 1 && r.sumFar.since === null,
   '★★★長く空けた後に開いても平均が膨らまない（30日で割る）', r.sumFar);
 ok(r.back.since === '2026-10-10' && r.back.days['2026-10-08'] === 1, '時計を戻しても数え始めは消えない', r.back);
+ok(r.sumBack.sum30 === 5 && r.sumBack.span === 30 && r.sumBack.since === null && r.sumBack.perMonth === 5,
+  '★時計を戻しても平均が膨らまない・未来の数え始めを出さない', r.sumBack);
 ok(r.junk.sum30 === 0 && r.junk.today === 0 && r.junk.span === 1, '壊れた値は数えない', r.junk);
 ok(r.empty.today === 0 && r.empty.sum30 === 0, '記録が無くても要約できる', r.empty);
 
