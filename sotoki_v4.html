@@ -1652,6 +1652,9 @@ html, body {
   cursor: pointer;
 }
 #layer-cache-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
+#layer-opens { font-size: 11px; color: var(--text2); }
+#layer-map-opens { font-family: var(--font-mono); }
+#layer-opens-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
 
 /* 地図画面だけOSのダークテーマに追従する（全画面オーバーレイなので本体と並ばない）。
    本体アプリはlight固定のまま。 */
@@ -2554,7 +2557,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.166.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.167.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2719,6 +2722,11 @@ html, body {
             <div id="layer-cache-usage">—</div>
             <button id="btn-cache-clear" onclick="clearTileCache()">タイルキャッシュを削除</button>
             <div id="layer-cache-note">一度表示した範囲は自動で保存され、圏外でも表示できる。</div>
+          </div>
+          <div class="layer-section-title">地図を開いた回数（この端末）</div>
+          <div id="layer-opens">
+            <div id="layer-map-opens">—</div>
+            <div id="layer-opens-note">この端末の中だけで数え、外へは送らない。Google マップを下地にした場合の費用の見当に使う（課金の回数とぴったりは一致しない目安）。</div>
           </div>
         </div>
       </div>
@@ -6803,6 +6811,7 @@ const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const MAP_LS_WIND_MODE = 'sotoki.map.windMode';   // 風の場：AUTO／手動の層（高度別の風の場）
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
+const MAP_LS_OPENS = 'sotoki.map.openCount';    // 地図画面を開いた回数（#210 段階0）：{ since, days: { 'YYYY-MM-DD': 回数 } }
 const MAP_LS_BLEND = 'sotoki.map.blend';           // 地形図ごとの重ね方（#194）：{ id: 'normal'|'multiply'|'screen' }
 const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', name: '乗算' }, { id: 'screen', name: 'スクリーン' }];
 /* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
@@ -11777,6 +11786,7 @@ function restoreFavRotary() {
 }
 
 function openMap() {
+  if (!isMapOpen()) recordMapOpen();   // 開いたまま呼ばれても数えない（#210 段階0）
   document.getElementById('map-overlay').classList.add('open');
   setMapDeclutter(false);   // 隠した状態は覚えない（#185）
   document.getElementById('map-results').innerHTML = '';   // 前回の検索結果をクリア
@@ -11917,6 +11927,7 @@ function toggleLayerPanel() {
     if (q) q.blur();
     renderLayerPanel();
     refreshTileCacheUsage();
+    refreshMapOpensView();
   }
 }
 function closeLayerPanel() {
@@ -12251,6 +12262,89 @@ async function refreshTileCacheUsage() {
   el.textContent = res
     ? `地図タイル ${formatBytes(res.bytes)}（${res.count}枚）${quotaText}`
     : `地図タイルのキャッシュ情報を取得できません${quotaText}`;
+}
+/* ------ 地図を開いた回数（#210 段階0） ------
+   Google マップを下地にした場合の費用（Dynamic Maps は地図の読み込みごとに課金）の当たりをつけるため、
+   地図画面を開いた回数を日ごとに数える。⚠ **端末の中（localStorage）だけ。外へは送らない。**
+   ⚠ 課金の回数とは一致しない目安（Leaflet の地図は一度作れば使い回している）。
+   ⚠ 日付は**端末のローカル日付**で組む。toISOString（UTC）だと日本の 0〜9時が前日に入る。
+   ⚠ 数え始め（since）は日ごとの表と別に持つ。表は古い日を落とすので、そこから取ると
+      長く開かなかった後に「今日から数え始めた」ことになり、平均が膨らむ。 */
+const MAP_OPENS_KEEP_DAYS = 60;   // 日ごとの表に残す日数
+const MAP_OPENS_WINDOW = 30;      // 平均を取る日数
+function localDayKey(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function dayKeyToUtcMs(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+function normalizeMapOpens(log) {
+  const days = {};
+  if (log && log.days && typeof log.days === 'object') {
+    for (const [k, v] of Object.entries(log.days)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(v) && v > 0) days[k] = Math.floor(v);
+    }
+  }
+  const since = (log && typeof log.since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(log.since)) ? log.since : null;
+  return { since, days };
+}
+function bumpMapOpens(log, dayKey) {
+  const { since, days } = normalizeMapOpens(log);
+  days[dayKey] = (days[dayKey] || 0) + 1;
+  const limit = dayKeyToUtcMs(dayKey) - (MAP_OPENS_KEEP_DAYS - 1) * 86400e3;
+  for (const k of Object.keys(days)) if (dayKeyToUtcMs(k) < limit) delete days[k];
+  return { since: since || dayKey, days };   // 時計を戻しても数え始めは書き換えない
+}
+function summarizeMapOpens(log, dayKey) {
+  const norm = normalizeMapOpens(log);
+  const days = norm.days;
+  // 時計を戻して数え始めが今日より後になったら、表の今日以前の最古の日を数え始めとみなす
+  // （そのままだと割る日数が1日になり、平均が膨らむ）
+  let since = norm.since;
+  if (since && since > dayKey) since = Object.keys(days).filter(k => k <= dayKey).sort()[0] || dayKey;
+  const todayMs = dayKeyToUtcMs(dayKey);
+  const from = todayMs - (MAP_OPENS_WINDOW - 1) * 86400e3;
+  let sum30 = 0;
+  for (const [k, v] of Object.entries(days)) {
+    const t = dayKeyToUtcMs(k);
+    if (t >= from && t <= todayMs) sum30 += v;
+  }
+  // 数え始めが30日より新しければ、その日から今日までで割る（始めたばかりで平均を薄めない）
+  const sinceMs = since ? dayKeyToUtcMs(since) : todayMs;
+  const elapsed = Math.floor((todayMs - sinceMs) / 86400e3) + 1;
+  const span = Math.max(1, Math.min(MAP_OPENS_WINDOW, elapsed));
+  const avg = sum30 / span;
+  return { today: days[dayKey] || 0, sum30, span, avg, perMonth: Math.round(avg * 30),
+           since: (since && elapsed < MAP_OPENS_WINDOW) ? since : null };
+}
+function loadMapOpens() {
+  // ⚠ 読み出しの失敗（getItem の例外）は呼び手へ投げる。飲み込むと「0回」と出て、
+  //   「数えていない」と「読めない」の区別がつかなくなる。壊れた値だけを null にする
+  const raw = localStorage.getItem(MAP_LS_OPENS);
+  try { return JSON.parse(raw || 'null'); }
+  catch (e) { return null; }
+}
+function recordMapOpen() {
+  // 数えられなくても地図は開く（数えるのは脇の仕事）
+  try {
+    const next = bumpMapOpens(loadMapOpens(), localDayKey(new Date()));
+    localStorage.setItem(MAP_LS_OPENS, JSON.stringify(next));
+  } catch (e) { /* 書けなければ数えない */ }
+}
+function refreshMapOpensView() {
+  const el = document.getElementById('layer-map-opens');
+  if (!el) return;
+  try {
+    const s = summarizeMapOpens(loadMapOpens(), localDayKey(new Date()));
+    const avgText = s.avg < 10 ? s.avg.toFixed(1) : String(Math.round(s.avg));
+    const sinceText = s.since ? `・${Number(s.since.slice(5, 7))}/${Number(s.since.slice(8, 10))} から` : '';
+    el.textContent = `今日 ${s.today}回／直近${s.span}日 計${s.sum30}回` +
+      `（1日平均 ${avgText}回・月に直すと約${s.perMonth}回${sinceText}）`;
+  } catch (e) {
+    el.textContent = '回数を読めません';
+  }
 }
 async function clearTileCache() {
   // 破壊的操作なので必ず確認を挟む

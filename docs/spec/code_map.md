@@ -533,6 +533,18 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 
 SW 側の実装は `sw.js` → `pwa.md`
 
+### 地図を開いた回数（#210 段階0・v4.167.0）
+
+Google マップを下地にした場合の費用の当たりをつけるための目安。**端末の中（`MAP_LS_OPENS`）だけで数え、外へは送らない。**
+表示はレイヤーパネル最下段（`#layer-map-opens`）。仕様は `map.md`「地図を開いた回数」。
+
+| 関数 | 役割 | 目安行 |
+|---|---|---|
+| `recordMapOpen()` | `openMap()` の先頭から。⚠ **開いたまま呼ばれたら数えない**（`isMapOpen()` で弾く） | `clearTileCache` の直前 |
+| `bumpMapOpens(log, dayKey)` / `summarizeMapOpens(log, dayKey)` | 純関数。⚠ **数え始め `since` は日ごとの表と別に持つ**（表は60日で切り落とす） | 同上 |
+| `localDayKey(d)` | ⚠ **端末のローカル日付**（UTC だと日本の 0〜9時が前日に入る） | 同上 |
+| `refreshMapOpensView()` | 表示。読めなければ「回数を読めません」 | 同上 |
+
 ## 地図 — 地点の確定・移動・検索
 
 | 関数 | 役割 | 目安行 |
