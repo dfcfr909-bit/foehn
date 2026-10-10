@@ -7061,6 +7061,7 @@ function applyOverlays() {
       overlayTileLayers[def.id] = layer;
     }
   });
+  orderNowcastBoxes();
   refreshWeatherPoints();
   updateMapAttribution();
 }
@@ -11516,6 +11517,15 @@ function overlayPane(id, z) {
 
 /* 重ね方を、その地形図・気象レイヤーの合成の箱に掛ける（作り直さない）。
    ⚠ 合成は必ず「タイルの div」ではなく箱（pane）に掛ける。内側に掛けると下の地図と混ざらない（wxPaneFor）。 */
+/* 雨雲と雷の上下は overlays の順（後に入れた方が上）。箱の z で決める（#194）。
+   既定の並び（雨雲の下・雷の上）から、雨雲を後から入れたときに逆転させる。 */
+function orderNowcastBoxes() {
+  if (!leafletMap) return;
+  const at = id => mapPrefs.overlays.findIndex(o => o.id === id);
+  const thunderTop = at('radar') < 0 || at('thunder') > at('radar');   // 雨雲が無いときは雷を上（既定）
+  leafletMap.getPane('mapNowcastMask').style.zIndex = thunderTop ? 380 : 381;
+  leafletMap.getPane('mapThunderMask').style.zIndex = thunderTop ? 381 : 380;
+}
 function applyBlendHost(id) {
   if (!leafletMap) return;
   const host = BLEND_HOST[id] ? leafletMap.getPane(BLEND_HOST[id]) : leafletMap.getPane('mapOv_' + id);
@@ -11643,7 +11653,7 @@ function openMap() {
       const satMask = leafletMap.createPane('mapSatMask');
       satMask.style.zIndex = 375;
       leafletMap.createPane('mapSat', satMask);
-      leafletMap.createPane('mapNowcastMask').style.zIndex = 380;
+      leafletMap.createPane('mapNowcastMask').style.zIndex = 380;   // 雨雲と雷の上下は orderNowcastBoxes が決める
       leafletMap.createPane('mapNowcast', leafletMap.getPane('mapNowcastMask'));
       leafletMap.createPane('mapThunderMask').style.zIndex = 381;   // 雷は雨雲と別の箱（重ね方を別に選べる）
       leafletMap.createPane('mapThunder', leafletMap.getPane('mapThunderMask'));

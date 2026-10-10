@@ -2327,6 +2327,22 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     '★薄い雲の濃さが想定どおり（輝度→透明度がsRGBで計算されている）',
     { frac: +frac.toFixed(3), lOff: +lOff.toFixed(1), lOn: +lOn.toFixed(1), lFull: +lFull.toFixed(1) });
   await page6.close();
+  /* 既定（保存なし）の見え方：雨雲と雷は通常、雷のタイルは mapThunder に入る（#194 の既定を守る） */
+  const pageD0 = await newPage();
+  await pageD0.click('#btn-map');
+  await pageD0.waitForTimeout(700);
+  await pageD0.evaluate(() => { toggleOverlay('radar'); toggleOverlay('thunder'); });
+  await pageD0.waitForTimeout(300);
+  const d0 = await pageD0.evaluate(() => ({
+    radar: leafletMap.getPane('mapNowcastMask').style.mixBlendMode,
+    thunder: leafletMap.getPane('mapThunderMask').style.mixBlendMode,
+    thunderTiles: overlayTileLayers.thunder ? overlayTileLayers.thunder.options.pane : null,
+    radarTiles: overlayTileLayers.radar ? overlayTileLayers.radar.options.pane : null,
+  }));
+  ok(d0.radar === 'normal' && d0.thunder === 'normal', '既定では雨雲・雷とも通常の合成（今の見え方どおり）', d0);
+  ok(d0.thunderTiles === 'mapThunder' && d0.radarTiles === 'mapNowcast', '雷のタイルは mapThunder、雨雲は mapNowcast に入る', d0);
+  await pageD0.close();
+
   /* ================= 9. 重ね方（レイヤーごと・覚える・#194） =================
      ⚠ 重ね方は pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
      並び順は z-index（340〜）で決め、DOM は動かさない。外して入れ直しても覚えている。 */
@@ -2416,6 +2432,19 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   }));
   ok(b5.thunder === 'multiply' && b5.radar === 'screen',
     '雷の重ね方は雨雲と別に掛かる（雷は乗算・雨雲はスクリーン）', b5);
+  // 雨雲と雷の上下は overlays の順（後に入れた方が上）
+  await pageB.evaluate(() => {
+    if (isOverlayOn('radar')) toggleOverlay('radar');
+    if (isOverlayOn('thunder')) toggleOverlay('thunder');
+  });
+  await pageB.evaluate(() => { toggleOverlay('radar'); toggleOverlay('thunder'); });
+  await pageB.waitForTimeout(200);
+  const z1 = await pageB.evaluate(() => [Number(leafletMap.getPane('mapNowcastMask').style.zIndex), Number(leafletMap.getPane('mapThunderMask').style.zIndex)]);
+  await pageB.evaluate(() => { toggleOverlay('radar'); toggleOverlay('radar'); });   // 雨雲だけ外して入れ直す（一番後ろになる）
+  await pageB.waitForTimeout(200);
+  const z2 = await pageB.evaluate(() => [Number(leafletMap.getPane('mapNowcastMask').style.zIndex), Number(leafletMap.getPane('mapThunderMask').style.zIndex)]);
+  ok(z1[1] > z1[0], '雷を後に入れたら雷が上（overlays の順）', z1);
+  ok(z2[0] > z2[1], '雨雲を後から入れ直したら雨雲が上（overlays の順）', z2);
   await pageB.close();
 
   satTileMode = 'dark';

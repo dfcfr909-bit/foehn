@@ -360,7 +360,7 @@ AUTO／層の切り替えも共通（`mapPrefs.windMode`。どちらの行にも
   ボタンは on のときだけ、透過度スライダーの横に出す（`blendChips()`）。
   重ね方は `mapPrefs.blend`（`MAP_LS_BLEND`）にレイヤーごとに覚え、外して入れ直しても残る。
   読み込み時は、選べるIDと許す値（`normal`/`multiply`/`screen`）だけ通す。
-  ⚠ 雨雲と雷は**別々の箱**（`mapNowcastMask` と `mapThunderMask`・z381）。現在地のくり抜き（`SPOT_PANES`）は両方に掛ける。
+  ⚠ 雨雲と雷は**別々の箱**（`mapNowcastMask` と `mapThunderMask`・z380／381。上下は `orderNowcastBoxes()` が overlays の順で決める）。現在地のくり抜き（`SPOT_PANES`）は両方に掛ける。
   雷の泡の表示（雷マーク）は別の pane（`mapWeather`）なので、重ね方の影響を受けない。
 - `pending: true` のレイヤーは UI に出ない（URL が確認できていないものを推測で書かないため）
 - `unverified: true` はパネルに「要確認」バッジを出す
@@ -475,7 +475,7 @@ Leaflet の既定のピンは `<img>` なので、**iOSでは長押しすると�
   `document.hidden` のときは自動更新しない
 - 古いレイヤーは `staleWxLayers` に積み、`WX_DROP_MS`(8秒) で必ず外す
   （`dropStaleWxLayer` / `dropAllStaleWxLayers`）
-- pane は `wxPaneFor(def)` が振り分ける（衛星＝`mapSat`、その他＝`mapNowcast`）
+- pane は `wxPaneFor(def)` が振り分ける（衛星＝`mapSat`、雷＝`mapThunder`、その他＝`mapNowcast`）
 
 時刻表の扱い（`jmaTimesList` / `latestObsTime` / `jmaTimes` / `timedTileUrl`）→ `data.md`
 
@@ -789,10 +789,10 @@ JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-0
   `SPOT_FADE_PX`(`ME_DOT_R`×2.6) で元の濃さに戻る
 - **マスクは「実寸のある箱」にしか効かない。Leaflet の pane は 0×0。**
   マスク用の入れ物（`mapNowcastMask` / `mapSatMask`）を1枚挟み、そちらに画面ぶんの
-  寸法を持たせる。タイルは中の `mapNowcast` / `mapSat` に入る
+  寸法を持たせる。タイルは中の `mapNowcast` / `mapThunder` / `mapSat` に入る
 - 入れ物は「map pane のずれ（`_getMapPanePos()`）を引いて画面の左上に合わせ、
   中身を同じ量だけ逆に動かす」。同じ値を使う限り差し引きは 0 なのでタイルはずれない
-- 対象は `SPOT_PANES` = `[['mapNowcastMask','mapNowcast'], ['mapSatMask','mapSat']]`
+- 対象は `SPOT_PANES` = `[['mapNowcastMask','mapNowcast'], ['mapThunderMask','mapThunder'], ['mapSatMask','mapSat']]`
 - **ナウキャストは `mapNowcast`、マーカーは `mapWeather` と pane を分けてある**
   （同じ pane に入れるとマスクで現在地マーカーごと消える）
 - 貼り直しは `move`/`zoom` と現在地更新のたび。rAF で間引く。追跡を止めたら外す

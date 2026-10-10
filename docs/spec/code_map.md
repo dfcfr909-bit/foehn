@@ -363,7 +363,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `clearWxTimes()` | 時刻表のキャッシュ破棄 | 約 4829 |
 | `timedTileUrl(def, t)` | 時刻つきタイルのURL | 約 4832 |
 | `dropStaleWxLayer` / `dropAllStaleWxLayers` | 古いレイヤーを必ず外す（`WX_DROP_MS`=8秒） | 約 4851 / 4856 |
-| `wxPaneFor(def)` | pane の振り分け（衛星=`mapSat`／他=`mapNowcast`） | 約 4867 |
+| `wxPaneFor(def)` | pane の振り分け（衛星=`mapSat`／雷=`mapThunder`／他=`mapNowcast`） | 約 4867 |
 | `buildSatFilter(tint, cut)` | **輝度→透明度のSVGフィルタを毎回作り直す** | 約 4899 |
 | `applyWxBlend(def)` | 旧方式（`blend`/`floor`）の適用と解除 | 約 4942 |
 | `addTimedTileLayer(def, op, replace)` | **時刻つきタイルの貼り替え**（新しいのが出るまで消さない） | 約 4957 |
