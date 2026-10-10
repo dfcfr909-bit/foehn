@@ -6875,8 +6875,8 @@ const MAP_LS_OPENS = 'sotoki.map.openCount';    // 地図画面を開いた回�
 const MAP_LS_BLEND = 'sotoki.map.blend';           // 地形図ごとの重ね方（#194）：{ id: 'normal'|'multiply'|'screen' }
 /* レイヤーパネルの並びと、一覧から隠した項目（#205 段階1）。⚠ **一覧の見た目だけ。** 重ね順（mapPrefs.overlays の配列順）には使わない */
 const MAP_LS_LAYER_ORDER = 'sotoki.map.layerOrder';       // { bases: [id], overlays: [id], weather: [id] }
-const MAP_LS_LAYER_HIDDEN = 'sotoki.map.layerHiddenIds';
-const MAP_LS_BASE_OPACITY = 'sotoki.map.baseOpacity';     // 下地ごとの透過率（#211）：{ baseId: 0〜1 }。無ければ 1  // [id]（利用者が隠した項目。定義表の hidden＝予備の層 とは別物）
+const MAP_LS_LAYER_HIDDEN = 'sotoki.map.layerHiddenIds';  // [id]（利用者が隠した項目。定義表の hidden＝予備の層 とは別物）
+const MAP_LS_BASE_OPACITY = 'sotoki.map.baseOpacity';     // 下地ごとの透過率（#211）：{ baseId: 0〜1 }。無ければ 1
 const LAYER_SECTIONS = ['bases', 'overlays', 'weather'];
 const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', name: '乗算' }, { id: 'screen', name: 'スクリーン' }];
 /* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
