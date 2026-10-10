@@ -1367,6 +1367,11 @@ html, body {
 }
 #btn-layer-edit[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
 #layer-panel.editing #layer-bases { display: block; }
+#layer-panel.editing #layer-base-op { display: none; }
+/* 下地の透過率（#211）。地形図の行のスライダー（.layer-ov-op）と同じ見た目 */
+#layer-base-op { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 2px 0; }
+#layer-base-op .layer-base-op-name { flex: 1; font-size: 12px; font-weight: 700; color: var(--text2); }
+#map.base-faded { background: #fff; }   /* 下地を薄くしたときの地は白で固定（Leaflet 既定は灰 #ddd） */
 .layer-edit-row {
   display: flex; align-items: center; gap: 6px;
   padding: 2px 0; border-bottom: 1px solid var(--border);
@@ -2588,7 +2593,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.171.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.172.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2746,6 +2751,8 @@ html, body {
         <div id="layer-panel-body">
           <div class="layer-section-title" id="layer-bases-title">ベースマップ</div>
           <div id="layer-bases" role="radiogroup" aria-labelledby="layer-bases-title"></div>
+          <!-- 選んでいる下地の透過率（#211）。編集モードでは隠す -->
+          <div id="layer-base-op"></div>
           <div class="layer-section-title" id="layer-overlays-title">重ねる地形図</div>
           <div id="layer-overlays" aria-labelledby="layer-overlays-title"></div>
           <div class="layer-section-title" id="layer-weather-title">気象を重ねる</div>
@@ -6869,6 +6876,7 @@ const MAP_LS_BLEND = 'sotoki.map.blend';           // 地形図ごとの重ね�
 /* レイヤーパネルの並びと、一覧から隠した項目（#205 段階1）。⚠ **一覧の見た目だけ。** 重ね順（mapPrefs.overlays の配列順）には使わない */
 const MAP_LS_LAYER_ORDER = 'sotoki.map.layerOrder';       // { bases: [id], overlays: [id], weather: [id] }
 const MAP_LS_LAYER_HIDDEN = 'sotoki.map.layerHiddenIds';  // [id]（利用者が隠した項目。定義表の hidden＝予備の層 とは別物）
+const MAP_LS_BASE_OPACITY = 'sotoki.map.baseOpacity';     // 下地ごとの透過率（#211）：{ baseId: 0〜1 }。無ければ 1
 const LAYER_SECTIONS = ['bases', 'overlays', 'weather'];
 const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', name: '乗算' }, { id: 'screen', name: 'スクリーン' }];
 /* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
@@ -7119,9 +7127,20 @@ function loadMapPrefs() {
   let layerHiddenIds = [];
   try { layerHiddenIds = sanitizeLayerHiddenIds(JSON.parse(localStorage.getItem(MAP_LS_LAYER_HIDDEN) || '[]')); }
   catch (e) { /* 壊れていたら隠さない */ }
+  // 下地ごとの透過率（#211）。⚠ Number() で読まない（null・"" が 0 になり、黙って下地が消える）
+  const baseOpacity = {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_BASE_OPACITY) || '{}');
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const id of Object.keys(raw)) {
+        const v = raw[id];
+        if (findBase(id) && typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) baseOpacity[id] = v;
+      }
+    }
+  } catch (e) { /* 読めなければ全部 100% */ }
   // 選択中の下地は隠さない（排他選択なので、隠すと一覧に選択中の印が無くなる）
   layerHiddenIds = layerHiddenIds.filter(id => id !== base);
-  return { base, overlays, amedasElement, satBand, windMode, blend, layerOrder, layerHiddenIds };
+  return { base, overlays, amedasElement, satBand, windMode, blend, layerOrder, layerHiddenIds, baseOpacity };
 }
 function saveMapPrefs() {
   try {
@@ -7133,6 +7152,7 @@ function saveMapPrefs() {
     localStorage.setItem(MAP_LS_BLEND, JSON.stringify(mapPrefs.blend));
     localStorage.setItem(MAP_LS_LAYER_ORDER, JSON.stringify(mapPrefs.layerOrder || {}));
     localStorage.setItem(MAP_LS_LAYER_HIDDEN, JSON.stringify(mapPrefs.layerHiddenIds || []));
+    localStorage.setItem(MAP_LS_BASE_OPACITY, JSON.stringify(mapPrefs.baseOpacity || {}));
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -7144,7 +7164,7 @@ let leafletMarker = null;
 let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
                  // ⚠ WIND_MODE_DEFAULT はこの下で定義する。ここで参照すると読み込み時に止まる（TDZ）
                  satBand: SAT_BAND_DEFAULT, windMode: 'auto', blend: {},
-                 layerOrder: {}, layerHiddenIds: [] };
+                 layerOrder: {}, layerHiddenIds: [], baseOpacity: {} };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -7161,12 +7181,36 @@ function tileOpts(def, extra) {
   }, extra || {});
 }
 
+/* 下地の透過率（#211）。下地ごとに覚え、無ければ 1（いまと同じ）。0（下地なし）も許す。
+   薄くしたときの地は白で固定（#map に base-faded。Leaflet 既定の灰 #ddd の代わり）。
+   ⚠ 白は重ね方（mix-blend-mode）の混ざる範囲（.leaflet-map-pane）の外にある。それでも地形図が不透明な所は
+     「薄い下地＋白」に乗算したのと同じ色になる（透明な相手との混合は元の色、白との乗算も元の色）。
+     違うのは地形図自体が半透明な所だけ（実機で確認） */
+function baseOpacity(id) {
+  const v = (mapPrefs.baseOpacity || {})[id];
+  return (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) ? v : 1;
+}
+function paintBaseFaded() {
+  const el = document.getElementById('map');
+  if (el) el.classList.toggle('base-faded', baseOpacity(mapPrefs.base) < 1);
+}
+function setBaseOpacity(value) {
+  const v = Math.max(0, Math.min(1, Number(value)));
+  if (!isFinite(v)) return;
+  mapPrefs.baseOpacity = Object.assign({}, mapPrefs.baseOpacity, { [mapPrefs.base]: v });
+  saveMapPrefs();
+  if (baseTileLayer) baseTileLayer.setOpacity(v);
+  paintBaseFaded();
+  const label = document.getElementById('layer-base-op-val');
+  if (label) label.textContent = Math.round(v * 100) + '%';
+}
 function applyBaseLayer() {
   if (!leafletMap) return;
   if (baseTileLayer) { leafletMap.removeLayer(baseTileLayer); baseTileLayer = null; }
   const def = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT);
   clearLayerStatus(def.id);              // 貼り直したら前の失敗は持ち越さない
-  baseTileLayer = L.tileLayer(def.url, tileOpts(def)).addTo(leafletMap);
+  baseTileLayer = L.tileLayer(def.url, tileOpts(def, { opacity: baseOpacity(def.id) })).addTo(leafletMap);
+  paintBaseFaded();
   /* ⚠ **下地こそ見張る。** これまで watchTileStatus が付いておらず、地図そのものが
      取れていなくても誰も気づかなかった。帯や筋が出る原因として最初に疑う所（2026-09-19） */
   watchTileStatus(baseTileLayer, def);
@@ -12485,6 +12529,8 @@ function renderLayerPanel() {
   }
   const wxWrap = document.getElementById('layer-weather');
   if (layerEditMode) {
+    const opRow = document.getElementById('layer-base-op');
+    if (opRow) opRow.innerHTML = '';     // 下地の透過率（#211）も編集モードでは出さない（CSS で隠すだけでなく中身ごと消す）
     baseWrap.innerHTML = layerEditRows('bases');
     ovWrap.innerHTML = layerEditRows('overlays');
     if (wxWrap) wxWrap.innerHTML = layerEditRows('weather');
@@ -12492,6 +12538,17 @@ function renderLayerPanel() {
     return;
   }
   const shown = sec => sectionLayers(sec).filter(d => !isLayerHidden(d.id));
+  const opWrap = document.getElementById('layer-base-op');
+  if (opWrap) {
+    const b = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT), op = baseOpacity(b.id);
+    opWrap.innerHTML = `
+      <span class="layer-base-op-name">${escapeHtml(b.name)}の透過率</span>
+      <span class="layer-ov-op">
+        <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
+               aria-label="${escapeHtml(b.name)}の透過率" oninput="setBaseOpacity(this.value / 100)">
+        <span class="layer-op-val" id="layer-base-op-val">${Math.round(op * 100)}%</span>
+      </span>`;
+  }
   baseWrap.innerHTML = shown('bases').map(b => `
     <button class="layer-base${b.id === mapPrefs.base ? ' active' : ''}"
             role="radio" aria-checked="${b.id === mapPrefs.base}"
