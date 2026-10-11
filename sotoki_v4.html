@@ -1394,6 +1394,18 @@ html, body {
   background: none; color: var(--text2); font-family: var(--font-ui); font-size: 12px; cursor: pointer;
 }
 .layer-hidden-sum { grid-column: 1 / -1; font-size: 10px; color: var(--text3); padding: 4px 2px; }
+/* レイヤーセット（#205 段階2） */
+.layer-sets-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 4px; }
+.layer-set-chip {
+  min-height: 32px; padding: 4px 12px; border-radius: 16px; font-size: 12px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer;
+}
+.layer-set-chip.active { background: var(--text); color: var(--surface); border-color: var(--text); font-weight: 700; }   /* .amedas-el.active と同じ（ダークで白地に白文字にしない） */
+.layer-set-add { border-style: dashed; color: var(--text2); }
+.layer-set-add:disabled { opacity: 0.4; }
+.layer-set-acts { display: inline-flex; gap: 4px; }
+.layer-set-act { min-height: 32px; padding: 2px 8px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer; }
+.layer-set-del { color: var(--c-col); }
 #btn-layer-close {
   min-width: 44px; min-height: 44px;
   border: none; background: none; cursor: pointer;
@@ -2593,7 +2605,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.172.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.174.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2749,6 +2761,9 @@ html, body {
           <button id="btn-layer-close" onclick="closeLayerPanel()" aria-label="閉じる">✕</button>
         </div>
         <div id="layer-panel-body">
+          <!-- レイヤーセット（#205 段階2）。押すと組み合わせを丸ごと置き換える。名前・上書き・削除は編集モードで -->
+          <div class="layer-section-title" id="layer-sets-title">セット</div>
+          <div id="layer-sets" aria-labelledby="layer-sets-title"></div>
           <div class="layer-section-title" id="layer-bases-title">ベースマップ</div>
           <div id="layer-bases" role="radiogroup" aria-labelledby="layer-bases-title"></div>
           <!-- 選んでいる下地の透過率（#211）。編集モードでは隠す -->
@@ -12516,6 +12531,231 @@ function layerHiddenSummary(sec) {
   const onN = sec === 'bases' ? 0 : hid.filter(d => isOverlayOn(d.id)).length;
   return `<div class="layer-hidden-sum">隠している項目 ${hid.length}件${onN ? `（うちON ${onN}件）` : ''}。「並べ替え」で戻せます</div>`;
 }
+/* ------ レイヤーセット（#205 段階2） ------
+   いまの組み合わせ（下地・下地の透過率・重ねるレイヤーと透過率と重ね順・重ね方・風の層・衛星のバンド・アメダスの要素）に
+   名前をつけて端末に覚え、押すと丸ごと置き換える（セットに無いレイヤーは OFF）。
+   ⚠ 含めないもの：風の流れの粒の設定（windPref）・施設の種類の絞り込み・一覧の並び／隠した項目
+   ⚠ 版でレイヤーが消えたら、その項目だけ黙って捨てる。下地が分からなければ下地と透過率は変えない
+   ⚠ 名前は利用者の入力なので HTML に出す前に escapeHtml。onclick に渡すのは採番した id（英数字）だけ */
+const MAP_LS_LAYER_SETS = 'sotoki.map.layerSets';
+const LAYER_SETS_MAX = 8;
+const LAYER_SET_NAME_MAX = 20;
+const LAYER_SET_ID_RE = /^[a-z0-9]{1,16}$/;
+let layerSetSeq = 0;
+// 名前は前後の空白を落として20字まで。⚠ 文字（コードポイント）で数える（slice だと絵文字の途中で切れる）
+function cutLayerSetName(t) { return Array.from(t.trim()).slice(0, LAYER_SET_NAME_MAX).join('').trim(); }
+
+// 透過率は 0〜1 の数だけ通す（Number() で読まない。null・"" が 0 になる）
+function layerSetOpacity(v, fallback) {
+  return (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) ? v : fallback;
+}
+/* overlays を検査する。loadMapPrefs と同じ条件（未知・pending・予備の層は捨てる。Canvas 版の風の流れは WebGL 版へ寄せる）。
+   赤色立体図風と傾斜量図・陰影起伏図が両方あれば赤色立体図風を残す */
+function sanitizeSetOverlays(raw) {
+  const out = [];
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    let id = item.id === 'windFlow' ? 'windFlowGL' : item.id;
+    const def = findOverlay(id);
+    if (!def || def.pending || def.hidden) continue;
+    if (out.some(o => o.id === def.id)) continue;
+    out.push({ id: def.id, opacity: layerSetOpacity(item.opacity, def.opacity) });
+  }
+  return out.some(o => o.id === 'rrimLike') ? out.filter(o => !RRIM_CONFLICTS.includes(o.id)) : out;
+}
+// 1件を検査する。壊れていれば null。分からない下地・風の層などは null にして「呼び出しで変えない」
+function sanitizeLayerSet(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (typeof raw.id !== 'string' || !LAYER_SET_ID_RE.test(raw.id)) return null;
+  const name = typeof raw.name === 'string' ? cutLayerSetName(raw.name) : '';
+  if (!name) return null;
+  const base = (typeof raw.base === 'string' && findBase(raw.base)) ? raw.base : null;
+  const overlays = sanitizeSetOverlays(raw.overlays);
+  const blend = {};
+  if (raw.blend && typeof raw.blend === 'object') {
+    for (const o of overlays) {
+      const m = raw.blend[o.id];
+      if (isBlendable(findOverlay(o.id)) && MAP_BLEND_MODES.some(x => x.id === m)) blend[o.id] = m;
+    }
+  }
+  return {
+    id: raw.id, name, base,
+    baseOpacity: base ? layerSetOpacity(raw.baseOpacity, 1) : null,
+    overlays, blend,
+    windMode: WIND_FIELD_MODES.some(m => m.id === raw.windMode) ? raw.windMode : null,
+    satBand: satBands().some(b => b.id === raw.satBand) ? raw.satBand : null,
+    amedasElement: AMEDAS_ELEMENTS.some(e => e.id === raw.amedasElement) ? raw.amedasElement : null,
+  };
+}
+function sanitizeLayerSets(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const r of raw) {
+    const s = sanitizeLayerSet(r);
+    if (s && !out.some(x => x.id === s.id)) out.push(s);
+    if (out.length >= LAYER_SETS_MAX) break;
+  }
+  return out;
+}
+let layerSetsCache = null;
+function loadLayerSets() {
+  if (layerSetsCache) return layerSetsCache;
+  try { layerSetsCache = sanitizeLayerSets(JSON.parse(localStorage.getItem(MAP_LS_LAYER_SETS) || '[]')); }
+  catch (e) { layerSetsCache = []; }    // 壊れていたらセットなし（地図は動く）
+  return layerSetsCache;
+}
+function saveLayerSets(sets) {
+  layerSetsCache = sets;
+  try { localStorage.setItem(MAP_LS_LAYER_SETS, JSON.stringify(sets)); } catch (e) { /* 保存できなくても動く */ }
+}
+/* いまの組み合わせを写し取る（参照で渡さない。setOverlayOpacity は item.opacity を直接書き換える）。
+   重ね方は実効値（既定のもの＝保存に無いものも書く。書かないと呼び出しで既定に戻らない） */
+function captureLayerSet() {
+  const overlays = mapPrefs.overlays.map(o => ({ id: o.id, opacity: o.opacity }));
+  const blend = {};
+  overlays.forEach(o => { if (isBlendable(findOverlay(o.id))) blend[o.id] = blendOf(o.id); });
+  return {
+    base: mapPrefs.base, baseOpacity: baseOpacity(mapPrefs.base), overlays, blend,
+    windMode: mapPrefs.windMode, satBand: mapPrefs.satBand, amedasElement: mapPrefs.amedasElement,
+  };
+}
+// 一致の比較に使う形。透過率は整数 %。null（分からない項目）は比べない
+function layerSetKey(s) {
+  return JSON.stringify([
+    s.base, s.base ? Math.round(s.baseOpacity * 100) : null,
+    s.overlays.map(o => [o.id, Math.round(o.opacity * 100), s.blend[o.id] || null]),
+    s.windMode, s.satBand, s.amedasElement,
+  ]);
+}
+function isLayerSetActive(set) {
+  const cur = captureLayerSet();
+  // セット側で分からない項目は、いまの値で埋めて比べる（比べない）
+  const view = Object.assign({}, cur, {
+    overlays: set.overlays, blend: set.blend,
+    ...(set.base ? { base: set.base, baseOpacity: set.baseOpacity } : {}),
+    ...(set.windMode ? { windMode: set.windMode } : {}),
+    ...(set.satBand ? { satBand: set.satBand } : {}),
+    ...(set.amedasElement ? { amedasElement: set.amedasElement } : {}),
+  });
+  const norm = s => layerSetKey(Object.assign({}, s, {
+    blend: Object.fromEntries(s.overlays.filter(o => isBlendable(findOverlay(o.id))).map(o => [o.id, s.blend[o.id] || BLEND_DEFAULT[o.id] || 'normal'])),
+  }));
+  return norm(view) === norm(cur);
+}
+function newLayerSetId() {
+  return (Date.now().toString(36) + (layerSetSeq++).toString(36)).slice(-16);
+}
+function saveCurrentLayerSet() {
+  const sets = loadLayerSets();
+  if (sets.length >= LAYER_SETS_MAX) return;
+  const input = window.prompt(`セットの名前（${LAYER_SET_NAME_MAX}字まで）`, `セット${sets.length + 1}`);
+  if (input === null) return;
+  const name = cutLayerSetName(String(input));
+  if (!name) return;
+  let id = newLayerSetId();
+  while (sets.some(s => s.id === id)) id = newLayerSetId();
+  saveLayerSets(sets.concat([Object.assign({ id, name }, captureLayerSet())]));
+  renderLayerPanel();
+}
+function applyLayerSet(id) {
+  const set = loadLayerSets().find(s => s.id === id);
+  if (!set) return;
+  const prevBase = mapPrefs.base, prevOp = baseOpacity(mapPrefs.base);
+  if (set.base) {
+    mapPrefs.base = set.base;
+    mapPrefs.baseOpacity = Object.assign({}, mapPrefs.baseOpacity, { [set.base]: set.baseOpacity });
+    // 下地は隠した項目に入っていたら外す（選択中の下地は隠せない・段階1）
+    mapPrefs.layerHiddenIds = (mapPrefs.layerHiddenIds || []).filter(x => x !== set.base);
+  }
+  mapPrefs.overlays = set.overlays.map(o => ({ id: o.id, opacity: o.opacity }));
+  // 重ね方：セットにあるレイヤーは必ず書き直す（保存に無ければ既定へ戻す）。セットに無いものは触らない（OFF なので害なし）
+  const blend = Object.assign({}, mapPrefs.blend);
+  set.overlays.forEach(o => {
+    if (!isBlendable(findOverlay(o.id))) return;
+    const m = set.blend[o.id];
+    if (m && m !== (BLEND_DEFAULT[o.id] || 'normal')) blend[o.id] = m; else delete blend[o.id];
+  });
+  mapPrefs.blend = blend;
+  if (set.windMode) mapPrefs.windMode = set.windMode;
+  if (set.satBand) mapPrefs.satBand = set.satBand;
+  if (set.amedasElement) mapPrefs.amedasElement = set.amedasElement;
+  saveMapPrefs();
+  if (leafletMap) {
+    // 下地はタイルを作り直すので、変わったときだけ
+    if (mapPrefs.base !== prevBase || baseOpacity(mapPrefs.base) !== prevOp) applyBaseLayer();
+    // 重ね方は pane に残るので、セットのものを掛け直す（applyOverlays は既存の pane の合成を作り直さない）
+    set.overlays.forEach(o => { if (isBlendable(findOverlay(o.id))) applyBlendHost(o.id); });
+    applyOverlays();
+  }
+  renderLayerPanel();
+}
+function renameLayerSet(id) {
+  const sets = loadLayerSets();
+  const set = sets.find(s => s.id === id);
+  if (!set) return;
+  const input = window.prompt('セットの名前', set.name);
+  if (input === null) return;
+  const name = cutLayerSetName(String(input));
+  if (!name) return;
+  saveLayerSets(sets.map(s => s.id === id ? Object.assign({}, s, { name }) : s));
+  renderLayerPanel();
+}
+function overwriteLayerSet(id) {
+  const sets = loadLayerSets();
+  const set = sets.find(s => s.id === id);
+  if (!set || !window.confirm(`「${set.name}」をいまの組み合わせで上書きしますか`)) return;
+  saveLayerSets(sets.map(s => s.id === id ? Object.assign({ id: s.id, name: s.name }, captureLayerSet()) : s));
+  renderLayerPanel();
+}
+function deleteLayerSet(id) {
+  const sets = loadLayerSets();
+  const set = sets.find(s => s.id === id);
+  if (!set || !window.confirm(`「${set.name}」を削除しますか`)) return;
+  saveLayerSets(sets.filter(s => s.id !== id));
+  renderLayerPanel();
+}
+function moveLayerSet(id, dir) {
+  const sets = loadLayerSets().slice();
+  const i = sets.findIndex(s => s.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= sets.length) return;
+  [sets[i], sets[j]] = [sets[j], sets[i]];
+  saveLayerSets(sets);
+  renderLayerPanel();
+}
+// 通常時はチップ＋「＋いまを保存」、編集モードでは行（名前＋▲▼＋名前・上書き・削除）
+function renderLayerSets() {
+  const wrap = document.getElementById('layer-sets');
+  if (!wrap) return;
+  const sets = loadLayerSets();
+  if (layerEditMode) {
+    wrap.innerHTML = sets.length ? sets.map((s, i) => {
+      const name = escapeHtml(s.name);
+      return `
+      <div class="layer-edit-row layer-set-row" data-set="${s.id}">
+        <span class="layer-edit-name">${name}</span>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を上へ" ${i === 0 ? 'disabled' : ''} onclick="moveLayerSet('${s.id}', -1)">▲</button>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を下へ" ${i === sets.length - 1 ? 'disabled' : ''} onclick="moveLayerSet('${s.id}', 1)">▼</button>
+        <span class="layer-set-acts">
+          <button type="button" class="layer-set-act" onclick="renameLayerSet('${s.id}')">名前</button>
+          <button type="button" class="layer-set-act" onclick="overwriteLayerSet('${s.id}')">上書き</button>
+          <button type="button" class="layer-set-act layer-set-del" onclick="deleteLayerSet('${s.id}')">削除</button>
+        </span>
+      </div>`;
+    }).join('') : '<div class="layer-hidden-sum">セットはまだありません</div>';
+    return;
+  }
+  const full = sets.length >= LAYER_SETS_MAX;
+  wrap.innerHTML = `<div class="layer-sets-chips">` +
+    sets.map(s => {
+      const on = isLayerSetActive(s);
+      return `<button type="button" class="layer-set-chip${on ? ' active' : ''}" aria-pressed="${on}" onclick="applyLayerSet('${s.id}')">${escapeHtml(s.name)}</button>`;
+    }).join('') +
+    `<button type="button" class="layer-set-chip layer-set-add" ${full ? 'disabled' : ''} onclick="saveCurrentLayerSet()">＋いまを保存</button>` +
+    `</div>` +
+    (full ? `<div class="layer-hidden-sum">セットは${LAYER_SETS_MAX}件までです。「並べ替え」で削除・上書きできます</div>` : '');
+}
+
 function renderLayerPanel() {
   const baseWrap = document.getElementById('layer-bases');
   const ovWrap = document.getElementById('layer-overlays');
@@ -12528,6 +12768,7 @@ function renderLayerPanel() {
     editBtn.setAttribute('aria-pressed', String(layerEditMode));
   }
   const wxWrap = document.getElementById('layer-weather');
+  renderLayerSets();              // セット（#205 段階2）は通常時も編集モードも描く（下の早い return より前）
   if (layerEditMode) {
     const opRow = document.getElementById('layer-base-op');
     if (opRow) opRow.innerHTML = '';     // 下地の透過率（#211）も編集モードでは出さない（CSS で隠すだけでなく中身ごと消す）
