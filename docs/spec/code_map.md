@@ -490,6 +490,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `baseOpacity` / `setBaseOpacity` / `paintBaseFaded` | 下地の透過率（#211）。下地ごと・既定 1・地は白（`#map.base-faded`） | `applyBaseLayer` の上 |
 | `orderLayers` / `layerSectionDefs` / `sanitizeLayerOrder` / `sanitizeLayerHiddenIds` | 一覧の並び（#205 段階1）。保存順＋版で足したものは末尾。⚠ 重ね順（`mapPrefs.overlays`）とは別 | `loadMapPrefs` の上 |
 | `toggleLayerEdit` / `moveLayer` / `toggleLayerHidden` / `resetLayerOrder` / `layerEditRows` / `layerHiddenSummary` | 並べ替え・隠すの編集モード（覚えない）。選択中の下地は隠せない | `renderLayerPanel` の上 |
+| `sanitizeLayerSets` / `captureLayerSet` / `applyLayerSet` / `saveCurrentLayerSet` / `renameLayerSet` / `overwriteLayerSet` / `deleteLayerSet` / `moveLayerSet` / `isLayerSetActive` / `renderLayerSets` | レイヤーセット（#205 段階2）。丸ごと置き換え・重ね方は実効値・分からない項目は変えない・端末だけ8件 | `renderLayerPanel` の上 |
 | `setMapDeclutter(on)` / `toggleMapDeclutter()` | 地図の上の情報を隠す（#185）。隠すものは CSS `#map-stage.declutter`。状態は覚えない | `closeMap` の直後 |
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |
