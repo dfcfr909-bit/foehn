@@ -1397,14 +1397,14 @@ html, body {
 /* レイヤーセット（#205 段階2） */
 .layer-sets-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 4px; }
 .layer-set-chip {
-  min-height: 32px; padding: 4px 12px; border-radius: 16px; font-size: 12px;
+  min-height: 44px; padding: 4px 14px; border-radius: 22px; font-size: 12px;   /* タッチターゲット 44px（smoke_mapui） */
   border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer;
 }
 .layer-set-chip.active { background: var(--text); color: var(--surface); border-color: var(--text); font-weight: 700; }   /* .amedas-el.active と同じ（ダークで白地に白文字にしない） */
 .layer-set-add { border-style: dashed; color: var(--text2); }
 .layer-set-add:disabled { opacity: 0.4; }
 .layer-set-acts { display: inline-flex; gap: 4px; }
-.layer-set-act { min-height: 32px; padding: 2px 8px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer; }
+.layer-set-act { min-height: 44px; padding: 2px 8px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer; }
 .layer-set-del { color: var(--c-col); }
 #btn-layer-close {
   min-width: 44px; min-height: 44px;
