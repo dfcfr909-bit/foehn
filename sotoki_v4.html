@@ -2593,7 +2593,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.172.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.173.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -4111,10 +4111,11 @@ function updateFavStar() {
   btn.classList.toggle('on', on);
 }
 
-/* ダイヤル（円柱）・🏠／🏥で地点を選んだときに寄る倍率（#216）。山頂まわりの尾根と谷が読める程度。
-   z14 は 390px 幅で縮尺の棒が 1 km（z15 で 500 m）。すでにそれより拡大していれば縮めない。
+/* ダイヤル（円柱）・🏠／🏥で地点を選んだときに寄る倍率（#216）。家の並びと道が読める程度。
+   z16 は 390px 幅で縮尺の棒が 200 m（z14 で 1 km）。すでにそれより拡大していれば縮めない。
+   v4.170.0 は 14 だったが、実機で「まだ広い」（利用者・2026-10-11。縮尺 200 m の画面を指定）
    ⚠ 地図を初めて開いたときの z10 は変えない（山域の位置関係を見るのに使う） */
-const FAV_GO_ZOOM = 14;
+const FAV_GO_ZOOM = 16;
 // 地点選択（現在地点と同じなら正面合わせのみ、違えば天気取得）
 function selectFav(lat, lon, name) {
   state.summitElev = null;      // お気に入りは標高を持たない。DEMに任せる
