@@ -74,6 +74,7 @@ await page.route('**/*', async route => {
     reqs.push({ src, z, x, y });
     const mode = src === '5a' ? mode5a : mode10b;
     if (mode === 'off') return route.fulfill({ status: 504, body: '' });
+    if (mode === 'bad') return route.fulfill({ contentType: 'image/png', body: 'not a png', headers: { 'Access-Control-Allow-Origin': '*' } });
     if (mode === 'none' || (mode === 'hole' && x === holeX)) return route.fulfill({ status: 404, body: '' });
     return route.fulfill({ contentType: 'image/png', body: await demPng(z, x, y), headers: { 'Access-Control-Allow-Origin': '*' } });
   }
@@ -261,6 +262,10 @@ await page.evaluate(() => { toggleOverlay('csLike'); clearLayerStatus('csLike');
 await page.waitForTimeout(4000);
 const off = await page.evaluate(() => ({ text: layerStatus.csLike, failed: !!layerFailed.csLike }));
 ok(off.failed && !/表示なし|範囲外/.test(off.text || ''), '★★圏外（504）は「表示なし」と取り違えず、失敗として出す', off);
+// 4g. 壊れたタイル（復号の失敗）は通信の失敗の印を付けない
+await reset(); mode5a = 'bad'; mode10b = 'bad';
+const r4h = await page.evaluate(async c => { try { await csRenderTile(c, { id: ++ciSeq, cancelled: false }); return 'ok'; } catch (e) { return e.network ? 'network' : 'other'; } }, { z: 14, x: T.x >> 1, y: T.y >> 1 });
+ok(r4h === 'other', '壊れたタイルの失敗は「通信できない」にしない', r4h);
 
 ok(errors.length === 0, 'ページで例外が出ない', errors);
 await browser.close();

@@ -7594,6 +7594,8 @@ function csMissAny(keys) {
   for (const k of keys) if (o[k]) { hit = true; break; }
   return hit;
 }
+// 通信の失敗の印つきのエラー（watchTileStatus が「表示なし」と取り違えないように。復号・計算の失敗には付けない）
+function csNetError() { return Object.assign(new Error('通信できません'), { network: true }); }
 // 9枚を取る → { ok, keys, blobs, missKeys, error }
 async function csGather(src, z, x, y) {
   const t0 = performance.now(), keys = [], reqs = [];
@@ -7632,7 +7634,7 @@ function csParent(px, py) {
   if (csParentCache.has(key)) return csParentCache.get(key);
   const p = (async () => {
     const g = await csGather('gsi10b', 14, px, py);
-    if (g.error) throw new Error('通信できません');
+    if (g.error) throw csNetError();
     return csCompute({ id: ++ciSeq, cancelled: false }, g, 'gsi10b', 14, py);
   })();
   p.catch(() => { if (csParentCache.get(key) === p) csParentCache.delete(key); });
@@ -7657,7 +7659,7 @@ async function csRenderTile(coords, job) {
   let use10b = false;
   if (g5.missKeys.length) { csMissMark(g5.missKeys); use10b = true; }
   else if (g5.error) {
-    if (!csMissAny(g5.keys)) throw new Error('通信できません');   // 覚えていない：失敗（圏内で取り直す）
+    if (!csMissAny(g5.keys)) throw csNetError();   // 覚えていない：失敗（圏内で取り直す）
     use10b = true;
   }
   if (!use10b) return csCompute(job, g5, 'gsi5a', z, y);
@@ -7668,7 +7670,7 @@ async function csRenderTile(coords, job) {
   }
   const g10 = await csGather('gsi10b', z, x, y);
   if (job.cancelled) return undefined;
-  if (g10.error) throw new Error('通信できません');
+  if (g10.error) throw csNetError();
   return csCompute(job, g10, 'gsi10b', z, y);
 }
 // 行の下に出す計測（試作の間だけ・v4.176.0）。中央値
@@ -7717,11 +7719,7 @@ function CsLayerClass() {
       tile.getContext('2d').putImageData(new ImageData(pix, CS_PRM.tile, CS_PRM.tile), 0, 0);
       done(null, tile);
       updateCsStatsNote();
-    }).catch(e => {
-      job.done = true;
-      // 通信の失敗（csRenderTile が投げるもの）は印を付ける：watchTileStatus が「表示なし」と取り違えないように
-      done(Object.assign(e instanceof Error ? e : new Error(String(e)), { network: true }), tile);
-    });
+    }).catch(e => { job.done = true; done(e, tile); });   // 通信の失敗は csNetError（network の印つき）
     return tile;
   },
   });
