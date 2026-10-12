@@ -7717,7 +7717,11 @@ function CsLayerClass() {
       tile.getContext('2d').putImageData(new ImageData(pix, CS_PRM.tile, CS_PRM.tile), 0, 0);
       done(null, tile);
       updateCsStatsNote();
-    }).catch(e => { job.done = true; done(e, tile); });
+    }).catch(e => {
+      job.done = true;
+      // 通信の失敗（csRenderTile が投げるもの）は印を付ける：watchTileStatus が「表示なし」と取り違えないように
+      done(Object.assign(e instanceof Error ? e : new Error(String(e)), { network: true }), tile);
+    });
     return tile;
   },
   });
@@ -8419,11 +8423,17 @@ const WX_FAIL_MIN_TILES = 6;      // これだけ届くまでは判定しない�
 const WX_FAIL_RATIO = 0.4;        // 4割以上落ちたら「一部しか出ていない」と言う
 const WX_FAIL_SETTLE_MS = 1500;   // タイルは非同期に届くので、落ち着いてから数える
 function watchTileStatus(layer, def, hooks) {
-  let errors = 0, loaded = 0, badZ = null, timer = null;
+  let errors = 0, loaded = 0, badZ = null, timer = null, netErrors = 0;
   const judge = () => {
     timer = null;
     const total = loaded + errors;
     if (!errors || total < WX_FAIL_MIN_TILES) return;
+    /* 通信の失敗だと分かっている枚（e.error.network。いまは CS立体図風だけが付ける）は、mayBeEmpty・partialCoverage でも
+       「表示なし」「配信の範囲外」にしない（圏外を範囲外と取り違えない） */
+    if (netErrors && (loaded === 0 || netErrors / total >= WX_FAIL_RATIO)) {
+      setLayerError(def.id, loaded === 0 ? `通信できません（z${badZ}）` : `一部しか取得できません（${Math.round(netErrors / total * 100)}%が通信できない・z${badZ}）`);
+      return;
+    }
     if (loaded === 0) {
       // ⚠ 雷などは「そもそも無い」ことがある。これは失敗ではないので警告に混ぜない
       if (def.mayBeEmpty) setLayerNote(def.id, `この範囲に表示なし（z${badZ}のタイルが無い）`);
@@ -8439,6 +8449,7 @@ function watchTileStatus(layer, def, hooks) {
   const later = () => { if (!timer) timer = setTimeout(judge, WX_FAIL_SETTLE_MS); };
   layer.on('tileerror', e => {
     errors++;
+    if (e && e.error && e.error.network) netErrors++;
     if (e && e.coords) badZ = e.coords.z;
     // 1枚も読めていないうちは、従来どおり早めに理由を出す
     if (loaded === 0 && errors >= 3 && hooks && hooks.onFail) hooks.onFail();

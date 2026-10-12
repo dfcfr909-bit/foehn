@@ -255,6 +255,12 @@ await page.evaluate(() => { toggleOverlay('csLike'); clearLayerStatus('csLike');
 await page.waitForTimeout(4000);
 const sea = await page.evaluate(() => ({ text: layerStatus.csLike, failed: !!layerFailed.csLike }));
 ok(/表示なし/.test(sea.text || '') && !sea.failed, '★配信の無い範囲は「表示なし」（赤い失敗にしない）', sea);
+// 4f. 圏外（両方 504・記録なし）：「表示なし」にせず、失敗として出す
+await reset(); mode5a = 'off'; mode10b = 'off';
+await page.evaluate(() => { toggleOverlay('csLike'); clearLayerStatus('csLike'); leafletMap.setView([36.95, 139.25], 14, { animate: false }); toggleOverlay('csLike'); });
+await page.waitForTimeout(4000);
+const off = await page.evaluate(() => ({ text: layerStatus.csLike, failed: !!layerFailed.csLike }));
+ok(off.failed && !/表示なし|範囲外/.test(off.text || ''), '★★圏外（504）は「表示なし」と取り違えず、失敗として出す', off);
 
 ok(errors.length === 0, 'ページで例外が出ない', errors);
 await browser.close();
