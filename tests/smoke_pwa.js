@@ -84,6 +84,29 @@ function pngSize(file) {
     cleansOldCaches: /caches\.delete/.test(SW),
   };
 
+  // --- 起動を止める外部読み込みが無いこと（圏外・弱電波で開かない・地図が作れない → ADR-0017・#227） ---
+  //   ⚠ 対象は本体（sotoki_v4.html）だけ。experiments/ は CDN のまま
+  const NM_LEAFLET = path.join(__dirname, 'node_modules/leaflet/dist');
+  const sameFile = (a, b) => fs.existsSync(a) && fs.existsSync(b) && fs.readFileSync(a).equals(fs.readFileSync(b));
+  const offlineBoot = {
+    // 外部オリジンの <script src> が無い（同期読み込みで止まる）
+    noExternalScript: !/<script[^>]+src="(https?:)?\/\//i.test(HTML),
+    // 外部の stylesheet は media="print"（読めたら切り替える）のものだけ
+    externalCssNonBlocking: [...HTML.matchAll(/<link[^>]+rel="stylesheet"[^>]*>/gi)]
+      .filter(m => /href="(https?:)?\/\//i.test(m[0])).every(m => /media="print"/.test(m[0])),
+    // <style> の中の @import で外部を読まない（描画を止める）
+    noExternalImport: !/@import\s+url\(['"]?(https?:)?\/\//i.test(HTML),
+    // Leaflet は vendor/ から読み、PRECACHE に入っている
+    leafletVendored: /<script src="vendor\/leaflet\/leaflet\.js"><\/script>/.test(HTML) &&
+      /<link rel="stylesheet" href="vendor\/leaflet\/leaflet\.css">/.test(HTML),
+    leafletPrecached: ['leaflet.js', 'leaflet.css', 'images/marker-icon.png', 'images/marker-icon-2x.png',
+      'images/marker-shadow.png'].every(f => SW.includes(`'./vendor/leaflet/${f}'`)),
+    // 同梱物はテストで使う npm の leaflet@1.9.4 と同じ中身（テストは node_modules 側を読むので、ずれると気づけない）
+    leafletSameAsTests: ['leaflet.js', 'leaflet.css', 'images/marker-icon.png', 'images/marker-icon-2x.png',
+      'images/marker-shadow.png', 'images/layers.png', 'images/layers-2x.png']
+      .every(f => sameFile(path.join(ROOT, 'vendor/leaflet', f), path.join(NM_LEAFLET, f))),
+  };
+
   // --- 実ブラウザで manifest が読めるか ---
   // index.html は即 sotoki_v4.html へリダイレクトするので、本体を直接開いて確認する
   const UPLOT_JS = fs.readFileSync(__dirname + '/node_modules/uplot/dist/uPlot.iife.min.js', 'utf8');
@@ -119,7 +142,7 @@ function pngSize(file) {
   const out = { manifest: { hasAny192, hasAny512, hasMaskable, display: manifest.display,
                             start_url: manifest.start_url, scope: manifest.scope,
                             name: manifest.name, short_name: manifest.short_name, orientation: manifest.orientation },
-                iconChecks, htmlIconFiles, refs, swChecks, linked, errors };
+                iconChecks, htmlIconFiles, refs, swChecks, offlineBoot, linked, errors };
   console.log(JSON.stringify(out, null, 2));
 
   const ok = errors.length === 0 &&
@@ -140,6 +163,8 @@ function pngSize(file) {
     swChecks.hasFetchHandler && swChecks.hasInstall && swChecks.hasActivate &&
     swChecks.htmlNetworkFirst && swChecks.htmlSkipsErrorResponses &&
     swChecks.skipsCrossOrigin && swChecks.cleansOldCaches &&
+    // 起動を止める外部読み込みが無い・Leaflet を同梱
+    Object.values(offlineBoot).every(Boolean) &&
     // ブラウザからmanifestが読める
     linked && linked.display === 'standalone' && linked.short_name === 'NAGI NAV';
 
