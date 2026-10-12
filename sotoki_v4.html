@@ -6845,6 +6845,7 @@ const MAP_OVERLAYS = [
      ⚠ 計算は z12〜15（minZoom・maxNativeZoom）。z16 以上は z15 を引き伸ばす。行の下の計測は試作の間だけ */
   { id: 'csLike', name: 'CS立体図風（全国）', kind: 'demRelief', opacity: 0.75,
     minZoom: 12, maxNativeZoom: 15,
+    mayBeEmpty: true, partialCoverage: true,   // 海の上など両方とも配信の無い所（404）を赤い失敗にしない
     note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m）。一度見た範囲は圏外でも出る' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
     minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },

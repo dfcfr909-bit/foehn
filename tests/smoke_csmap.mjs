@@ -249,6 +249,13 @@ await reset(); mode5a = 'none'; mode10b = 'off';
 const r4g = await render([{ z: 13, x: T.x >> 2, y: T.y >> 2 }]);
 ok(/^err:/.test(r4g[0]), 'DEM10B も通信できなければ失敗', r4g);
 
+// 4e. 海の上など両方とも配信が無い（404）：赤い失敗にしない
+await reset(); mode5a = 'none'; mode10b = 'none';
+await page.evaluate(() => { toggleOverlay('csLike'); clearLayerStatus('csLike'); leafletMap.setView([36.9, 139.2], 14, { animate: false }); toggleOverlay('csLike'); });
+await page.waitForTimeout(4000);
+const sea = await page.evaluate(() => ({ text: layerStatus.csLike, failed: !!layerFailed.csLike }));
+ok(/表示なし/.test(sea.text || '') && !sea.failed, '★配信の無い範囲は「表示なし」（赤い失敗にしない）', sea);
+
 ok(errors.length === 0, 'ページで例外が出ない', errors);
 await browser.close();
 if (fails.length) { console.log('FAIL\n  - ' + fails.join('\n  - ')); process.exit(1); }
