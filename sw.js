@@ -15,7 +15,7 @@
 const CACHE_VERSION = 'sotoki-v2';
 const CACHE_NAME = `${CACHE_VERSION}`;
 
-// 起動に必要な同梱ファイル。CDN（Leaflet）は落ちても本体が動くのでここには入れない
+// 起動に必要な同梱ファイル。Leaflet も同梱して入れる（CDN だと圏外で地図が開かなかった → ADR-0017）
 const PRECACHE = [
   './',
   './index.html',
@@ -31,6 +31,14 @@ const PRECACHE = [
   './data/poi.json',
   './vendor/uPlot.iife.min.js',
   './vendor/uPlot.min.css',
+  // Leaflet 1.9.4。images は選択地点のピン（既定のアイコン）とレイヤー切替の絵
+  './vendor/leaflet/leaflet.js',
+  './vendor/leaflet/leaflet.css',
+  './vendor/leaflet/images/marker-icon.png',
+  './vendor/leaflet/images/marker-icon-2x.png',
+  './vendor/leaflet/images/marker-shadow.png',
+  './vendor/leaflet/images/layers.png',
+  './vendor/leaflet/images/layers-2x.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];

@@ -159,8 +159,8 @@
 ## 技術スタック
 
 - 単一HTML構成（バンドラなし） → `docs/adr/0001-single-html.md`
-- uPlot 1.6.32 は `vendor/` に同梱（CDNは403等で失敗した実績があるため）。Leaflet 1.9.x はCDN
-  → `docs/adr/0002-uplot.md`
+- uPlot 1.6.32 と Leaflet 1.9.4 は `vendor/` に同梱（CDNは403等で失敗した実績があり、山の圏外・弱電波で地図が開かなかったため）
+  → `docs/adr/0002-uplot.md` / `docs/adr/0017-vendor-leaflet.md`
 - デプロイ: GitHub Pages（静的ファイル直接配信。Netlifyは無料枠停止のため移行済み）
   → `docs/adr/0003-github-pages.md`
 - データ: Open-Meteo Forecast API（JMAモデル）

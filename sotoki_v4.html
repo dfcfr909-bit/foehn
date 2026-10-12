@@ -15,10 +15,12 @@
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-<!-- Leaflet CSS -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<!-- Leaflet JS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Leaflet 1.9.4（同梱。山では圏外・弱電波がふつうで、CDN から読むと地図が開かなかった → ADR-0017・#227） -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/leaflet/leaflet.js"></script>
+<!-- Web フォント（取れなくても既定の字で出る）。⚠ 起動を止めないよう media="print" で読み、読めたら切り替える。
+     `<style>` の中の @import は描画を止める外部読み込みで、弱電波では開くまで待たされる（#227） -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap" media="print" onload="this.media='all'">
 <!-- uPlot CSS/JS（v1.6.32 同梱。CDN配信されていないためセルフホスト） -->
 <link rel="stylesheet" href="vendor/uPlot.min.css">
 <script src="vendor/uPlot.iife.min.js"></script>
@@ -29,7 +31,6 @@
 /* ============================================================
    BASE & TYPOGRAPHY
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 
 :root {
   --bg: #f5f4f0;
@@ -2605,7 +2606,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.174.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.175.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7503,8 +7504,8 @@ function ciCancel(tile) {
   if (ciWorker && ciPending.has(job.id)) ciWorker.postMessage({ type: 'cancel', id: job.id });
 }
 
-/* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet は CDN なので、取れないと
-   本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
+/* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet が読めないと（v4.175.0 で同梱したが、
+   壊れた控えなどで無いことはありうる）本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
 let ciMapLayerClass = null;
 function CiMapLayerClass() {
   if (ciMapLayerClass) return ciMapLayerClass;

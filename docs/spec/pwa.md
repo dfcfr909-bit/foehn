@@ -57,12 +57,14 @@ HTML・静的ファイル・タイルの3つとも `res.ok` を見てから保�
 
 ### プリキャッシュ（`PRECACHE`）
 
-起動に必要な同梱ファイルだけ。**CDN（Leaflet）は入れない**（落ちても本体が動くため）。
+起動に必要な同梱ファイルだけ。**Leaflet も同梱して入れる**（v4.175.0・ADR-0017。CDN だと圏外・弱電波で地図が開かなかった）。
 
 ```
 ./  ./index.html  ./sotoki_v4.html  ./manifest.webmanifest
 ./areas.json  ./snowRanking.js  ./data/spots.json
 ./vendor/uPlot.iife.min.js  ./vendor/uPlot.min.css
+./vendor/leaflet/leaflet.js  ./vendor/leaflet/leaflet.css
+./vendor/leaflet/images/（marker-icon・marker-icon-2x・marker-shadow・layers・layers-2x）
 ./icons/icon-192.png  ./icons/icon-512.png
 ```
 
