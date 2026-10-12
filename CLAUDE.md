@@ -46,6 +46,8 @@
   対象外にしたのは利用者の決定（2026-10-10）
   ⚠ **公開の地図データ（OpenStreetMap）に載っている山小屋・店・温泉などの名前は対象外**（`data/poi.json`・#199。
   ODbL で出典を書いて使う。医療施設の名前は取り出す段階で落とす）。対象外にしたのは利用者の決定（2026-10-10）
+  ⚠ **同梱する OSS のライセンスの著作権表示（作者名・会社名）は対象外**（例：`vendor/leaflet/LICENSE`・ADR-0017。
+  BSD 等は表示の同梱が条件で、消すとライセンス違反になる）。対象外にしたのは利用者の決定（2026-10-12）
   一度コミットすると履歴に残り、**あとから消すにはリポジトリの作り直しが要る**
   （実際に様式の出典として施設名を書いてしまい、公開状態になった）
   ⚠ **`git push --force` では消えない。** GitHub が PR ごとに作る `refs/pull/*` は
@@ -159,8 +161,8 @@
 ## 技術スタック
 
 - 単一HTML構成（バンドラなし） → `docs/adr/0001-single-html.md`
-- uPlot 1.6.32 は `vendor/` に同梱（CDNは403等で失敗した実績があるため）。Leaflet 1.9.x はCDN
-  → `docs/adr/0002-uplot.md`
+- uPlot 1.6.32 と Leaflet 1.9.4 は `vendor/` に同梱（CDNは403等で失敗した実績があり、山の圏外・弱電波で地図が開かなかったため）
+  → `docs/adr/0002-uplot.md` / `docs/adr/0017-vendor-leaflet.md`
 - デプロイ: GitHub Pages（静的ファイル直接配信。Netlifyは無料枠停止のため移行済み）
   → `docs/adr/0003-github-pages.md`
 - データ: Open-Meteo Forecast API（JMAモデル）

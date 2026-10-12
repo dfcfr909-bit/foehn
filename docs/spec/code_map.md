@@ -29,7 +29,7 @@
 
 | 範囲 | 中身 |
 |---|---|
-| 1〜27 | `<head>`・CDN（Leaflet）・同梱スクリプト（uPlot / `snowRanking.js`） |
+| 1〜29 | `<head>`・同梱スクリプト（Leaflet / uPlot / `snowRanking.js`・ADR-0017）・Web フォント（止めない形） |
 | 28〜1629 | `<style>`（16ブロック。下記） |
 | 1630〜1886 | `<body>` のマークアップ |
 | 1887〜7137 | `<script>`（本体。以下すべてここ） |
