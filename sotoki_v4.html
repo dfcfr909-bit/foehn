@@ -2606,7 +2606,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.176.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.176.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -7573,7 +7573,9 @@ function ciCancel(tile) {
    ・DEM10B は z14 まで。z15 で 10B なら z14 の親を計算し、その4分の1を引き伸ばす（親の結果は4枚の子で共有） */
 const CS_PRM = { tile: 256, sigM: 5, cs0: 0.01 };   // ならし σ=5m・曲率の満色 0.01/m（試作の既定）
 const CS_MISS_KEY = 'demMiss5a', CS_MISS_MAX = 4000, CS_MISS_DAYS = 30;
-const csStats = { worker: 0, main: 0, fetch: [], decode: [], compute: [], src5a: 0, src10b: 0 };   // 試作の計測（行の下に出す）
+/* 計数と時間（検査用。画面には出さない）。iPhone の実測（2026-10-12・#231）：中央値で 取得 56／復号 8／計算 3 ms、
+   Worker 1887 枚・メイン 0・5m 2155／10m 7 → 端末で描いて足りる（Actions で画像を作る案は採らない） */
+const csStats = { worker: 0, main: 0, fetch: [], decode: [], compute: [], src5a: 0, src10b: 0 };
 function csPushTime(k, ms) { const a = csStats[k]; a.push(ms); if (a.length > 200) a.shift(); }
 function csMissLoad() {
   try { const o = JSON.parse(localStorage.getItem(CS_MISS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
@@ -7674,11 +7676,6 @@ async function csRenderTile(coords, job) {
   if (g10.error) throw csNetError();
   return csCompute(job, g10, 'gsi10b', z, y);
 }
-// 行の下に出す計測（試作の間だけ・v4.176.0）。中央値
-function csStatsText() {
-  const med = a => { if (!a.length) return '-'; const s = [...a].sort((p, q) => p - q); return Math.round(s[s.length >> 1]); };
-  return `計測：取得 ${med(csStats.fetch)}／復号 ${med(csStats.decode)}／計算 ${med(csStats.compute)} ms（${csStats.compute.length}枚・Worker ${csStats.worker}／メイン ${csStats.main}・5m ${csStats.src5a}／10m ${csStats.src10b}）`;
-}
 
 /* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet が読めないと（v4.175.0 で同梱したが、
    壊れた控えなどで無いことはありうる）本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
@@ -7719,21 +7716,11 @@ function CsLayerClass() {
       if (!pix) { done(new Error('範囲外'), tile); return; }
       tile.getContext('2d').putImageData(new ImageData(pix, CS_PRM.tile, CS_PRM.tile), 0, 0);
       done(null, tile);
-      updateCsStatsNote();
     }).catch(e => { job.done = true; done(e, tile); });   // 通信の失敗は csNetError（network の印つき）
     return tile;
   },
   });
   return csLayerClass;
-}
-// 計測の文言をレイヤーの行に出す（試作の間だけ）
-let csStatsTimer = 0;
-function updateCsStatsNote() {
-  clearTimeout(csStatsTimer);
-  csStatsTimer = setTimeout(() => {
-    const el = document.getElementById('cs-stats');
-    if (el) el.textContent = csStatsText();
-  }, 300);
 }
 
 // z13 未満で CIマップを入れているときは「拡大すると表示」。z13 以上に戻ったら消す
@@ -13031,7 +13018,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}${o.id === 'csLike' && on ? `<div class="layer-ov-note" id="cs-stats">${escapeHtml(csStatsText())}</div>` : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}
         <div class="layer-ov-op">
           ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"

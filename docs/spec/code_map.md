@@ -383,7 +383,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `DEM_SRC` / `decodeGsiDem` / `demFetchBlob(src,z,x,y)` | 標高タイルの源（栃木・地理院 DEM5A・DEM10B）。`demFetchBlob` は `{blob}`／`{missing}`（403・404）／`{error}`（通信の失敗・覚えない）。鍵は `ciTileKey(z,x,y,src)`（栃木は従来の `z/x/y`）。`ciFetchBlob` は栃木用の薄い包み（戻り値は従来どおり） |
 | `csMargin` / `computeCsTile` / `CS_PRM` | CS立体図風の計算（曲率＋傾斜）。Worker に toString で渡す（`CI_WORKER_FNS`） |
 | `csRenderTile` / `csGather` / `csCompute` / `csParent` / `csCropQuarter` / `csMiss*` / `CsLayerClass()` | CS立体図風の1枚（ADR-0018）。DEM5A の9枚で1枚でも 404 なら9枚とも DEM10B。504 では落とさず、`demMiss5a` の記録（30日）があれば 10B。z15 の 10B は z14 の親を共有して切り出す |
-| `csStats` / `csStatsText` / `updateCsStatsNote` | 試作の計測（取得・復号・計算の中央値）を行の下（`#cs-stats`）に出す。**実機で測り終えたら消す** |
+| `csStats` | 計数と時間（検査用・画面には出さない）。行の下の計測は #231 で iPhone を測り終えて v4.176.1 で外した |
 | `ciRenderTile` / `ciCancel` / `CiMapLayerClass()` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す。⚠ GridLayer の派生は**使うときに作る**（最上位で `L.` を呼ぶと、Leaflet が取れないとき本体ごと止まる） |
 | `updateCiZoomNote()` | z13 未満で「拡大すると表示（z13 から）」 |
 | `ciStats` | どちらの経路で何枚計算したか（検査用） |
