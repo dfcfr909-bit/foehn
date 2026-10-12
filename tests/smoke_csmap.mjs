@@ -149,8 +149,10 @@ ok(p1.n > 0 && p1.colored === p1.n, '★タイルに色が付く', p1);
 // ⚠ dem_png z14 は地点の標高（readDemElevation）が別に読むので、DEM5A の取得だけを見る
 const r5 = reqs.filter(r => r.src === '5a');
 ok(r5.length > 0 && r5.every(r => r.z === 15), 'z15 では DEM5A の z15 を取りに行く', r5.slice(0, 3));
-const panel = await page.evaluate(() => { renderLayerPanel(); const el = document.getElementById('cs-stats'); return el ? el.textContent : null; });
-ok(panel && /計測：取得 \d+／復号 \d+／計算 \d+ ms/.test(panel), '行の下に計測（取得・復号・計算）を出す', panel);
+const panel = await page.evaluate(() => { renderLayerPanel(); return !!document.getElementById('cs-stats'); });
+ok(!panel, '試作の計測は行の下に出さない（#231 で測り終えた）', panel);
+const times = await page.evaluate(() => ({ f: csStats.fetch.length, d: csStats.decode.length, c: csStats.compute.length }));
+ok(times.f > 0 && times.d > 0 && times.c > 0, '取得・復号・計算の時間は数えている（検査用）', times);
 
 /* Worker とメインで同じ画素 */
 const same = await page.evaluate(async () => {
