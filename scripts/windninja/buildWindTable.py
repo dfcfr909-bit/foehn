@@ -206,4 +206,5 @@ for p in peaks:
 json.dump(meta, open(os.path.join(OUT, f'{AREA_ID}.json'), 'w'), ensure_ascii=False, indent=1)
 size = os.path.getsize(os.path.join(OUT, f'{AREA_ID}.png'))
 print(f'合計 {time.time() - t_all:.0f} 秒・PNG {size / 1e6:.2f} MB')
-print('峰の倍率（北・東・南・西）:', {k: [v[0], v[4], v[8], v[12]] for k, v in peak_ratio.items()})
+# 方位は 0〜157.5°（逆向きは同じ値）。北（＝南）と東（＝西）を出す
+print('峰の倍率（北・東）:', {k: [v[DIRS.index(0.0)], v[DIRS.index(90.0)]] for k, v in peak_ratio.items()})
