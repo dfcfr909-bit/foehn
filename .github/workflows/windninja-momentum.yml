@@ -1,0 +1,103 @@
+name: 風の細分化（WindNinja・運動量の解法の調査）
+
+# WindNinja の運動量の解法（OpenFOAM 11・RANS）を谷川岳の 14km 四方で北西・南東の2方位だけ解き、質量保存の解法と比べる
+# （experiments/windninja/README.md「findings-04」）。質量保存は逆向きの風で倍率が同じになり、風下の陰が出なかった（findings-03）。
+#
+# ⚠ 調査用。手動実行と、調べ方を変えた非 main への push だけで走る。main ではコミットしない。
+# ⚠ 結果（数値の要約と画像）は experiments/windninja/momentum/out/ にコミットする（Pages では配らない）。
+# ⚠ OpenFOAM は dl.openfoam.org の apt から入れる（WindNinja の公式の手順 scripts/build_deps_ubuntu_2404.sh と同じ）。
+#   開発環境からは届かないので Actions で試す。WindNinja は通信の無い名前空間で動かす
+on:
+  workflow_dispatch: {}
+  push:
+    branches-ignore: [main]
+    paths:
+      - experiments/windninja/momentum/run.sh
+      - experiments/windninja/momentum/compare.py
+      - .github/workflows/windninja-momentum.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windninja-momentum
+  cancel-in-progress: false
+
+env:
+  WINDNINJA_TAG: 4.0.0
+
+jobs:
+  probe:
+    name: 調べる
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 依存を入れる（OpenFOAM 11 を含む）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pkg-config cmake g++ libboost-program-options-dev libboost-date-time-dev libboost-test-dev \
+            libshp-dev libgdal-dev gdal-bin libnetcdf-dev libcurl4-openssl-dev libhwloc-dev python3-numpy python3-pil > /dev/null
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openfoam11 > /dev/null
+
+      - name: WindNinja をビルド（運動量の解法つき）
+        run: |
+          WN="$RUNNER_TEMP/wn"
+          git clone -q --depth 1 --branch "$WINDNINJA_TAG" https://github.com/firelab/windninja.git "$WN/src"
+          mkdir -p "$WN/build" && cd "$WN/build"
+          cmake -DNINJA_GUI=OFF -DNINJAFOAM=ON -DPHONE_HOME_QUERIES=OFF -DSUPRESS_WARNINGS=ON -DCMAKE_BUILD_TYPE=Release ../src > cmake.log || { tail -40 cmake.log; exit 1; }
+          make -j"$(nproc)" > make.log 2>&1 || { tail -60 make.log; exit 1; }
+          # WindNinja の OpenFOAM 用の境界条件（libWindNinja）と applyInit を OpenFOAM 側に作る（Dockerfile の手順の 11 版）
+          source /opt/openfoam11/etc/bashrc
+          mkdir -p "$WM_PROJECT_USER_DIR/applications"
+          cp -r "$WN/src/src/ninjafoam/11/." "$WM_PROJECT_USER_DIR/applications/"
+          cd "$WM_PROJECT_USER_DIR/applications" && wmake libso > wmake.log 2>&1 || { tail -40 wmake.log; exit 1; }
+          cd utility/applyInit && wmake > wmake.log 2>&1 || { tail -40 wmake.log; exit 1; }
+          # root（unshare の中）からも見えるように OpenFOAM の本体の置き場へ写す（Dockerfile と同じ考え方）
+          sudo cp "$FOAM_USER_LIBBIN/libWindNinja.so" "$FOAM_LIBBIN/"
+          sudo cp "$FOAM_USER_APPBIN/applyInit" "$FOAM_APPBIN/"
+
+      - name: 地形（地理院 DEM10B・14km 四方）
+        run: |
+          mkdir -p "$RUNNER_TEMP/work"
+          python3 experiments/windninja/fetchDem.py 36.8375 138.9300 7 14 dem_png "$RUNNER_TEMP/work/merc.asc"
+          gdalwarp -q -s_srs EPSG:3857 -t_srs EPSG:32654 -tr 30 30 -r bilinear -srcnodata -9999 -dstnodata -9999 \
+            "$RUNNER_TEMP/work/merc.asc" "$RUNNER_TEMP/work/dem.tif"
+
+      - name: 解く（質量保存と運動量 × 北西・南東）
+        shell: bash
+        run: |
+          export WN="$RUNNER_TEMP/wn"
+          for s in mass mom; do for d in 315 135; do
+            experiments/windninja/momentum/run.sh $s $d "$RUNNER_TEMP/work/dem.tif" "$RUNNER_TEMP/work" | tee -a times.txt
+          done; done
+
+      - name: 比べる
+        shell: bash
+        run: |
+          python3 experiments/windninja/momentum/compare.py "$RUNNER_TEMP/work" "$RUNNER_TEMP/work/dem.tif" experiments/windninja/momentum/out | tee result.txt
+          cat times.txt >> experiments/windninja/momentum/out/result.txt
+
+      - name: 結果をコミット
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git add experiments/windninja/momentum/out
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: 運動量の解法の調査結果 (自動生成)"
+          git push
+
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## 運動量の解法の調査'
+            echo '```'
+            cat times.txt result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
