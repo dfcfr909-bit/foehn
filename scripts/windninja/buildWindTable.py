@@ -99,12 +99,22 @@ lon_deg = OUT_DEG / math.cos(math.radians(latc))
 nx = int(round((oE - oW) / lon_deg)); ny = int(round((oN - oS) / OUT_DEG))
 print(f'出力の格子 {nx}×{ny}（{OUT_DEG}° × {lon_deg:.6f}°）')
 
+# ESRI ASCII グリッドを読む → (見出しの行, 値)。⚠ 見出しの行数は決め打ちしない（GDAL は升目が正方でないと
+#   cellsize の代わりに dx・dy を書き、7行になる）
+def read_asc(path):
+    head = []
+    with open(path) as f:
+        while True:
+            pos = f.tell(); line = f.readline()
+            if not line or not line.strip()[:1].isalpha(): f.seek(pos); break
+            head.append(line)
+        a = np.loadtxt(f)
+    return head, a
+
 def warp(src, out):
     sh(['gdalwarp', '-q', '-overwrite', '-s_srs', f'EPSG:{EPSG_UTM}', '-t_srs', 'EPSG:4326', '-te', str(oW), str(oS), str(oE), str(oN),
         '-ts', str(nx), str(ny), '-r', 'bilinear', '-srcnodata', '-9999', '-dstnodata', '-9999', '-of', 'AAIGrid', src, out])
-    with open(out) as f:
-        for _ in range(6): f.readline()
-        a = np.loadtxt(f)
+    _, a = read_asc(out)
     return np.where(a < -9000, np.nan, a)
 
 # ---- 16方位を解く ----
@@ -141,9 +151,7 @@ output_path = {od}
     # ⚠ 向きそのもの（0〜360°）を双線形で引き直すと、北寄りの風で 355° と 5° の間が 180° になって壊れる。
     #   元の UTM の格子で入力との差（曲がり・±180）にしてから引き直す（曲がりは ±数十度で ±180 をまたがない）
     src_ang = glob.glob(od + '/*_ang.asc')[0]
-    with open(src_ang) as f:
-        head = [f.readline() for _ in range(6)]
-        a0 = np.loadtxt(f)
+    head, a0 = read_asc(src_ang)
     t0a = np.where(a0 < -9000, -9999, (a0 - d + 180) % 360 - 180)
     turn_src = os.path.join(od, 'turn.asc')
     with open(turn_src, 'w') as f:
