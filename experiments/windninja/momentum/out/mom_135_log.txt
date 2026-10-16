@@ -81,7 +81,7 @@ Run 0: Solver: 30% complete
 Run 0: Solver: 31% complete
 Run 0: Solver: 33% complete
 Run 0: Solver: 34% complete
-Run 0: Solver: 35% complete
+Run 0: Solver: 36% complete
 Run 0: Solver: 37% complete
 Run 0: Solver: 38% complete
 Run 0: Solver: 40% complete
@@ -96,7 +96,7 @@ Run 0: Solver: 50% complete
 Run 0: Solver: 51% complete
 Run 0: Solver: 53% complete
 Run 0: Solver: 54% complete
-Run 0: Solver: 55% complete
+Run 0: Solver: 56% complete
 Run 0: Solver: 57% complete
 Run 0: Solver: 58% complete
 Run 0: Solver: 60% complete
@@ -133,16 +133,16 @@ Run 0: Reconstructing domain...
 Run 0: Sampling at requested output height...
 Run 0: Generating and sampling mass mesh...
 Run 0: Writing output files...
-Run 0: try 0 time was 20.222877 seconds.
-Run 0: try 1 time was 19.713841 seconds.
-Run 0: try 2 time was 123.542416 seconds.
-Run 0: File writing time was 0.062588 seconds.
-Run 0: STL conversion time was 0.029141 seconds.
-Run 0: Meshing time was 12.481318 seconds.
-Run 0: Initialization time was 1.365808 seconds.
-Run 0: Solver time was 95.587949 seconds.
-Run 0: Output sampling time was 14.019718 seconds.
-Run 0: generate and sample mass mesh time was 0.000014 seconds.
-Run 0: Output writing time was 0.024926 seconds.
-Run 0: Total simulation time was 163.508590 seconds.
+Run 0: try 0 time was 13.665576 seconds.
+Run 0: try 1 time was 13.451102 seconds.
+Run 0: try 2 time was 82.205504 seconds.
+Run 0: File writing time was 0.066880 seconds.
+Run 0: STL conversion time was 0.031761 seconds.
+Run 0: Meshing time was 7.808930 seconds.
+Run 0: Initialization time was 0.825026 seconds.
+Run 0: Solver time was 65.054400 seconds.
+Run 0: Output sampling time was 8.433805 seconds.
+Run 0: generate and sample mass mesh time was 0.000015 seconds.
+Run 0: Output writing time was 0.016358 seconds.
+Run 0: Total simulation time was 109.342449 seconds.
 Run 0: Run number 0 done!
