@@ -1637,6 +1637,9 @@ html, body {
 #wind-hud .wh-btns { flex-wrap: wrap; }
 /* 風の流れの設定（レイヤー一覧の行の下・v4.141.0） */
 .wind-set .amedas-el { min-height: 36px; padding: 0 10px; }
+.windexp-set select { min-height: 36px; font: inherit; font-size: 12px; border-radius: 8px; padding: 0 6px; background: var(--surface); color: inherit; border: 1px solid var(--border); }
+.windexp-set .amedas-el { min-height: 36px; padding: 0 10px; }
+.windexp-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
 .wind-set-sl { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 0 0 8px 30px;
   font-family: var(--font-ui); font-size: 12px; font-weight: 700; color: var(--text2); }
 .wind-set-sl label { display: flex; align-items: center; gap: 6px; }
@@ -2606,7 +2609,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.176.1</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.177.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6848,6 +6851,12 @@ const MAP_OVERLAYS = [
     minZoom: 12, maxNativeZoom: 15,
     mayBeEmpty: true, partialCoverage: true,   // 海の上など両方とも配信の無い所（404）を赤い失敗にしない
     note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m）。一度見た範囲は圏外でも出る' },
+  /* 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md）：細かい地形 × 風向で、風上の地形の仰角 Sx を塗る。
+     風速は出さない。風向は選択地点の判定の風（自動）か16方位。⚠ 計算は z13〜15。z16 以上は z15 を引き伸ばす */
+  { id: 'windExp', name: '風の当たり方', kind: 'windExp', opacity: 0.75,
+    minZoom: 13, maxNativeZoom: 15,
+    mayBeEmpty: true, partialCoverage: true,
+    note: 'z13 から。風が当たる＝橙・風の陰＝青（風速ではない）。端末で計算（5m、無い所は 10m）' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
     minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
@@ -6914,7 +6923,7 @@ const BLEND_DEFAULT = { rrimLike: 'multiply' };
 function isBlendable(def) {
   if (!def) return false;
   if (BLEND_HOST[def.id]) return true;
-  if (def.kind === 'ciMap' || def.kind === 'demRelief') return true;   // 自前で描くタイル（#202・CS立体図風）。pane に重ね方を掛けられる
+  if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp') return true;   // 自前で描くタイル（#202・CS立体図風・風の当たり方）。pane に重ね方を掛けられる
   return !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
 }
 function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || BLEND_DEFAULT[id] || 'normal'; }
@@ -7407,6 +7416,35 @@ function computeCsTile(grid, M, px, prm) {
   }
   return out;
 }
+/* ------ 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md）：風上の地形の仰角 Sx（度）------
+   ⚠ これも Worker に toString で渡す（外の定数を見ない。prm＝{ tile, sigM, dmaxM, fromDeg } を引数で）
+   ⚠ 余白は ならしの 3σ ＋ 風上を見る距離 DMAX。csMargin（数 px）では縁から DMAX の帯で風上が欠け、タイルの継ぎ目が出る */
+function sxMargin(px, prm) { return Math.min(prm.tile, Math.ceil((prm.dmaxM + 3 * prm.sigM) / px) + 2); }
+/* 格子 → n×n の Sx（Float32・度）。式は terrainSx（粒子の遮蔽）と同じ：風上へ DMAX まで歩いた最大の見上げ角。
+   負＝風上が下がっている（風が当たる）、正＝風上に高まり（陰）。欠け・風上がすべて欠けは NaN。
+   fromDeg は**吹いてくる向き**（気象の表記・北風＝0°）。風上＝その向きへ歩く */
+function computeSxTile(grid, M, px, prm) {
+  const n = prm.tile, W = n + 2 * M, out = new Float32Array(n * n).fill(NaN);
+  const s = prm.sigM / px, Z = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
+  const r = prm.fromDeg * Math.PI / 180, ux = Math.sin(r), uy = -Math.cos(r);   // 風上へ（東・南の成分）
+  const steps = Math.max(1, Math.round(prm.dmaxM / px)), RAD = 180 / Math.PI;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const h0 = Z[(y + M) * W + (x + M)];
+    if (h0 !== h0) continue;
+    let best = -Infinity;
+    for (let k = 1; k <= steps; k++) {
+      const fx = x + M + ux * k, fy = y + M + uy * k, ix = Math.floor(fx), iy = Math.floor(fy);
+      if (ix < 0 || iy < 0 || ix >= W - 1 || iy >= W - 1) break;
+      const tx = fx - ix, ty = fy - iy, i = iy * W + ix;
+      const h = (Z[i] * (1 - tx) + Z[i + 1] * tx) * (1 - ty) + (Z[i + W] * (1 - tx) + Z[i + W + 1] * tx) * ty;
+      if (h !== h) continue;
+      const a = (h - h0) / (k * px);
+      if (a > best) best = a;
+    }
+    if (best > -Infinity) out[y * n + x] = Math.atan(best) * RAD;
+  }
+  return out;
+}
 // Worker の本体（これも toString で渡す）。依頼は1枚ずつ順に処理し、取り消された依頼は飛ばす
 function ciWorkerMain() {
   const cache = new Map(), MAX = 120, queue = []; let busy = false, cv = null, cx = null;
@@ -7430,9 +7468,9 @@ function ciWorkerMain() {
         const t0 = performance.now();
         const tiles = await Promise.all(m.keys.map((k, i) => m.blobs[i] ? dem(k, m.blobs[i], m.dec || 'tochigi') : null));
         if (!tiles[4]) { self.postMessage({ id: m.id, empty: true }); continue; }
-        const t1 = performance.now(), cs = m.alg === 'cs';
-        const M = cs ? csMargin(m.px, m.prm) : ciMargin(m.px, m.prm), grid = ciAssembleGrid(tiles, M, m.prm.tile);
-        const pix = cs ? computeCsTile(grid, M, m.px, m.prm) : computeCiTile(grid, M, m.px, m.prm);
+        const t1 = performance.now(), cs = m.alg === 'cs', sx = m.alg === 'sx';
+        const M = sx ? sxMargin(m.px, m.prm) : cs ? csMargin(m.px, m.prm) : ciMargin(m.px, m.prm), grid = ciAssembleGrid(tiles, M, m.prm.tile);
+        const pix = sx ? computeSxTile(grid, M, m.px, m.prm) : cs ? computeCsTile(grid, M, m.px, m.prm) : computeCiTile(grid, M, m.px, m.prm);
         self.postMessage({ id: m.id, pix, t: { decode: t1 - t0, compute: performance.now() - t1 } }, [pix.buffer]);
       } catch (e) { self.postMessage({ id: m.id, error: String(e && e.message || e) }); }
     }
@@ -7444,7 +7482,7 @@ function ciWorkerMain() {
     queue.push(m); pump();
   };
 }
-const CI_WORKER_FNS = [decodeTochigiDem, decodeGsiDem, ciGaussBlur, ciAcos, ciMargin, csMargin, ciAssembleGrid, computeCiTile, computeCsTile];
+const CI_WORKER_FNS = [decodeTochigiDem, decodeGsiDem, ciGaussBlur, ciAcos, ciMargin, csMargin, sxMargin, ciAssembleGrid, computeCiTile, computeCsTile, computeSxTile];
 
 let ciWorker = null, ciWorkerBroken = false, ciSeq = 0;
 const ciPending = new Map();   // id -> { resolve, reject }
@@ -7521,12 +7559,12 @@ function ciComputeMain(job) {
   const run = ciMainChain.then(() => new Promise(r => setTimeout(r, 0))).then(async () => {
     if (job.cancelled) return undefined;
     // job.alg／job.dec／job.prm／job.stats が無ければ栃木の CI（従来どおり）
-    const cs = job.alg === 'cs', prm = job.prm || CI_PRM, t0 = performance.now();
+    const cs = job.alg === 'cs', sx = job.alg === 'sx', prm = job.prm || CI_PRM, t0 = performance.now();
     const tiles = await Promise.all(job.keys.map((k, i) => job.blobs[i] ? ciDecodeMain(k, job.blobs[i], job.dec || 'tochigi') : null));
     if (!tiles[4]) return null;
     const t1 = performance.now();
-    const M = cs ? csMargin(job.px, prm) : ciMargin(job.px, prm), grid = ciAssembleGrid(tiles, M, prm.tile);
-    const pix = cs ? computeCsTile(grid, M, job.px, prm) : computeCiTile(grid, M, job.px, prm);
+    const M = sx ? sxMargin(job.px, prm) : cs ? csMargin(job.px, prm) : ciMargin(job.px, prm), grid = ciAssembleGrid(tiles, M, prm.tile);
+    const pix = sx ? computeSxTile(grid, M, job.px, prm) : cs ? computeCsTile(grid, M, job.px, prm) : computeCiTile(grid, M, job.px, prm);
     (job.stats || ciStats).main++;
     if (job.onTime) job.onTime({ decode: t1 - t0, compute: performance.now() - t1 });
     return pix;
@@ -7611,20 +7649,20 @@ async function csGather(src, z, x, y) {
   rs.forEach((r, i) => { if (r.missing) missKeys.push(keys[i]); });
   return { keys, blobs: rs.map(r => r.blob || null), missKeys, error: rs.some(r => r.error) };
 }
-// 1回の計算（Worker か、だめならメイン）。中心が無ければ null
-async function csCompute(job, g, src, z, y) {
+// 1回の計算（Worker か、だめならメイン）。中心が無ければ null。alg・prm・stats を渡せば風の当たり方（'sx'）にも使う
+async function csCompute(job, g, src, z, y, alg = 'cs', prm = CS_PRM, stats = csStats) {
   if (!g.blobs[4]) return null;
-  Object.assign(job, { keys: g.keys, blobs: g.blobs, px: ciMetersPerPx(z, y, CS_PRM.tile), prm: CS_PRM, dec: 'gsi', alg: 'cs',
-    stats: csStats, onTime: t => { csPushTime('decode', t.decode); csPushTime('compute', t.compute); } });
-  csStats[src === 'gsi5a' ? 'src5a' : 'src10b']++;
+  Object.assign(job, { keys: g.keys, blobs: g.blobs, px: ciMetersPerPx(z, y, prm.tile), prm, dec: 'gsi', alg,
+    stats, onTime: stats === csStats ? t => { csPushTime('decode', t.decode); csPushTime('compute', t.compute); } : null });
+  stats[src === 'gsi5a' ? 'src5a' : 'src10b']++;
   const w = getCiWorker();
   if (w) {
     try {
       const pix = await new Promise((resolve, reject) => {
         ciPending.set(job.id, { resolve, reject, onTime: job.onTime });
-        w.postMessage({ id: job.id, keys: job.keys, blobs: job.blobs, px: job.px, prm: CS_PRM, dec: 'gsi', alg: 'cs' });
+        w.postMessage({ id: job.id, keys: job.keys, blobs: job.blobs, px: job.px, prm, dec: 'gsi', alg });
       });
-      if (pix) csStats.worker++;
+      if (pix) stats.worker++;
       return pix;
     } catch (e) { /* Worker が壊れた：メインでやり直す */ }
   }
@@ -7677,6 +7715,156 @@ async function csRenderTile(coords, job) {
   return csCompute(job, g10, 'gsi10b', z, y);
 }
 
+/* ------ 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md） ------
+   細かい地形（DEM5A 5m／無い所は DEM10B）× 風向で、風上の地形の仰角 Sx を塗る。**風速は出さない**（約11km格子の風を
+   細かい地形で何倍にするかは分からない。物理で解く案は experiments/windninja/）。
+   ・取得・源の選び方（5A → 1枚でも 404 なら 10B）・Worker・控えは CS立体図風（csGather / csCompute）と同じ
+   ・Worker が返すのは Float32 の Sx（度）。色はメインで塗る（sxColorize）
+   ・風向は16方位に丸める。方位・見る距離が変わったときだけ描き直す（sxSync）。時刻を動かしても方位が同じなら描き直さない
+   ・⚠ 粒子の遮蔽（terrainSx・30m の升目）と式は同じだが升目が違うので、数値は一致しない */
+const SX_PRM = { tile: 256, sigM: 5 };              // ならし σ=5m（CS と同じ）
+const SX_DMAX = [100, 300];                         // 風上を見る距離（m）。100＝沢・肩の小さな陰、300＝尾根1本ぶんの陰（利用者の選択で両方）
+// ⚠ 色の境は仮（実機で調整）。陰の側は粒子の遮蔽（WIND_SHELTER の SX_LO_DEG / SX_HI_DEG）と同じ 2°〜20°
+const SX_COLOR = { EXP_LO: 2, EXP_HI: 12, SH_LO: 2, SH_HI: 20, EXP: [236, 112, 24], SH: [36, 88, 220], ALPHA: 0.85 };
+const SX_WEAK_MS = 3;                               // これ未満は「風が弱い」と添える（塗りは消さない）
+const SX_DIR16 = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+const sxStats = { worker: 0, main: 0, src5a: 0, src10b: 0 };   // 検査用
+// mode … 'auto'（選択地点の判定の風）か 0〜15（吹いてくる向きの16方位）。dmax … SX_DMAX のどれか。端末に覚える
+const windExp = { mode: 'auto', dmax: 300, sector: null, drawn: null };
+const WINDEXP_KEY = 'windExp';
+function windExpLoad() {
+  try {
+    const o = JSON.parse(localStorage.getItem(WINDEXP_KEY) || '{}') || {};
+    if (o.mode === 'auto' || (Number.isInteger(o.mode) && o.mode >= 0 && o.mode < 16)) windExp.mode = o.mode;
+    if (SX_DMAX.includes(o.dmax)) windExp.dmax = o.dmax;
+  } catch (e) { /* 読めなければ既定 */ }
+}
+function windExpSave() {
+  try { localStorage.setItem(WINDEXP_KEY, JSON.stringify({ mode: windExp.mode, dmax: windExp.dmax })); } catch (e) { /* 覚えないだけ */ }
+}
+windExpLoad();
+/* 使う風向。→ { sector（0〜15 か null）, src: 'auto'|'manual', wind, idx, missing }
+   自動は processData が埋めた data[i].wdir（判定・グラフ・ポップアップと同じ風。**吹いてくる向き**） */
+function windExpDir() {
+  if (windExp.mode !== 'auto') return { sector: windExp.mode, src: 'manual' };
+  const i = state.sliderIndex, d = state.allData && state.allData[i];
+  if (!d || d.windMissing || typeof d.wdir !== 'number' || !isFinite(d.wdir)) return { sector: null, src: 'auto', missing: true, idx: i };
+  return { sector: Math.round((((d.wdir % 360) + 360) % 360) / 22.5) % 16, src: 'auto', wind: d.wind, idx: i };
+}
+function windExpInfoText(r) {
+  if (r.missing) return '風データなし（この時刻）：塗りません';
+  const name = SX_DIR16[r.sector] + 'の風';
+  if (r.src === 'manual') return `${name}（手動）`;
+  const t = state.allData[r.idx].time, when = `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:00`;
+  const spd = typeof r.wind === 'number' ? ` ${r.wind.toFixed(1)} m/s` : '';
+  const weak = typeof r.wind === 'number' && r.wind < SX_WEAK_MS ? '・風が弱い：当たり方の差は小さい' : '';
+  return `${name}${spd}（地点の予報・${when}）${weak}`;
+}
+// Sx（度）→ 色。当たる（負）＝橙・陰（正）＝青。境の内側は透明
+function sxColorize(f, n) {
+  const out = new Uint8ClampedArray(n * n * 4), C = SX_COLOR;
+  for (let i = 0, j = 0; i < n * n; i++, j += 4) {
+    const v = f[i];
+    if (v !== v) continue;
+    let t, col;
+    if (v <= -C.EXP_LO) { t = Math.min(1, (-v - C.EXP_LO) / (C.EXP_HI - C.EXP_LO)); col = C.EXP; }
+    else if (v >= C.SH_LO) { t = Math.min(1, (v - C.SH_LO) / (C.SH_HI - C.SH_LO)); col = C.SH; }
+    else continue;
+    out[j] = col[0]; out[j + 1] = col[1]; out[j + 2] = col[2]; out[j + 3] = Math.round(255 * C.ALPHA * t);
+  }
+  return out;
+}
+// 親（z14）の Sx の4分の1を n×n へ双線形で引き伸ばす（色ではなく数値で。欠けが混ざる所は近い方の値）
+function sxCropQuarter(f, qx, qy, n) {
+  const out = new Float32Array(n * n), h = n / 2;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const fx = Math.min(n - 1.001, Math.max(0, qx * h + (x + 0.5) / 2 - 0.5)), fy = Math.min(n - 1.001, Math.max(0, qy * h + (y + 0.5) / 2 - 0.5));
+    const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, i = iy * n + ix;
+    const a = f[i], b = f[i + 1], c = f[i + n], d = f[i + n + 1];
+    const v = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+    out[y * n + x] = v === v ? v : f[(ty < 0.5 ? iy : iy + 1) * n + (tx < 0.5 ? ix : ix + 1)];
+  }
+  return out;
+}
+// 計算の結果の控え（源・方位・距離・z/x/y）。Float32 で1枚 256KB
+const sxCache = new Map(), SX_CACHE_MAX = 48;
+function sxCacheGet(key) { if (!sxCache.has(key)) return undefined; const v = sxCache.get(key); sxCache.delete(key); sxCache.set(key, v); return v; }
+function sxCacheSet(key, v) { sxCache.set(key, v); if (sxCache.size > SX_CACHE_MAX) sxCache.delete(sxCache.keys().next().value); }
+function sxPrm(sector, dmax) { return { tile: SX_PRM.tile, sigM: SX_PRM.sigM, dmaxM: dmax, fromDeg: sector * 22.5 }; }
+async function sxComputeCached(job, g, src, z, x, y, sector, dmax) {
+  const key = `${src}|${z}/${x}/${y}|${sector}|${dmax}`, hit = sxCacheGet(key);
+  if (hit !== undefined) return hit;
+  const f = await csCompute(job, g, src, z, y, 'sx', sxPrm(sector, dmax), sxStats);
+  if (f) sxCacheSet(key, f);
+  return f;
+}
+// z15 で DEM10B のとき：z14 の親（4枚の子で共有）
+const sxParentCache = new Map();
+function sxParent(px, py, sector, dmax) {
+  const key = `sx|gsi10b|14/${px}/${py}|${sector}|${dmax}`;
+  if (sxParentCache.has(key)) return sxParentCache.get(key);
+  const p = (async () => {
+    const g = await csGather('gsi10b', 14, px, py);
+    if (g.error) throw csNetError();
+    return sxComputeCached({ id: ++ciSeq, cancelled: false }, g, 'gsi10b', 14, px, py, sector, dmax);
+  })();
+  p.catch(() => { if (sxParentCache.get(key) === p) sxParentCache.delete(key); });
+  sxParentCache.set(key, p);
+  if (sxParentCache.size > CS_PARENT_MAX) sxParentCache.delete(sxParentCache.keys().next().value);
+  return p;
+}
+// 1枚の Sx（Float32）。源の選び方は csRenderTile と同じ（ADR-0018）
+async function sxRenderTile(coords, job, sector, dmax) {
+  const { x, y, z } = coords;
+  const g5 = await csGather('gsi5a', z, x, y);
+  if (job.cancelled) return undefined;
+  let use10b = false;
+  if (g5.missKeys.length) { csMissMark(g5.missKeys); use10b = true; }
+  else if (g5.error) {
+    if (!csMissAny(g5.keys)) throw csNetError();
+    use10b = true;
+  }
+  if (!use10b) return sxComputeCached(job, g5, 'gsi5a', z, x, y, sector, dmax);
+  if (z > DEM_SRC.gsi10b.zmax) {
+    const f = await sxParent(x >> 1, y >> 1, sector, dmax);
+    if (job.cancelled) return undefined;
+    return f ? sxCropQuarter(f, x & 1, y & 1, SX_PRM.tile) : null;
+  }
+  const g10 = await csGather('gsi10b', z, x, y);
+  if (job.cancelled) return undefined;
+  if (g10.error) throw csNetError();
+  return sxComputeCached(job, g10, 'gsi10b', z, x, y, sector, dmax);
+}
+// 方位・距離・説明を今の状態に合わせる。変わったときだけ描き直す（refreshWeatherPoints・設定の変更から呼ぶ）
+function sxSync() {
+  const r = windExpDir();
+  windExp.sector = r.sector;
+  const info = document.getElementById('windexp-info');
+  if (info) info.textContent = windExpInfoText(r);
+  const drawn = r.sector == null ? 'none' : `${r.sector}|${windExp.dmax}`;
+  const layer = overlayTileLayers.windExp;
+  if (layer && windExp.drawn !== drawn) { windExp.drawn = drawn; layer.redraw(); }
+  else if (!layer) windExp.drawn = null;
+}
+function setWindExpMode(v) {
+  windExp.mode = v === 'auto' ? 'auto' : Math.max(0, Math.min(15, parseInt(v, 10) || 0));
+  windExpSave(); sxSync(); updateMapTime();
+}
+function setWindExpDmax(m) {
+  if (!SX_DMAX.includes(m)) return;
+  windExp.dmax = m; windExpSave(); renderLayerPanel(); sxSync();
+}
+// レイヤーの行の下：風向（自動／16方位）・見る距離・使っている風・凡例
+function windExpSettings() {
+  const opt = (v, label) => `<option value="${v}"${String(windExp.mode) === String(v) ? ' selected' : ''}>${label}</option>`;
+  const r = windExpDir();
+  return `<div class="amedas-els windexp-set">` +
+    `<select id="windexp-dir" aria-label="風向" onchange="setWindExpMode(this.value)">${opt('auto', '風向:自動（地点の予報）')}${SX_DIR16.map((d, i) => opt(i, '風向:' + d)).join('')}</select>` +
+    SX_DMAX.map(m => `<button type="button" class="amedas-el${windExp.dmax === m ? ' active' : ''}" onclick="setWindExpDmax(${m})">風上${m}m</button>`).join('') +
+    `</div><span class="layer-ov-note" id="windexp-info">${escapeHtml(windExpInfoText(r))}</span>` +
+    `<span class="layer-ov-note windexp-legend"><span class="windexp-sw" style="background:rgb(${SX_COLOR.EXP.join(',')})"></span>風が当たる　<span class="windexp-sw" style="background:rgb(${SX_COLOR.SH.join(',')})"></span>風の陰　（風速ではない・吹きだまりの判定ではない）</span>`;
+}
+
 /* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet が読めないと（v4.175.0 で同梱したが、
    壊れた控えなどで無いことはありうる）本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
 let ciMapLayerClass = null;
@@ -7723,13 +7911,38 @@ function CsLayerClass() {
   return csLayerClass;
 }
 
+// 風の当たり方の GridLayer（CS立体図風と同じ作り）。風向が無い（風データなし）ときは空のタイル
+let sxLayerClass = null;
+function SxLayerClass() {
+  if (sxLayerClass) return sxLayerClass;
+  sxLayerClass = L.GridLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = SX_PRM.tile;
+    const job = { id: ++ciSeq, cancelled: false, done: false };
+    tile._ciJob = job;
+    const sector = windExp.sector, dmax = windExp.dmax;
+    if (sector == null) { job.done = true; setTimeout(() => done(null, tile), 0); return tile; }
+    sxRenderTile(coords, job, sector, dmax).then(f => {
+      job.done = true;
+      if (f === undefined) return;
+      if (!f) { done(new Error('範囲外'), tile); return; }
+      tile.getContext('2d').putImageData(new ImageData(sxColorize(f, SX_PRM.tile), SX_PRM.tile, SX_PRM.tile), 0, 0);
+      done(null, tile);
+    }).catch(e => { job.done = true; done(e, tile); });
+    return tile;
+  },
+  });
+  return sxLayerClass;
+}
+
 // z13 未満で CIマップを入れているときは「拡大すると表示」。z13 以上に戻ったら消す
 // 自前で描く地形の図（CIマップ・CS立体図風）ぜんぶ。文言は各レイヤーの minZoom から作る（CI は従来どおり z13）
 function updateCiZoomNote() {
   if (!leafletMap) return;
   mapPrefs.overlays.forEach(o => {
     const def = findOverlay(o.id);
-    if (!def || (def.kind !== 'ciMap' && def.kind !== 'demRelief') || !def.minZoom) return;
+    if (!def || (def.kind !== 'ciMap' && def.kind !== 'demRelief' && def.kind !== 'windExp') || !def.minZoom) return;
     const note = `拡大すると表示（z${def.minZoom} から）`;
     if (leafletMap.getZoom() < def.minZoom) setLayerNote(def.id, note);
     else if (layerStatus[def.id] === note) clearLayerStatus(def.id);
@@ -7754,10 +7967,11 @@ function applyOverlays() {
       addTimedTileLayer(def, item.opacity);
     } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas' || def.kind === 'poi') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
-    } else if (def.kind === 'ciMap' || def.kind === 'demRelief') {
+    } else if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp') {
       // ⚠ isBlendable の分岐より前に置く（url が無いので L.tileLayer にすると壊れる）
       const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
-      const Cls = def.kind === 'demRelief' ? CsLayerClass() : CiMapLayerClass();
+      if (def.kind === 'windExp') { const r = windExpDir(); windExp.sector = r.sector; windExp.drawn = r.sector == null ? 'none' : `${r.sector}|${windExp.dmax}`; }
+      const Cls = def.kind === 'windExp' ? SxLayerClass() : def.kind === 'demRelief' ? CsLayerClass() : CiMapLayerClass();
       const layer = new Cls(tileOpts(def, { pane, opacity: item.opacity, minZoom: def.minZoom }));
       layer.on('tileunload', e => ciCancel(e.tile));
       layer.addTo(leafletMap);
@@ -12142,6 +12356,7 @@ function refreshWeatherPoints() {
     if (cells) drawThunderHint(cells, overlayOpacity('thunderHint'));
   }
   updateThunderIcons();
+  if (isOverlayOn('windExp')) sxSync();
   updateMapTime();
   weatherPointsDirty = false;
 }
@@ -12164,7 +12379,8 @@ function mapTimeLabel(idx) {
 function updateMapTime() {
   const box = document.getElementById('map-time');
   if (!box) return;
-  const show = isMapOpen() && !!state.allData && typeof pointHintAnyOn === 'function' && pointHintAnyOn();
+  // 風の当たり方も自動の風向なら時刻で変わる（v4.177.0）
+  const show = isMapOpen() && !!state.allData && typeof pointHintAnyOn === 'function' && (pointHintAnyOn() || (isOverlayOn('windExp') && windExp.mode === 'auto'));
   box.classList.toggle('hidden', !show);
   if (!show) return;
   const r = document.getElementById('map-time-range');
@@ -13018,7 +13234,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}${o.id === 'windExp' && on ? windExpSettings() : ''}
         <div class="layer-ov-op">
           ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
