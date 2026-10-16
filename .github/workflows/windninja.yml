@@ -35,7 +35,8 @@ env:
 jobs:
   build:
     name: 作る
-    runs-on: ubuntu-latest
+    # ⚠ OS を固定する（控えたビルドの共有ライブラリが OS の更新で食い違わないように。控えのキーとも揃える）
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -60,7 +61,7 @@ jobs:
           git clone --depth 1 --branch "$WINDNINJA_TAG" https://github.com/firelab/windninja.git "$WN/src"
           mkdir -p "$WN/build" && cd "$WN/build"
           cmake -DNINJA_GUI=OFF -DNINJAFOAM=OFF -DPHONE_HOME_QUERIES=OFF -DSUPRESS_WARNINGS=ON -DCMAKE_BUILD_TYPE=Release ../src > cmake.log
-          make -j"$(nproc)" WindNinja_cli > make.log 2>&1 || { tail -60 make.log; exit 1; }
+          make -j"$(nproc)" > make.log 2>&1 || { tail -60 make.log; exit 1; }
 
       # ⚠ shell: bash を明示する（pipefail が付く）。付けないと tee が失敗を飲み込み、欠けた表までコミットしてしまう
       - name: 表を作る
@@ -69,9 +70,10 @@ jobs:
           WINDNINJA_VERSION: ${{ env.WINDNINJA_TAG }}
           # WindNinja を通信の無い名前空間で動かす（天気モデルを取りに行く機能を使わない・外へ問い合わせない）
           WN_PREFIX: sudo unshare -n
+          # ⚠ 入力は式でスクリプトに埋め込まず、環境変数で渡す（検査より先にシェルに入らないように）
+          AREA: ${{ github.event.inputs.area || 'tanigawa' }}
         run: |
           WN="$RUNNER_TEMP/wn"
-          AREA="${{ github.event.inputs.area || 'tanigawa' }}"
           [[ "$AREA" =~ ^[a-z0-9-]+$ ]] || { echo "山域 id が不正: $AREA"; exit 1; }
           python3 scripts/windninja/buildWindTable.py "$AREA" "$WN/build/src/cli/WindNinja_cli" "$WN/src/data" "$RUNNER_TEMP/work" experiments/windninja/tables | tee result.txt
 

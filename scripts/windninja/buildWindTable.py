@@ -2,7 +2,7 @@
 # 風の細分化の表を1山域ぶん作る（WindNinja・質量保存の解法）。experiments/windninja/README.md「段3の計画」
 #
 # 使い方: python3 buildWindTable.py <山域id> <WindNinja_cli> <WINDNINJA_DATA> <作業ディレクトリ> <出力ディレクトリ>
-#   → <出力>/<id>.png（16方位を縦に積む。R＝倍率×100・G＝向きの曲がり（度）＋128・A＝255／欠けは 0）
+#   → <出力>/<id>.png（16方位を縦に積む。R＝倍率×64・G＝向きの曲がり（度）＋128・A＝255／欠けは 0）
 #     <出力>/<id>.json（範囲・升目・方位の並び・峰ごとの倍率など）
 #
 # ⚠ 倍率は「範囲の平均の地上10m風」を 1 とした値。端末では 判定の風 × 倍率(地点) ÷ 倍率(選択地点) で使う（案A）。
@@ -138,11 +138,26 @@ output_path = {od}
     t0 = time.time()
     sh(WN_PREFIX + ['env', f'WINDNINJA_DATA={WN_DATA}', CLI, cfg])
     vel = warp(glob.glob(od + '/*_vel.asc')[0], os.path.join(od, 'vel_ll.asc'))
-    ang = warp(glob.glob(od + '/*_ang.asc')[0], os.path.join(od, 'ang_ll.asc'))
-    # ⚠ 向きは双線形で補間すると 0/360 をまたぐ所で壊れる。曲がり（入力との差）にしてから補間しても、
-    #   元の格子で差にしてから引き直すのが正しいが、差は ±数十度で 0/360 をまたがないので、出力側で差を取る（近似）
+    # ⚠ 向きそのもの（0〜360°）を双線形で引き直すと、北寄りの風で 355° と 5° の間が 180° になって壊れる。
+    #   元の UTM の格子で入力との差（曲がり・±180）にしてから引き直す（曲がりは ±数十度で ±180 をまたがない）
+    src_ang = glob.glob(od + '/*_ang.asc')[0]
+    with open(src_ang) as f:
+        head = [f.readline() for _ in range(6)]
+        a0 = np.loadtxt(f)
+    t0a = np.where(a0 < -9000, -9999, (a0 - d + 180) % 360 - 180)
+    turn_src = os.path.join(od, 'turn.asc')
+    with open(turn_src, 'w') as f:
+        f.writelines(head); np.savetxt(f, t0a, fmt='%.2f')
+    prj = src_ang[:-4] + '.prj'
+    if os.path.exists(prj):
+        with open(prj) as fi, open(turn_src[:-4] + '.prj', 'w') as fo: fo.write(fi.read())
+    turn = warp(turn_src, os.path.join(od, 'turn_ll.asc'))
     ratio = vel / INPUT_MS
-    turn = (ang - d + 180) % 360 - 180
+    big_turn = float(np.nanmean(np.abs(turn) > 127))
+    if big_turn > 0: fail(f'{d}°：曲がりが ±127° を超える升目が {big_turn:.3%}（G に入らない）')
+    # 向きの約束の検査：出力の向き（_ang）が入力と同じ「吹いてくる向き」なら、範囲全体の曲がりの中央はほぼ 0。
+    #   約束がずれていれば ±180 付近になる（16方位すべて逆向きで黙って通るのを止める）
+    if abs(float(np.nanmedian(turn))) > 15: fail(f'{d}°：曲がりの中央が {np.nanmedian(turn):.0f}°（向きの約束が入力と違う疑い）')
     ok = np.isfinite(ratio) & np.isfinite(turn)
     blk = img[k * ny:(k + 1) * ny]
     if not np.isfinite(ratio).any(): fail(f'{d}°：出力が空')
@@ -154,7 +169,8 @@ output_path = {od}
     blk[..., 1] = np.clip(np.round(np.nan_to_num(turn)) + 128, 0, 255).astype(np.uint8)
     blk[..., 3] = np.where(ok, 255, 0).astype(np.uint8)
     for p in peaks:
-        c = int((p['lon'] - oW) / lon_deg); r = int((oN - p['lat']) / OUT_DEG)
+        # 升目の幅は gdalwarp に渡した -te と -ts で決まる（丸める前の lon_deg・OUT_DEG ではない）。端末も bounds と nx・ny から同じ式で引く
+        c = int((p['lon'] - oW) / ((oE - oW) / nx)); r = int((oN - p['lat']) / ((oN - oS) / ny))
         v = ratio[r, c] if 0 <= r < ny and 0 <= c < nx else float('nan')
         peak_ratio[p['name']].append(None if not np.isfinite(v) else round(float(v), 3))
     print(f'{d:6.1f}°  {time.time() - t0:5.1f} 秒  倍率 5%点 {np.nanpercentile(ratio, 5):.2f}・中央 {np.nanmedian(ratio):.2f}・95%点 {np.nanpercentile(ratio, 95):.2f}  '
@@ -165,7 +181,7 @@ wn_ver = os.environ.get('WINDNINJA_VERSION', '')
 meta = {
     'area': AREA_ID, 'name': area['name'],
     'bounds': {'south': round(oS, 6), 'north': round(oN, 6), 'west': round(oW, 6), 'east': round(oE, 6)},
-    'nx': nx, 'ny': ny, 'dirs': DIRS, 'dirNote': '吹いてくる向き（北風＝0°）。PNG は方位の順に縦に積む（1方位 ny 行）',
+    'nx': nx, 'ny': ny, 'cellNote': '升目の幅は (east−west)/nx・(north−south)/ny。行は北から', 'dirs': DIRS, 'dirNote': '吹いてくる向き（北風＝0°）。PNG は方位の順に縦に積む（1方位 ny 行）',
     'encoding': {'r': f'倍率×{R_SCALE}（範囲の平均の地上10m風＝1）', 'rScale': R_SCALE, 'g': '向きの曲がり（度・時計回りが正）＋128', 'a': '255＝値あり／0＝欠け'},
     'peakRatio': peak_ratio, 'ratioMax': round(ratio_max, 3),
     'solver': f'WindNinja {wn_ver}（質量保存）・domainAverage・入力 {INPUT_MS} m/s（地上10m）・植生 grass・升目 {MESH_M} m',
