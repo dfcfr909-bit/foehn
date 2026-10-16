@@ -26,7 +26,7 @@ ascii_out_resolution = 60
 units_ascii_out_resolution = m
 output_path = $OD
 CFG
-# 運動量の解法は mesh_resolution ではなく mesh_choice を使う版がある（失敗したらログに出る）
+# 升目は mesh_resolution（4.0.0 の CLI で運動量の解法にも使えることを確かめた。mesh_choice とは同時に使えない）
 s=$(date +%s)
 # 通信の無い名前空間で動かす。OpenFOAM の環境を読み込んでから（WM_PROJECT_VERSION で版を見分ける）
 # ⚠ 新しい名前空間ではループバック（lo）が DOWN のまま。OpenMPI はプロセス間の連絡に TCP（lo）を使うので上げる（外への通信は無いまま）
