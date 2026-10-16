@@ -6,7 +6,7 @@
 
 - `sotoki_v4.html`：16,380行／本体の `<script>` は 2893〜16377 行
 - トップレベルの宣言 996（関数 715・定数と状態 281）／ブロック 39
-- `code_map.md` に説明があるもの：545／996（📝 印）
+- `code_map.md` に説明があるもの：556／996（📝 印）
 - **参照元**＝その名前を使っているトップレベルの関数（推定。文字列の中の `onclick="名前()"` も数える。コメントは除く）。
   変更の影響範囲を見るときの手がかりで、網羅は保証しない。`（HTML）` は `<script>` の外（マークアップ）、`（トップレベル）` は関数の外の文（起動時の登録など）からの参照
 - 参照元が 0 のもの＝どこからも呼ばれていない候補（起動時に1回だけ動くものや、テストからだけ使うものもある）
@@ -483,8 +483,8 @@
 | `computeCiTile` 📝 | 関数 | 7356 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
 | `csMargin` 📝 | 関数 | 7398 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
 | `computeCsTile` 📝 | 関数 | 7400 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
-| `sxMargin` | 関数 | 7422 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
-| `computeSxTile` | 関数 | 7426 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
+| `sxMargin` 📝 | 関数 | 7422 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
+| `computeSxTile` 📝 | 関数 | 7426 | 3：`CI_WORKER_FNS`、`ciComputeMain`、`ciWorkerMain` |
 | `ciWorkerMain` 📝 | 関数 | 7449 | 1：`getCiWorker` |
 | `CI_WORKER_FNS` 📝 | 定数 | 7485 | 1：`getCiWorker` |
 | `getCiWorker` 📝 | 関数 | 7489 | 2：`ciRenderTile`、`csCompute` |
@@ -515,27 +515,27 @@
 | `SX_WEAK_MS` | 定数 | 7729 | 1：`windExpInfoText` |
 | `SX_DIR16` | 定数 | 7730 | 2：`windExpInfoText`、`windExpSettings` |
 | `sxStats` | 状態 | 7731 | 1：`sxComputeCached` |
-| `windExp` | 状態 | 7733 | 16：`MAP_OVERLAYS`、`SxLayerClass`、`WINDEXP_KEY`、`applyOverlays`、`isBlendable`、`refreshWeatherPoints` ほか10 |
+| `windExp` 📝 | 状態 | 7733 | 16：`MAP_OVERLAYS`、`SxLayerClass`、`WINDEXP_KEY`、`applyOverlays`、`isBlendable`、`refreshWeatherPoints` ほか10 |
 | `WINDEXP_KEY` | 定数 | 7734 | 2：`windExpLoad`、`windExpSave` |
 | `windExpLoad` | 関数 | 7735 | 1：（トップレベル） |
 | `windExpSave` | 関数 | 7742 | 2：`setWindExpDmax`、`setWindExpMode` |
-| `windExpDir` | 関数 | 7748 | 3：`applyOverlays`、`sxSync`、`windExpSettings` |
+| `windExpDir` 📝 | 関数 | 7748 | 3：`applyOverlays`、`sxSync`、`windExpSettings` |
 | `windExpInfoText` | 関数 | 7754 | 2：`sxSync`、`windExpSettings` |
-| `sxColorize` | 関数 | 7764 | 1：`SxLayerClass` |
-| `sxCropQuarter` | 関数 | 7778 | 1：`sxRenderTile` |
+| `sxColorize` 📝 | 関数 | 7764 | 1：`SxLayerClass` |
+| `sxCropQuarter` 📝 | 関数 | 7778 | 1：`sxRenderTile` |
 | `sxCacheGet` | 関数 | 7791 | 1：`sxComputeCached` |
 | `sxCacheSet` | 関数 | 7792 | 1：`sxComputeCached` |
 | `sxPrm` | 関数 | 7793 | 1：`sxComputeCached` |
 | `sxComputeCached` | 関数 | 7794 | 2：`sxParent`、`sxRenderTile` |
-| `sxParent` | 関数 | 7803 | 1：`sxRenderTile` |
-| `sxRenderTile` | 関数 | 7817 | 1：`SxLayerClass` |
-| `sxSync` | 関数 | 7839 | 3：`refreshWeatherPoints`、`setWindExpDmax`、`setWindExpMode` |
+| `sxParent` 📝 | 関数 | 7803 | 1：`sxRenderTile` |
+| `sxRenderTile` 📝 | 関数 | 7817 | 1：`SxLayerClass` |
+| `sxSync` 📝 | 関数 | 7839 | 3：`refreshWeatherPoints`、`setWindExpDmax`、`setWindExpMode` |
 | `setWindExpMode` | 関数 | 7849 | 1：`windExpSettings` |
 | `setWindExpDmax` | 関数 | 7853 | 1：`windExpSettings` |
-| `windExpSettings` | 関数 | 7858 | 1：`renderLayerPanel` |
+| `windExpSettings` 📝 | 関数 | 7858 | 1：`renderLayerPanel` |
 | `CiMapLayerClass` 📝 | 関数 | 7871 | 1：`applyOverlays` |
 | `CsLayerClass` 📝 | 関数 | 7893 | 1：`applyOverlays` |
-| `SxLayerClass` | 関数 | 7916 | 1：`applyOverlays` |
+| `SxLayerClass` 📝 | 関数 | 7916 | 1：`applyOverlays` |
 | `updateCiZoomNote` 📝 | 関数 | 7941 | 2：`applyOverlays`、`openMap` |
 | `applyOverlays` 📝 | 関数 | 7952 | 3：`applyLayerSet`、`openMap`、`toggleOverlay` |
 | `wxTimesPromises` | 状態 | 8000 | 2：`clearWxTimes`、`jmaTimesList` |
