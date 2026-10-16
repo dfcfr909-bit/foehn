@@ -1,0 +1,1 @@
+Exception caught: Option 'num_threads' '4' is greater than maxNumCores '2' when option 'momentum_flag' is set to 'true'.
