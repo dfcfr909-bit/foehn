@@ -83,8 +83,9 @@ jobs:
           for d in 315 135; do
             if ! experiments/windninja/momentum/run.sh mom $d "$RUNNER_TEMP/work/dem.tif" "$RUNNER_TEMP/work" | tee -a times.txt; then
               echo "mom $d: 失敗（log は out/mom_${d}_log.txt）" | tee -a times.txt
-              tail -200 "$RUNNER_TEMP/work/mom_$d/log.txt" > "experiments/windninja/momentum/out/mom_${d}_log.txt" 2>/dev/null || true
             fi
+            # 成功しても log を残す（升目の数・収束のようすを見る）
+            tail -300 "$RUNNER_TEMP/work/mom_$d/log.txt" > "experiments/windninja/momentum/out/mom_${d}_log.txt" 2>/dev/null || true
           done
 
       - name: 比べる
