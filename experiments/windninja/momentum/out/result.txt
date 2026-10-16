@@ -1,13 +1,14 @@
 mass_315: 風上が開けた所（Sx<-10°）の倍率 1.06・風下の陰（Sx>10°）0.79・比 0.75・中央 0.86
-mom_315: 解なし
+mom_315: 風上が開けた所（Sx<-10°）の倍率 0.80・風下の陰（Sx>10°）0.41・比 0.52・中央 0.51
 mass_135: 風上が開けた所（Sx<-10°）の倍率 1.06・風下の陰（Sx>10°）0.79・比 0.74・中央 0.86
-mom_135: 解なし
+mom_135: 風上が開けた所（Sx<-10°）の倍率 0.86・風下の陰（Sx>10°）0.39・比 0.45・中央 0.49
 mass: 北西と南東の倍率の差 中央 0.000・95%点 0.000（0 なら風下の陰が出ていない）
+mom: 北西と南東の倍率の差 中央 0.392・95%点 1.087（0 なら風下の陰が出ていない）
 谷川岳の山頂 mass_315: 1.43
 谷川岳の山頂 mass_135: 1.43
+谷川岳の山頂 mom_315: 0.34
+谷川岳の山頂 mom_135: 0.77
 mass 315: 10 秒
 mass 135: 11 秒
-Exception caught: Option 'num_threads' '4' is greater than maxNumCores '2' when option 'momentum_flag' is set to 'true'.
-mom 315: 失敗（log は out/mom_315_log.txt）
-Exception caught: Option 'num_threads' '4' is greater than maxNumCores '2' when option 'momentum_flag' is set to 'true'.
-mom 135: 失敗（log は out/mom_135_log.txt）
+mom 315: 166 秒
+mom 135: 166 秒
