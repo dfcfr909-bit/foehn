@@ -6,22 +6,32 @@
 #     <出力>/<id>.json（範囲・升目・方位の並び・峰ごとの倍率など）
 #
 # ⚠ 倍率は「範囲の平均の地上10m風」を 1 とした値。端末では 判定の風 × 倍率(地点) ÷ 倍率(選択地点) で使う（案A）。
-# ⚠ 範囲の取り方で倍率は 1〜2 割変わる（findings-02）。範囲は「峰を囲む長方形＋4km」に固定し、外周 1km は捨てる。
+# ⚠ 範囲の取り方で倍率は 1〜2 割変わる（findings-02）。範囲は**峰を囲む長方形の中心から一辺 SIDE_KM の正方形に固定**し、
+#   外周 1km は捨てる。峰が端から EDGE_KM より近ければ止める（範囲を山域ごとに変えない）。
+# ⚠ 欠けを黙って通さない：標高タイルの通信の失敗・欠けの多い出力・倍率の頭打ちは、終了コード 1 で止める。
+# ⚠ WindNinja は外へ通信させない（環境変数 WN_PREFIX に `sudo unshare -n` などを入れると、通信の無い名前空間で動かす）。
 # ⚠ 入力の風速に対してほぼ線形（findings-02）なので 10 m/s の1回だけ解く。
 # ⚠ 風向は吹いてくる向き（北風＝0°）。WindNinja の input_direction も同じ約束。
-import sys, os, json, math, subprocess, time, glob, io, urllib.request, datetime
+import sys, os, re, json, math, subprocess, time, glob, io, urllib.request, urllib.error, datetime, shlex
 import numpy as np
 from PIL import Image
 
 AREA_ID, CLI, WN_DATA, WORK, OUT = sys.argv[1:6]
+if not re.fullmatch(r'[a-z0-9-]+', AREA_ID):
+    sys.exit(f'山域 id が不正: {AREA_ID!r}')
+WN_PREFIX = shlex.split(os.environ.get('WN_PREFIX', ''))
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
-MARGIN_KM = 4.0      # 峰を囲む長方形の外へ足す幅
+SIDE_KM = 32.0       # 解く範囲（正方形）の一辺。全山域で同じ
+EDGE_KM = 3.0        # 峰がこれより端に近ければ止める
 DROP_KM = 1.0        # 外周で捨てる幅（範囲の端の影響）
 MESH_M = 60          # WindNinja の升目
 DEM_Z = 14           # 地理院 DEM10B のズーム（約 10m）
 INPUT_MS = 10.0
 DIRS = [i * 22.5 for i in range(16)]
 OUT_DEG = 0.0006     # 出力の格子（緯度方向。約 67m）。経度方向は緯度で伸ばす
+R_SCALE = 64         # PNG の R＝倍率×64（0〜3.98）。超えたら止める
+MAX_MISSING = 0.02   # 出力の欠けの割合の上限（これを超えたら止める）
+def fail(msg): print('✗ ' + msg); sys.exit(1)
 
 def sh(cmd, **kw):
     r = subprocess.run(cmd, capture_output=True, text=True, **kw)
@@ -34,9 +44,13 @@ area = next(a for a in areas if a['id'] == AREA_ID)
 peaks = area['peaks']
 lat0, lat1 = min(p['lat'] for p in peaks), max(p['lat'] for p in peaks)
 lon0, lon1 = min(p['lon'] for p in peaks), max(p['lon'] for p in peaks)
-latc = (lat0 + lat1) / 2
-dlat = MARGIN_KM / 111.0; dlon = MARGIN_KM / (111.0 * math.cos(math.radians(latc)))
-S, N, W, E = lat0 - dlat, lat1 + dlat, lon0 - dlon, lon1 + dlon
+latc, lonc = (lat0 + lat1) / 2, (lon0 + lon1) / 2
+kmLat = 111.0; kmLon = 111.0 * math.cos(math.radians(latc))
+h = SIDE_KM / 2
+S, N, W, E = latc - h / kmLat, latc + h / kmLat, lonc - h / kmLon, lonc + h / kmLon
+for p in peaks:
+    d = min((p['lat'] - S) * kmLat, (N - p['lat']) * kmLat, (p['lon'] - W) * kmLon, (E - p['lon']) * kmLon)
+    if d < EDGE_KM: fail(f'{p["name"]} が範囲の端から {d:.1f} km（{EDGE_KM:g} km 未満）。一辺 {SIDE_KM:g} km に収まらない山域')
 zone = int((((lon0 + lon1) / 2) + 180) // 6) + 1
 EPSG_UTM = 32600 + zone
 os.makedirs(WORK, exist_ok=True); os.makedirs(OUT, exist_ok=True)
@@ -49,21 +63,27 @@ def ty(lat):
     r = math.radians(lat); return int((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * 2 ** DEM_Z)
 x0, x1, y0, y1 = tx(W), tx(E), ty(N), ty(S)
 arr = np.full(((y1 - y0 + 1) * 256, (x1 - x0 + 1) * 256), np.nan, dtype=np.float32)
-miss = 0
+miss = 0   # 404（配信なし＝海など）。通信の失敗は止める
 for yy in range(y0, y1 + 1):
     for xx in range(x0, x1 + 1):
         url = f'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{DEM_Z}/{xx}/{yy}.png'
-        for k in range(3):
+        d, err = None, None
+        for k in range(4):
             try:
                 d = np.asarray(Image.open(io.BytesIO(urllib.request.urlopen(url, timeout=30).read())).convert('RGB')).astype(np.int64); break
+            except urllib.error.HTTPError as e:
+                if e.code == 404: break
+                err = e; time.sleep(2 ** (k + 1))
             except Exception as e:
-                if '404' in str(e): d = None; break
-                time.sleep(2 * (k + 1)); d = None
-        if d is None: miss += 1; continue
+                err = e; time.sleep(2 ** (k + 1))
+        if d is None:
+            if err is not None: fail(f'標高タイルが取れない: {url}（{err}）')
+            miss += 1; continue
         v = d[..., 0] * 65536 + d[..., 1] * 256 + d[..., 2]
         h = np.where(v < 2 ** 23, v, v - 2 ** 24) * 0.01
         arr[(yy - y0) * 256:(yy - y0 + 1) * 256, (xx - x0) * 256:(xx - x0 + 1) * 256] = np.where(v == 2 ** 23, np.nan, h)
 print(f'標高タイル {(x1 - x0 + 1) * (y1 - y0 + 1)} 枚（配信なし {miss}）')
+if miss > 0.1 * (x1 - x0 + 1) * (y1 - y0 + 1): fail(f'配信なしの標高タイルが多すぎる（{miss} 枚）')
 merc = os.path.join(WORK, 'dem_merc.asc')
 with open(merc, 'w') as f:
     f.write(f'ncols {arr.shape[1]}\nnrows {arr.shape[0]}\nxllcorner {x0 * ts - WM / 2:.3f}\nyllcorner {WM / 2 - (y1 + 1) * ts:.3f}\ncellsize {ts / 256:.6f}\nNODATA_value -9999\n')
@@ -90,6 +110,7 @@ def warp(src, out):
 # ---- 16方位を解く ----
 img = np.zeros((ny * 16, nx, 4), dtype=np.uint8)
 peak_ratio = {p['name']: [] for p in peaks}
+ratio_max = 0.0
 t_all = time.time()
 for k, d in enumerate(DIRS):
     od = os.path.join(WORK, f'd{k:02d}'); os.makedirs(od, exist_ok=True)
@@ -115,7 +136,7 @@ units_ascii_out_resolution = m
 output_path = {od}
 ''')
     t0 = time.time()
-    sh([CLI, cfg], env=dict(os.environ, WINDNINJA_DATA=WN_DATA))
+    sh(WN_PREFIX + ['env', f'WINDNINJA_DATA={WN_DATA}', CLI, cfg])
     vel = warp(glob.glob(od + '/*_vel.asc')[0], os.path.join(od, 'vel_ll.asc'))
     ang = warp(glob.glob(od + '/*_ang.asc')[0], os.path.join(od, 'ang_ll.asc'))
     # ⚠ 向きは双線形で補間すると 0/360 をまたぐ所で壊れる。曲がり（入力との差）にしてから補間しても、
@@ -124,7 +145,12 @@ output_path = {od}
     turn = (ang - d + 180) % 360 - 180
     ok = np.isfinite(ratio) & np.isfinite(turn)
     blk = img[k * ny:(k + 1) * ny]
-    blk[..., 0] = np.clip(np.round(np.nan_to_num(ratio) * 100), 0, 255).astype(np.uint8)
+    if not np.isfinite(ratio).any(): fail(f'{d}°：出力が空')
+    rmax = float(np.nanmax(ratio)); ratio_max = max(ratio_max, rmax)
+    if rmax * R_SCALE > 255: fail(f'{d}°：倍率 {rmax:.2f} が PNG の上限 {255 / R_SCALE:.2f} を超える（R_SCALE を見直す）')
+    miss_frac = 1 - ok.mean()
+    if miss_frac > MAX_MISSING: fail(f'{d}°：欠けが {miss_frac:.1%}（上限 {MAX_MISSING:.0%}）')
+    blk[..., 0] = np.round(np.nan_to_num(ratio) * R_SCALE).astype(np.uint8)
     blk[..., 1] = np.clip(np.round(np.nan_to_num(turn)) + 128, 0, 255).astype(np.uint8)
     blk[..., 3] = np.where(ok, 255, 0).astype(np.uint8)
     for p in peaks:
@@ -132,7 +158,7 @@ output_path = {od}
         v = ratio[r, c] if 0 <= r < ny and 0 <= c < nx else float('nan')
         peak_ratio[p['name']].append(None if not np.isfinite(v) else round(float(v), 3))
     print(f'{d:6.1f}°  {time.time() - t0:5.1f} 秒  倍率 5%点 {np.nanpercentile(ratio, 5):.2f}・中央 {np.nanmedian(ratio):.2f}・95%点 {np.nanpercentile(ratio, 95):.2f}  '
-          f'曲がり 95%点 {np.nanpercentile(np.abs(turn), 95):.0f}°  255超 {int(np.sum(ratio > 2.55))}')
+          f'曲がり 95%点 {np.nanpercentile(np.abs(turn), 95):.0f}°  最大 {rmax:.2f}  欠け {miss_frac:.2%}')
 
 Image.fromarray(img, 'RGBA').save(os.path.join(OUT, f'{AREA_ID}.png'), optimize=True)
 wn_ver = os.environ.get('WINDNINJA_VERSION', '')
@@ -140,13 +166,16 @@ meta = {
     'area': AREA_ID, 'name': area['name'],
     'bounds': {'south': round(oS, 6), 'north': round(oN, 6), 'west': round(oW, 6), 'east': round(oE, 6)},
     'nx': nx, 'ny': ny, 'dirs': DIRS, 'dirNote': '吹いてくる向き（北風＝0°）。PNG は方位の順に縦に積む（1方位 ny 行）',
-    'encoding': {'r': '倍率×100（範囲の平均の地上10m風＝1）', 'g': '向きの曲がり（度・時計回りが正）＋128', 'a': '255＝値あり／0＝欠け'},
-    'peakRatio': peak_ratio,
+    'encoding': {'r': f'倍率×{R_SCALE}（範囲の平均の地上10m風＝1）', 'rScale': R_SCALE, 'g': '向きの曲がり（度・時計回りが正）＋128', 'a': '255＝値あり／0＝欠け'},
+    'peakRatio': peak_ratio, 'ratioMax': round(ratio_max, 3),
     'solver': f'WindNinja {wn_ver}（質量保存）・domainAverage・入力 {INPUT_MS} m/s（地上10m）・植生 grass・升目 {MESH_M} m',
-    'domain': f'峰を囲む長方形＋{MARGIN_KM:g}km で解き、外周 {DROP_KM:g}km を捨てた',
+    'domain': {'sideKm': SIDE_KM, 'dropKm': DROP_KM, 'center': [round(latc, 5), round(lonc, 5)], 'utmZone': zone,
+               'note': f'峰を囲む長方形の中心から一辺 {SIDE_KM:g}km の正方形で解き、外周 {DROP_KM:g}km を捨てた'},
     'source': '地理院タイル（標高タイル）を加工して作成',
     'generated': datetime.date.today().isoformat(),
 }
+for p in peaks:
+    if any(v is None for v in peak_ratio[p['name']]): fail(f'{p["name"]} の倍率が欠けている')
 json.dump(meta, open(os.path.join(OUT, f'{AREA_ID}.json'), 'w'), ensure_ascii=False, indent=1)
 size = os.path.getsize(os.path.join(OUT, f'{AREA_ID}.png'))
 print(f'合計 {time.time() - t_all:.0f} 秒・PNG {size / 1e6:.2f} MB')

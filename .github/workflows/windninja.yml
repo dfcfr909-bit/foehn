@@ -67,9 +67,12 @@ jobs:
         shell: bash
         env:
           WINDNINJA_VERSION: ${{ env.WINDNINJA_TAG }}
+          # WindNinja を通信の無い名前空間で動かす（天気モデルを取りに行く機能を使わない・外へ問い合わせない）
+          WN_PREFIX: sudo unshare -n
         run: |
           WN="$RUNNER_TEMP/wn"
           AREA="${{ github.event.inputs.area || 'tanigawa' }}"
+          [[ "$AREA" =~ ^[a-z0-9-]+$ ]] || { echo "山域 id が不正: $AREA"; exit 1; }
           python3 scripts/windninja/buildWindTable.py "$AREA" "$WN/build/src/cli/WindNinja_cli" "$WN/src/data" "$RUNNER_TEMP/work" experiments/windninja/tables | tee result.txt
 
       # ⚠ main では手動実行してもコミットしない（main へ直接 push しない・CLAUDE.md）。表はブランチで作って PR で入れる
