@@ -23,7 +23,7 @@ def load(tag):
     d = os.path.join(WORK, tag)
     h, v = read_asc(glob.glob(d + '/*_vel.asc')[0]); _, a = read_asc(glob.glob(d + '/*_ang.asc')[0])
     return h, v / 10.0, a
-runs = {t: load(t) for t in ['mass_315', 'mass_135', 'mom_315', 'mom_135'] if glob.glob(os.path.join(WORK, t, '*_vel.asc'))}
+runs = {t: load(t) for t in ['mass_315', 'mass_135', 'mom_315', 'mom_135', 'mom_315_n500000', 'mom_315_n1500000'] if glob.glob(os.path.join(WORK, t, '*_vel.asc'))}
 # 質量保存の2回は必ず要る（運動量は失敗しうるので、欠けは「解なし」と書いて続ける）
 for t in ['mass_315', 'mass_135']:
     if t not in runs: sys.exit(f'{t} の解が無い')
@@ -43,10 +43,10 @@ def sx(z, from_deg, dmax=300):
 lines = []
 for d in [315, 135]:
     S = sx(z, d)
-    for solver in ['mass', 'mom']:
-        t = f'{solver}_{d}'
+    for t in [f'mass_{d}', f'mom_{d}'] + ([f'mom_{d}_n500000', f'mom_{d}_n1500000'] if d == 315 else []):
         if t not in runs: lines.append(f'{t}: 解なし'); continue
         R = runs[t][1]; m = 5
+        if R.shape != S.shape: lines.append(f'{t}: 格子の大きさが違う {R.shape} / {S.shape}'); continue
         Ri, Si = R[m:-m, m:-m], S[m:-m, m:-m]
         exp, lee = np.nanmean(Ri[Si < -10]), np.nanmean(Ri[Si > 10])
         lines.append(f'{t}: 風上が開けた所（Sx<-10°）の倍率 {exp:.2f}・風下の陰（Sx>10°）{lee:.2f}・比 {lee / exp:.2f}・中央 {np.nanmedian(R):.2f}')

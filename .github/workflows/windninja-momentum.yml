@@ -87,6 +87,12 @@ jobs:
             # 成功しても log を残す（升目の数・収束のようすを見る）
             tail -300 "$RUNNER_TEMP/work/mom_$d/log.txt" > "experiments/windninja/momentum/out/mom_${d}_log.txt" 2>/dev/null || true
           done
+          # 升目の総数を増やすと、急な地形で発散せず（地形をならさず）に解けるか（北西だけ）。findings-04
+          for n in 500000 1500000; do
+            MESH_COUNT=$n experiments/windninja/momentum/run.sh mom 315 "$RUNNER_TEMP/work/dem.tif" "$RUNNER_TEMP/work" | tee -a times.txt \
+              || echo "mom 315_n$n: 失敗" | tee -a times.txt
+            tail -300 "$RUNNER_TEMP/work/mom_315_n$n/log.txt" > "experiments/windninja/momentum/out/mom_315_n${n}_log.txt" 2>/dev/null || true
+          done
 
       - name: 比べる
         shell: bash

@@ -3,10 +3,13 @@
 # 環境変数 WN（WindNinja のビルドとソースの親）。mom は OpenFOAM 11 を使う
 set -euo pipefail
 SOLVER=$1; DIR=$2; DEM=$3; WORK=$4
-OD="$WORK/${SOLVER}_${DIR}"; mkdir -p "$OD"
 MOM=false; [[ "$SOLVER" == mom ]] && MOM=true
 # ⚠ 運動量の解法は物理コアの数までしか使えない（1回目：num_threads 4 > maxNumCores 2 で止まった）
+# 升目：質量保存は 60m。運動量は MESH_COUNT（升目の総数）を渡せば mesh_count で（既定は 60m 指定）
+if [[ "$SOLVER" == mom && -n "${MESH_COUNT:-}" ]]; then MESH_LINES="mesh_count = $MESH_COUNT"; TAG="_n$MESH_COUNT"
+else MESH_LINES=$'mesh_resolution = 60\nunits_mesh_resolution = m'; TAG=""; fi
 NT=$(nproc); [[ "$SOLVER" == mom ]] && NT=$(lscpu -p=Core,Socket | grep -v '^#' | sort -u | wc -l)
+OD="$WORK/${SOLVER}_${DIR}${TAG}"; mkdir -p "$OD"
 cat > "$OD/run.cfg" <<CFG
 num_threads = $NT
 elevation_file = $DEM
@@ -21,8 +24,7 @@ units_output_wind_height = m
 output_speed_units = mps
 vegetation = grass
 momentum_flag = $MOM
-mesh_resolution = 60
-units_mesh_resolution = m
+$MESH_LINES
 write_ascii_output = true
 ascii_out_resolution = 60
 units_ascii_out_resolution = m
@@ -38,4 +40,4 @@ sudo -E unshare -n bash -c "
   [[ -f /opt/openfoam11/etc/bashrc ]] && source /opt/openfoam11/etc/bashrc
   cd '$OD' && '$WN/build/src/cli/WindNinja_cli' run.cfg
 " > "$OD/log.txt" 2>&1 || { tail -40 "$OD/log.txt"; exit 1; }
-echo "$SOLVER $DIR: $(( $(date +%s) - s )) 秒"
+echo "$SOLVER $DIR$TAG: $(( $(date +%s) - s )) 秒・地形をならした回数 $(grep -c 'Smoothing elevation file' "$OD/log.txt" || true)"
