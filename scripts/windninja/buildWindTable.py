@@ -2,7 +2,7 @@
 # 風の細分化の表を1山域ぶん作る（WindNinja・質量保存の解法）。experiments/windninja/README.md「段3の計画」
 #
 # 使い方: python3 buildWindTable.py <山域id> <WindNinja_cli> <WINDNINJA_DATA> <作業ディレクトリ> <出力ディレクトリ>
-#   → <出力>/<id>.png（16方位を縦に積む。R＝倍率×64・G＝向きの曲がり（度）×127/180＋128・A＝255／欠けは 0）
+#   → <出力>/<id>.png（8方位を縦に積む。R＝倍率×64・G＝向きの曲がり（度）×127/180＋128・A＝255／欠けは 0）
 #     <出力>/<id>.json（範囲・升目・方位の並び・峰ごとの倍率など）
 #
 # ⚠ 倍率は「範囲の平均の地上10m風」を 1 とした値。端末では 判定の風 × 倍率(地点) ÷ 倍率(選択地点) で使う（案A）。
@@ -27,7 +27,9 @@ DROP_KM = 1.0        # 外周で捨てる幅（範囲の端の影響）
 MESH_M = 60          # WindNinja の升目
 DEM_Z = 14           # 地理院 DEM10B のズーム（約 10m）
 INPUT_MS = 10.0
-DIRS = [i * 22.5 for i in range(16)]
+# ⚠ 質量保存の解は風を逆向きにすると流れが逆向きになるだけ（倍率・曲がりとも全升目で同じ。findings-03）。
+#   逆向き（＋180°）は同じ表を使うので、0〜157.5° の 8方位だけ解く（端末は d と d−180 のどちらかで引く）
+DIRS = [i * 22.5 for i in range(8)]
 OUT_DEG = 0.0006     # 出力の格子（緯度方向。約 67m）。経度方向は緯度で伸ばす
 R_SCALE = 64         # PNG の R＝倍率×64（0〜3.98）。超えたら止める
 G_SCALE = 127 / 180  # PNG の G＝曲がり（度）×127/180＋128（±180° がそのまま入る・1.4° 刻み）。
@@ -119,7 +121,7 @@ def warp(src, out):
     _, a = read_asc(out)
     return np.where(a < -9000, np.nan, a)
 
-# ---- 16方位を解く ----
+# ---- 8方位を解く ----
 img = np.zeros((ny * 16, nx, 4), dtype=np.uint8)
 peak_ratio = {p['name']: [] for p in peaks}
 ratio_max = 0.0
@@ -165,7 +167,7 @@ output_path = {od}
     ratio = vel / INPUT_MS
     big_turn = float(np.nanmean(np.abs(turn) > 90))   # 記録だけ（止めない）
     # 向きの約束の検査：出力の向き（_ang）が入力と同じ「吹いてくる向き」なら、範囲全体の曲がりの中央はほぼ 0。
-    #   約束がずれていれば ±180 付近になる（16方位すべて逆向きで黙って通るのを止める）
+    #   約束がずれていれば ±180 付近になる（全方位が逆向きで黙って通るのを止める）
     if abs(float(np.nanmedian(turn))) > 15: fail(f'{d}°：曲がりの中央が {np.nanmedian(turn):.0f}°（向きの約束が入力と違う疑い）')
     ok = np.isfinite(ratio) & np.isfinite(turn)
     blk = img[k * ny:(k + 1) * ny]
@@ -190,7 +192,7 @@ wn_ver = os.environ.get('WINDNINJA_VERSION', '')
 meta = {
     'area': AREA_ID, 'name': area['name'],
     'bounds': {'south': round(oS, 6), 'north': round(oN, 6), 'west': round(oW, 6), 'east': round(oE, 6)},
-    'nx': nx, 'ny': ny, 'cellNote': '升目の幅は (east−west)/nx・(north−south)/ny。行は北から', 'dirs': DIRS, 'dirNote': '吹いてくる向き（北風＝0°）。PNG は方位の順に縦に積む（1方位 ny 行）',
+    'nx': nx, 'ny': ny, 'cellNote': '升目の幅は (east−west)/nx・(north−south)/ny。行は北から', 'dirs': DIRS, 'dirNote': '吹いてくる向き（北風＝0°）。PNG は方位の順に縦に積む（1方位 ny 行）。逆向き（＋180°）は同じ表（倍率・曲がりとも同じ値）',
     'encoding': {'r': f'倍率×{R_SCALE}（範囲の平均の地上10m風＝1）', 'rScale': R_SCALE, 'g': '向きの曲がり（度・時計回りが正）×127/180＋128', 'gScale': round(G_SCALE, 6), 'a': '255＝値あり／0＝欠け'},
     'peakRatio': peak_ratio, 'ratioMax': round(ratio_max, 3),
     'solver': f'WindNinja {wn_ver}（質量保存）・domainAverage・入力 {INPUT_MS} m/s（地上10m）・植生 grass・升目 {MESH_M} m',
