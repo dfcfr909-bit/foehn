@@ -29,7 +29,9 @@ CFG
 # 運動量の解法は mesh_resolution ではなく mesh_choice を使う版がある（失敗したらログに出る）
 s=$(date +%s)
 # 通信の無い名前空間で動かす。OpenFOAM の環境を読み込んでから（WM_PROJECT_VERSION で版を見分ける）
+# ⚠ 新しい名前空間ではループバック（lo）が DOWN のまま。OpenMPI はプロセス間の連絡に TCP（lo）を使うので上げる（外への通信は無いまま）
 sudo -E unshare -n bash -c "
+  ip link set lo up
   export OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 WINDNINJA_DATA='$WN/src/data'
   [[ -f /opt/openfoam11/etc/bashrc ]] && source /opt/openfoam11/etc/bashrc
   cd '$OD' && '$WN/build/src/cli/WindNinja_cli' run.cfg

@@ -72,9 +72,17 @@ jobs:
         shell: bash
         run: |
           export WN="$RUNNER_TEMP/wn"
-          for s in mass mom; do for d in 315 135; do
-            experiments/windninja/momentum/run.sh $s $d "$RUNNER_TEMP/work/dem.tif" "$RUNNER_TEMP/work" | tee -a times.txt
-          done; done
+          mkdir -p experiments/windninja/momentum/out
+          # 質量保存の失敗はステップを落とす。運動量の失敗は記録して先へ進む（質量保存の結果と失敗の手がかりを残す）
+          for d in 315 135; do
+            experiments/windninja/momentum/run.sh mass $d "$RUNNER_TEMP/work/dem.tif" "$RUNNER_TEMP/work" | tee -a times.txt
+          done
+          for d in 315 135; do
+            if ! experiments/windninja/momentum/run.sh mom $d "$RUNNER_TEMP/work/dem.tif" "$RUNNER_TEMP/work" | tee -a times.txt; then
+              echo "mom $d: 失敗（log は out/mom_${d}_log.txt）" | tee -a times.txt
+              tail -200 "$RUNNER_TEMP/work/mom_$d/log.txt" > "experiments/windninja/momentum/out/mom_${d}_log.txt" 2>/dev/null || true
+            fi
+          done
 
       - name: 比べる
         shell: bash
