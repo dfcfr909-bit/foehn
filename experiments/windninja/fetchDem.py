@@ -16,6 +16,7 @@ W = 2 * math.pi * R; ts = W / 2 ** z
 def tile(x, y): return int((x + W / 2) // ts), int((W / 2 - y) // ts)
 x0, y0 = tile(cx - half, cy + half); x1, y1 = tile(cx + half, cy - half)
 nx, ny = x1 - x0 + 1, y1 - y0 + 1
+miss = 0
 arr = np.full((ny * 256, nx * 256), np.nan, dtype=np.float32)
 for ty in range(y0, y1 + 1):
     for tx in range(x0, x1 + 1):
@@ -23,7 +24,7 @@ for ty in range(y0, y1 + 1):
         try:
             d = np.asarray(Image.open(io.BytesIO(urllib.request.urlopen(url, timeout=30).read())).convert('RGB')).astype(np.int64)
         except Exception as e:
-            print('miss', url, e, file=sys.stderr); continue
+            print('miss', url, e, file=sys.stderr); miss += 1; continue
         x = d[..., 0] * 65536 + d[..., 1] * 256 + d[..., 2]
         h = np.where(x < 2 ** 23, x, x - 2 ** 24) * 0.01
         h = np.where(x == 2 ** 23, np.nan, h)
@@ -33,3 +34,6 @@ with open(out, 'w') as f:
     f.write(f"ncols {arr.shape[1]}\nnrows {arr.shape[0]}\nxllcorner {x0 * ts - W / 2:.3f}\nyllcorner {W / 2 - (y1 + 1) * ts:.3f}\ncellsize {px:.6f}\nNODATA_value -9999\n")
     np.savetxt(f, np.nan_to_num(arr, nan=-9999), fmt='%.2f')
 print(out, arr.shape, 'nan:', int(np.isnan(arr).sum()), 'min/max:', np.nanmin(arr), np.nanmax(arr))
+# ⚠ 欠けを黙って通さない：取れなかったタイル・欠けの升目が1つでもあれば終了コード 1（海を含む範囲では使わない）
+if miss or np.isnan(arr).any():
+    sys.exit(f'欠けあり：取れなかったタイル {miss}・欠けの升目 {int(np.isnan(arr).sum())}')

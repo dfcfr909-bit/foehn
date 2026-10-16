@@ -14,6 +14,7 @@ on:
     paths:
       - experiments/windninja/momentum/run.sh
       - experiments/windninja/momentum/compare.py
+      - experiments/windninja/fetchDem.py
       - .github/workflows/windninja-momentum.yml
 
 permissions:

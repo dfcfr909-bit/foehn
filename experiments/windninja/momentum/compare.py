@@ -24,6 +24,9 @@ def load(tag):
     h, v = read_asc(glob.glob(d + '/*_vel.asc')[0]); _, a = read_asc(glob.glob(d + '/*_ang.asc')[0])
     return h, v / 10.0, a
 runs = {t: load(t) for t in ['mass_315', 'mass_135', 'mom_315', 'mom_135'] if glob.glob(os.path.join(WORK, t, '*_vel.asc'))}
+# 質量保存の2回は必ず要る（運動量は失敗しうるので、欠けは「解なし」と書いて続ける）
+for t in ['mass_315', 'mass_135']:
+    if t not in runs: sys.exit(f'{t} の解が無い')
 h0 = runs['mass_315'][0]; cs = h0['cellsize']
 # 地形を風の格子に合わせる
 dem60 = os.path.join(WORK, 'dem60.asc')
@@ -55,6 +58,7 @@ for solver in ['mass', 'mom']:
 # 谷川岳
 x, y = map(float, subprocess.run(['gdaltransform', '-s_srs', 'EPSG:4326', '-t_srs', 'EPSG:32654'], input='138.9301 36.8371', capture_output=True, text=True).stdout.split()[:2])
 c, r = int((x - h0['xllcorner']) / cs), int(h0['nrows'] - (y - h0['yllcorner']) / cs)
+assert 0 <= c < h0['ncols'] and 0 <= r < h0['nrows'], f'谷川岳が範囲の外（{c}, {r}）。gdaltransform の軸の順を疑う'
 for t in runs: lines.append(f'谷川岳の山頂 {t}: {runs[t][1][r, c]:.2f}')
 # 画像（地形の陰影 × 倍率の色）
 gy, gx = np.gradient(np.nan_to_num(z), cs); sl = np.arctan(np.hypot(gx, gy)); asp = np.arctan2(-gx, gy)

@@ -107,7 +107,8 @@ Actions（WindNinja 4.0.0）で谷川・上越国境（32km 四方・60m・16方
 ## 段4の計画：運動量の解法を調べる（案2・利用者の決定 2026-10-16）
 
 - `.github/workflows/windninja-momentum.yml`（手動実行と、調べ方を変えた非 main への push だけ）。OpenFOAM 11 を dl.openfoam.org の apt から入れ（WindNinja 公式の手順と同じ）、
-  WindNinja 4.0.0 を運動量の解法つきでビルドする。⚠ 開発環境からは dl.openfoam.org に届かない（プロキシで拒否）ので Actions で試す
+  WindNinja 4.0.0 を運動量の解法つきでビルドする。⚠ 開発環境からは dl.openfoam.org に届かない（2026-10-16 に curl で試してプロキシが 403 で拒否）ので Actions で試す。
+  4.0.0 のタグに `src/ninjafoam/11`・`data/ninjafoam/11` があり、CLI に `momentum_flag`・`mesh_resolution` があることは git で確かめた（`mesh_choice` と `mesh_resolution` は同時に使えない）
 - 谷川岳の 14km 四方・60m で、**質量保存と運動量 × 北西・南東の4回**を解く（`momentum/run.sh`。通信の無い名前空間で）
 - `momentum/compare.py` で比べる：①北西と南東で倍率が違うか（質量保存は同じだった）②**風上が開けた所（Sx＜−10°）と風下の陰（Sx＞10°）の平均の倍率**
   ③谷川岳の山頂の倍率 ④1方位の時間。画像と要約を `momentum/out/` にコミット（Pages では配らない）
