@@ -53,7 +53,9 @@ jobs:
           cmake -DNINJA_GUI=OFF -DNINJAFOAM=ON -DPHONE_HOME_QUERIES=OFF -DSUPRESS_WARNINGS=ON -DCMAKE_BUILD_TYPE=Release ../src > cmake.log || { tail -40 cmake.log; exit 1; }
           make -j"$(nproc)" > make.log 2>&1 || { tail -60 make.log; exit 1; }
           # WindNinja の OpenFOAM 用の境界条件（libWindNinja）と applyInit を OpenFOAM 側に作る（Dockerfile の手順の 11 版）
-          source /opt/openfoam11/etc/bashrc
+          # ⚠ OpenFOAM の bashrc は途中で非 0 を返す行がある。-e のまま読むとステップが落ちる（1回目の実行で落ちた）
+          set +e; source /opt/openfoam11/etc/bashrc; set -e
+          [[ -n "$WM_PROJECT_USER_DIR" && -n "$FOAM_LIBBIN" ]] || { echo 'OpenFOAM の環境が読めない'; exit 1; }
           mkdir -p "$WM_PROJECT_USER_DIR/applications"
           cp -r "$WN/src/src/ninjafoam/11/." "$WM_PROJECT_USER_DIR/applications/"
           cd "$WM_PROJECT_USER_DIR/applications" && wmake libso > wmake.log 2>&1 || { tail -40 wmake.log; exit 1; }
