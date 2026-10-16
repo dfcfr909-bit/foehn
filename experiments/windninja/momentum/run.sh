@@ -5,8 +5,10 @@ set -euo pipefail
 SOLVER=$1; DIR=$2; DEM=$3; WORK=$4
 OD="$WORK/${SOLVER}_${DIR}"; mkdir -p "$OD"
 MOM=false; [[ "$SOLVER" == mom ]] && MOM=true
+# ⚠ 運動量の解法は物理コアの数までしか使えない（1回目：num_threads 4 > maxNumCores 2 で止まった）
+NT=$(nproc); [[ "$SOLVER" == mom ]] && NT=$(lscpu -p=Core,Socket | grep -v '^#' | sort -u | wc -l)
 cat > "$OD/run.cfg" <<CFG
-num_threads = $(nproc)
+num_threads = $NT
 elevation_file = $DEM
 initialization_method = domainAverageInitialization
 input_speed = 10.0
