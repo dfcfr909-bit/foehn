@@ -111,7 +111,7 @@ ok(JSON.stringify(pure.w) === JSON.stringify([[0, 1, 0], [0, 1, 0.5], [7, 0, 0],
 ok(JSON.stringify(pure.peaks) === JSON.stringify(['苗場山', '平標山', '谷川岳', '巻機山']), '表の範囲内の峰は areas.json の谷川4峰', pure.peaks);
 ok(pure.ref.name === '谷川岳' && Math.abs(pure.ref.est - 15) <= pure.ref.tol, '★★★基準の峰の升で推定の風＝判定の風（丸めの範囲）', pure.ref);
 ok(Math.abs(pure.rev[0] - pure.rev[1]) < 1e-9, '★逆向きの風は同じ倍率', pure.rev);
-ok(pure.color.got[3] > 150 && pure.color.got.slice(0, 3).every((v, k) => v === pure.color.want[k]), '★色は風の流れの背景と同じ（同じ m/s が同じ色）', pure.color);
+ok(pure.color.got[3] === 255 && pure.color.got.slice(0, 3).every((v, k) => v === pure.color.want[k]), '★色は風の流れの背景と同じ（同じ m/s が同じ色）', pure.color);
 ok(!pure.outside.ok && /範囲外/.test(pure.outside.reason), '★範囲外は塗らず理由', pure.outside);
 ok(!pure.missing.ok && /風データなし/.test(pure.missing.reason), '★風が欠けた時刻は塗らない', pure.missing);
 ok(!pure.ground.ok && /地上10m/.test(pure.ground.reason), '★★地上10m風に落ちた時刻は塗らない', pure.ground);
@@ -190,6 +190,10 @@ await page.evaluate(() => { state.lat = 36.8371; state.lon = 138.9301; toggleOve
 await page.waitForTimeout(1200);
 const f = await page.evaluate(() => ({ status: layerStatus.windDown, info: wd.info }));
 ok(fail && /表を読めません/.test(f.info) && /表を読めません/.test(f.status || ''), '★表が取れなければ理由を出す', f);
+// 取れるようになったら、失敗の文言を消して塗る
+tableStatus = 200;
+const rec = await page.evaluate(async () => { await wdSync(); return { status: layerStatus.windDown || '', url: overlayTileLayers.windDown._url.slice(0, 22) }; });
+ok(rec.status === '' && rec.url === 'data:image/png;base64,', '★失敗から戻ったら文言を消して塗る', rec);
 
 ok(errors.length === 0, 'ページで例外が出ない', errors);
 await browser.close();

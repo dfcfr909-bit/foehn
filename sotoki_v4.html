@@ -7044,7 +7044,7 @@ const MAP_WEATHER = [
     attribution: 'Open-Meteo', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
   /* 風の強さ（地形）（v4.178.0・ADR-0019）：選択地点・選択時刻の判定の風を、WindNinja の倍率の表で地図の各点へ配る（推定）。
      表のある山域だけ（WIND_TABLE_AREAS）。地理院の標高タイルの加工の表記は出典欄が常に1回出す */
-  { id: 'windDown', name: '風の強さ（地形）', kind: 'windDown', opacity: 0.8,
+  { id: 'windDown', name: '風の強さ（地形）', kind: 'windDown', opacity: 0.7,
     attribution: ['Open-Meteo', 'WindNinja（米国農務省林野局）で計算'],
     note: '推定。選択地点に近い峰で判定の風と一致させ、地形の倍率で配る（谷川・上越国境だけ）。色は風の流れと同じ m/s' },
   /* 降雪の目安（段階2・#131）。風の矢印と同じ格子点に、選択時刻の雨・みぞれ・雪の記号を置く。
@@ -7879,7 +7879,7 @@ function windExpSettings() {
    ・⚠ Worker は使わない（要件は Worker だったが、PNG の取り出しは山域ごとに1回・毎時刻の計算は 20万升の掛け算で軽い）
    ・⚠ 表は緯度経度の等間隔のまま imageOverlay で貼る（メルカトルとの縦のずれは谷川の 30km 四方で十数 m・升目 67m より小さい） */
 const WIND_TABLE_AREAS = ['tanigawa'];               // 表のある山域（areas.json の id）。足すときは Actions で作ってから
-const WD = { RATIO_MIN: 0.3, LOW_M: 300, ALPHA: 0.8 };   // 基準の峰の倍率の下限・選択地点が峰より低いと注記する差・塗りの濃さ
+const WD = { RATIO_MIN: 0.3, LOW_M: 300 };   // 基準の峰の倍率の下限・選択地点が峰より低いと注記する差（濃さはレイヤーの透過率だけで決める）
 const wdTables = new Map();                          // 山域 id → Promise<{ meta, r, a }>（1回だけ読む）
 const wd = { key: null, url: null, info: '', plan: null };
 // PNG を読んで R（倍率×rScale）と A（255＝値あり）を取り出す。⚠ 色空間の変換と乗算済みアルファを切る（R がずれる・A=0 で R が壊れる）
@@ -7951,11 +7951,11 @@ function wdPlan(tables, lat, lon, d, pointElev) {
 // 表と計画から色の画素（nx×ny×4）。欠けの升（どちらかの方位で A≠255）は透明
 function wdPaint(tbl, plan) {
   const { meta, r, a } = tbl, n = meta.nx * meta.ny, s = meta.encoding.rScale, out = new Uint8ClampedArray(n * 4);
-  const o0 = plan.w.i0 * n, o1 = plan.w.i1 * n, t = plan.w.t, k = plan.wind / plan.refR / s, al = Math.round(255 * WD.ALPHA);
+  const o0 = plan.w.i0 * n, o1 = plan.w.i1 * n, t = plan.w.t, k = plan.wind / plan.refR / s;
   for (let i = 0, j = 0; i < n; i++, j += 4) {
     if (a[o0 + i] !== 255 || a[o1 + i] !== 255) continue;
     const rgb = windBgRGB((r[o0 + i] * (1 - t) + r[o1 + i] * t) * k);
-    out[j] = rgb[0]; out[j + 1] = rgb[1]; out[j + 2] = rgb[2]; out[j + 3] = al;
+    out[j] = rgb[0]; out[j + 1] = rgb[1]; out[j + 2] = rgb[2]; out[j + 3] = 255;
   }
   return out;
 }
@@ -7983,6 +7983,7 @@ async function wdSync() {
   try { tables = await wdTablesFor(); }
   catch (e) { wd.info = '表を読めませんでした（' + e.message + '）'; wdSetInfo(); setLayerNote('windDown', wd.info); wdClear(); return; }
   if (!isOverlayOn('windDown')) return;
+  clearLayerStatus('windDown');   // 前の失敗の文言を消す
   const d = state.allData && state.allData[state.sliderIndex];
   const plan = wdPlan(tables, state.lat, state.lon, d, state.summitElev ?? state.demElevation);
   wd.plan = plan; wd.info = wdInfoText(plan); wdSetInfo();
