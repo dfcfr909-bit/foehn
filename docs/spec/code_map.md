@@ -384,6 +384,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `csMargin` / `computeCsTile` / `CS_PRM` | CS立体図風の計算（曲率＋傾斜）。Worker に toString で渡す（`CI_WORKER_FNS`） |
 | `sxMargin` / `computeSxTile` | 風の当たり方の計算（風上の仰角 Sx・Float32 を返す）。Worker に toString で渡す（`CI_WORKER_FNS`）。余白は DMAX ぶん |
 | `windExp` / `windExpDir` / `sxSync` / `sxRenderTile` / `sxColorize` / `sxParent` / `sxCropQuarter` / `SxLayerClass()` / `windExpSettings` | 風の当たり方のレイヤー（v4.177.0）。風向は自動（`state.allData[i].wdir`）か16方位。源の選び方は CS と同じ（`csGather`・`csCompute` に alg='sx'） |
+| `WIND_TABLE_AREAS` / `WD` / `wdLoadTable` / `wdDecodePng` / `wdDirWeights` / `wdCell` / `wdPlan` / `wdPaint` / `wdTablesFor` / `wdSync` / `windDownSettings` | 風の強さ（地形）（v4.178.0・ADR-0019）。WindNinja の表（`data/wind/`）× 判定の風 ÷ 基準の峰の倍率。画像1枚（`L.imageOverlay`）。塗らない条件は `wdPlan` |
 | `csRenderTile` / `csGather` / `csCompute` / `csParent` / `csCropQuarter` / `csMiss*` / `CsLayerClass()` | CS立体図風の1枚（ADR-0018）。DEM5A の9枚で1枚でも 404 なら9枚とも DEM10B。504 では落とさず、`demMiss5a` の記録（30日）があれば 10B。z15 の 10B は z14 の親を共有して切り出す |
 | `csStats` | 計数と時間（検査用・画面には出さない）。行の下の計測は #231 で iPhone を測り終えて v4.176.1 で外した |
 | `ciRenderTile` / `ciCancel` / `CiMapLayerClass()` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す。⚠ GridLayer の派生は**使うときに作る**（最上位で `L.` を呼ぶと、Leaflet が取れないとき本体ごと止まる） |
