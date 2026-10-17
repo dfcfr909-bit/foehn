@@ -358,6 +358,58 @@ await reset(); mode5a = 'none'; mode10b = 'none'; mode1a = 'none';
 const r5k = await render([K17]);
 ok(r5k[0] === 'null', '1A も z15 も配信なしなら「範囲外」', r5k);
 
+/* ============ 6. 濃さのスライダー（v4.181.0） ============ */
+const st = await page.evaluate(() => ({ a: csStrength(0.25), b: csStrength(0.5), c: csStrength(1), def: findOverlay('csLike').opacity }));
+ok(st.a.opacity === 0.5 && st.a.filter === '' && st.b.opacity === 1 && st.b.filter === '', '★★濃さ 50% までは透過率 0〜100%（色はそのまま）', st);
+ok(st.c.opacity === 1 && /saturate\(2\.2/.test(st.c.filter) && /contrast\(1\.5/.test(st.c.filter), '★★50% より上は不透明のまま色を濃く', st.c);
+ok(st.def === 0.5, '既定は 50%（今までの 100% と同じ見え方）', st.def);
+await reset(); mode5a = 'ok'; mode1a = 'none';
+const live = await page.evaluate(() => {
+  if (!isOverlayOn('csLike')) toggleOverlay('csLike');
+  setOverlayOpacity('csLike', 0.9);
+  const pane = leafletMap.getPane('mapOv_csLike'), a = { op: overlayTileLayers.csLike.options.opacity, f: pane.style.filter };
+  setOverlayOpacity('csLike', 0.3);
+  return { a, b: { op: overlayTileLayers.csLike.options.opacity, f: pane.style.filter } };
+});
+ok(live.a.op === 1 && /saturate/.test(live.a.f) && Math.abs(live.b.op - 0.6) < 1e-9 && !live.b.f, '★スライダーで透過率と色の濃さが変わる', live);
+// レイヤーセットの呼び出し（applyOverlays で作り直す入口）でも濃さが効く
+const viaSet = await page.evaluate(() => {
+  setOverlayOpacity('csLike', 0.9);
+  const cap = captureLayerSet();
+  setOverlayOpacity('csLike', 0.3);
+  saveLayerSets([...loadLayerSets(), Object.assign(cap, { id: 'tstr', name: '濃い' })]);
+  applyLayerSet('tstr');
+  return { op: overlayTileLayers.csLike && overlayTileLayers.csLike.options.opacity, f: leafletMap.getPane('mapOv_csLike').style.filter };
+});
+ok(viaSet.op === 1 && /saturate/.test(viaSet.f), '★セットを呼び出しても濃さ（フィルタ）が効く', viaSet);
+// 移し替え：覚えていた 100% は 50% に（一度だけ）。セットの値も
+const mig = await ctx.newPage(), migErrors = [];
+mig.on('pageerror', e => migErrors.push(e.message));
+await mig.route('**/*', r => {
+  const u = r.request().url();
+  if (u === 'https://sotoki.test/') return r.fulfill({ contentType: 'text/html', body: HTML });
+  if (u.includes('uPlot.iife.min.js')) return r.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
+  if (u.includes('leaflet') && u.endsWith('.js')) return r.fulfill({ contentType: 'application/javascript', body: LEAFLET_JS });
+  return r.fulfill({ status: 404, body: '' });
+});
+await mig.addInitScript(() => {
+  if (sessionStorage.getItem('seeded')) return;
+  sessionStorage.setItem('seeded', '1');
+  localStorage.removeItem('sotoki.map.csStrength'); localStorage.removeItem('sotoki.map.csStrengthSets');
+  localStorage.setItem('sotoki.map.overlays', JSON.stringify([{ id: 'csLike', opacity: 1 }, { id: 'hillshade', opacity: 0.8 }]));
+  localStorage.setItem('sotoki.map.layerSets', JSON.stringify([{ id: 's1', name: 'A', base: null, overlays: [{ id: 'csLike', opacity: 0.8 }], blend: {} },
+    { id: 's2', name: 'B', base: null, overlays: [{ id: 'csLike', opacity: 'こわれた' }], blend: {} }]));
+});
+await mig.goto('https://sotoki.test/'); await mig.waitForTimeout(600);
+const m1 = await mig.evaluate(() => ({ cs: loadMapPrefs().overlays.find(o => o.id === 'csLike')?.opacity, other: loadMapPrefs().overlays.find(o => o.id !== 'csLike')?.opacity, sets: loadLayerSets().map(s => s.overlays[0]?.opacity) }));
+await mig.reload(); await mig.waitForTimeout(600);
+const m2 = await mig.evaluate(() => ({ cs: loadMapPrefs().overlays.find(o => o.id === 'csLike')?.opacity, sets: loadLayerSets().map(s => s.overlays[0]?.opacity) }));
+ok(m1.cs === 0.5 && m2.cs === 0.5 && m1.other === 0.8, '★★★覚えていた CS立体図風の 100% は 50% に移し替える（二度目の起動で半分にしない）', { m1, m2 });
+ok(m1.sets[0] === 0.4 && m2.sets[0] === 0.4, '★★セットに覚えた値も一度だけ半分にする', { m1, m2 });
+ok(m1.sets[1] === 0.5 && m2.sets[1] === 0.5, '壊れた値は既定（50%）に戻し、半分にしない', { m1, m2 });
+ok(migErrors.length === 0, '移し替えのページで例外が出ない', migErrors);
+await mig.close();
+
 ok(errors.length === 0, 'ページで例外が出ない', errors);
 await browser.close();
 if (fails.length) { console.log('FAIL\n  - ' + fails.join('\n  - ')); process.exit(1); }
