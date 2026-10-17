@@ -7121,19 +7121,20 @@ function loadMapPrefs() {
   const overlays = [];
   try {
     const raw = JSON.parse(localStorage.getItem(MAP_LS_OVERLAYS) || '[]');
+    const migrate = localStorage.getItem(MAP_LS_CS_STRENGTH) !== '1';
     if (Array.isArray(raw)) {
       for (const item of raw) {
         if (!item || typeof item !== 'object') continue;
         const def = findOverlay(item.id);
         if (!def || def.pending) continue;                 // 未知ID・未確認レイヤーは捨てる
         const o = Number(item.opacity);
-        overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? o : def.opacity });
+        // ⚠ 濃さへの移し替え（下）は正常な値だけ。既定（新しい尺度）へ戻した値は半分にしない
+        overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? (migrate && def.strength ? o / 2 : o) : def.opacity });
       }
     }
-    /* v4.181.0：CS立体図風のスライダーを「濃さ」にした（50% で今までの 100%）。覚えていた値を一度だけ半分にして、見え方を変えない。
+    /* v4.181.0：CS立体図風のスライダーを「濃さ」にした（50% で今までの 100%）。覚えていた値を一度だけ半分にして（上の migrate）、見え方を変えない。
        ⚠ 印を立てるときに overlays も書き戻す（印だけ立って値が戻らないと、次の起動で濃さが倍になる） */
-    if (localStorage.getItem(MAP_LS_CS_STRENGTH) !== '1') {
-      overlays.forEach(x => { if (findOverlay(x.id).strength) x.opacity /= 2; });
+    if (migrate) {
       localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(overlays));
       localStorage.setItem(MAP_LS_CS_STRENGTH, '1');
     }
@@ -13250,16 +13251,25 @@ function sanitizeLayerSets(raw) {
 let layerSetsCache = null;
 function loadLayerSets() {
   if (layerSetsCache) return layerSetsCache;
-  try { layerSetsCache = sanitizeLayerSets(JSON.parse(localStorage.getItem(MAP_LS_LAYER_SETS) || '[]')); }
-  catch (e) { layerSetsCache = []; }    // 壊れていたらセットなし（地図は動く）
-  // v4.181.0：セットに覚えた CS立体図風の値も一度だけ半分にする（loadMapPrefs と同じ理由。印は別に持つ）
+  let migrate = false;
+  try { migrate = localStorage.getItem(MAP_LS_CS_STRENGTH_SETS) !== '1'; } catch (e) { /* 読めなければ移し替えない */ }
   try {
-    if (localStorage.getItem(MAP_LS_CS_STRENGTH_SETS) !== '1') {
-      layerSetsCache.forEach(s => s.overlays.forEach(o => { if (findOverlay(o.id).strength) o.opacity /= 2; }));
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_LAYER_SETS) || '[]');
+    /* v4.181.0：セットに覚えた CS立体図風の値も一度だけ半分にする（loadMapPrefs と同じ理由。印は別に持つ）。
+       ⚠ 整える前の生の値に掛ける（壊れた値を既定＝新しい尺度へ戻した後に半分にしない） */
+    if (migrate && Array.isArray(raw)) raw.forEach(s => s && Array.isArray(s.overlays) && s.overlays.forEach(o => {
+      const def = o && findOverlay(o.id), v = o && Number(o.opacity);
+      if (def && def.strength && v >= 0 && v <= 1) o.opacity = v / 2;
+    }));
+    layerSetsCache = sanitizeLayerSets(raw);
+  }
+  catch (e) { layerSetsCache = []; }    // 壊れていたらセットなし（地図は動く）
+  if (migrate) {
+    try {
       localStorage.setItem(MAP_LS_LAYER_SETS, JSON.stringify(layerSetsCache));
       localStorage.setItem(MAP_LS_CS_STRENGTH_SETS, '1');
-    }
-  } catch (e) { /* 書けなければ移し替えない */ }
+    } catch (e) { /* 書けなければ移し替えは次の機会に */ }
+  }
   return layerSetsCache;
 }
 function saveLayerSets(sets) {
@@ -13470,7 +13480,7 @@ function renderLayerPanel() {
         <div class="layer-ov-op">
           ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
-                 aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
+                 aria-label="${escapeHtml(o.name)}の${o.strength ? '濃さ' : '透過率'}" ${on ? '' : 'disabled'}
                  oninput="setOverlayOpacity('${o.id}', this.value / 100)">
           <span class="layer-op-val" data-id="${o.id}">${Math.round(op * 100)}%</span>
         </div>
