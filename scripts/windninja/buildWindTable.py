@@ -5,7 +5,8 @@
 #   → <出力>/<id>.png（8方位を縦に積む。R＝倍率×64・G＝向きの曲がり（度）×127/180＋128・A＝255／欠けは 0）
 #     <出力>/<id>.json（範囲・升目・方位の並び・峰ごとの倍率など）
 #
-# ⚠ 倍率は「範囲の平均の地上10m風」を 1 とした値。端末では 判定の風 × 倍率(地点) ÷ 倍率(選択地点) で使う（案A）。
+# ⚠ 倍率は「範囲の平均の地上10m風」を 1 とした値。端末では 判定の風 × 倍率(地点) ÷ 倍率(基準の峰) で使う（案A）。
+#   基準の峰＝選択地点にいちばん近い、表の範囲内の峰（JSON の peakRatio）。docs/requirements_wind_downscale.md
 # ⚠ 範囲の取り方で倍率は 1〜2 割変わる（findings-02）。範囲は**峰を囲む長方形の中心から一辺 SIDE_KM の正方形に固定**し、
 #   外周 1km は捨てる。峰が端から EDGE_KM より近ければ止める（範囲を山域ごとに変えない）。
 # ⚠ 欠けを黙って通さない：標高タイルの通信の失敗・欠けの多い出力・倍率の頭打ちは、終了コード 1 で止める。
@@ -122,7 +123,7 @@ def warp(src, out):
     return np.where(a < -9000, np.nan, a)
 
 # ---- 8方位を解く ----
-img = np.zeros((ny * 16, nx, 4), dtype=np.uint8)
+img = np.zeros((ny * len(DIRS), nx, 4), dtype=np.uint8)
 peak_ratio = {p['name']: [] for p in peaks}
 ratio_max = 0.0
 t_all = time.time()
@@ -187,6 +188,8 @@ output_path = {od}
     print(f'{d:6.1f}°  {time.time() - t0:5.1f} 秒  倍率 5%点 {np.nanpercentile(ratio, 5):.2f}・中央 {np.nanmedian(ratio):.2f}・95%点 {np.nanpercentile(ratio, 95):.2f}  '
           f'曲がり 95%点 {np.nanpercentile(np.abs(turn), 95):.0f}°・90°超 {big_turn:.3%}  最大 {rmax:.2f}  欠け {miss_frac:.2%}')
 
+# 全体の欠けも見る（空の方位が黙って混ざるのを止める。8方位に減らした後も16方位ぶんの高さで作り、下半分が空だったことがある）
+if 1 - (img[..., 3] == 255).mean() > MAX_MISSING: fail(f'PNG 全体の欠けが {1 - (img[..., 3] == 255).mean():.1%}（上限 {MAX_MISSING:.0%}）')
 Image.fromarray(img, 'RGBA').save(os.path.join(OUT, f'{AREA_ID}.png'), optimize=True)
 wn_ver = os.environ.get('WINDNINJA_VERSION', '')
 meta = {
@@ -205,6 +208,6 @@ for p in peaks:
     if any(v is None for v in peak_ratio[p['name']]): fail(f'{p["name"]} の倍率が欠けている')
 json.dump(meta, open(os.path.join(OUT, f'{AREA_ID}.json'), 'w'), ensure_ascii=False, indent=1)
 size = os.path.getsize(os.path.join(OUT, f'{AREA_ID}.png'))
-print(f'合計 {time.time() - t_all:.0f} 秒・PNG {size / 1e6:.2f} MB')
+print(f'合計 {time.time() - t_all:.0f} 秒・PNG {nx}×{img.shape[0]}・{size / 1e6:.2f} MB')
 # 方位は 0〜157.5°（逆向きは同じ値）。北（＝南）と東（＝西）を出す
 print('峰の倍率（北・東）:', {k: [v[DIRS.index(0.0)], v[DIRS.index(90.0)]] for k, v in peak_ratio.items()})
