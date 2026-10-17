@@ -2609,7 +2609,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.179.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.180.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -7621,8 +7621,9 @@ function ciCancel(tile) {
    ・圏内ではいつも DEM5A を取りに行く（地理院が範囲を広げたら自然に 5A へ戻る）
    ・DEM10B は z14 まで。z15 で 10B なら z14 の親を計算し、その4分の1を引き伸ばす（親の結果は4枚の子で共有） */
 const CS_PRM = { tile: 256, sigM: 5, cs0: 0.01 };   // ならし σ=5m・曲率の満色 0.01/m（試作の既定）
-// 1m（z16〜17・ADR-0020）。σ=2m は仮（5m では 1m の細かさが消える見込み）、cs0 は据え置き。どちらも実機で決める
-const CS_PRM_1M = { tile: 256, sigM: 2, cs0: 0.01, whole: true };
+// 1m（z16〜17・ADR-0020）。σ は 5A と同じ 5m・cs0 も同じ（z15 から寄っても色の強さが変わらない）。
+// ⚠ σ=2m（v4.179.0）は実機で砂のようにざらついた（1m の微起伏と測量の粗さで曲率が満色を大きく超える。生の |ラプラシアン| の中央値 0.14/m²＝満色の14倍・茶臼岳）
+const CS_PRM_1M = { tile: 256, sigM: 5, cs0: 0.01, whole: true };
 const CS_MISS_KEY = 'demMiss5a', CS_MISS_MAX = 4000, CS_MISS_DAYS = 30;
 const CS_MISS1A_KEY = 'demMiss1a';   // DEM1A が 404 だった鍵（作りは demMiss5a と同じ。記録のある9枚は取りに行かない）
 /* 計数と時間（検査用。画面には出さない）。iPhone の実測（2026-10-12・#231）：中央値で 取得 56／復号 8／計算 3 ms、
