@@ -7399,7 +7399,7 @@ function computeCiTile(grid, M, px, prm) {
   }
   return out;
 }
-/* ------ CS立体図風（v4.176.0）：曲率（谷＝青・尾根＝赤）＋傾斜（急なほど暗い）。試作 experiments/relief/viewer.html の CS と同じ式 ------
+/* ------ CS立体図風（v4.176.0）：曲率（谷＝青・尾根＝赤）＋傾斜（急なほど暗い）。v4.179.0 までは試作 experiments/relief/viewer.html と同じ式、v4.180.0 で色を本物の CS立体図に寄せた ------
    ⚠ これも Worker に toString で渡す（外の定数を見ない。prm＝CS_PRM を引数で） */
 // 余白（升目の数）：ならしの 3σ ＋ 隣の1升目
 function csMargin(px, prm) { return Math.min(prm.tile, Math.ceil(3 * prm.sigM / px) + 2); }
