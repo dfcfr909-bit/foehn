@@ -7409,18 +7409,19 @@ function computeCsTile(grid, M, px, prm) {
   const n = prm.tile, W = n + 2 * M, out = new Uint8ClampedArray(n * n * 4);
   if (prm.whole) for (let i = 0; i < grid.length; i++) if (grid[i] !== grid[i]) return null;
   const s = prm.sigM / px, Z = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
-  const RAD = 180 / Math.PI, GRAY = [232, 232, 232], RIDGE = [238, 82, 40], VALLEY = [36, 78, 224];
+  // 色は本物の CS立体図に寄せる（v4.180.0）：地は白に近い灰、曲率の色は最大 70%、急な斜面は青みの灰へ寄せて暗くする
+  const RAD = 180 / Math.PI, GRAY = [245, 245, 245], RIDGE = [238, 82, 40], VALLEY = [36, 78, 224], SLOPE = [90, 105, 130];
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = (y + M) * W + (x + M), j = (y * n + x) * 4, z0 = Z[i];
     const e = Z[i + 1], w = Z[i - 1], no = Z[i - W], so = Z[i + W];
     if (z0 !== z0 || e !== e || w !== w || no !== no || so !== so) continue;
     // 曲率（ラプラシアン）：負＝凸＝尾根。傾斜（度）で暗くする
     const lap = (e + w + no + so - 4 * z0) / (px * px), gx = (e - w) / (2 * px), gy = (so - no) / (2 * px);
-    const t = Math.max(-1, Math.min(1, -lap / prm.cs0)), u = t < 0 ? -t : t, col = t >= 0 ? RIDGE : VALLEY;
-    const f = 1 - 0.55 * Math.min(1, Math.atan(Math.sqrt(gx * gx + gy * gy)) * RAD / 55);
-    out[j] = (GRAY[0] + (col[0] - GRAY[0]) * u) * f;
-    out[j + 1] = (GRAY[1] + (col[1] - GRAY[1]) * u) * f;
-    out[j + 2] = (GRAY[2] + (col[2] - GRAY[2]) * u) * f;
+    const t = Math.max(-1, Math.min(1, -lap / prm.cs0)), u = (t < 0 ? -t : t) * 0.7, col = t >= 0 ? RIDGE : VALLEY;
+    const f = 1 - 0.6 * Math.min(1, Math.atan(Math.sqrt(gx * gx + gy * gy)) * RAD / 45);
+    out[j] = (GRAY[0] + (col[0] - GRAY[0]) * u) * (f + (1 - f) * SLOPE[0] / 255);
+    out[j + 1] = (GRAY[1] + (col[1] - GRAY[1]) * u) * (f + (1 - f) * SLOPE[1] / 255);
+    out[j + 2] = (GRAY[2] + (col[2] - GRAY[2]) * u) * (f + (1 - f) * SLOPE[2] / 255);
     out[j + 3] = 255;
   }
   return out;
@@ -7620,10 +7621,12 @@ function ciCancel(tile) {
      記録した鍵が9枚の中にあれば（30日以内）DEM10B で描く（圏外でも、一度見た 10B の範囲は描けるように）
    ・圏内ではいつも DEM5A を取りに行く（地理院が範囲を広げたら自然に 5A へ戻る）
    ・DEM10B は z14 まで。z15 で 10B なら z14 の親を計算し、その4分の1を引き伸ばす（親の結果は4枚の子で共有） */
-const CS_PRM = { tile: 256, sigM: 5, cs0: 0.01 };   // ならし σ=5m・曲率の満色 0.01/m（試作の既定）
-// 1m（z16〜17・ADR-0020）。σ は 5A と同じ 5m・cs0 も同じ（z15 から寄っても色の強さが変わらない）。
-// ⚠ σ=2m（v4.179.0）は実機で砂のようにざらついた（1m の微起伏と測量の粗さで曲率が満色を大きく超える。生の |ラプラシアン| の中央値 0.14/m²＝満色の14倍・茶臼岳）
-const CS_PRM_1M = { tile: 256, sigM: 5, cs0: 0.01, whole: true };
+// ならし σ=5m・曲率の満色 0.03/m（v4.180.0。0.01（試作の既定）では赤青が満色で埋まり、本物の CS立体図より読みにくかった）
+const CS_PRM = { tile: 256, sigM: 5, cs0: 0.03 };
+// 1m（z16〜17・ADR-0020）。σ=3m・満色 0.1/m（1m の曲率は大きいので満色も大きく。茶臼岳の実タイルで z15 の 0.03 と色の混み具合をそろえた）
+// ⚠ σ=2m・満色 0.01（v4.179.0）は実機で砂のようにざらついた（生の |ラプラシアン| の中央値 0.14/m²＝満色の14倍・茶臼岳）。
+//   ざらつきの元は満色が小さすぎたこと（σ を 5m にしても赤青の満色で埋まる）
+const CS_PRM_1M = { tile: 256, sigM: 3, cs0: 0.1, whole: true };
 const CS_MISS_KEY = 'demMiss5a', CS_MISS_MAX = 4000, CS_MISS_DAYS = 30;
 const CS_MISS1A_KEY = 'demMiss1a';   // DEM1A が 404 だった鍵（作りは demMiss5a と同じ。記録のある9枚は取りに行かない）
 /* 計数と時間（検査用。画面には出さない）。iPhone の実測（2026-10-12・#231）：中央値で 取得 56／復号 8／計算 3 ms、
