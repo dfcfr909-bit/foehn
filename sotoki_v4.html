@@ -2609,7 +2609,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.180.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.181.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6848,10 +6848,11 @@ const MAP_OVERLAYS = [
      出典は持たない（「地理院タイル（標高タイル）を加工して作成」は出典欄が常に1回出している）。
      ⚠ 計算は z12〜17（minZoom・maxNativeZoom）。z16〜17 は DEM1A（1m）が9枚とも欠け無くあるときだけ 1m、
        無ければ z15 を引き伸ばす（ADR-0020）。z18 は z17 を引き伸ばす */
-  { id: 'csLike', name: 'CS立体図風（全国）', kind: 'demRelief', opacity: 0.75,
+  /* ⚠ スライダーは「濃さ」（strength・v4.181.0）：0〜50% は透過率 0〜100%、50〜100% は不透明のまま色を濃くする（csStrength） */
+  { id: 'csLike', name: 'CS立体図風（全国）', kind: 'demRelief', opacity: 0.5, strength: true,
     minZoom: 12, maxNativeZoom: 17,
     mayBeEmpty: true, partialCoverage: true,   // 海の上など両方とも配信の無い所（404）を赤い失敗にしない
-    note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m。z16 から配信のある所は 1m）。一度見た範囲は圏外でも出る' },
+    note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m。z16 から配信のある所は 1m）。一度見た範囲は圏外でも出る。スライダーは濃さ（50% で不透明、それより上は色を濃く）' },
   /* 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md）：細かい地形 × 風向で、風上の地形の仰角 Sx を塗る。
      風速は出さない。風向は選択地点の判定の風（自動）か16方位。⚠ 計算は z13〜15。z16 以上は z15 を引き伸ばす */
   { id: 'windExp', name: '風の当たり方', kind: 'windExp', opacity: 0.75,
@@ -6903,6 +6904,7 @@ function amedasDirDeg(i) { return (i >= 1 && i <= 16) ? i * 22.5 : null; }
 
 const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
+const MAP_LS_CS_STRENGTH = 'sotoki.map.csStrength';   // CS立体図風の「濃さ」への移し替えを済ませた印（v4.181.0）
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const MAP_LS_WIND_MODE = 'sotoki.map.windMode';   // 風の場：AUTO／手動の層（高度別の風の場）
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
@@ -7127,6 +7129,13 @@ function loadMapPrefs() {
         const o = Number(item.opacity);
         overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? o : def.opacity });
       }
+    }
+    /* v4.181.0：CS立体図風のスライダーを「濃さ」にした（50% で今までの 100%）。覚えていた値を一度だけ半分にして、見え方を変えない。
+       ⚠ 印を立てるときに overlays も書き戻す（印だけ立って値が戻らないと、次の起動で濃さが倍になる） */
+    if (localStorage.getItem(MAP_LS_CS_STRENGTH) !== '1') {
+      overlays.forEach(x => { if (findOverlay(x.id).strength) x.opacity /= 2; });
+      localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(overlays));
+      localStorage.setItem(MAP_LS_CS_STRENGTH, '1');
     }
     // v4.141.0：Canvas 版の「風の流れ」は予備になった（一覧に出ない）。入れていた人は WebGL 版へ移す
     const wf = overlays.findIndex(x => x.id === 'windFlow');
@@ -8176,7 +8185,8 @@ function applyOverlays() {
       const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
       if (def.kind === 'windExp') { const r = windExpDir(); windExp.sector = r.sector; windExp.drawn = r.sector == null ? 'none' : `${r.sector}|${windExp.dmax}`; }
       const Cls = def.kind === 'windExp' ? SxLayerClass() : def.kind === 'demRelief' ? CsLayerClass() : CiMapLayerClass();
-      const layer = new Cls(tileOpts(def, { pane, opacity: item.opacity, minZoom: def.minZoom }));
+      const layer = new Cls(tileOpts(def, { pane, opacity: def.strength ? csStrength(item.opacity).opacity : item.opacity, minZoom: def.minZoom }));
+      if (def.strength) leafletMap.getPane(pane).style.filter = csStrength(item.opacity).filter;
       layer.on('tileunload', e => ciCancel(e.tile));
       layer.addTo(leafletMap);
       watchTileStatus(layer, def);
@@ -12852,6 +12862,12 @@ function toggleOverlay(id) {
   renderLayerPanel();
 }
 
+/* 「濃さ」（strength のレイヤー・v4.181.0）：スライダーの値 v → 透過率と pane のフィルタ。
+   v≦0.5 は透過率 2v（色はそのまま）。v＞0.5 は不透明のまま、彩度・コントラストを上げ少し暗くする（v=1 で彩度 2.2 倍・コントラスト 1.5 倍・明るさ 0.85） */
+function csStrength(v) {
+  const k = Math.max(0, Math.min(1, (v - 0.5) / 0.5));
+  return { opacity: Math.min(1, 2 * v), filter: k > 0 ? `saturate(${(1 + 1.2 * k).toFixed(3)}) contrast(${(1 + 0.5 * k).toFixed(3)}) brightness(${(1 - 0.15 * k).toFixed(3)})` : '' };
+}
 // スライダーはドラッグ中も即座に反映する（作り直さず不透明度だけ差し替える）
 function setOverlayOpacity(id, value) {
   const item = mapPrefs.overlays.find(o => o.id === id);
@@ -12863,7 +12879,9 @@ function setOverlayOpacity(id, value) {
     leafletMap.getPane('rrimShade').style.opacity = String(item.opacity);
     leafletMap.getPane('rrimSlope').style.opacity = String(item.opacity);
   } else if (layer) {
-    layer.setOpacity(item.opacity);
+    const d = findOverlay(id);
+    if (d && d.strength) { const s = csStrength(item.opacity); layer.setOpacity(s.opacity); leafletMap.getPane('mapOv_' + id).style.filter = s.filter; }
+    else layer.setOpacity(item.opacity);
   }
   const def = findOverlay(id);
   // ⚠ 点で描くものは描き直さないと透過率が効かない（'areas' は v4.166.0 まで漏れていた）
@@ -13168,6 +13186,7 @@ function layerHiddenSummary(sec) {
    ⚠ 版でレイヤーが消えたら、その項目だけ黙って捨てる。下地が分からなければ下地と透過率は変えない
    ⚠ 名前は利用者の入力なので HTML に出す前に escapeHtml。onclick に渡すのは採番した id（英数字）だけ */
 const MAP_LS_LAYER_SETS = 'sotoki.map.layerSets';
+const MAP_LS_CS_STRENGTH_SETS = 'sotoki.map.csStrengthSets';   // セットの CS立体図風を「濃さ」へ移し替えた印（v4.181.0）
 const LAYER_SETS_MAX = 8;
 const LAYER_SET_NAME_MAX = 20;
 const LAYER_SET_ID_RE = /^[a-z0-9]{1,16}$/;
@@ -13233,6 +13252,14 @@ function loadLayerSets() {
   if (layerSetsCache) return layerSetsCache;
   try { layerSetsCache = sanitizeLayerSets(JSON.parse(localStorage.getItem(MAP_LS_LAYER_SETS) || '[]')); }
   catch (e) { layerSetsCache = []; }    // 壊れていたらセットなし（地図は動く）
+  // v4.181.0：セットに覚えた CS立体図風の値も一度だけ半分にする（loadMapPrefs と同じ理由。印は別に持つ）
+  try {
+    if (localStorage.getItem(MAP_LS_CS_STRENGTH_SETS) !== '1') {
+      layerSetsCache.forEach(s => s.overlays.forEach(o => { if (findOverlay(o.id).strength) o.opacity /= 2; }));
+      localStorage.setItem(MAP_LS_LAYER_SETS, JSON.stringify(layerSetsCache));
+      localStorage.setItem(MAP_LS_CS_STRENGTH_SETS, '1');
+    }
+  } catch (e) { /* 書けなければ移し替えない */ }
   return layerSetsCache;
 }
 function saveLayerSets(sets) {
