@@ -2609,7 +2609,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.177.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.178.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6923,7 +6923,7 @@ const BLEND_DEFAULT = { rrimLike: 'multiply' };
 function isBlendable(def) {
   if (!def) return false;
   if (BLEND_HOST[def.id]) return true;
-  if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp') return true;   // 自前で描くタイル（#202・CS立体図風・風の当たり方）。pane に重ね方を掛けられる
+  if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp' || def.kind === 'windDown') return true;   // 自前で描くタイル（#202・CS立体図風・風の当たり方）。pane に重ね方を掛けられる・風の強さ（地形）は画像1枚
   return !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
 }
 function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || BLEND_DEFAULT[id] || 'normal'; }
@@ -7042,6 +7042,11 @@ const MAP_WEATHER = [
     attribution: 'Open-Meteo', note: '選択時刻の風を粒子で流す。パン・ズーム中も流れる。AUTO／層の切り替えは風向風速と共通' },
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
     attribution: 'Open-Meteo', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
+  /* 風の強さ（地形）（v4.178.0・ADR-0019）：選択地点・選択時刻の判定の風を、WindNinja の倍率の表で地図の各点へ配る（推定）。
+     表のある山域だけ（WIND_TABLE_AREAS）。地理院の標高タイルの加工の表記は出典欄が常に1回出す */
+  { id: 'windDown', name: '風の強さ（地形）', kind: 'windDown', opacity: 0.8,
+    attribution: ['Open-Meteo', 'WindNinja（米国農務省林野局）で計算'],
+    note: '推定。選択地点に近い峰で判定の風と一致させ、地形の倍率で配る（谷川・上越国境だけ）。色は風の流れと同じ m/s' },
   /* 降雪の目安（段階2・#131）。風の矢印と同じ格子点に、選択時刻の雨・みぞれ・雪の記号を置く。
      ⚠ 予報モデルの値であって観測ではない。判定（ABC評価）でもない（閾値は SNOW_HINT・仮置き）。
      説明は「降雪の目安」の節（drawSnowHint の上） */
@@ -7865,6 +7870,146 @@ function windExpSettings() {
     `<span class="layer-ov-note windexp-legend"><span class="windexp-sw" style="background:rgb(${SX_COLOR.EXP.join(',')})"></span>風が当たる　<span class="windexp-sw" style="background:rgb(${SX_COLOR.SH.join(',')})"></span>風の陰　（風速ではない・吹きだまりの判定ではない）</span>`;
 }
 
+/* ------ 風の強さ（地形）（v4.178.0・docs/requirements_wind_downscale.md・ADR-0019） ------
+   Actions で WindNinja（質量保存）を解いて作った表（data/wind/<山域>.png・.json）を読み、選択時刻の判定の風を地図の各点へ配る（案A）。
+     その点の風 ＝ 判定の風 × 倍率(点) ÷ 倍率(基準の峰)。基準の峰＝選択地点にいちばん近い、表の範囲内の峰
+   ・表は 8方位（0〜157.5°）。逆向き（＋180°）は同じ表。挟む2方位を角度で按分（findings-02）
+   ・**推定。** 風下の陰は出ない（逆向きの風でも倍率が同じ計算）。陰は「風の当たり方」で見る。判定（A/B/C）・グラフ・矢印には使わない
+   ・塗らないとき：範囲外・表の無い山域・風の欠け・地上10m風に落ちた時刻（峰の高さの風ではないので案Aの前提が崩れる）・基準の峰の倍率 0.3 未満
+   ・⚠ Worker は使わない（要件は Worker だったが、PNG の取り出しは山域ごとに1回・毎時刻の計算は 20万升の掛け算で軽い）
+   ・⚠ 表は緯度経度の等間隔のまま imageOverlay で貼る（メルカトルとの縦のずれは谷川の 30km 四方で十数 m・升目 67m より小さい） */
+const WIND_TABLE_AREAS = ['tanigawa'];               // 表のある山域（areas.json の id）。足すときは Actions で作ってから
+const WD = { RATIO_MIN: 0.3, LOW_M: 300, ALPHA: 0.8 };   // 基準の峰の倍率の下限・選択地点が峰より低いと注記する差・塗りの濃さ
+const wdTables = new Map();                          // 山域 id → Promise<{ meta, r, a }>（1回だけ読む）
+const wd = { key: null, url: null, info: '', plan: null };
+// PNG を読んで R（倍率×rScale）と A（255＝値あり）を取り出す。⚠ 色空間の変換と乗算済みアルファを切る（R がずれる・A=0 で R が壊れる）
+async function wdDecodePng(blob, w, h) {
+  const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  if (bmp.width !== w || bmp.height !== h) throw new Error(`表の大きさが違う（${bmp.width}×${bmp.height}）`);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0);
+  const d = g.getImageData(0, 0, w, h).data, n = w * h, r = new Uint8Array(n), a = new Uint8Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) { r[i] = d[j]; a[i] = d[j + 3]; }
+  return { r, a };
+}
+function wdLoadTable(id) {
+  if (wdTables.has(id)) return wdTables.get(id);
+  const p = (async () => {
+    const mr = await fetch(`data/wind/${id}.json`);
+    if (!mr.ok) throw new Error(`表の JSON HTTP ${mr.status}`);
+    const meta = await mr.json();
+    const pr = await fetch(`data/wind/${id}.png`);
+    if (!pr.ok) throw new Error(`表の PNG HTTP ${pr.status}`);
+    const { r, a } = await wdDecodePng(await pr.blob(), meta.nx, meta.ny * meta.dirs.length);
+    return { meta, r, a };
+  })();
+  p.catch(() => { if (wdTables.get(id) === p) wdTables.delete(id); });   // 失敗は覚えない（次に入れたとき取り直す）
+  wdTables.set(id, p);
+  return p;
+}
+// 風向（吹いてくる向き・度）→ 挟む2方位と重み。表は 0〜157.5° の 8方位で、180° は 0° と同じ表
+function wdDirWeights(wdir, nDir = 8) {
+  const f = ((((wdir % 180) + 180) % 180) / 180) * nDir;
+  const i0 = Math.floor(f) % nDir;
+  return { i0, i1: (i0 + 1) % nDir, t: f - Math.floor(f) };
+}
+function wdInterp(arr, w) { return arr[w.i0] * (1 - w.t) + arr[w.i1] * w.t; }
+// 地点が表の範囲に入るか・その升（表を作った式と同じ：buildWindTable.py）
+function wdCell(meta, lat, lon) {
+  const b = meta.bounds;
+  if (!(lat >= b.south && lat < b.north && lon >= b.west && lon < b.east)) return null;
+  return { c: Math.floor((lon - b.west) / ((b.east - b.west) / meta.nx)), r: Math.floor((b.north - lat) / ((b.north - b.south) / meta.ny)) };
+}
+function wdDistKm(lat1, lon1, lat2, lon2) {
+  const k = 111.0, dx = (lon2 - lon1) * k * Math.cos((lat1 + lat2) / 2 * Math.PI / 180), dy = (lat2 - lat1) * k;
+  return Math.hypot(dx, dy);
+}
+/* 塗るかどうかと、使う値を決める（純関数）。→ { ok, reason } か { ok:true, w, ref, refR, wind, wdir, low, distKm }
+   tables … [{ id, meta, peaks:[{ name, lat, lon, elev }] }]（表の範囲内の峰だけ）。d … state.allData の1時刻 */
+function wdPlan(tables, lat, lon, d, pointElev) {
+  if (!(isFinite(lat) && isFinite(lon))) return { ok: false, reason: '地点が決まっていない' };
+  const tb = tables.find(t => wdCell(t.meta, lat, lon));
+  if (!tb) return { ok: false, reason: 'この地点は表の範囲外（いまは谷川・上越国境だけ）' };
+  if (!d || d.windMissing) return { ok: false, reason: '風データなし（この時刻）：塗りません' };
+  const tr = d.windTrace;
+  if (tr && (tr.kind === 'missing')) return { ok: false, reason: '風データなし（この時刻）：塗りません' };
+  if (tr && tr.kind === 'ground') return { ok: false, reason: '判定の風が地上10m風（峰の高さの風ではない）：塗りません' };
+  if (typeof d.wind !== 'number' || !isFinite(d.wind) || typeof d.wdir !== 'number' || !isFinite(d.wdir)) return { ok: false, reason: '風データなし（この時刻）：塗りません' };
+  let ref = null, best = Infinity;
+  tb.peaks.forEach(p => { const k = wdDistKm(lat, lon, p.lat, p.lon); if (k < best) { best = k; ref = p; } });
+  if (!ref) return { ok: false, reason: '基準の峰が決まらない' };
+  const w = wdDirWeights(d.wdir, tb.meta.dirs.length);
+  const pr = tb.meta.peakRatio[ref.name];
+  // ⚠ 表は峰の値が読めない方位に null を入れうる（null は掛け算で 0 になり、もう一方の方位だけで比較を通ってしまう）
+  if (![pr[w.i0], pr[w.i1]].every(v => typeof v === 'number' && isFinite(v))) return { ok: false, reason: `基準の峰（${ref.name}）の倍率が表に無い：塗りません` };
+  const refR = wdInterp(pr, w);
+  if (!(refR >= WD.RATIO_MIN)) return { ok: false, reason: `基準の峰（${ref.name}）の倍率が小さすぎる（${refR.toFixed(2)}）：塗りません` };
+  const low = typeof pointElev === 'number' && typeof ref.elev === 'number' && pointElev <= ref.elev - WD.LOW_M;
+  return { ok: true, id: tb.id, w, ref, refR, wind: d.wind, wdir: d.wdir, low, distKm: best };
+}
+// 表と計画から色の画素（nx×ny×4）。欠けの升（どちらかの方位で A≠255）は透明
+function wdPaint(tbl, plan) {
+  const { meta, r, a } = tbl, n = meta.nx * meta.ny, s = meta.encoding.rScale, out = new Uint8ClampedArray(n * 4);
+  const o0 = plan.w.i0 * n, o1 = plan.w.i1 * n, t = plan.w.t, k = plan.wind / plan.refR / s, al = Math.round(255 * WD.ALPHA);
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    if (a[o0 + i] !== 255 || a[o1 + i] !== 255) continue;
+    const rgb = windBgRGB((r[o0 + i] * (1 - t) + r[o1 + i] * t) * k);
+    out[j] = rgb[0]; out[j + 1] = rgb[1]; out[j + 2] = rgb[2]; out[j + 3] = al;
+  }
+  return out;
+}
+function wdInfoText(plan) {
+  if (!plan) return '表を読み込み中…';
+  if (!plan.ok) return plan.reason;
+  const dir = SX_DIR16[Math.round((((plan.wdir % 360) + 360) % 360) / 22.5) % 16];
+  return `${dir}の風 ${plan.wind.toFixed(1)} m/s を、${plan.ref.name}（${plan.distKm.toFixed(1)} km）で一致させた推定` +
+    (plan.low ? '・選択地点が峰より低い：峰の風は予報より強い見込み' : '');
+}
+// 表の範囲内の峰（areas.json の座標・標高）を添える
+async function wdTablesFor() {
+  const areas = await loadAreas();
+  return Promise.all(WIND_TABLE_AREAS.map(async id => {
+    const tbl = await wdLoadTable(id), area = (areas.areas || []).find(x => x.id === id);
+    const peaks = ((area && area.peaks) || []).filter(p => tbl.meta.peakRatio[p.name] && wdCell(tbl.meta, p.lat, p.lon))
+      .map(p => ({ name: p.name, lat: p.lat, lon: p.lon, elev: p.elev }));
+    return { id, meta: tbl.meta, peaks, tbl };
+  }));
+}
+/* 今の選択地点・時刻に合わせて塗る。鍵が同じなら塗り直さないが、層が無ければ（applyOverlays が外した）手元の画像で貼り直す */
+async function wdSync() {
+  if (!leafletMap || !isOverlayOn('windDown')) return;
+  let tables;
+  try { tables = await wdTablesFor(); }
+  catch (e) { wd.info = '表を読めませんでした（' + e.message + '）'; wdSetInfo(); setLayerNote('windDown', wd.info); return; }
+  if (!isOverlayOn('windDown')) return;
+  const d = state.allData && state.allData[state.sliderIndex];
+  const plan = wdPlan(tables, state.lat, state.lon, d, state.summitElev ?? state.demElevation);
+  wd.plan = plan; wd.info = wdInfoText(plan); wdSetInfo();
+  const key = plan.ok ? `${plan.id}|${plan.ref.name}|${plan.wdir.toFixed(1)}|${plan.wind.toFixed(2)}` : 'none';
+  if (key !== wd.key) {
+    wd.key = key; wd.url = null;
+    if (plan.ok) {
+      const tb = tables.find(t => t.id === plan.id), m = tb.meta;
+      const c = document.createElement('canvas'); c.width = m.nx; c.height = m.ny;
+      c.getContext('2d').putImageData(new ImageData(wdPaint(tb.tbl, plan), m.nx, m.ny), 0, 0);
+      wd.url = c.toDataURL('image/png');
+      wd.bounds = [[m.bounds.south, m.bounds.west], [m.bounds.north, m.bounds.east]];
+    }
+  }
+  const layer = overlayTileLayers.windDown;
+  if (!wd.url) { if (layer) layer.setUrl(WD_BLANK); return; }
+  if (layer && layer._wdUrl !== wd.url) { layer.setUrl(wd.url); layer.setBounds(L.latLngBounds(wd.bounds)); layer._wdUrl = wd.url; }
+}
+const WD_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+function wdSetInfo() { const el = document.getElementById('winddown-info'); if (el) el.textContent = wd.info; }
+// レイヤーの行の下：使った風・基準の峰・塗らない理由と、必ず書くこと（要件「画面と about に必ず書くこと」）
+function windDownSettings() {
+  return `<span class="layer-ov-note" id="winddown-info">${escapeHtml(wd.info || wdInfoText(wd.plan))}</span>` +
+    `<span class="layer-ov-note">推定。風下の斜面は強めに出る（風上と同じ倍率の計算）。陰は「風の当たり方」で見る。` +
+    `谷・樹林の中は強めの見込み。判定（A/B/C）には使わない</span>`;
+}
+
 /* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet が読めないと（v4.175.0 で同梱したが、
    壊れた控えなどで無いことはありうる）本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
 let ciMapLayerClass = null;
@@ -7967,6 +8112,10 @@ function applyOverlays() {
       addTimedTileLayer(def, item.opacity);
     } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas' || def.kind === 'poi') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
+    } else if (def.kind === 'windDown') {
+      // ⚠ isBlendable の分岐より前に置く（url が無い）。中身は wdSync が貼る（鍵が同じでも、作り直したこの層へ貼り直す）
+      const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
+      overlayTileLayers[def.id] = L.imageOverlay(WD_BLANK, [[0, 0], [0.001, 0.001]], { pane, opacity: item.opacity, interactive: false }).addTo(leafletMap);
     } else if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp') {
       // ⚠ isBlendable の分岐より前に置く（url が無いので L.tileLayer にすると壊れる）
       const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
@@ -12357,6 +12506,7 @@ function refreshWeatherPoints() {
   }
   updateThunderIcons();
   if (isOverlayOn('windExp')) sxSync();
+  if (isOverlayOn('windDown')) wdSync();
   updateMapTime();
   weatherPointsDirty = false;
 }
@@ -12380,7 +12530,7 @@ function updateMapTime() {
   const box = document.getElementById('map-time');
   if (!box) return;
   // 風の当たり方も自動の風向なら時刻で変わる（v4.177.0）
-  const show = isMapOpen() && !!state.allData && typeof pointHintAnyOn === 'function' && (pointHintAnyOn() || (isOverlayOn('windExp') && windExp.mode === 'auto'));
+  const show = isMapOpen() && !!state.allData && typeof pointHintAnyOn === 'function' && (pointHintAnyOn() || isOverlayOn('windDown') || (isOverlayOn('windExp') && windExp.mode === 'auto'));
   box.classList.toggle('hidden', !show);
   if (!show) return;
   const r = document.getElementById('map-time-range');
@@ -13234,7 +13384,7 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}${o.id === 'windExp' && on ? windExpSettings() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}${o.id === 'windExp' && on ? windExpSettings() : ''}${o.id === 'windDown' && on ? windDownSettings() : ''}
         <div class="layer-ov-op">
           ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
