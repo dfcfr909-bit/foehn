@@ -380,12 +380,13 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `getCiWorker()` / `ciBreakWorker()` | Worker を初回に作る。無い・壊れたら以後はメイン |
 | `ciFetchBlob(z,x,y)` | 標高タイルの取得は**メイン**（Service Worker のタイルキャッシュを通す）。通信の失敗は覚えない |
 | `ciComputeMain(job)` / `ciDecodeMain` | Worker が使えないときの計算（1枚ずつ譲る） |
-| `DEM_SRC` / `decodeGsiDem` / `demFetchBlob(src,z,x,y)` | 標高タイルの源（栃木・地理院 DEM5A・DEM10B）。`demFetchBlob` は `{blob}`／`{missing}`（403・404）／`{error}`（通信の失敗・覚えない）。鍵は `ciTileKey(z,x,y,src)`（栃木は従来の `z/x/y`）。`ciFetchBlob` は栃木用の薄い包み（戻り値は従来どおり） |
+| `DEM_SRC` / `decodeGsiDem` / `demFetchBlob(src,z,x,y)` | 標高タイルの源（栃木・地理院 DEM5A・DEM10B・DEM1A）。`demFetchBlob` は `{blob}`／`{missing}`（403・404）／`{error}`（通信の失敗・覚えない）。鍵は `ciTileKey(z,x,y,src)`（栃木は従来の `z/x/y`）。`ciFetchBlob` は栃木用の薄い包み（戻り値は従来どおり） |
 | `csMargin` / `computeCsTile` / `CS_PRM` | CS立体図風の計算（曲率＋傾斜）。Worker に toString で渡す（`CI_WORKER_FNS`） |
 | `sxMargin` / `computeSxTile` | 風の当たり方の計算（風上の仰角 Sx・Float32 を返す）。Worker に toString で渡す（`CI_WORKER_FNS`）。余白は DMAX ぶん |
 | `windExp` / `windExpDir` / `sxSync` / `sxRenderTile` / `sxColorize` / `sxParent` / `sxCropQuarter` / `SxLayerClass()` / `windExpSettings` | 風の当たり方のレイヤー（v4.177.0）。風向は自動（`state.allData[i].wdir`）か16方位。源の選び方は CS と同じ（`csGather`・`csCompute` に alg='sx'） |
 | `WIND_TABLE_AREAS` / `WD` / `wdLoadTable` / `wdDecodePng` / `wdDirWeights` / `wdCell` / `wdPlan` / `wdPaint` / `wdTablesFor` / `wdSync` / `windDownSettings` | 風の強さ（地形）（v4.178.0・ADR-0019）。WindNinja の表（`data/wind/`）× 判定の風 ÷ 基準の峰の倍率。画像1枚（`L.imageOverlay`）。塗らない条件は `wdPlan` |
-| `csRenderTile` / `csGather` / `csCompute` / `csParent` / `csCropQuarter` / `csMiss*` / `CsLayerClass()` | CS立体図風の1枚（ADR-0018）。DEM5A の9枚で1枚でも 404 なら9枚とも DEM10B。504 では落とさず、`demMiss5a` の記録（30日）があれば 10B。z15 の 10B は z14 の親を共有して切り出す |
+| `csRenderTile` / `csGather` / `csCompute` / `csParent` / `csCropPart` / `csMiss*` / `CsLayerClass()` | CS立体図風の1枚（ADR-0018）。DEM5A の9枚で1枚でも 404 なら9枚とも DEM10B。504 では落とさず、`demMiss5a` の記録（30日）があれば 10B。z15 の 10B は z14 の親を共有して切り出す（`csCropPart(pix,k,qx,qy)`） |
+| `csRender1m` / `csStretch15` / `csZ15` / `CS_PRM_1M` / `CS_MISS1A_KEY` | z16〜17 の 1m（ADR-0020）。DEM1A の9枚が欠け無く揃えば 1m、だめなら z15 の結果を切り出して引き伸ばす。`demMiss1a` の記録がある9枚は取りに行かない。`csMiss*` は保存先の鍵を引数で受ける（既定 `demMiss5a`） |
 | `csStats` | 計数と時間（検査用・画面には出さない）。行の下の計測は #231 で iPhone を測り終えて v4.176.1 で外した |
 | `ciRenderTile` / `ciCancel` / `CiMapLayerClass()` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す。⚠ GridLayer の派生は**使うときに作る**（最上位で `L.` を呼ぶと、Leaflet が取れないとき本体ごと止まる） |
 | `updateCiZoomNote()` | z13 未満で「拡大すると表示（z13 から）」 |

@@ -2609,7 +2609,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.178.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.179.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -6846,11 +6846,12 @@ const MAP_OVERLAYS = [
   /* CS立体図風（全国）（v4.176.0・ADR-0018）：地理院の標高タイル（DEM5A 5m／無い所は DEM10B 10m）から、端末で
      曲率と傾斜を計算して描く。本物の CS立体図（航空レーザー 0.5〜1m から作る）ではないので「風」。
      出典は持たない（「地理院タイル（標高タイル）を加工して作成」は出典欄が常に1回出している）。
-     ⚠ 計算は z12〜15（minZoom・maxNativeZoom）。z16 以上は z15 を引き伸ばす。行の下の計測は試作の間だけ */
+     ⚠ 計算は z12〜17（minZoom・maxNativeZoom）。z16〜17 は DEM1A（1m）が9枚とも欠け無くあるときだけ 1m、
+       無ければ z15 を引き伸ばす（ADR-0020）。z18 は z17 を引き伸ばす */
   { id: 'csLike', name: 'CS立体図風（全国）', kind: 'demRelief', opacity: 0.75,
-    minZoom: 12, maxNativeZoom: 15,
+    minZoom: 12, maxNativeZoom: 17,
     mayBeEmpty: true, partialCoverage: true,   // 海の上など両方とも配信の無い所（404）を赤い失敗にしない
-    note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m）。一度見た範囲は圏外でも出る' },
+    note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m。z16 から配信のある所は 1m）。一度見た範囲は圏外でも出る' },
   /* 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md）：細かい地形 × 風向で、風上の地形の仰角 Sx を塗る。
      風速は出さない。風向は選択地点の判定の風（自動）か16方位。⚠ 計算は z13〜15。z16 以上は z15 を引き伸ばす */
   { id: 'windExp', name: '風の当たり方', kind: 'windExp', opacity: 0.75,
@@ -7288,6 +7289,7 @@ const DEM_SRC = {
   tochigi: { url: CI_TERRAIN_URL, dec: 'tochigi', zmax: 18 },
   gsi5a:  { url: 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png', dec: 'gsi', zmax: 15 },   // 5m・航空レーザー
   gsi10b: { url: 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png', dec: 'gsi', zmax: 14 },     // 10m・全国
+  gsi1a:  { url: 'https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/{z}/{x}/{y}.png', dec: 'gsi', zmax: 17 },  // 1m・欠けが多い。CS立体図風の z16〜17 だけ（ADR-0020）
 };
 const CI_BLOB_MAX = 120;      // 標高タイルの Blob を覚えておく枚数（メイン側）
 const ciStats = { worker: 0, main: 0 };   // どちらの経路で何枚計算したか（検査用。Worker が黙って壊れていないかを見る）
@@ -7401,9 +7403,11 @@ function computeCiTile(grid, M, px, prm) {
    ⚠ これも Worker に toString で渡す（外の定数を見ない。prm＝CS_PRM を引数で） */
 // 余白（升目の数）：ならしの 3σ ＋ 隣の1升目
 function csMargin(px, prm) { return Math.min(prm.tile, Math.ceil(3 * prm.sigM / px) + 2); }
-// 格子 → n×n の RGBA。欠けの升目（自分か上下左右が NaN）は透明
+// 格子 → n×n の RGBA。欠けの升目（自分か上下左右が NaN）は透明。
+// prm.whole（1m 用）なら、格子（余白込み＝計算に使う範囲）に欠けが1つでもあれば null（縁に偽の崖を出さない・ADR-0020）
 function computeCsTile(grid, M, px, prm) {
   const n = prm.tile, W = n + 2 * M, out = new Uint8ClampedArray(n * n * 4);
+  if (prm.whole) for (let i = 0; i < grid.length; i++) if (grid[i] !== grid[i]) return null;
   const s = prm.sigM / px, Z = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
   const RAD = 180 / Math.PI, GRAY = [232, 232, 232], RIDGE = [238, 82, 40], VALLEY = [36, 78, 224];
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
@@ -7476,6 +7480,7 @@ function ciWorkerMain() {
         const t1 = performance.now(), cs = m.alg === 'cs', sx = m.alg === 'sx';
         const M = sx ? sxMargin(m.px, m.prm) : cs ? csMargin(m.px, m.prm) : ciMargin(m.px, m.prm), grid = ciAssembleGrid(tiles, M, m.prm.tile);
         const pix = sx ? computeSxTile(grid, M, m.px, m.prm) : cs ? computeCsTile(grid, M, m.px, m.prm) : computeCiTile(grid, M, m.px, m.prm);
+        if (!pix) { self.postMessage({ id: m.id, empty: true }); continue; }   // 1m の欠け（computeCsTile の whole）
         self.postMessage({ id: m.id, pix, t: { decode: t1 - t0, compute: performance.now() - t1 } }, [pix.buffer]);
       } catch (e) { self.postMessage({ id: m.id, error: String(e && e.message || e) }); }
     }
@@ -7570,6 +7575,7 @@ function ciComputeMain(job) {
     const t1 = performance.now();
     const M = sx ? sxMargin(job.px, prm) : cs ? csMargin(job.px, prm) : ciMargin(job.px, prm), grid = ciAssembleGrid(tiles, M, prm.tile);
     const pix = sx ? computeSxTile(grid, M, job.px, prm) : cs ? computeCsTile(grid, M, job.px, prm) : computeCiTile(grid, M, job.px, prm);
+    if (!pix) return null;   // 1m の欠け（computeCsTile の whole）
     (job.stats || ciStats).main++;
     if (job.onTime) job.onTime({ decode: t1 - t0, compute: performance.now() - t1 });
     return pix;
@@ -7615,28 +7621,32 @@ function ciCancel(tile) {
    ・圏内ではいつも DEM5A を取りに行く（地理院が範囲を広げたら自然に 5A へ戻る）
    ・DEM10B は z14 まで。z15 で 10B なら z14 の親を計算し、その4分の1を引き伸ばす（親の結果は4枚の子で共有） */
 const CS_PRM = { tile: 256, sigM: 5, cs0: 0.01 };   // ならし σ=5m・曲率の満色 0.01/m（試作の既定）
+// 1m（z16〜17・ADR-0020）。σ=2m は仮（5m では 1m の細かさが消える見込み）、cs0 は据え置き。どちらも実機で決める
+const CS_PRM_1M = { tile: 256, sigM: 2, cs0: 0.01, whole: true };
 const CS_MISS_KEY = 'demMiss5a', CS_MISS_MAX = 4000, CS_MISS_DAYS = 30;
+const CS_MISS1A_KEY = 'demMiss1a';   // DEM1A が 404 だった鍵（作りは demMiss5a と同じ。記録のある9枚は取りに行かない）
 /* 計数と時間（検査用。画面には出さない）。iPhone の実測（2026-10-12・#231）：中央値で 取得 56／復号 8／計算 3 ms、
    Worker 1887 枚・メイン 0・5m 2155／10m 7 → 端末で描いて足りる（Actions で画像を作る案は採らない） */
-const csStats = { worker: 0, main: 0, fetch: [], decode: [], compute: [], src5a: 0, src10b: 0 };
+const csStats = { worker: 0, main: 0, fetch: [], decode: [], compute: [], src5a: 0, src10b: 0, src1a: 0 };
+const CS_SRC_STAT = { gsi5a: 'src5a', gsi10b: 'src10b', gsi1a: 'src1a' };
 function csPushTime(k, ms) { const a = csStats[k]; a.push(ms); if (a.length > 200) a.shift(); }
-function csMissLoad() {
-  try { const o = JSON.parse(localStorage.getItem(CS_MISS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
+function csMissLoad(lsKey = CS_MISS_KEY) {
+  try { const o = JSON.parse(localStorage.getItem(lsKey) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
 }
-function csMissMark(keys) {
+function csMissMark(keys, lsKey = CS_MISS_KEY) {
   if (!keys.length) return;
-  const o = csMissLoad(), now = Date.now();
+  const o = csMissLoad(lsKey), now = Date.now();
   keys.forEach(k => { delete o[k]; o[k] = now; });
   const ks = Object.keys(o);
   if (ks.length > CS_MISS_MAX) ks.sort((a, b) => o[a] - o[b]).slice(0, ks.length - CS_MISS_MAX).forEach(k => delete o[k]);
-  try { localStorage.setItem(CS_MISS_KEY, JSON.stringify(o)); } catch (e) { /* 入らなければ覚えないだけ */ }
+  try { localStorage.setItem(lsKey, JSON.stringify(o)); } catch (e) { /* 入らなければ覚えないだけ */ }
 }
 // 鍵のどれかが「DEM5A が無い」と記録されているか（30日を過ぎたものは消す）
-function csMissAny(keys) {
-  const o = csMissLoad(), lim = Date.now() - CS_MISS_DAYS * 86400000;
+function csMissAny(keys, lsKey = CS_MISS_KEY) {
+  const o = csMissLoad(lsKey), lim = Date.now() - CS_MISS_DAYS * 86400000;
   let hit = false, dirty = false;
   for (const k of Object.keys(o)) if (!(o[k] >= lim)) { delete o[k]; dirty = true; }
-  if (dirty) { try { localStorage.setItem(CS_MISS_KEY, JSON.stringify(o)); } catch (e) { /* 無視 */ } }
+  if (dirty) { try { localStorage.setItem(lsKey, JSON.stringify(o)); } catch (e) { /* 無視 */ } }
   for (const k of keys) if (o[k]) { hit = true; break; }
   return hit;
 }
@@ -7659,7 +7669,8 @@ async function csCompute(job, g, src, z, y, alg = 'cs', prm = CS_PRM, stats = cs
   if (!g.blobs[4]) return null;
   Object.assign(job, { keys: g.keys, blobs: g.blobs, px: ciMetersPerPx(z, y, prm.tile), prm, dec: 'gsi', alg,
     stats, onTime: stats === csStats ? t => { csPushTime('decode', t.decode); csPushTime('compute', t.compute); } : null });
-  stats[src === 'gsi5a' ? 'src5a' : 'src10b']++;
+  // 源の計数は結果が出てから（1m の欠けで null なら数えない）。sxStats には src1a が無いので (|| 0)
+  const count = pix => { if (pix) { const k = CS_SRC_STAT[src]; stats[k] = (stats[k] || 0) + 1; } return pix; };
   const w = getCiWorker();
   if (w) {
     try {
@@ -7668,10 +7679,10 @@ async function csCompute(job, g, src, z, y, alg = 'cs', prm = CS_PRM, stats = cs
         w.postMessage({ id: job.id, keys: job.keys, blobs: job.blobs, px: job.px, prm, dec: 'gsi', alg });
       });
       if (pix) stats.worker++;
-      return pix;
+      return count(pix);
     } catch (e) { /* Worker が壊れた：メインでやり直す */ }
   }
-  return ciComputeMain(job);
+  return ciComputeMain(job).then(count);
 }
 // z15 で DEM10B のとき：z14 の親の結果（4枚の子で共有。子が取り消されても止めない）
 const csParentCache = new Map(), CS_PARENT_MAX = 32;
@@ -7688,9 +7699,9 @@ function csParent(px, py) {
   if (csParentCache.size > CS_PARENT_MAX) csParentCache.delete(csParentCache.keys().next().value);
   return p;
 }
-// 親の4分の1を切り出して 256 に引き伸ばす
-function csCropQuarter(pix, qx, qy) {
-  const n = CS_PRM.tile, h = n / 2, src = document.createElement('canvas'), dst = document.createElement('canvas');
+// 親の k×k 分の1（左上から qx, qy 番目）を切り出して 256 に引き伸ばす。z15 の 10B の親は k=2、z16 は k=2・z17 は k=4（z15 から）
+function csCropPart(pix, k, qx, qy) {
+  const n = CS_PRM.tile, h = n / k, src = document.createElement('canvas'), dst = document.createElement('canvas');
   src.width = src.height = dst.width = dst.height = n;
   src.getContext('2d').putImageData(new ImageData(pix, n, n), 0, 0);
   const g = dst.getContext('2d');
@@ -7698,8 +7709,42 @@ function csCropQuarter(pix, qx, qy) {
   g.drawImage(src, qx * h, qy * h, h, h, 0, 0, n, n);
   return g.getImageData(0, 0, n, n).data;
 }
+/* z16〜17（ADR-0020）：DEM1A の9枚がすべてあり、計算に使う範囲に画素の欠けも無いときだけ 1m で計算する。
+   それ以外（404・通信の失敗・画素の欠け）は z15 の結果を切り出して引き伸ばす（いまと同じ見え方。1枚の中で源を混ぜない）。
+   404 の記録（demMiss1a・30日）がある9枚は、圏内でも取りに行かない（落ちても見え方は今と同じ・圏外で待たない） */
+const csZ15Cache = new Map();
+// z15 の結果（子の z16・z17 で共有。子が取り消されても止めない。失敗は覚えない）
+function csZ15(x15, y15) {
+  const key = `cs|15/${x15}/${y15}`;
+  if (csZ15Cache.has(key)) return csZ15Cache.get(key);
+  const p = csRenderTile({ z: 15, x: x15, y: y15 }, { id: ++ciSeq, cancelled: false });
+  p.catch(() => { if (csZ15Cache.get(key) === p) csZ15Cache.delete(key); });
+  csZ15Cache.set(key, p);
+  if (csZ15Cache.size > CS_PARENT_MAX) csZ15Cache.delete(csZ15Cache.keys().next().value);
+  return p;
+}
+async function csStretch15(coords, job) {
+  const { x, y, z } = coords, sh = z - 15, k = 1 << sh;   // ⚠ 親は必ず z15 の1段（z17 も z16 を経ない）
+  const pix = await csZ15(x >> sh, y >> sh);
+  if (job.cancelled) return undefined;
+  return pix ? csCropPart(pix, k, x & (k - 1), y & (k - 1)) : null;
+}
+async function csRender1m(coords, job) {
+  const { x, y, z } = coords, keys = [];
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) keys.push(ciTileKey(z, x + ox, y + oy, 'gsi1a'));
+  if (csMissAny(keys, CS_MISS1A_KEY)) return csStretch15(coords, job);
+  const g = await csGather('gsi1a', z, x, y);
+  if (job.cancelled) return undefined;
+  if (g.missKeys.length) { csMissMark(g.missKeys, CS_MISS1A_KEY); return csStretch15(coords, job); }
+  if (g.error) return csStretch15(coords, job);
+  let pix = null;
+  try { pix = await csCompute(job, g, 'gsi1a', z, y, 'cs', CS_PRM_1M); } catch (e) { /* 壊れた 1A は z15 で描く */ }
+  if (job.cancelled) return undefined;
+  return pix || csStretch15(coords, job);
+}
 async function csRenderTile(coords, job) {
   const { x, y, z } = coords;
+  if (z > 15) return csRender1m(coords, job);
   const g5 = await csGather('gsi5a', z, x, y);
   if (job.cancelled) return undefined;
   let use10b = false;
@@ -7712,7 +7757,7 @@ async function csRenderTile(coords, job) {
   if (z > DEM_SRC.gsi10b.zmax) {
     const pix = await csParent(x >> 1, y >> 1);
     if (job.cancelled) return undefined;
-    return pix ? csCropQuarter(pix, x & 1, y & 1) : null;
+    return pix ? csCropPart(pix, 2, x & 1, y & 1) : null;
   }
   const g10 = await csGather('gsi10b', z, x, y);
   if (job.cancelled) return undefined;
