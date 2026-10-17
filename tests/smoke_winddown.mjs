@@ -155,11 +155,16 @@ const urls = await page.evaluate(async () => {
   state.sliderIndex = 2; await wdSync();
   const u2 = overlayTileLayers.windDown._url, i2 = document.getElementById('winddown-info').textContent;
   state.sliderIndex = 0; await wdSync();
-  return { changed: u1 !== u0, i1, blank: u2 === WD_BLANK, i2, back: overlayTileLayers.windDown._url === u0 };
+  const back = overlayTileLayers.windDown._url === u0;
+  // 塗る → 塗らない → 同じ塗るに戻る（同じ画素は同じ dataURL。空にしたあと貼り直されること）
+  state.sliderIndex = 2; await wdSync();
+  state.sliderIndex = 0; await wdSync();
+  return { changed: u1 !== u0, i1, blank: u2 === WD_BLANK, i2, back, back2: overlayTileLayers.windDown._url === u0 };
 });
 ok(urls.changed && /^北東の風 8\.0/.test(urls.i1), '★時刻を変えると塗り直す', urls);
 ok(urls.blank && /地上10m/.test(urls.i2), '★★地上10m風の時刻は消して理由', urls);
 ok(urls.back, '戻すと同じ絵', urls.back);
+ok(urls.back2, '★★塗らない時刻から同じ時刻に戻ると、また塗る（空のまま残らない）', urls);
 
 /* 別の層を入れ外ししても残る（applyOverlays が作り直す） */
 await page.evaluate(() => { toggleOverlay('windArrows'); });

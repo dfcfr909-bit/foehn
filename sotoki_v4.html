@@ -7981,7 +7981,7 @@ async function wdSync() {
   if (!leafletMap || !isOverlayOn('windDown')) return;
   let tables;
   try { tables = await wdTablesFor(); }
-  catch (e) { wd.info = '表を読めませんでした（' + e.message + '）'; wdSetInfo(); setLayerNote('windDown', wd.info); return; }
+  catch (e) { wd.info = '表を読めませんでした（' + e.message + '）'; wdSetInfo(); setLayerNote('windDown', wd.info); wdClear(); return; }
   if (!isOverlayOn('windDown')) return;
   const d = state.allData && state.allData[state.sliderIndex];
   const plan = wdPlan(tables, state.lat, state.lon, d, state.summitElev ?? state.demElevation);
@@ -7998,10 +7998,15 @@ async function wdSync() {
     }
   }
   const layer = overlayTileLayers.windDown;
-  if (!wd.url) { if (layer) layer.setUrl(WD_BLANK); return; }
+  if (!wd.url) { wdClear(); return; }
   if (layer && layer._wdUrl !== wd.url) { layer.setUrl(wd.url); layer.setBounds(L.latLngBounds(wd.bounds)); layer._wdUrl = wd.url; }
 }
 const WD_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+// 層を空にする。⚠ 貼った画像の控え（_wdUrl）も消す（同じ画素は同じ dataURL になるので、残すと戻ったときに貼り直されず空のまま）
+function wdClear() {
+  const layer = overlayTileLayers.windDown;
+  if (layer) { layer.setUrl(WD_BLANK); layer._wdUrl = null; }
+}
 function wdSetInfo() { const el = document.getElementById('winddown-info'); if (el) el.textContent = wd.info; }
 // レイヤーの行の下：使った風・基準の峰・塗らない理由と、必ず書くこと（要件「画面と about に必ず書くこと」）
 function windDownSettings() {
