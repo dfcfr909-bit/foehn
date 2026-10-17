@@ -31,10 +31,10 @@ const gen = await ctx.newPage();
 await gen.setContent('<canvas id="c" width="256" height="256"></canvas>');
 const PEAK = { lat: 36.9, lon: 139.2 };
 const pngCache = new Map();
-async function demPng(z, x, y) {
-  const key = `${z}/${x}/${y}`;
+async function demPng(z, x, y, gap = false) {
+  const key = `${z}/${x}/${y}/${gap}`;
   if (pngCache.has(key)) return pngCache.get(key);
-  const buf = Buffer.from(await gen.evaluate(({ z, x, y, PEAK }) => {
+  const buf = Buffer.from(await gen.evaluate(({ z, x, y, PEAK, gap }) => {
     const c = document.getElementById('c'), g = c.getContext('2d'), img = g.createImageData(256, 256), d = img.data;
     const n = 2 ** z, R = 6378137;
     const mx = lon => (lon + 180) / 360 * n * 256;
@@ -45,10 +45,11 @@ async function demPng(z, x, y) {
       const dist = Math.hypot(x * 256 + i - px0, y * 256 + j - py0) * mPerPx;
       const v = Math.round((2400 - dist * 0.4) * 100), k = (j * 256 + i) * 4;
       d[k] = (v >> 16) & 255; d[k + 1] = (v >> 8) & 255; d[k + 2] = v & 255; d[k + 3] = 255;
+      if (gap && i === 128 && j === 128) { d[k] = 128; d[k + 1] = 0; d[k + 2] = 0; }   // 画素の欠け（2^23）
     }
     g.putImageData(img, 0, 0);
     return c.toDataURL('image/png').split(',')[1];
-  }, { z, x, y, PEAK }), 'base64');
+  }, { z, x, y, PEAK, gap }), 'base64');
   pngCache.set(key, buf);
   return buf;
 }
@@ -58,8 +59,9 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 const reqs = [];   // { src, z, x, y }
 /* mode5a：'ok' | 'hole'（holeX の列だけ 404）| 'none'（全部 404）| 'off'（504＝圏外）
-   mode10b：'ok' | 'off' */
-let mode5a = 'ok', mode10b = 'ok', holeX = -1;
+   mode10b：'ok' | 'off'
+   mode1a：'ok' | 'hole'（holeX1a の列だけ 404）| 'none' | 'off' | 'gap'（中心の1枚に画素の欠け） */
+let mode5a = 'ok', mode10b = 'ok', holeX = -1, mode1a = 'none', holeX1a = -1, gapAt = '';
 await page.route('**/*', async route => {
   const url = route.request().url();
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
@@ -68,10 +70,15 @@ await page.route('**/*', async route => {
   if (url.includes('leaflet') && url.endsWith('.js')) return route.fulfill({ contentType: 'application/javascript', body: LEAFLET_JS });
   if (url.includes('leaflet') && url.endsWith('.css')) return route.fulfill({ contentType: 'text/css', body: LEAFLET_CSS });
   if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: '{}' });
-  const m = url.match(/xyz\/(dem5a_png|dem_png)\/(\d+)\/(\d+)\/(\d+)\.png/);
+  const m = url.match(/xyz\/(dem5a_png|dem_png|dem1a_png)\/(\d+)\/(\d+)\/(\d+)\.png/);
   if (m) {
-    const src = m[1] === 'dem5a_png' ? '5a' : '10b', [z, x, y] = m.slice(2).map(Number);
+    const src = m[1] === 'dem5a_png' ? '5a' : m[1] === 'dem1a_png' ? '1a' : '10b', [z, x, y] = m.slice(2).map(Number);
     reqs.push({ src, z, x, y });
+    if (src === '1a') {
+      if (mode1a === 'off') return route.fulfill({ status: 504, body: '' });
+      if (mode1a === 'none' || (mode1a === 'hole' && x === holeX1a)) return route.fulfill({ status: 404, body: '' });
+      return route.fulfill({ contentType: 'image/png', body: await demPng(z, x, y, mode1a === 'gap' && `${z}/${x}/${y}` === gapAt), headers: { 'Access-Control-Allow-Origin': '*' } });
+    }
     const mode = src === '5a' ? mode5a : mode10b;
     if (mode === 'off') return route.fulfill({ status: 504, body: '' });
     if (mode === 'bad') return route.fulfill({ contentType: 'image/png', body: 'not a png', headers: { 'Access-Control-Allow-Origin': '*' } });
@@ -111,8 +118,15 @@ const pure = await page.evaluate(() => {
   // 親の4分の1の切り出し：左上・右上・左下・右下を別の色に
   const q = new Uint8ClampedArray(n * n * 4);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const j = (y * n + x) * 4, k = (y >= 128 ? 2 : 0) + (x >= 128 ? 1 : 0); q[j] = [10, 80, 160, 240][k]; q[j + 3] = 255; }
-  const tr = csCropQuarter(q, 1, 0), bl = csCropQuarter(q, 0, 1);
+  const tr = csCropPart(q, 2, 1, 0), bl = csCropPart(q, 2, 0, 1);
   out.crop = [tr[(128 * n + 128) * 4], bl[(128 * n + 128) * 4]];
+  const c16a = csCropPart(q, 4, 0, 3), c16b = csCropPart(q, 4, 3, 2);   // 左下・右下の象限の中
+  out.crop16 = [c16a[(128 * n + 128) * 4], c16b[(128 * n + 128) * 4]];
+  const W1 = { ...CS_PRM_1M }, M1 = csMargin(1, W1), Wd = n + 2 * M1;
+  const flat1 = new Float32Array(Wd * Wd).fill(1000), gap1 = flat1.slice(); gap1[3] = NaN;   // 余白の隅の1点だけ欠け
+  out.whole = computeCsTile(gap1, M1, 1, W1);
+  out.wholeOk = computeCsTile(flat1, M1, 1, W1) ? 'pix' : null;
+  out.holeNoWhole = computeCsTile(gap1, M1, 1, CS_PRM) ? 'pix' : null;
   return out;
 });
 ok(JSON.stringify(pure.dec) === JSON.stringify([0, 1234.56, -5.12, true]), '★★地理院の標高の復号（0.01m・負の標高・2^23 は欠け）', pure.dec);
@@ -122,6 +136,8 @@ ok(pure.bowl[2] > pure.bowl[0] + 60, '★★すり鉢（凹・谷）は青系', 
 ok(pure.steep[0] < pure.gentle[0] - 40 && Math.abs(pure.gentle[0] - pure.gentle[2]) < 10, '★急な斜面ほど暗い（平らな面は灰）', [pure.gentle, pure.steep]);
 ok(pure.hole === 0, '欠けの升目は透明', pure.hole);
 ok(pure.crop[0] === 80 && pure.crop[1] === 160, '★z15 の子は親（z14）の自分の4分の1を切り出す（右上・左下）', pure.crop);
+ok(pure.crop16[0] === 160 && pure.crop16[1] === 240, '★z17 は z15 の 16分の1（qx・qy は 0〜3）を切り出す', pure.crop16);
+ok(pure.whole === null && pure.wholeOk !== null && pure.holeNoWhole !== null, '★★1m 用（whole）は格子に欠けが1つでもあれば null・欠けが無ければ描く・whole でなければ従来どおり', pure);
 
 /* ============ 2. 地図で入れる（DEM5A・Worker の経路） ============ */
 async function shown() {
@@ -188,10 +204,19 @@ await page.evaluate(() => leafletMap.setView([36.9, 139.2], 12, { animate: false
 await page.waitForTimeout(2500);
 const z12 = await page.evaluate(() => layerStatus.csLike || '');
 ok(z12 !== '拡大すると表示（z12 から）', 'z12 に戻ると注記を消す', z12);
+reqs.length = 0; mode1a = 'ok';
+await page.evaluate(() => { ciBlobCache.clear(); csStats.src1a = 0; leafletMap.setView([36.9, 139.2], 17, { animate: false }); });
+await page.waitForTimeout(3500);
+const z17 = await page.evaluate(() => ({ src1a: csStats.src1a, main: csStats.main }));
+const p17 = await shown();
+ok(reqs.some(r => r.src === '1a') && reqs.filter(r => r.src === '1a').every(r => r.z === 17), '★★z17 では DEM1A の z17 を取りに行く', reqs.filter(r => r.src === '1a').slice(0, 3));
+ok(z17.src1a > 0 && z17.main === 0 && p17.n > 0 && p17.colored === p17.n, '★★z17 は DEM1A を Worker で計算して描く', { z17, p17 });
+ok(!reqs.some(r => r.src === '5a' && r.z > 15), 'DEM5A は z15 より上を取りに行かない', reqs.filter(r => r.src === '5a').slice(0, 3));
 reqs.length = 0;
-await page.evaluate(() => { ciBlobCache.clear(); leafletMap.setView([36.9, 139.2], 17, { animate: false }); });
+await page.evaluate(() => { ciBlobCache.clear(); leafletMap.setView([36.9, 139.2], 15, { animate: false }); });
 await page.waitForTimeout(2500);
-ok(reqs.some(r => r.src === '5a') && reqs.filter(r => r.src === '5a').every(r => r.z === 15), '★z17 では z15 の標高だけ取りに行く（引き伸ばし）', reqs.slice(0, 3));
+ok(!reqs.some(r => r.src === '1a'), '★z15 以下では DEM1A を取りに行かない', reqs.filter(r => r.src === '1a').slice(0, 3));
+mode1a = 'none';
 
 /* ============ 4. 源の選び方（csRenderTile を直接） ============ */
 // 4枚の子（z15）が共有する z14 の親と、その周り
@@ -210,7 +235,7 @@ async function render(list) {
     return out;
   }, list);
 }
-const reset = () => page.evaluate(() => { ciBlobCache.clear(); csParentCache.clear(); localStorage.removeItem('demMiss5a'); for (const k of ['src5a', 'src10b']) csStats[k] = 0; });
+const reset = () => page.evaluate(() => { ciBlobCache.clear(); csParentCache.clear(); csZ15Cache.clear(); localStorage.removeItem('demMiss5a'); localStorage.removeItem('demMiss1a'); for (const k of ['src5a', 'src10b', 'src1a']) csStats[k] = 0; });
 
 // 4a. 周りの1枚だけ DEM5A が 404 → 9枚とも DEM10B。z15 なら z14 の親を1回だけ計算し、4枚の子で使う
 await reset(); reqs.length = 0; mode5a = 'hole'; mode10b = 'ok'; holeX = T.x + 2;   // 子 (T.x+1) の右隣の列が 404
@@ -268,6 +293,70 @@ ok(off.failed && !/表示なし|範囲外/.test(off.text || ''), '★★圏外�
 await reset(); mode5a = 'bad'; mode10b = 'bad';
 const r4h = await page.evaluate(async c => { try { await csRenderTile(c, { id: ++ciSeq, cancelled: false }); return 'ok'; } catch (e) { return e.network ? 'network' : 'other'; } }, { z: 14, x: T.x >> 1, y: T.y >> 1 });
 ok(r4h === 'other', '壊れたタイルの失敗は「通信できない」にしない', r4h);
+
+/* ============ 5. z16〜17 の 1m（ADR-0020） ============ */
+// z17 の子：z15 の T（偶数の x, y）の中の (1, 2) 番目。z16 の子：(1, 0) 番目
+const K17 = { z: 17, x: T.x * 4 + 1, y: T.y * 4 + 2 }, K16 = { z: 16, x: T.x * 2 + 1, y: T.y * 2 };
+// z15 を引き伸ばした画素（比べる基準）と、csRenderTile の結果の差
+async function vsStretch(c) {
+  return page.evaluate(async c => {
+    const pix = await csRenderTile(c, { id: ++ciSeq, cancelled: false });
+    if (!pix) return { pix: String(pix) };
+    const sh = c.z - 15, k = 1 << sh, p15 = await csRenderTile({ z: 15, x: c.x >> sh, y: c.y >> sh }, { id: ++ciSeq, cancelled: false });
+    const ref = csCropPart(p15, k, c.x & (k - 1), c.y & (k - 1));
+    let diff = 0; for (let i = 0; i < pix.length; i++) diff = Math.max(diff, Math.abs(pix[i] - ref[i]));
+    return { pix: 'pix', diff };
+  }, c);
+}
+const n1a = () => reqs.filter(r => r.src === '1a').length;
+// 5a. 9枚とも 1A：1m で計算（z15 の引き伸ばしと違う画素）
+await reset(); mode5a = 'ok'; mode1a = 'ok'; reqs.length = 0;
+const r5a = await vsStretch(K17);
+const s5a = await page.evaluate(() => csStats.src1a);
+ok(r5a.pix === 'pix' && r5a.diff > 0 && s5a === 1 && n1a() === 9, '★★★9枚とも DEM1A なら 1m で計算する（z17）', { r5a, s5a, n: n1a() });
+await reset(); reqs.length = 0;
+const r5b = await vsStretch(K16);
+ok(r5b.pix === 'pix' && r5b.diff > 0 && reqs.filter(r => r.src === '1a').every(r => r.z === 16), '★★z16 は DEM1A の z16 で計算する', r5b);
+// 5b. 周りの1枚が 404：z15 の引き伸ばし（今と同じ画素）・記録・次は取りに行かない
+await reset(); mode1a = 'hole'; holeX1a = K17.x + 1; reqs.length = 0;
+const r5c = await vsStretch(K17);
+const miss1 = await page.evaluate(() => ({ m1: Object.keys(JSON.parse(localStorage.getItem('demMiss1a') || '{}')), m5: localStorage.getItem('demMiss5a'), s: csStats.src1a }));
+ok(r5c.pix === 'pix' && r5c.diff === 0 && miss1.s === 0, '★★★1枚でも DEM1A が 404 なら z15 の引き伸ばし（今と同じ画素）', { r5c, miss1 });
+ok(miss1.m1.length === 3 && miss1.m1.every(k => k.startsWith(`gsi1a/17/${K17.x + 1}/`)) && !miss1.m5, '★404 だった 1A の鍵を demMiss1a に記録する（demMiss5a とは別）', miss1);
+await page.evaluate(() => { ciBlobCache.clear(); csZ15Cache.clear(); });
+reqs.length = 0; mode1a = 'ok';
+const r5d = await vsStretch(K17);
+ok(r5d.diff === 0 && n1a() === 0, '★★記録のある9枚は、圏内でも DEM1A を取りに行かない', { r5d, n: n1a() });
+await page.evaluate(() => { const o = JSON.parse(localStorage.getItem('demMiss1a')); for (const k of Object.keys(o)) o[k] = Date.now() - 31 * 86400000; localStorage.setItem('demMiss1a', JSON.stringify(o)); ciBlobCache.clear(); csZ15Cache.clear(); });
+reqs.length = 0;
+const r5e = await vsStretch(K17);
+ok(r5e.diff > 0 && n1a() === 9, '★30日を過ぎた記録は使わない（取り直して 1m）', { r5e, n: n1a() });
+// 5c. 通信の失敗（504）：z15 の引き伸ばしで描ける（失敗にしない）・記録しない
+await reset(); mode1a = 'off';
+const r5f = await vsStretch(K17);
+const miss2 = await page.evaluate(() => localStorage.getItem('demMiss1a'));
+ok(r5f.pix === 'pix' && r5f.diff === 0 && !miss2, '★★★DEM1A が通信できなければ z15 の引き伸ばしで描く（記録しない）', { r5f, miss2 });
+// z15 も通信できなければ失敗（今と同じ）
+await reset(); mode1a = 'off'; mode5a = 'off';
+const r5g = await render([K17]);
+ok(/^err:/.test(r5g[0]), 'z15 も通信できなければ失敗（今と同じ）', r5g);
+// 5d. 画素の欠け：z15 の引き伸ばし。⚠ Worker は復号した標高を鍵で覚えるので、まだ読んでいない所（G1・G2）で試す
+const G1 = { z: 17, x: K17.x + 16, y: K17.y }, G2 = { z: 17, x: K17.x + 32, y: K17.y };
+await reset(); mode5a = 'ok'; mode1a = 'gap'; gapAt = `17/${G1.x}/${G1.y - 1}`;   // 上の隣の中ほど（余白の外）
+const r5h = await vsStretch(G1);
+ok(r5h.pix === 'pix' && r5h.diff > 0, '計算に使わない所の欠けは 1m のまま', r5h);
+await reset(); gapAt = `17/${G2.x}/${G2.y}`;   // 中心の1枚の中ほど
+const r5i = await vsStretch(G2);
+const s5i = await page.evaluate(() => ({ s: csStats.src1a, miss: localStorage.getItem('demMiss1a') }));
+ok(r5i.pix === 'pix' && r5i.diff === 0 && s5i.s === 0, '★★★計算に使う範囲に画素の欠けがあれば z15 の引き伸ばし（1m の計数に入れない）', { r5i, s5i });
+// 5e. z15 で 10B（DEM5A が無い）のときも、z16 の引き伸ばしは同じ z15 の結果（z14 の親の切り出し）
+await reset(); mode5a = 'none'; mode10b = 'ok'; mode1a = 'none';
+const r5j = await vsStretch(K16);
+ok(r5j.pix === 'pix' && r5j.diff === 0, '★z15 が DEM10B の所でも z16 は z15 を引き伸ばす', r5j);
+// 5f. 両方とも配信なし → null（範囲外）
+await reset(); mode5a = 'none'; mode10b = 'none'; mode1a = 'none';
+const r5k = await render([K17]);
+ok(r5k[0] === 'null', '1A も z15 も配信なしなら「範囲外」', r5k);
 
 ok(errors.length === 0, 'ページで例外が出ない', errors);
 await browser.close();
