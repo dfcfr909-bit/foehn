@@ -2434,6 +2434,11 @@ html, body {
   border-bottom: 2px solid var(--b-col);
 }
 #offline-note.on { display: block; }
+/* 弱電波で控えを先に出したあと、新しいデータが届いたときのボタン（#227） */
+#offline-note .wx-fresh-btn {
+  margin-left: 4px; padding: 3px 8px; font: inherit; font-size: 11px;
+  color: #fff; background: #0b6e8a; border: 0; border-radius: 4px;
+}
 
 /* ⚠ レーダー実況とモデル予報の食い違いを出す帯（v4.98.0）。
    ⚠⚠ **一致しているときは出さない。** 常時出すと読まなくなり、
@@ -2609,7 +2614,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.181.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.182.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -3271,7 +3276,10 @@ function wxStampText(at) {
      次に本当に古いものを出したときに気づけない。
    ⚠ **距離を必ず添える。** 完全一致でない地点のものを黙って出すのがいちばん危ない
      （GPSは毎回わずかに違う座標を返すので、現在地はまず完全一致しない）。 */
-function setWxSource(info) {
+/* extra（#227・v4.182.0）：'fetching' … 通信は続いている（弱電波で 6 秒待って控えを先に出した）。
+   function … 新しいデータが届いた。帯に「押すと更新」を出し、押したらそれを呼ぶ。
+   ⚠ 届いても**勝手に描き直さない**（判定が後から覆るのを避ける・ADR-0006 と同じ考え）。利用者が押して初めて替える */
+function setWxSource(info, extra) {
   const el = document.getElementById('offline-note');
   if (!el) return;
   if (!info) { el.className = ''; el.textContent = ''; return; }
@@ -3285,7 +3293,13 @@ function setWxSource(info) {
   }
   el.className = 'on';
   el.textContent = `📴 保存データを表示中　${wxStampText(rec.at)}取得（${wxAgeText(ageMs)}）／${where}`
-    + (km >= 0.2 ? `（${km.toFixed(1)}km先）` : '');
+    + (km >= 0.2 ? `（${km.toFixed(1)}km先）` : '') + (extra === 'fetching' ? '　通信を続けています…' : '');
+  if (typeof extra === 'function') {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wx-fresh-btn'; b.textContent = '新しいデータがあります。押すと更新';
+    b.onclick = extra;
+    el.append(' ', b);
+  }
 }
 
 /* ============================================================
@@ -3372,6 +3386,9 @@ let modelSwitching = false;
 async function switchModel(key) {
   closeModelSheet();
   if (!FORECAST_MODELS[key] || modelSwitching) return;
+  /* ⚠ 地点の取得（通常）の最中は切り替えない（#227）。切り替えの取得が通常の取得を追い越して失敗すると、
+     state.lat は前の地点のまま・地点名は新しい地点のまま画面が残る（新しい地点が二度と描かれない） */
+  if (wxNormalBusy) { showModelNote('予報を取得中です。取れてから切り替えてください'); return; }
   const shown = FORECAST_MODELS[state.dataModel] ? state.dataModel : DEFAULT_MODEL;
   if (key === shown && key === state.model) return;      // すでにそのモデルを見ている
   const prev = state.model;
@@ -3394,8 +3411,20 @@ async function switchModel(key) {
 /* 予報の取得。opts.strict … モデルを切り替えたときの取得（B-3）。
    失敗したら**画面のデータには触らずに例外を投げる**（呼び手が理由を出す）。従来の「控えを出す」は使わない
    （選んだモデルの控えではなく、直前に見ていたデータをそのまま残すため）。戻り値は成功で true */
+/* 弱電波（#227・v4.182.0）：通常の取得は WX_SOFT_MS 待っても返らなければ、24時間以内の控えを先に出し、通信は続ける。
+   届いた新しいデータは勝手に描き直さず、帯の「押すと更新」で替える（判定が後から覆らない）。
+   strict（モデル切り替え）は WX_HARD_MS で打ち切る（控えは出さない）。
+   ⚠ wxReqSeq：後から別の取得が始まったら、古い取得は画面に触らない（控えへの保存だけする）。
+     strict が追い越されたときは例外を投げない（switchModel が「失敗」と言ってモデルを戻してしまう） */
+const WX_SOFT_MS = 6000, WX_HARD_MS = 30000;
+let wxReqSeq = 0, wxNormalBusy = 0;   // wxNormalBusy＝取得中の通常の取得の番号（0＝無し。switchModel が見る）
 async function fetchWeather(lat, lon, opts) {
   const strict = !!(opts && opts.strict);
+  const seq = ++wxReqSeq, current = () => seq === wxReqSeq;
+  if (!strict) wxNormalBusy = seq;
+  // 前の取得の「押すと更新」は、新しい取得が始まったら外す（押しても何もしないボタンを残さない）
+  const oldBtn = document.querySelector('#offline-note .wx-fresh-btn');
+  if (oldBtn) oldBtn.remove();
   showLoading(strict ? `${forecastModel(state.model).label} を取得中…` : '気象データ取得中…');
   /* ⚠ **この要求の地点名を、awaitを挟む前に写し取る。**
      呼び出し側はどれも fetchWeather の前に `state.locationName` を入れている。
@@ -3415,17 +3444,53 @@ async function fetchWeather(lat, lon, opts) {
   const lvVars = windInterpLevels()
     .map(hPa => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join(',');
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=${fm.id}`;
+  // 控えを画面に出す（通信の失敗・弱電波の両方から使う）
+  const showHit = (hit, extra) => {
+    // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
+    //   あとから出すと帯のぶんの高さがチャートに入らず、下端が隠れる
+    setWxSource(hit, extra);
+    applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon, reqModel);
+    // ⚠ 補助データも**描画が走る前に**混ぜる。あとから混ぜると
+    //   突風の目盛りと右軸だけが一拍遅れて動く
+    if (hit.rec.sup) { try { applySupplemental(hit.rec.sup, false); } catch (e2) { /* 任意 */ } }
+  };
+  let settled = false, shown = null, soft = null;
+  const ctl = strict ? new AbortController() : null;
+  const hard = strict ? setTimeout(() => ctl.abort(), WX_HARD_MS) : null;
+  if (!strict) soft = setTimeout(async () => {
+    if (settled || !current()) return;
+    const hit = await loadWxCache(lat, lon, reqModel);
+    // ⚠ 控えを読む間に通信が返った・別の取得が始まったなら出さない（新しいものを控えで上書きしない）
+    if (settled || !current() || !hit || hit.ageMs > WX_MAX_AGE_MS) return;
+    shown = hit;
+    showHit(hit, 'fetching');
+  }, WX_SOFT_MS);
   try {
     // 山頂標高（地理院DEM）は**判定の入力**なので、気象データと一緒に待つ。
     // 先に判定を出してから覆ると、安全に関わる表示が化ける（ADR-0006）
     const [res, dem] = await Promise.all([
-      fetch(url),
+      fetch(url, ctl ? { signal: ctl.signal } : undefined),
       fetchPointElevation(lat, lon).catch(() => null),
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     // strict：中身が空の応答（そのモデルがこの地点を返さない等）も失敗として扱う
     if (strict && !weatherJsonUsable(json)) throw new Error('データが空でした');
+    settled = true; clearTimeout(soft); clearTimeout(hard);
+    if (wxNormalBusy === seq) wxNormalBusy = 0;
+    // 追い越された・控えを先に出していた：画面はそのまま、控えにだけ入れる
+    if (!current() || shown) {
+      await saveWxCache(lat, lon, json, dem, reqName, reqModel);
+      if (!current()) return false;
+      // 届いた。押したら替える（その間に別の取得が始まっていたら何もしない）
+      setWxSource(shown, () => {
+        if (!current()) return;
+        setWxSource(null);
+        applyWeatherJson(json, dem, lat, lon, reqModel);
+        fetchSupplemental(lat, lon, reqModel);
+      });
+      return true;
+    }
     setWxSource(null);                           // 通信で取れた＝帯は消す
     applyWeatherJson(json, dem, lat, lon, reqModel);
     // 圏外で出せるように控える（失敗しても無視）。
@@ -3436,17 +3501,20 @@ async function fetchWeather(lat, lon, opts) {
     fetchSupplemental(lat, lon, reqModel);
     return true;
   } catch (e) {
-    if (strict) { hideLoading(); throw e; }      // 画面は直前のまま。理由は呼び手が出す
+    settled = true; clearTimeout(soft); clearTimeout(hard);
+    if (wxNormalBusy === seq) wxNormalBusy = 0;
+    if (!current()) return false;                // 追い越された：新しい画面に触らない（strict も投げない）
+    if (strict) {
+      hideLoading();
+      throw (e && e.name === 'AbortError') ? new Error(`${WX_HARD_MS / 1000}秒たっても返りませんでした`) : e;   // 画面は直前のまま。理由は呼び手が出す
+    }
+    // 控えを先に出していた：そのまま（「通信を続けています」だけ消す）
+    if (shown) { setWxSource(shown); return; }
     // 通信できない／APIが不調。控えてあるものがあれば出す（無ければ従来どおり諦める）
     const hit = await loadWxCache(lat, lon, reqModel);
+    if (!current()) return false;
     if (hit && hit.ageMs <= WX_MAX_AGE_MS) {
-      // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
-      //   あとから出すと帯のぶんの高さがチャートに入らず、下端が隠れる
-      setWxSource(hit);
-      applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon, reqModel);
-      // ⚠ 補助データも**描画が走る前に**混ぜる。あとから混ぜると
-      //   突風の目盛りと右軸だけが一拍遅れて動く
-      if (hit.rec.sup) { try { applySupplemental(hit.rec.sup, false); } catch (e2) { /* 任意 */ } }
+      showHit(hit);
       return;
     }
     hideLoading();
