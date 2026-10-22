@@ -330,6 +330,27 @@ await openAt(P1);
     return p;
   }, P2);
   ok(st === 'ok:false', '★★追い越された strict の取得は例外を投げず false を返す', st);
+  // 通常の取得の最中はモデルを切り替えない（追い越して失敗すると新しい地点が描かれない）
+  slowMs = 3000;
+  const busy = await page.evaluate(async () => {
+    const p = fetchWeather(36.2, 138.5);
+    await new Promise(r => setTimeout(r, 200));
+    const before = state.model, other = Object.keys(FORECAST_MODELS).find(k => k !== state.model);
+    await switchModel(other);
+    const res = { changed: state.model !== before, note: document.getElementById('model-note').textContent };
+    await p;
+    return res;
+  });
+  ok(!busy.changed && /取得中/.test(busy.note), '★★地点の取得中はモデルを切り替えず、理由を出す', busy);
+  // 控えの無い地点で遅い応答：控えは出さず、待って描く
+  slowMs = 8000; slowFor = 'latitude=34.1'; weatherTemp = 9;
+  await page.evaluate(() => { state.locationName = '控えの無い地点'; fetchWeather(34.1, 135.1); });
+  await page.waitForTimeout(7000);
+  const noc = await note();
+  ok(!/保存データ/.test(noc.text), '控えの無い地点では、遅くても控えを出さない（待つ）', noc);
+  await page.waitForTimeout(2500);
+  const got = await page.evaluate(() => ({ lat: state.lat, t: state.allData[0].temp }));
+  ok(Math.abs(got.lat - 34.1) < 1e-9 && got.t === 9, '★控えの無い地点は届いたら描く', got);
   slowMs = 0; slowFor = ''; weatherTemp = 5;
 }
 

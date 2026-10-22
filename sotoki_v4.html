@@ -3386,6 +3386,9 @@ let modelSwitching = false;
 async function switchModel(key) {
   closeModelSheet();
   if (!FORECAST_MODELS[key] || modelSwitching) return;
+  /* ⚠ 地点の取得（通常）の最中は切り替えない（#227）。切り替えの取得が通常の取得を追い越して失敗すると、
+     state.lat は前の地点のまま・地点名は新しい地点のまま画面が残る（新しい地点が二度と描かれない） */
+  if (wxNormalBusy) { showModelNote('予報を取得中です。取れてから切り替えてください'); return; }
   const shown = FORECAST_MODELS[state.dataModel] ? state.dataModel : DEFAULT_MODEL;
   if (key === shown && key === state.model) return;      // すでにそのモデルを見ている
   const prev = state.model;
@@ -3414,10 +3417,14 @@ async function switchModel(key) {
    ⚠ wxReqSeq：後から別の取得が始まったら、古い取得は画面に触らない（控えへの保存だけする）。
      strict が追い越されたときは例外を投げない（switchModel が「失敗」と言ってモデルを戻してしまう） */
 const WX_SOFT_MS = 6000, WX_HARD_MS = 30000;
-let wxReqSeq = 0;
+let wxReqSeq = 0, wxNormalBusy = 0;   // wxNormalBusy＝取得中の通常の取得の番号（0＝無し。switchModel が見る）
 async function fetchWeather(lat, lon, opts) {
   const strict = !!(opts && opts.strict);
   const seq = ++wxReqSeq, current = () => seq === wxReqSeq;
+  if (!strict) wxNormalBusy = seq;
+  // 前の取得の「押すと更新」は、新しい取得が始まったら外す（押しても何もしないボタンを残さない）
+  const oldBtn = document.querySelector('#offline-note .wx-fresh-btn');
+  if (oldBtn) oldBtn.remove();
   showLoading(strict ? `${forecastModel(state.model).label} を取得中…` : '気象データ取得中…');
   /* ⚠ **この要求の地点名を、awaitを挟む前に写し取る。**
      呼び出し側はどれも fetchWeather の前に `state.locationName` を入れている。
@@ -3470,6 +3477,7 @@ async function fetchWeather(lat, lon, opts) {
     // strict：中身が空の応答（そのモデルがこの地点を返さない等）も失敗として扱う
     if (strict && !weatherJsonUsable(json)) throw new Error('データが空でした');
     settled = true; clearTimeout(soft); clearTimeout(hard);
+    if (wxNormalBusy === seq) wxNormalBusy = 0;
     // 追い越された・控えを先に出していた：画面はそのまま、控えにだけ入れる
     if (!current() || shown) {
       await saveWxCache(lat, lon, json, dem, reqName, reqModel);
@@ -3494,6 +3502,7 @@ async function fetchWeather(lat, lon, opts) {
     return true;
   } catch (e) {
     settled = true; clearTimeout(soft); clearTimeout(hard);
+    if (wxNormalBusy === seq) wxNormalBusy = 0;
     if (!current()) return false;                // 追い越された：新しい画面に触らない（strict も投げない）
     if (strict) {
       hideLoading();

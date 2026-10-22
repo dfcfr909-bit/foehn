@@ -133,6 +133,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `loadWxCache(lat, lon)` | 完全一致 → 無ければ最寄り。**古くても返す**（古さの判断は呼び手） | 2435 |
 | `trimWxCache()` | 期限切れと上限超過を消す | 2456 |
 | `wxAgeText(ms)` / `wxStampText(at)` | 経過時間・取得時刻の言い方 | 2472 |
+| `WX_SOFT_MS` / `WX_HARD_MS` / `wxReqSeq` / `wxNormalBusy` | 弱電波（#227・v4.182.0）。通常の取得は6秒で控えを先に出し（帯「通信を続けています」）、届いた新しいデータは帯の「押すと更新」で替える（勝手に描き直さない）。strict は30秒で打ち切る。`wxReqSeq` で追い越された取得は画面に触らない（控えへの保存だけ）。通常の取得の最中は `switchModel` しない（`wxNormalBusy`） | — |
 | `setWxSource(info)` | **帯（`#offline-note`）の出し分け。** 通信で取れたら `null` で必ず消す | 2490 |
 
 ## 気象データ取得
