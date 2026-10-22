@@ -44,7 +44,7 @@ function fakeWeather() {
   const h = { time };
   const fill = v => time.map(() => v);
   Object.assign(h, {
-    temperature_2m: fill(5), apparent_temperature: fill(2), precipitation: fill(0.4),
+    temperature_2m: fill(weatherTemp), apparent_temperature: fill(2), precipitation: fill(0.4),
     snowfall: fill(0), surface_pressure: fill(1013), windspeed_10m: fill(6),
     winddirection_10m: fill(270), windgusts_10m: fill(9), weathercode: fill(2), cloudcover: fill(40),
     cloud_cover_low: fill(30), cloud_cover_mid: fill(20), cloud_cover_high: fill(10),
@@ -79,6 +79,8 @@ page.on('dialog', d => { dialogs.push(d.message); d.dismiss().catch(() => {}); }
 
 let online = true;          // false にすると気象APIだけ落ちる（＝圏外）
 let slowMs = 0;             // >0 にすると気象APIの応答を遅らせる（取得中の割り込みを作る）
+let slowFor = '';           // 空でなければ、この文字列を含む URL だけ slowMs 遅らせる（H の弱電波）
+let weatherTemp = 5;        // 作り物の気温（新しいデータと控えを見分ける）
 let apiHits = 0;
 await page.route('**/*', async route => {
   const url = route.request().url();
@@ -88,7 +90,7 @@ await page.route('**/*', async route => {
   if (url.includes('api.open-meteo.com')) {
     apiHits++;
     if (!online) return route.abort();
-    if (slowMs) await new Promise(r => setTimeout(r, slowMs));
+    if (slowMs && (!slowFor || url.includes(slowFor))) await new Promise(r => setTimeout(r, slowMs));
     const body = url.includes('models=jma_seamless') ? fakeWeather() : fakeSupplemental();
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   }
@@ -277,6 +279,58 @@ await openAt(P1);
     '★★sw.js は気象APIをキャッシュしない方針のまま');
   ok(!/api\.open-meteo\.com/.test(SW),
     '★★★sw.js に気象APIのホストを足さない（古さを画面に出せなくなる）');
+}
+
+/* ============ H. 弱電波（#227・v4.182.0）：6秒で控えを先に出し、届いた新しいデータは押して替える ============ */
+{
+  online = true; slowMs = 0; slowFor = ''; weatherTemp = 5;
+  const PH = { lat: 36.2, lon: 138.5, name: '弱電波の地点' };
+  await openAt(PH);                                   // まず控えを作る（気温 5）
+  const temp0 = () => page.evaluate(() => (typeof state !== 'undefined' && state.allData) ? state.allData[0].temp : null);
+  ok(await temp0() === 5, '★前提: 控えができた（気温 5）');
+  weatherTemp = 12; slowMs = 10000; slowFor = 'latitude=36.2';
+  await page.evaluate(v => localStorage.setItem('sotoki_last', JSON.stringify(v)), PH);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(3500);
+  const early = await note();
+  ok(!/保存データ/.test(early.text), '6秒までは控えを出さない（通信を待つ）', early);
+  await page.waitForTimeout(4000);                    // 7.5 秒
+  const mid = await note(), dmid = await drawn();
+  ok(mid.shown && /保存データを表示中/.test(mid.text) && /通信を続けています/.test(mid.text) && dmid.points > 0 && dmid.loading === 'none',
+    '★★★弱電波：6秒で控えを先に出し、「通信を続けています」と添える', { mid, dmid });
+  ok(await temp0() === 5, '控えの数字（気温 5）を出している');
+  await page.waitForTimeout(4500);                    // 12 秒：届いた
+  const arrived = await note();
+  ok(/新しいデータがあります/.test(arrived.text) && await temp0() === 5,
+    '★★★新しいデータが届いても勝手に描き直さない（押すと更新を出す）', { arrived, t: await temp0() });
+  await page.click('#offline-note .wx-fresh-btn');
+  await page.waitForTimeout(600);
+  const after = await note();
+  ok(await temp0() === 12 && !after.shown, '★★押すと新しいデータ（気温 12）に替わり、帯が消える', { after, t: await temp0() });
+
+  // 弱電波の取得中に別の地点へ移ったら、古い取得は画面に触らない
+  weatherTemp = 7;
+  await page.evaluate(v => localStorage.setItem('sotoki_last', JSON.stringify(v)), PH);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(1500);
+  const P2 = { lat: 35.9, lon: 138.9 };
+  await page.evaluate(v => { state.locationName = '移った先'; fetchWeather(v.lat, v.lon); }, P2);
+  await page.waitForTimeout(11000);
+  const moved = await page.evaluate(() => ({ lat: state.lat, name: state.locationName }));
+  const nm = await note();
+  ok(Math.abs(moved.lat - P2.lat) < 1e-9 && !/新しいデータ|保存データ/.test(nm.text),
+    '★★★取得中に別の地点へ移ったら、古い取得の控え・新しいデータで画面を上書きしない', { moved, nm });
+  ok(dialogs.length === 0 || !dialogs.some(d => /データ取得失敗/.test(d)), '追い越された取得は失敗の知らせを出さない', dialogs);
+  // モデル切り替え（strict）の取得が追い越されたら、例外を投げない（switchModel が「失敗」と言わない）
+  slowMs = 4000; slowFor = 'latitude=36.2';
+  const st = await page.evaluate(async v => {
+    const p = fetchWeather(36.2, 138.5, { strict: true }).then(r => 'ok:' + r, e => 'threw:' + e.message);
+    await new Promise(r => setTimeout(r, 300));
+    fetchWeather(v.lat, v.lon);
+    return p;
+  }, P2);
+  ok(st === 'ok:false', '★★追い越された strict の取得は例外を投げず false を返す', st);
+  slowMs = 0; slowFor = ''; weatherTemp = 5;
 }
 
 ok(errors.length === 0, '★ページ内で例外が出ていない', errors);
