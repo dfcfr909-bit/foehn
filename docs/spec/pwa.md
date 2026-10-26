@@ -34,6 +34,7 @@
 | HTML（ナビゲーション） | **ネットワーク優先。** 取れたら必ずそれを表示し、同時にキャッシュを更新。通信できないときだけキャッシュへフォールバック |
 | 同梱の静的ファイル | キャッシュ優先＋裏で更新（stale-while-revalidate） |
 | 地図タイル | **別キャッシュ**に cache-first で保存（訪問済みのみ・LRU で上限管理） |
+| 保存した山域のタイル | さらに別の箱 `AREA_CACHE`（`sotoki-areas-v1`）。**タイルはまずここを引く**。自動では消さない（#244 段2・v4.183.0） |
 | 気象API・地名検索・`outlook.json` | **一切キャッシュしない** |
 
 ⚠ **気象APIをここへ足さないこと。** 古い数字が黙って出るようになる。
@@ -86,6 +87,13 @@ HTML・静的ファイル・タイルの3つとも `res.ok` を見てから保�
 - 上限を超えたら最終アクセスが古い順に **90%** まで削る
 - 最終アクセス時刻と合計サイズは **IndexedDB**（`sotoki-tiles` / store `tiles` `meta`）で持つ
 - **サイズの分からない opaque レスポンスは保存しない**（LRU の合計が壊れるため）
+
+### 保存した山域（`AREA_CACHE`・#244 段2＋#229・v4.183.0）
+
+- 利用者が「この山域を保存」で前もって入れたタイル。**LRU の上限・`tiles-clear`・`CACHE_VERSION` の更新・`activate` の掃除のどれでも消さない**。消すのは `area-delete` だけ
+- タイルの要求は `AREA_CACHE` → `TILE_CACHE`（LRU）→ ネットの順に引く
+- 取得は SW が行う（message `area-fetch` {urls} → 1 枚ずつ {url, status, size}）。**SW 自身の fetch は自分の fetch ハンドラを通らない**ので LRU に二重に入らない。間隔（毎秒 4 枚）はページが管理
+- 範囲・上限・続き・削除（重なるタイルは残す）はページ側（`sotoki_v4.html` の `areaPlan` ほか・`docs/requirements_dem1m.md` 段2）
 
 ### 対象ホスト（`TILE_HOSTS`）
 
