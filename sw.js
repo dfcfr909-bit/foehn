@@ -255,8 +255,8 @@ self.addEventListener('fetch', e => {
   if (isTileRequest(url)) {
     e.respondWith((async () => {
       // 保存した山域を先に引く（LRU に押し出されない・圏外でも出る）
-      const saved = await (await caches.open(AREA_CACHE)).match(req.url);
-      if (saved) return saved;
+      // ⚠ 読めなくても（例外）LRU・ネットへ進む。ここで落とすとタイルが全部出なくなる
+      try { const saved = await (await caches.open(AREA_CACHE)).match(req.url); if (saved) return saved; } catch (err) { /* 先へ */ }
       const cache = await caches.open(TILE_CACHE);
       const hit = await cache.match(req.url);
       if (hit) {

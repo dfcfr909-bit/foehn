@@ -138,17 +138,32 @@ ok(run1.calls.every(c => c.n <= 8) && gaps.every(g => g >= 1900), '★★★毎�
 ok(run1.area && run1.area.complete && run1.area.done > 0 && run1.area.miss.length >= 3, '★★最後まで取れたら complete・404 は miss に', run1.area);
 ok(p0.a5.every(k => run1.area.miss.includes(k)) && run1.area.miss.includes(p0.a1), '404 の鍵を山域に記録する', run1.area.miss);
 ok(run1.m1[p0.a1] && p0.a5.every(k => run1.m5[k]), '★404 は端末の記録（demMiss1a・demMiss5a）にも入れる', { m1: Object.keys(run1.m1), m5: Object.keys(run1.m5) });
-ok(run1.area.miss.length > 0 && run1.calls.some(c => true), '前提: 保存を回した');
 const reqs10b = await page.evaluate(() => window.__sw.calls.flatMap(c => c.urls).filter(u => u.includes('/dem_png/')).length);
 ok(reqs10b > 0, '★★5A が 404 の所は 10B も取る', reqs10b);
 const hasMiss = await page.evaluate(k => { localStorage.removeItem('demMiss5a'); return areaMissHas([k]); }, p0.a5[0]);
 ok(hasMiss, '★★★端末の記録（30 日）が消えても、保存した山域の 404 は残る（areaMissHas）');
+
+// 二重に押しても 2 本走らない（persist を待つ間に押す）
+await page.evaluate(async () => { await caches.delete(AREA_CACHE_NAME); storeSavedAreas([]); window.__sw.calls = []; window.__sw.status404 = new Set(); });
+const dbl = await page.evaluate(async () => {
+  const realPersist = navigator.storage.persist.bind(navigator.storage);
+  navigator.storage.persist = () => new Promise(r => setTimeout(() => r(true), 300));
+  const a = saveArea(loadFavs()[0]); const b = saveArea(loadFavs()[0]);
+  await Promise.all([a, b]);
+  navigator.storage.persist = realPersist;
+  const urls = window.__sw.calls.flatMap(c => c.urls);
+  return { n: urls.length, uniq: new Set(urls).size };
+});
+ok(dbl.n === dbl.uniq && dbl.n > 0, '★★二重に押しても同じタイルを2回頼まない（1本だけ走る）', dbl);
+const done = await page.evaluate(() => { const a = loadSavedAreas()[0]; return { done: a.done }; });
 
 // 続き：箱にあるものは取らない（2 回目は何も頼まない）
 await page.evaluate(() => { window.__sw.calls = []; const l = loadSavedAreas(); l[0].complete = false; storeSavedAreas(l); });
 await page.evaluate(() => saveArea(loadFavs()[0]));
 const again = await page.evaluate(() => window.__sw.calls.length);
 ok(again === 0, '★★続きは「箱に無く 404 でもない」ものだけ取る（全部あれば頼まない）', again);
+const done2 = await page.evaluate(() => loadSavedAreas()[0].done);
+ok(done2 === done.done && done2 > 0, '続きの後も枚数は箱にある枚数（飛ばした分も数える）', { done, done2 });
 
 // やめる：そこまでは残る・途中の印
 await page.evaluate(async () => { await caches.delete(AREA_CACHE_NAME); storeSavedAreas([]); window.__sw.calls = []; });

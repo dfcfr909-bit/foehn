@@ -13986,23 +13986,25 @@ async function saveArea(fav) {
   if (areaJob.running) return;
   if (!(navigator.serviceWorker && navigator.serviceWorker.controller)) { alert('いまは保存できません（アプリを一度開き直してください）'); return; }
   const plan0 = areaPlan(fav.lat, fav.lon);
-  if (!confirm(`「${fav.name}」のまわりの地形（標高 最大${AREA_DEM_MAX}枚）と標準地図（最大${AREA_STD_MAX}枚）を保存します。\n` +
-    `合わせて最大 約100MB。電波のよい所で行ってください（毎秒4枚ずつ取ります。途中でやめても、そこまでは残ります）。\n` +
+  if (!confirm(`「${fav.name}」のまわりの地形（標高 最大${AREA_DEM_MAX}枚・約90MB）と標準地図（最大${AREA_STD_MAX}枚・約15MB）を保存します。\n` +
+    `合わせて 約100MB 前後（1A の無い山域は少なくなります）。電波のよい所で行ってください（毎秒4枚ずつ取ります。途中でやめても、そこまでは残ります）。\n` +
     `保存した地図は端末の中で見るためのものです（公開などするときは「判定とデータ」の注意を見てください）。\n始めますか？`)) return;
+  // ⚠ 確認の直後（await の前）に走行中にする。後に置くと、persist を待つ間にもう一度押せて2本走る
+  if (areaJob.running) return;
+  const id = areaIdOf(fav.lat, fav.lon);
+  areaJob.running = id; areaJob.cancel = false;
+  let stopped = '';
   try {
     if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
     if (navigator.storage && navigator.storage.estimate) {
       const est = await navigator.storage.estimate();
-      if (est && est.quota && est.quota - (est.usage || 0) < AREA_MIN_FREE_BYTES) { alert('端末の空きが足りないため保存できません（120MB 以上の空きが要ります）'); return; }
+      if (est && est.quota && est.quota - (est.usage || 0) < AREA_MIN_FREE_BYTES) { stopped = '端末の空きが足りないため保存できません（120MB 以上の空きが要ります）'; alert(stopped); throw null; }
     }
-  } catch (e) { /* 分からなければ進める（足りなければ保存が失敗するだけ） */ }
-  const id = areaIdOf(fav.lat, fav.lon);
+  } catch (e) { if (stopped) { areaJob.running = null; areaJob.text = stopped; renderAreaPanel(); return; } /* 分からなければ進める（足りなければ保存が失敗するだけ） */ }
   let list = loadSavedAreas(), area = list.find(a => a.id === id);
   if (!area) { area = { id, name: fav.name, lat: fav.lat, lon: fav.lon, at: Date.now(), done: 0, bytes: 0, miss: [], complete: false }; list.push(area); }
   area.at = Date.now(); area.complete = false; area.name = fav.name;
   storeSavedAreas(list);
-  areaJob.running = id; areaJob.cancel = false;
-  let stopped = '';
   try {
     const cache = await caches.open(AREA_CACHE_NAME);
     const miss = new Set(area.miss || []);
@@ -14015,10 +14017,12 @@ async function saveArea(fav) {
       () => plan0.std,
     ];
     const total = plan0.dem.length + plan0.std.length;
-    let seen = 0;
+    let seen = 0, skipped = 0;
+    area.done = 0;
     for (const phase of phases) {
       const todo = [];
-      for (const t of phase()) { seen++; if (!miss.has(t.key) && !(await cache.match(t.url))) todo.push(t); }
+      // 箱にあるものは取らない（done は「箱にある枚数」にそろえるので、ここで数える）
+      for (const t of phase()) { seen++; if (miss.has(t.key)) continue; if (await cache.match(t.url)) skipped++; else todo.push(t); }
       for (let i = 0; i < todo.length && !stopped; i += AREA_BATCH) {
         if (areaJob.cancel) { stopped = 'やめました（そこまでは保存しました）'; break; }
         const t0 = Date.now(), batch = todo.slice(i, i + AREA_BATCH);
@@ -14045,6 +14049,7 @@ async function saveArea(fav) {
       }
       if (stopped) break;
     }
+    area.done += skipped; put();
     if (!stopped) { area.complete = true; area.at = Date.now(); put(); }
   } catch (e) {
     stopped = '保存できませんでした（' + (e && e.message || e) + '）';

@@ -4,7 +4,7 @@
 > 関数・定数を足す・消す・改名したら作り直す（`tests/smoke_codeindex.mjs` が顔ぶれのずれで落とす。行番号のずれでは落とさない）。
 > 説明・地雷・「なぜ」は手書きの [`code_map.md`](code_map.md) と `docs/adr/`。ここは「どこに何があり、誰が使うか」だけ。
 
-- `sotoki_v4.html`：16,906行／本体の `<script>` は 2908〜16903 行
+- `sotoki_v4.html`：16,911行／本体の `<script>` は 2908〜16908 行
 - トップレベルの宣言 1041（関数 745・定数と状態 296）／ブロック 39
 - `code_map.md` に説明があるもの：585／1041（📝 印）
 - **参照元**＝その名前を使っているトップレベルの関数（推定。文字列の中の `onclick="名前()"` も数える。コメントは除く）。
@@ -37,18 +37,18 @@
 - 行 10620：段階3a：風下の遮蔽（v4.133.0〜・実験・**既定は切**。計測表示の「補正」で入れる）（13）
 - 行 10825：段階2：地形の構造の抽出（尾根・沢・鞍部）— 検証用（v4.122.0〜v4.124.0）（188）
 - 行 13577：標高タイル（国土地理院 dem_png）から選択地点の標高を読む（50）
-- 行 14141：現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）（58）
-- 行 15050：検索の履歴（選んだ地点）（8）
-- 行 15178：手元の山の検索（#171・第1段階）（33）
-- 行 15588：座標の表記（DD・DMS・DDM・度分秒）— v4.109.0（11）
-- 行 15726：座標の入力を読む（v4.158.0・findings-09 の B・第1段）（21）
-- 行 15940：FAVORITES（7）
-- 行 16130：RANKING（全国山域ランキング）（21）
-- 行 16467：新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）（9）
-- 行 16621：LOCALSTORAGE – 最終地点（2）
-- 行 16632：LOADING OVERLAY（2）
-- 行 16686：天気図（気象庁の速報天気図・予想天気図）（13）
-- 行 16828：AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）（4）
+- 行 14146：現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）（58）
+- 行 15055：検索の履歴（選んだ地点）（8）
+- 行 15183：手元の山の検索（#171・第1段階）（33）
+- 行 15593：座標の表記（DD・DMS・DDM・度分秒）— v4.109.0（11）
+- 行 15731：座標の入力を読む（v4.158.0・findings-09 の B・第1段）（21）
+- 行 15945：FAVORITES（7）
+- 行 16135：RANKING（全国山域ランキング）（21）
+- 行 16472：新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）（9）
+- 行 16626：LOCALSTORAGE – 最終地点（2）
+- 行 16637：LOADING OVERLAY（2）
+- 行 16691：天気図（気象庁の速報天気図・予想天気図）（13）
+- 行 16833：AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）（4）
 
 ## STATE
 
@@ -1064,282 +1064,282 @@
 | `areaJob` | 状態 | 13983 | 3：`deleteArea`、`renderAreaPanel`、`saveArea` |
 | `areaIdOf` | 関数 | 13984 | 2：`renderAreaPanel`、`saveArea` |
 | `saveArea` 📝 | 関数 | 13985 | 1：`renderAreaPanel` |
-| `deleteArea` 📝 | 関数 | 14058 | 1：`renderAreaPanel` |
-| `renderAreaPanel` 📝 | 関数 | 14071 | 3：`deleteArea`、`saveArea`、`toggleLayerPanel` |
-| `pickMapPoint` 📝 | 関数 | 14112 | 4：`drawAreas`、`pickMtn`、`renderMapResults`、`renderSearchHist` |
-| `setPickedName` 📝 | 関数 | 14126 | 7：`fetchGPS`、`hideLoading`、`openMap`、`pickMapPoint`、`pickPinPoint`、`selectFav` ほか1 |
-| `mapFlyTo` 📝 | 関数 | 14133 | 5：`fetchGPS`、`goCoordPoint`、`pickMapPoint`、`selectFav`、`setLocateMode` |
+| `deleteArea` 📝 | 関数 | 14063 | 1：`renderAreaPanel` |
+| `renderAreaPanel` 📝 | 関数 | 14076 | 3：`deleteArea`、`saveArea`、`toggleLayerPanel` |
+| `pickMapPoint` 📝 | 関数 | 14117 | 4：`drawAreas`、`pickMtn`、`renderMapResults`、`renderSearchHist` |
+| `setPickedName` 📝 | 関数 | 14131 | 7：`fetchGPS`、`hideLoading`、`openMap`、`pickMapPoint`、`pickPinPoint`、`selectFav` ほか1 |
+| `mapFlyTo` 📝 | 関数 | 14138 | 5：`fetchGPS`、`goCoordPoint`、`pickMapPoint`、`selectFav`、`setLocateMode` |
 
 ## 現在地の追跡と、地図の向き（ノースアップ／ヘディングアップ）
 
-行 14141〜
+行 14146〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `updatePinVisibility` 📝 | 関数 | 14166 | 5：`openMap`、`releaseFollow`、`setLocateMode`、`startTracking`、`stopTracking` |
-| `updateMapToolButtons` 📝 | 関数 | 14173 | 5：`releaseFollow`、`setHeadingUp`、`setLocateMode`、`startTracking`、`stopTracking` |
-| `paintCompass` 📝 | 関数 | 14195 | 2：`applyMapRotation`、`updateMapToolButtons` |
-| `cycleLocate` 📝 | 関数 | 14212 | 1：（HTML） |
-| `setLocateMode` 📝 | 関数 | 14218 | 2：`cycleLocate`、`toggleOrientation` |
-| `startTracking` 📝 | 関数 | 14233 | 1：`setLocateMode` |
-| `releaseFollow` 📝 | 関数 | 14252 | 3：`pickMapPoint`、`pickPinPoint`、`selectFav` |
-| `stopTracking` 📝 | 関数 | 14264 | 3：`closeMap`、`setLocateMode`、`startTracking` |
-| `onGeoUpdate` 📝 | 関数 | 14279 | 1：`startTracking` |
-| `drawMe` 📝 | 関数 | 14289 | 3：`applyMapRotation`、`onGeoUpdate`、`setHeading` |
-| `enableHeading` 📝 | 関数 | 14322 | 1：`toggleOrientation` |
-| `screenAngle` | 関数 | 14345 | 2：`applyNotchSide`、`enableHeading` |
-| `applyNotchSide` | 関数 | 14355 | 1：（トップレベル） |
-| `setHeading` 📝 | 関数 | 14363 | 2：`enableHeading`、`onGeoUpdate` |
-| `applyMapRotation` 📝 | 関数 | 14370 | 2：`setHeading`、`setHeadingUp` |
-| `toggleOrientation` 📝 | 関数 | 14382 | 1：（HTML） |
-| `setHeadingUp` 📝 | 関数 | 14390 | 3：`releaseFollow`、`stopTracking`、`toggleOrientation` |
-| `ME_DOT_R` 📝 | 定数 | 14423 | 2：`SPOT_CLEAR_PX`、`SPOT_FADE_PX` |
-| `SPOT_CLEAR_PX` | 定数 | 14424 | 1：`paintSpotlightPane` |
-| `SPOT_FADE_PX` | 定数 | 14425 | 1：`paintSpotlightPane` |
-| `updateMeSpotlight` 📝 | 関数 | 14428 | 3：`onGeoUpdate`、`openMap`、`stopTracking` |
-| `SPOT_PANES` | 定数 | 14434 | 1：`paintMeSpotlight` |
-| `paintMeSpotlight` 📝 | 関数 | 14435 | 1：`updateMeSpotlight` |
-| `paintSpotlightPane` 📝 | 関数 | 14441 | 1：`paintMeSpotlight` |
-| `DTAP_MS` 📝 | 定数 | 14483 | 2：`bindDoubleTapZoom`、`flashPinHint` |
-| `DTAP_SLOP_PX` 📝 | 定数 | 14484 | 1：`bindDoubleTapZoom` |
-| `DTAP_PX_PER_ZOOM` 📝 | 定数 | 14485 | 1：`bindDoubleTapZoom` |
-| `zoomAnchor` 📝 | 関数 | 14491 | 1：`bindDoubleTapZoom` |
-| `bindDoubleTapZoom` 📝 | 関数 | 14496 | 1：`openMap` |
-| `PIN_HOLD_MS` 📝 | 定数 | 14570 | 2：`bindPinLongPress`、`showPinHold` |
-| `PIN_HOLD_SLOP_PX` 📝 | 定数 | 14571 | 1：`bindPinLongPress` |
-| `showPinHold` 📝 | 関数 | 14576 | 1：`bindPinLongPress` |
-| `hidePinHold` 📝 | 関数 | 14588 | 2：`bindPinLongPress`、`cancelPinHold` |
-| `cancelPinHold` 📝 | 関数 | 14592 | 2：`bindPinLongPress`、`closeMap` |
-| `flashPinHint` 📝 | 関数 | 14600 | 1：`bindPinLongPress` |
-| `MAP_HINT_MS` 📝 | 定数 | 14617 | 1：`showMapHint` |
-| `showMapHint` 📝 | 関数 | 14618 | 1：`openMap` |
-| `pickPinPoint` 📝 | 関数 | 14632 | 2：`bindPinLongPress`、`goCoordPoint` |
-| `bindPinLongPress` 📝 | 関数 | 14650 | 1：`openMap` |
-| `patchRotatedInput` 📝 | 関数 | 14702 | 1：`openMap` |
-| `NAME_VARIANT_GROUPS` | 定数 | 14723 | 2：`nameSearchVariants`、`normalizeSearchName` |
-| `SEARCH_VARIANT_MAX` | 定数 | 14727 | 1：`nameSearchVariants` |
-| `nameSearchVariants` | 関数 | 14731 | 1：`doMapSearch` |
-| `KANJI_VARIANT_PAIRS` | 定数 | 14750 | 2：`mtnKey`、`normalizeSearchName` |
-| `normalizeSearchName` | 関数 | 14753 | 5：`doMapSearch`、`findHyakumeizan`、`isShownMtn`、`renderSearchHist`、`sameHistPlace` |
-| `HYAKU_MATCH_KM` | 定数 | 14766 | 1：`findHyakumeizan` |
-| `findHyakumeizan` | 関数 | 14767 | 1：`renderMapResults` |
-| `gsiPlaceSearch` | 関数 | 14793 | 1：`doMapSearch` |
-| `mapSearchItems` | 状態 | 14810 | 3：`doMapSearch`、`renderMapResults`、`renderSearchHist` |
-| `setMapSearchSort` | 関数 | 14813 | 1：`renderMapResults` |
-| `renderMapResults` | 関数 | 14819 | 2：`doMapSearch`、`setMapSearchSort` |
-| `SEARCH_TIMEOUT_MS` 📝 | 定数 | 14880 | 1：`fetchJsonWithTimeout` |
-| `fetchJsonWithTimeout` 📝 | 関数 | 14881 | 2：`doMapSearch`、`gsiPlaceSearch` |
-| `doMapSearch` 📝 | 関数 | 14898 | 2：（HTML）、（トップレベル） |
-| `COORD_GO_ZOOM` | 定数 | 15021 | 1：`goCoordPoint` |
-| `COORD_OUT_MSG` | 定数 | 15022 | 1：`doMapSearch` |
-| `goCoordPoint` 📝 | 関数 | 15023 | 3：`coordGoRow`、`doMapSearch`、`renderSearchHist` |
-| `coordGoRow` 📝 | 関数 | 15030 | 1：`renderSearchHist` |
+| `updatePinVisibility` 📝 | 関数 | 14171 | 5：`openMap`、`releaseFollow`、`setLocateMode`、`startTracking`、`stopTracking` |
+| `updateMapToolButtons` 📝 | 関数 | 14178 | 5：`releaseFollow`、`setHeadingUp`、`setLocateMode`、`startTracking`、`stopTracking` |
+| `paintCompass` 📝 | 関数 | 14200 | 2：`applyMapRotation`、`updateMapToolButtons` |
+| `cycleLocate` 📝 | 関数 | 14217 | 1：（HTML） |
+| `setLocateMode` 📝 | 関数 | 14223 | 2：`cycleLocate`、`toggleOrientation` |
+| `startTracking` 📝 | 関数 | 14238 | 1：`setLocateMode` |
+| `releaseFollow` 📝 | 関数 | 14257 | 3：`pickMapPoint`、`pickPinPoint`、`selectFav` |
+| `stopTracking` 📝 | 関数 | 14269 | 3：`closeMap`、`setLocateMode`、`startTracking` |
+| `onGeoUpdate` 📝 | 関数 | 14284 | 1：`startTracking` |
+| `drawMe` 📝 | 関数 | 14294 | 3：`applyMapRotation`、`onGeoUpdate`、`setHeading` |
+| `enableHeading` 📝 | 関数 | 14327 | 1：`toggleOrientation` |
+| `screenAngle` | 関数 | 14350 | 2：`applyNotchSide`、`enableHeading` |
+| `applyNotchSide` | 関数 | 14360 | 1：（トップレベル） |
+| `setHeading` 📝 | 関数 | 14368 | 2：`enableHeading`、`onGeoUpdate` |
+| `applyMapRotation` 📝 | 関数 | 14375 | 2：`setHeading`、`setHeadingUp` |
+| `toggleOrientation` 📝 | 関数 | 14387 | 1：（HTML） |
+| `setHeadingUp` 📝 | 関数 | 14395 | 3：`releaseFollow`、`stopTracking`、`toggleOrientation` |
+| `ME_DOT_R` 📝 | 定数 | 14428 | 2：`SPOT_CLEAR_PX`、`SPOT_FADE_PX` |
+| `SPOT_CLEAR_PX` | 定数 | 14429 | 1：`paintSpotlightPane` |
+| `SPOT_FADE_PX` | 定数 | 14430 | 1：`paintSpotlightPane` |
+| `updateMeSpotlight` 📝 | 関数 | 14433 | 3：`onGeoUpdate`、`openMap`、`stopTracking` |
+| `SPOT_PANES` | 定数 | 14439 | 1：`paintMeSpotlight` |
+| `paintMeSpotlight` 📝 | 関数 | 14440 | 1：`updateMeSpotlight` |
+| `paintSpotlightPane` 📝 | 関数 | 14446 | 1：`paintMeSpotlight` |
+| `DTAP_MS` 📝 | 定数 | 14488 | 2：`bindDoubleTapZoom`、`flashPinHint` |
+| `DTAP_SLOP_PX` 📝 | 定数 | 14489 | 1：`bindDoubleTapZoom` |
+| `DTAP_PX_PER_ZOOM` 📝 | 定数 | 14490 | 1：`bindDoubleTapZoom` |
+| `zoomAnchor` 📝 | 関数 | 14496 | 1：`bindDoubleTapZoom` |
+| `bindDoubleTapZoom` 📝 | 関数 | 14501 | 1：`openMap` |
+| `PIN_HOLD_MS` 📝 | 定数 | 14575 | 2：`bindPinLongPress`、`showPinHold` |
+| `PIN_HOLD_SLOP_PX` 📝 | 定数 | 14576 | 1：`bindPinLongPress` |
+| `showPinHold` 📝 | 関数 | 14581 | 1：`bindPinLongPress` |
+| `hidePinHold` 📝 | 関数 | 14593 | 2：`bindPinLongPress`、`cancelPinHold` |
+| `cancelPinHold` 📝 | 関数 | 14597 | 2：`bindPinLongPress`、`closeMap` |
+| `flashPinHint` 📝 | 関数 | 14605 | 1：`bindPinLongPress` |
+| `MAP_HINT_MS` 📝 | 定数 | 14622 | 1：`showMapHint` |
+| `showMapHint` 📝 | 関数 | 14623 | 1：`openMap` |
+| `pickPinPoint` 📝 | 関数 | 14637 | 2：`bindPinLongPress`、`goCoordPoint` |
+| `bindPinLongPress` 📝 | 関数 | 14655 | 1：`openMap` |
+| `patchRotatedInput` 📝 | 関数 | 14707 | 1：`openMap` |
+| `NAME_VARIANT_GROUPS` | 定数 | 14728 | 2：`nameSearchVariants`、`normalizeSearchName` |
+| `SEARCH_VARIANT_MAX` | 定数 | 14732 | 1：`nameSearchVariants` |
+| `nameSearchVariants` | 関数 | 14736 | 1：`doMapSearch` |
+| `KANJI_VARIANT_PAIRS` | 定数 | 14755 | 2：`mtnKey`、`normalizeSearchName` |
+| `normalizeSearchName` | 関数 | 14758 | 5：`doMapSearch`、`findHyakumeizan`、`isShownMtn`、`renderSearchHist`、`sameHistPlace` |
+| `HYAKU_MATCH_KM` | 定数 | 14771 | 1：`findHyakumeizan` |
+| `findHyakumeizan` | 関数 | 14772 | 1：`renderMapResults` |
+| `gsiPlaceSearch` | 関数 | 14798 | 1：`doMapSearch` |
+| `mapSearchItems` | 状態 | 14815 | 3：`doMapSearch`、`renderMapResults`、`renderSearchHist` |
+| `setMapSearchSort` | 関数 | 14818 | 1：`renderMapResults` |
+| `renderMapResults` | 関数 | 14824 | 2：`doMapSearch`、`setMapSearchSort` |
+| `SEARCH_TIMEOUT_MS` 📝 | 定数 | 14885 | 1：`fetchJsonWithTimeout` |
+| `fetchJsonWithTimeout` 📝 | 関数 | 14886 | 2：`doMapSearch`、`gsiPlaceSearch` |
+| `doMapSearch` 📝 | 関数 | 14903 | 2：（HTML）、（トップレベル） |
+| `COORD_GO_ZOOM` | 定数 | 15026 | 1：`goCoordPoint` |
+| `COORD_OUT_MSG` | 定数 | 15027 | 1：`doMapSearch` |
+| `goCoordPoint` 📝 | 関数 | 15028 | 3：`coordGoRow`、`doMapSearch`、`renderSearchHist` |
+| `coordGoRow` 📝 | 関数 | 15035 | 1：`renderSearchHist` |
 
 ## 検索の履歴（選んだ地点）
 
-行 15050〜
+行 15055〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `SEARCH_HIST_KEY` | 定数 | 15058 | 2：`loadSearchHist`、`saveSearchHist` |
-| `SEARCH_HIST_MAX` | 定数 | 15059 | 1：`addSearchHist` |
-| `loadSearchHist` | 関数 | 15061 | 3：`addSearchHist`、`removeSearchHist`、`renderSearchHist` |
-| `saveSearchHist` | 関数 | 15068 | 3：`addSearchHist`、`mtnClearButton`、`removeSearchHist` |
-| `sameHistPlace` | 関数 | 15072 | 1：`addSearchHist` |
-| `addSearchHist` 📝 | 関数 | 15076 | 3：`goCoordPoint`、`renderMapResults`、`renderSearchHist` |
-| `removeSearchHist` | 関数 | 15086 | 1：`renderSearchHist` |
-| `renderSearchHist` 📝 | 関数 | 15095 | 3：`mtnClearButton`、`renderMtnSection`、（トップレベル） |
+| `SEARCH_HIST_KEY` | 定数 | 15063 | 2：`loadSearchHist`、`saveSearchHist` |
+| `SEARCH_HIST_MAX` | 定数 | 15064 | 1：`addSearchHist` |
+| `loadSearchHist` | 関数 | 15066 | 3：`addSearchHist`、`removeSearchHist`、`renderSearchHist` |
+| `saveSearchHist` | 関数 | 15073 | 3：`addSearchHist`、`mtnClearButton`、`removeSearchHist` |
+| `sameHistPlace` | 関数 | 15077 | 1：`addSearchHist` |
+| `addSearchHist` 📝 | 関数 | 15081 | 3：`goCoordPoint`、`renderMapResults`、`renderSearchHist` |
+| `removeSearchHist` | 関数 | 15091 | 1：`renderSearchHist` |
+| `renderSearchHist` 📝 | 関数 | 15100 | 3：`mtnClearButton`、`renderMtnSection`、（トップレベル） |
 
 ## 手元の山の検索（#171・第1段階）
 
-行 15178〜
+行 15183〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `MTN_SEARCH` 📝 | 定数 | 15186 | 7：`addMtnHist`、`mtnHistBoost`、`mtnMatchKey`、`mtnTagChip`、`mtnTierBoost`、`mtnTopTier` ほか1 |
-| `MTN_HIST_KEY` | 定数 | 15196 | 2：`loadMtnHist`、`saveMtnHist` |
-| `MTN_KA_GROUP` | 定数 | 15204 | 1：`mtnKey` |
-| `mtnKey` 📝 | 関数 | 15205 | 2：`buildPeakIndex`、`mtnSearch` |
-| `editDistance` | 関数 | 15215 | 1：`mtnMatchKey` |
-| `mtnMatchKey` | 関数 | 15230 | 1：`mtnMatchScore` |
-| `mtnMatchScore` | 関数 | 15245 | 1：`mtnSearch` |
-| `mtnTopTier` | 関数 | 15252 | 3：`mtnTagChip`、`mtnTierBoost`、`renderMtnSection` |
-| `mtnTierBoost` | 関数 | 15256 | 1：`mtnSearch` |
-| `mtnHistBoost` | 関数 | 15262 | 1：`mtnSearch` |
-| `mtnRoleInfo` | 関数 | 15273 | 1：`buildPeakIndex` |
-| `buildPeakIndex` 📝 | 関数 | 15292 | 1：`ensureMtnIndex` |
-| `loadPeakMeta` | 関数 | 15320 | 1：`ensureMtnIndex` |
-| `ensureMtnIndex` | 関数 | 15327 | 2：`doMapSearch`、`renderSearchHist` |
-| `mtnById` | 関数 | 15337 | 1：`renderMtnSection` |
-| `loadMtnHist` | 関数 | 15342 | 4：`addMtnHist`、`mtnSearch`、`removeMtnHist`、`renderMtnSection` |
-| `saveMtnHist` | 関数 | 15349 | 3：`addMtnHist`、`mtnClearButton`、`removeMtnHist` |
-| `addMtnHist` 📝 | 関数 | 15352 | 1：`pickMtn` |
-| `removeMtnHist` | 関数 | 15360 | 1：`renderMtnSection` |
-| `mtnDistOrigin` | 関数 | 15366 | 1：`renderMtnSection` |
-| `mtnSearch` 📝 | 関数 | 15375 | 1：`renderMtnSection` |
-| `mtnNameCmp` | 関数 | 15390 | 2：`mtnSortList`、`renderMtnSection` |
-| `mtnSortList` | 関数 | 15395 | 1：`renderMtnSection` |
-| `mtnDisplayName` | 関数 | 15406 | 1：`mtnRowEl` |
-| `pickMtn` 📝 | 関数 | 15412 | 1：`mtnRowEl` |
-| `mtnTagChip` | 関数 | 15422 | 1：`mtnRowEl` |
-| `mtnRowEl` | 関数 | 15439 | 1：`renderMtnSection` |
-| `mtnHead` | 関数 | 15475 | 1：`renderMtnSection` |
-| `mtnClearButton` | 関数 | 15485 | 2：`renderMtnSection`、`renderSearchHist` |
-| `mtnShown` | 状態 | 15501 | 2：`isShownMtn`、`renderMtnSection` |
-| `renderMtnSection` 📝 | 関数 | 15502 | 2：`doMapSearch`、`renderSearchHist` |
-| `MTN_DUP_KM` | 定数 | 15578 | 1：`isShownMtn` |
-| `isShownMtn` | 関数 | 15579 | 1：`doMapSearch` |
+| `MTN_SEARCH` 📝 | 定数 | 15191 | 7：`addMtnHist`、`mtnHistBoost`、`mtnMatchKey`、`mtnTagChip`、`mtnTierBoost`、`mtnTopTier` ほか1 |
+| `MTN_HIST_KEY` | 定数 | 15201 | 2：`loadMtnHist`、`saveMtnHist` |
+| `MTN_KA_GROUP` | 定数 | 15209 | 1：`mtnKey` |
+| `mtnKey` 📝 | 関数 | 15210 | 2：`buildPeakIndex`、`mtnSearch` |
+| `editDistance` | 関数 | 15220 | 1：`mtnMatchKey` |
+| `mtnMatchKey` | 関数 | 15235 | 1：`mtnMatchScore` |
+| `mtnMatchScore` | 関数 | 15250 | 1：`mtnSearch` |
+| `mtnTopTier` | 関数 | 15257 | 3：`mtnTagChip`、`mtnTierBoost`、`renderMtnSection` |
+| `mtnTierBoost` | 関数 | 15261 | 1：`mtnSearch` |
+| `mtnHistBoost` | 関数 | 15267 | 1：`mtnSearch` |
+| `mtnRoleInfo` | 関数 | 15278 | 1：`buildPeakIndex` |
+| `buildPeakIndex` 📝 | 関数 | 15297 | 1：`ensureMtnIndex` |
+| `loadPeakMeta` | 関数 | 15325 | 1：`ensureMtnIndex` |
+| `ensureMtnIndex` | 関数 | 15332 | 2：`doMapSearch`、`renderSearchHist` |
+| `mtnById` | 関数 | 15342 | 1：`renderMtnSection` |
+| `loadMtnHist` | 関数 | 15347 | 4：`addMtnHist`、`mtnSearch`、`removeMtnHist`、`renderMtnSection` |
+| `saveMtnHist` | 関数 | 15354 | 3：`addMtnHist`、`mtnClearButton`、`removeMtnHist` |
+| `addMtnHist` 📝 | 関数 | 15357 | 1：`pickMtn` |
+| `removeMtnHist` | 関数 | 15365 | 1：`renderMtnSection` |
+| `mtnDistOrigin` | 関数 | 15371 | 1：`renderMtnSection` |
+| `mtnSearch` 📝 | 関数 | 15380 | 1：`renderMtnSection` |
+| `mtnNameCmp` | 関数 | 15395 | 2：`mtnSortList`、`renderMtnSection` |
+| `mtnSortList` | 関数 | 15400 | 1：`renderMtnSection` |
+| `mtnDisplayName` | 関数 | 15411 | 1：`mtnRowEl` |
+| `pickMtn` 📝 | 関数 | 15417 | 1：`mtnRowEl` |
+| `mtnTagChip` | 関数 | 15427 | 1：`mtnRowEl` |
+| `mtnRowEl` | 関数 | 15444 | 1：`renderMtnSection` |
+| `mtnHead` | 関数 | 15480 | 1：`renderMtnSection` |
+| `mtnClearButton` | 関数 | 15490 | 2：`renderMtnSection`、`renderSearchHist` |
+| `mtnShown` | 状態 | 15506 | 2：`isShownMtn`、`renderMtnSection` |
+| `renderMtnSection` 📝 | 関数 | 15507 | 2：`doMapSearch`、`renderSearchHist` |
+| `MTN_DUP_KM` | 定数 | 15583 | 1：`isShownMtn` |
+| `isShownMtn` | 関数 | 15584 | 1：`doMapSearch` |
 
 ## 座標の表記（DD・DMS・DDM・度分秒）— v4.109.0
 
-行 15588〜
+行 15593〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `coordParts` | 関数 | 15593 | 3：`fmtDDM`、`fmtDMS`、`fmtJpDMS` |
-| `fmtDMS` | 関数 | 15598 | 1：`coordFormats` |
-| `fmtDDM` | 関数 | 15603 | 1：`coordFormats` |
-| `fmtJpDMS` | 関数 | 15607 | 1：`coordFormats` |
-| `UTM_BANDS` | 定数 | 15618 | 2：`toUTM`、`utmBandRange` |
-| `utmZone` | 関数 | 15619 | 1：`toUTM` |
-| `toUTM` 📝 | 関数 | 15631 | 2：`coordFormats`、`parseUtmMgrs` |
-| `fmtUTM` | 関数 | 15652 | 1：`coordFormats` |
-| `fmtMGRS` | 関数 | 15655 | 1：`coordFormats` |
-| `fromUTM` 📝 | 関数 | 15669 | 2：`utmCellInBand`、`utmResult` |
-| `coordFormats` | 関数 | 15690 | 1：`openCoordSheet` |
+| `coordParts` | 関数 | 15598 | 3：`fmtDDM`、`fmtDMS`、`fmtJpDMS` |
+| `fmtDMS` | 関数 | 15603 | 1：`coordFormats` |
+| `fmtDDM` | 関数 | 15608 | 1：`coordFormats` |
+| `fmtJpDMS` | 関数 | 15612 | 1：`coordFormats` |
+| `UTM_BANDS` | 定数 | 15623 | 2：`toUTM`、`utmBandRange` |
+| `utmZone` | 関数 | 15624 | 1：`toUTM` |
+| `toUTM` 📝 | 関数 | 15636 | 2：`coordFormats`、`parseUtmMgrs` |
+| `fmtUTM` | 関数 | 15657 | 1：`coordFormats` |
+| `fmtMGRS` | 関数 | 15660 | 1：`coordFormats` |
+| `fromUTM` 📝 | 関数 | 15674 | 2：`utmCellInBand`、`utmResult` |
+| `coordFormats` | 関数 | 15695 | 1：`openCoordSheet` |
 
 ## 座標の入力を読む（v4.158.0・findings-09 の B・第1段）
 
-行 15726〜
+行 15731〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `COORD_JP` | 定数 | 15736 | 1：`coordInJapan` |
-| `COORD_NUM` | 定数 | 15739 | 2：`COORD_COMP_POST`、`COORD_COMP_PRE` |
-| `COORD_LABEL` | 定数 | 15742 | 3：`COORD_COMP_POST`、`COORD_COMP_PRE`、`parseCoordInput` |
-| `COORD_COMP_PRE` | 定数 | 15743 | 1：`parseCoordWith` |
-| `COORD_COMP_POST` | 定数 | 15744 | 1：`parseCoordWith` |
-| `COORD_SEP` | 定数 | 15745 | 1：`parseCoordWith` |
-| `coordInJapan` | 関数 | 15746 | 2：`parseCoordWith`、`utmResult` |
-| `parseCoordComp` | 関数 | 15749 | 1：`parseCoordWith` |
-| `UTM_IN` | 定数 | 15775 | 1：`parseUtmMgrs` |
-| `MGRS_IN` | 定数 | 15776 | 1：`parseUtmMgrs` |
-| `MGRS_ROWS` | 定数 | 15777 | 1：`parseUtmMgrs` |
-| `utmBandRange` | 関数 | 15778 | 2：`parseUtmMgrs`、`utmCellInBand` |
-| `utmCellInBand` 📝 | 関数 | 15783 | 1：`utmResult` |
-| `utmResult` | 関数 | 15788 | 1：`parseUtmMgrs` |
-| `parseUtmMgrs` 📝 | 関数 | 15795 | 1：`parseCoordInput` |
-| `parseCoordInput` 📝 | 関数 | 15819 | 2：`doMapSearch`、`renderSearchHist` |
-| `parseCoordWith` | 関数 | 15831 | 1：`parseCoordInput` |
-| `copyText` | 関数 | 15865 | 1：`openCoordSheet` |
-| `flashCopied` | 関数 | 15878 | 1：`openCoordSheet` |
-| `openCoordSheet` | 関数 | 15886 | 2：`renderFavList`、`renderSearchHist` |
-| `closeCoordSheet` | 関数 | 15928 | 1：（HTML） |
+| `COORD_JP` | 定数 | 15741 | 1：`coordInJapan` |
+| `COORD_NUM` | 定数 | 15744 | 2：`COORD_COMP_POST`、`COORD_COMP_PRE` |
+| `COORD_LABEL` | 定数 | 15747 | 3：`COORD_COMP_POST`、`COORD_COMP_PRE`、`parseCoordInput` |
+| `COORD_COMP_PRE` | 定数 | 15748 | 1：`parseCoordWith` |
+| `COORD_COMP_POST` | 定数 | 15749 | 1：`parseCoordWith` |
+| `COORD_SEP` | 定数 | 15750 | 1：`parseCoordWith` |
+| `coordInJapan` | 関数 | 15751 | 2：`parseCoordWith`、`utmResult` |
+| `parseCoordComp` | 関数 | 15754 | 1：`parseCoordWith` |
+| `UTM_IN` | 定数 | 15780 | 1：`parseUtmMgrs` |
+| `MGRS_IN` | 定数 | 15781 | 1：`parseUtmMgrs` |
+| `MGRS_ROWS` | 定数 | 15782 | 1：`parseUtmMgrs` |
+| `utmBandRange` | 関数 | 15783 | 2：`parseUtmMgrs`、`utmCellInBand` |
+| `utmCellInBand` 📝 | 関数 | 15788 | 1：`utmResult` |
+| `utmResult` | 関数 | 15793 | 1：`parseUtmMgrs` |
+| `parseUtmMgrs` 📝 | 関数 | 15800 | 1：`parseCoordInput` |
+| `parseCoordInput` 📝 | 関数 | 15824 | 2：`doMapSearch`、`renderSearchHist` |
+| `parseCoordWith` | 関数 | 15836 | 1：`parseCoordInput` |
+| `copyText` | 関数 | 15870 | 1：`openCoordSheet` |
+| `flashCopied` | 関数 | 15883 | 1：`openCoordSheet` |
+| `openCoordSheet` | 関数 | 15891 | 2：`renderFavList`、`renderSearchHist` |
+| `closeCoordSheet` | 関数 | 15933 | 1：（HTML） |
 
 ## FAVORITES
 
-行 15940〜
+行 15945〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `loadFavs` 📝 | 関数 | 15943 | 9：`assignSpot`、`migrateSpotsOutOfFavs`、`renderAreaPanel`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav` ほか3 |
-| `saveFavs` 📝 | 関数 | 15947 | 6：`assignSpot`、`migrateSpotsOutOfFavs`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav`、`toggleFavStar` |
-| `toggleFavSpots` | 関数 | 15957 | 1：（HTML） |
-| `openFav` 📝 | 関数 | 15961 | 1：（HTML） |
-| `closeFav` 📝 | 関数 | 15966 | 2：`renderFavList`、（HTML） |
-| `renderFavList` 📝 | 関数 | 15970 | 3：`openFav`、`saveCurrentAsFav`、`toggleFavSpots` |
-| `saveCurrentAsFav` 📝 | 関数 | 16119 | 1：（HTML） |
+| `loadFavs` 📝 | 関数 | 15948 | 9：`assignSpot`、`migrateSpotsOutOfFavs`、`renderAreaPanel`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav` ほか3 |
+| `saveFavs` 📝 | 関数 | 15952 | 6：`assignSpot`、`migrateSpotsOutOfFavs`、`renderFavList`、`returnToFavs`、`saveCurrentAsFav`、`toggleFavStar` |
+| `toggleFavSpots` | 関数 | 15962 | 1：（HTML） |
+| `openFav` 📝 | 関数 | 15966 | 1：（HTML） |
+| `closeFav` 📝 | 関数 | 15971 | 2：`renderFavList`、（HTML） |
+| `renderFavList` 📝 | 関数 | 15975 | 3：`openFav`、`saveCurrentAsFav`、`toggleFavSpots` |
+| `saveCurrentAsFav` 📝 | 関数 | 16124 | 1：（HTML） |
 
 ## RANKING（全国山域ランキング）
 
-行 16130〜
+行 16135〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `RANK_WINDOW_START` 📝 | 定数 | 16136 | 1：`rankHourWindow` |
-| `RANK_WINDOW_END` | 定数 | 16137 | 1：`rankHourWindow` |
-| `RANK_MAX_AHEAD` | 定数 | 16138 | 1：`openRank` |
-| `rankFetchCache` | 状態 | 16141 | 1：`fetchRankData` |
-| `rankDates` | 状態 | 16142 | 4：`openRank`、`refreshRanking`、`setRankDate`、`updateMapWhen` |
-| `loadAreas` 📝 | 関数 | 16145 | 7：`buildRanking`、`doMapSearch`、`drawAreas`、`ensureMtnIndex`、`fetchRankData`、`fillReliability` ほか1 |
-| `fmtDateISO` | 関数 | 16154 | 7：`fillReliability`、`judgePeakDay`、`openRank`、`rankHourWindow`、`refreshRanking`、`resolveRankDates` ほか1 |
-| `resolveRankDates` 📝 | 関数 | 16159 | 2：`openRank`、`setRankDate` |
-| `fetchRankData` 📝 | 関数 | 16184 | 1：`buildRanking` |
-| `rankHourWindow` 📝 | 関数 | 16227 | 3：`judgePeakDay`、`refreshRanking`、`updateMapWhen` |
-| `judgePeakDay` 📝 | 関数 | 16236 | 1：`buildRanking` |
-| `buildRanking` 📝 | 関数 | 16259 | 1：`refreshRanking` |
-| `rankGradeChar` | 関数 | 16297 | 2：`refreshRanking`、`renderRankList` |
-| `rankDowChar` | 関数 | 16298 | 2：`renderRankList`、`updateMapWhen` |
-| `bestPeakOf` 📝 | 関数 | 16303 | 1：`renderRankList` |
-| `renderRankList` 📝 | 関数 | 16313 | 1：`refreshRanking` |
-| `gotoPeak` 📝 | 関数 | 16397 | 2：`renderRankList`、`renderSnowList` |
-| `refreshRanking` 📝 | 関数 | 16406 | 2：`openRank`、`setRankDate` |
-| `setRankDate` 📝 | 関数 | 16441 | 1：（HTML） |
-| `openRank` 📝 | 関数 | 16451 | 1：（HTML） |
-| `closeRank` 📝 | 関数 | 16463 | 2：`gotoPeak`、（HTML） |
+| `RANK_WINDOW_START` 📝 | 定数 | 16141 | 1：`rankHourWindow` |
+| `RANK_WINDOW_END` | 定数 | 16142 | 1：`rankHourWindow` |
+| `RANK_MAX_AHEAD` | 定数 | 16143 | 1：`openRank` |
+| `rankFetchCache` | 状態 | 16146 | 1：`fetchRankData` |
+| `rankDates` | 状態 | 16147 | 4：`openRank`、`refreshRanking`、`setRankDate`、`updateMapWhen` |
+| `loadAreas` 📝 | 関数 | 16150 | 7：`buildRanking`、`doMapSearch`、`drawAreas`、`ensureMtnIndex`、`fetchRankData`、`fillReliability` ほか1 |
+| `fmtDateISO` | 関数 | 16159 | 7：`fillReliability`、`judgePeakDay`、`openRank`、`rankHourWindow`、`refreshRanking`、`resolveRankDates` ほか1 |
+| `resolveRankDates` 📝 | 関数 | 16164 | 2：`openRank`、`setRankDate` |
+| `fetchRankData` 📝 | 関数 | 16189 | 1：`buildRanking` |
+| `rankHourWindow` 📝 | 関数 | 16232 | 3：`judgePeakDay`、`refreshRanking`、`updateMapWhen` |
+| `judgePeakDay` 📝 | 関数 | 16241 | 1：`buildRanking` |
+| `buildRanking` 📝 | 関数 | 16264 | 1：`refreshRanking` |
+| `rankGradeChar` | 関数 | 16302 | 2：`refreshRanking`、`renderRankList` |
+| `rankDowChar` | 関数 | 16303 | 2：`renderRankList`、`updateMapWhen` |
+| `bestPeakOf` 📝 | 関数 | 16308 | 1：`renderRankList` |
+| `renderRankList` 📝 | 関数 | 16318 | 1：`refreshRanking` |
+| `gotoPeak` 📝 | 関数 | 16402 | 2：`renderRankList`、`renderSnowList` |
+| `refreshRanking` 📝 | 関数 | 16411 | 2：`openRank`、`setRankDate` |
+| `setRankDate` 📝 | 関数 | 16446 | 1：（HTML） |
+| `openRank` 📝 | 関数 | 16456 | 1：（HTML） |
+| `closeRank` 📝 | 関数 | 16468 | 2：`gotoPeak`、（HTML） |
 
 ## 新雪ランキング（直近24hの新雪＋今夜〜明朝12hの予想降雪）
 
-行 16467〜
+行 16472〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `setRankTab` 📝 | 関数 | 16478 | 1：（HTML） |
-| `setWindMode` | 関数 | 16487 | 1：`windModeChips` |
-| `setAmedasElement` 📝 | 関数 | 16494 | 1：`amedasElementChips` |
-| `setSatBand` 📝 | 関数 | 16502 | 1：`satBandChips` |
-| `setSnowFilter` 📝 | 関数 | 16510 | 1：（HTML） |
-| `loadSnowSpots` 📝 | 関数 | 16518 | 1：`refreshSnowRanking` |
-| `refreshSnowRanking` 📝 | 関数 | 16527 | 1：`setRankTab` |
-| `renderSnowList` 📝 | 関数 | 16556 | 2：`refreshSnowRanking`、`setSnowFilter` |
-| `degToDir` 📝 | 関数 | 16614 | 1：`renderSnowList` |
+| `setRankTab` 📝 | 関数 | 16483 | 1：（HTML） |
+| `setWindMode` | 関数 | 16492 | 1：`windModeChips` |
+| `setAmedasElement` 📝 | 関数 | 16499 | 1：`amedasElementChips` |
+| `setSatBand` 📝 | 関数 | 16507 | 1：`satBandChips` |
+| `setSnowFilter` 📝 | 関数 | 16515 | 1：（HTML） |
+| `loadSnowSpots` 📝 | 関数 | 16523 | 1：`refreshSnowRanking` |
+| `refreshSnowRanking` 📝 | 関数 | 16532 | 1：`setRankTab` |
+| `renderSnowList` 📝 | 関数 | 16561 | 2：`refreshSnowRanking`、`setSnowFilter` |
+| `degToDir` 📝 | 関数 | 16619 | 1：`renderSnowList` |
 
 ## LOCALSTORAGE – 最終地点
 
-行 16621〜
+行 16626〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `saveLast` 📝 | 関数 | 16624 | 1：`applyWeatherJson` |
-| `loadLast` 📝 | 関数 | 16627 | 1：（トップレベル） |
+| `saveLast` 📝 | 関数 | 16629 | 1：`applyWeatherJson` |
+| `loadLast` 📝 | 関数 | 16632 | 1：（トップレベル） |
 
 ## LOADING OVERLAY
 
-行 16632〜
+行 16637〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `showLoading` 📝 | 関数 | 16635 | 3：`fetchGPS`、`fetchWeather`、（トップレベル） |
-| `hideLoading` 📝 | 関数 | 16641 | 4：`fetchGPS`、`fetchWeather`、`render`、（トップレベル） |
+| `showLoading` 📝 | 関数 | 16640 | 3：`fetchGPS`、`fetchWeather`、（トップレベル） |
+| `hideLoading` 📝 | 関数 | 16646 | 4：`fetchGPS`、`fetchWeather`、`render`、（トップレベル） |
 
 ## 天気図（気象庁の速報天気図・予想天気図）
 
-行 16686〜
+行 16691〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `WXMAP_LIST_URL` | 定数 | 16702 | 1：`loadWxMapList` |
-| `WXMAP_PNG_BASE` | 定数 | 16703 | 1：`renderWxMap` |
-| `isWxMapOpen` | 関数 | 16713 | 1：`renderWxMap` |
-| `openWxMap` | 関数 | 16718 | 1：（HTML） |
-| `closeWxMap` | 関数 | 16722 | 1：（HTML） |
-| `setWxMapWhen` | 関数 | 16725 | 1：（HTML） |
-| `setWxMapArea` | 関数 | 16731 | 1：（HTML） |
-| `loadWxMapList` | 関数 | 16739 | 1：`renderWxMap` |
-| `wxMapParseName` | 関数 | 16755 | 1：`wxMapPick` |
-| `wxMapJst` | 関数 | 16765 | 1：`renderWxMap` |
-| `wxMapPick` | 関数 | 16774 | 1：`renderWxMap` |
-| `toggleWxMapZoom` | 関数 | 16789 | 2：`renderWxMap`、（HTML） |
-| `renderWxMap` | 関数 | 16799 | 3：`openWxMap`、`setWxMapArea`、`setWxMapWhen` |
+| `WXMAP_LIST_URL` | 定数 | 16707 | 1：`loadWxMapList` |
+| `WXMAP_PNG_BASE` | 定数 | 16708 | 1：`renderWxMap` |
+| `isWxMapOpen` | 関数 | 16718 | 1：`renderWxMap` |
+| `openWxMap` | 関数 | 16723 | 1：（HTML） |
+| `closeWxMap` | 関数 | 16727 | 1：（HTML） |
+| `setWxMapWhen` | 関数 | 16730 | 1：（HTML） |
+| `setWxMapArea` | 関数 | 16736 | 1：（HTML） |
+| `loadWxMapList` | 関数 | 16744 | 1：`renderWxMap` |
+| `wxMapParseName` | 関数 | 16760 | 1：`wxMapPick` |
+| `wxMapJst` | 関数 | 16770 | 1：`renderWxMap` |
+| `wxMapPick` | 関数 | 16779 | 1：`renderWxMap` |
+| `toggleWxMapZoom` | 関数 | 16794 | 2：`renderWxMap`、（HTML） |
+| `renderWxMap` | 関数 | 16804 | 3：`openWxMap`、`setWxMapArea`、`setWxMapWhen` |
 
 ## AI全国概況（outlook.json を読むだけ。失敗・未生成時は非表示）
 
-行 16828〜
+行 16833〜
 
 | 名前 | 種類 | 行 | 参照元 |
 |---|---|---|---|
-| `toggleOutlook` 📝 | 関数 | 16831 | 1：（HTML） |
-| `loadOutlook` 📝 | 関数 | 16834 | 1：（トップレベル） |
-| `escapeHtml` 📝 | 関数 | 16855 | 13：`drawAmedas`、`drawAreas`、`drawPoi`、`layerEditRows`、`loadOutlook`、`poiTypeChips` ほか7 |
-| `BOOT_GEO_WAIT_MS` 📝 | 定数 | 16865 | 1：（トップレベル） |
+| `toggleOutlook` 📝 | 関数 | 16836 | 1：（HTML） |
+| `loadOutlook` 📝 | 関数 | 16839 | 1：（トップレベル） |
+| `escapeHtml` 📝 | 関数 | 16860 | 13：`drawAmedas`、`drawAreas`、`drawPoi`、`layerEditRows`、`loadOutlook`、`poiTypeChips` ほか7 |
+| `BOOT_GEO_WAIT_MS` 📝 | 定数 | 16870 | 1：（トップレベル） |
 
