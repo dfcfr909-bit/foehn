@@ -556,7 +556,9 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 |---|---|---|
 | `swMessage(payload)` | Service Worker とのやり取り | 約 5848 |
 | `refreshTileCacheUsage()` | 使用量の取得（レイヤーパネル最下段） | 約 5862 |
-| `clearTileCache()` | 削除 | 約 5880 |
+| `clearTileCache()` | 削除（見た範囲の LRU だけ。保存した山域は消さない） | 約 5880 |
+| `areaPlan(lat, lon, missKeys)` / `areaTilesIn` / `areaTiles10b` / `areaTile` / `areaTileRange` | 山域の保存の範囲（#244 段2）。5A z13〜15・10B（5A の 404 から）・1A z16・1A z17（中心から近い順）で標高 `AREA_DEM_MAX`=1,100、標準地図 z12〜16 で `AREA_STD_MAX`=750。URL は demFetchBlob と同じ式 | `clearTileCache` の下 |
+| `saveArea(fav)` / `deleteArea(id)` / `renderAreaPanel()` / `loadSavedAreas()` / `storeSavedAreas()` / `areaMissHas(keys)` | 保存の流れ（SW に 8 枚ずつ頼み 2 秒あける・やめる・続きは箱を見る）・削除（重なるタイルは残す）・パネル。`areaMissHas` は保存した山域の 404（期限切れにならない）で、`csRender1m`（1A は圏内でも取らない）と `csRenderTile`／`sxRenderTile`（5A が通信の失敗のときだけ）が引く。⚠ ランキングの `loadAreas()`（areas.json）と名前が別 | 同上 |
 | `formatBytes(n)` | 表示整形 | 約 5858 |
 
 SW 側の実装は `sw.js` → `pwa.md`

@@ -1696,6 +1696,12 @@ html, body {
 }
 #layer-cache { font-size: 11px; color: var(--text2); }
 #layer-cache-usage { font-family: var(--font-mono); margin-bottom: 6px; }
+/* 山域の保存（#244 段2） */
+.area-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.area-name { font-weight: 700; flex-shrink: 0; }
+.area-meta { color: var(--muted, #888); font-size: 11px; flex: 1; }
+.area-btn { margin-left: auto; padding: 4px 10px; font: inherit; font-size: 12px; border-radius: 6px; }
+#layer-areas-note { font-size: 11px; color: var(--muted, #888); margin: 4px 0 8px; }
 #btn-cache-clear {
   min-height: 44px; padding: 0 14px;
   border: 2px solid var(--c-col); border-radius: 10px;
@@ -2614,7 +2620,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.182.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.183.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2787,6 +2793,10 @@ html, body {
             <button id="btn-cache-clear" onclick="clearTileCache()">タイルキャッシュを削除</button>
             <div id="layer-cache-note">一度表示した範囲は自動で保存され、圏外でも表示できる。</div>
           </div>
+          <div class="layer-section-title">山域の保存（圏外用）</div>
+          <div id="layer-areas"></div>
+          <div id="layer-areas-note">お気に入りの地点を中心に、地形（CS立体図風・風の当たり方の元）と標準地図を前もって保存する。自動では消えない。電波のよい所で。
+            ⚠ 圏外の下地は標準地図の z16 まで（それより寄ると下地が出ないことがある）。淡色地図・写真は保存しない。</div>
           <div class="layer-section-title">地図を開いた回数（この端末）</div>
           <div id="layer-opens">
             <div id="layer-map-opens">—</div>
@@ -7814,7 +7824,8 @@ async function csStretch15(coords, job) {
 async function csRender1m(coords, job) {
   const { x, y, z } = coords, keys = [];
   for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) keys.push(ciTileKey(z, x + ox, y + oy, 'gsi1a'));
-  if (csMissAny(keys, CS_MISS1A_KEY)) return csStretch15(coords, job);
+  // 保存した山域で 404 だった所も（期限切れにならない・#244 段2）。1A は圏内でも取りに行かない（ADR-0020）
+  if (csMissAny(keys, CS_MISS1A_KEY) || areaMissHas(keys)) return csStretch15(coords, job);
   const g = await csGather('gsi1a', z, x, y);
   if (job.cancelled) return undefined;
   if (g.missKeys.length) { csMissMark(g.missKeys, CS_MISS1A_KEY); return csStretch15(coords, job); }
@@ -7832,7 +7843,8 @@ async function csRenderTile(coords, job) {
   let use10b = false;
   if (g5.missKeys.length) { csMissMark(g5.missKeys); use10b = true; }
   else if (g5.error) {
-    if (!csMissAny(g5.keys)) throw csNetError();   // 覚えていない：失敗（圏内で取り直す）
+    // 覚えていない：失敗（圏内で取り直す）。保存した山域の 404 も根拠にする（5A は圏内では今どおり取りに行く・ADR-0018）
+    if (!csMissAny(g5.keys) && !areaMissHas(g5.keys)) throw csNetError();
     use10b = true;
   }
   if (!use10b) return csCompute(job, g5, 'gsi5a', z, y);
@@ -7953,7 +7965,7 @@ async function sxRenderTile(coords, job, sector, dmax) {
   let use10b = false;
   if (g5.missKeys.length) { csMissMark(g5.missKeys); use10b = true; }
   else if (g5.error) {
-    if (!csMissAny(g5.keys)) throw csNetError();
+    if (!csMissAny(g5.keys) && !areaMissHas(g5.keys)) throw csNetError();
     use10b = true;
   }
   if (!use10b) return sxComputeCached(job, g5, 'gsi5a', z, x, y, sector, dmax);
@@ -13126,6 +13138,7 @@ function toggleLayerPanel() {
     if (q) q.blur();
     renderLayerPanel();
     refreshTileCacheUsage();
+    renderAreaPanel();
     refreshMapOpensView();
   }
 }
@@ -13769,12 +13782,13 @@ function updateMapScale() {
 }
 
 /* ------ タイルキャッシュの使用量表示・削除（Service Workerと会話する） ------ */
-function swMessage(payload) {
+// timeoutMs：既定 3 秒（使用量・削除）。山域の保存は数枚の取得を待つので長くする（AREA_FETCH_TIMEOUT_MS）
+function swMessage(payload, timeoutMs = 3000) {
   return new Promise(resolve => {
     const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
     if (!sw) return resolve(null);
     const ch = new MessageChannel();
-    const timer = setTimeout(() => resolve(null), 3000);
+    const timer = setTimeout(() => resolve(null), timeoutMs);
     ch.port1.onmessage = e => { clearTimeout(timer); resolve(e.data); };
     sw.postMessage(payload, [ch.port2]);
   });
@@ -13886,9 +13900,216 @@ function refreshMapOpensView() {
 }
 async function clearTileCache() {
   // 破壊的操作なので必ず確認を挟む
-  if (!confirm('保存した地図タイルをすべて削除します。\n圏外では削除した範囲の地図が表示できなくなります。\n削除しますか？')) return;
+  if (!confirm('見た範囲の地図タイル（自動の控え）をすべて削除します。\n圏外では削除した範囲の地図が表示できなくなります。\n「山域の保存」で保存した山域は消えません。\n削除しますか？')) return;
   await swMessage({ type: 'tiles-clear' });
   await refreshTileCacheUsage();
+}
+
+/* ------ 山域の保存（#244 段2＋#229・ADR-0020） ------
+   お気に入りの地点を中心に、地形（標高タイル）と標準地図を前もって Service Worker の別の箱（AREA_CACHE）へ入れる。
+   ・取るのは SW（ページが数枚ずつ頼む）。SW 自身の fetch は LRU に入らない。間隔はページが管理（毎秒4枚まで）
+   ・範囲：5A z13〜15（10km 四方）→ 5A が 404 の所の 10B（z13〜14・周り1枚）→ 1A z16（10km 四方）→ 1A z17（中心5km 四方・中心から近い順）。
+     標高は合わせて AREA_DEM_MAX 枚まで（超える分は z17 の外側から削る）。標準地図 std は z12〜16 の 10km 四方（#229 の半径約5km）で AREA_STD_MAX 枚まで
+   ・どこまで保存したかの正は箱そのもの。続き・やり直しは「箱に無く、404 でもない」ものを取る。山域の記録（sotoki.areas）は表示用
+   ・404 は保存しない。山域の miss（鍵）は期限切れにならない「無い」の根拠（areaMissHas。csMissAny の 30 日とは別）
+   ⚠ 地理院の回答（decisions 2026-10-22）：端末の中で私的に使うなら申請不要。サーバーの負荷は別なので控えめに取る */
+const AREA_LS = 'sotoki.areas', AREA_CACHE_NAME = 'sotoki-areas-v1';
+const AREA_DEM_MAX = 1100, AREA_STD_MAX = 750, AREA_BATCH = 8, AREA_BATCH_MS = 2000;   // 8 枚を 2 秒ごと＝毎秒 4 枚
+const AREA_FETCH_TIMEOUT_MS = 60000, AREA_MIN_FREE_BYTES = 120 * 1024 * 1024;
+const AREA_STD_URL = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png';   // MAP_BASES の std と同じ
+// 中心から half km 四方の半分のタイルの範囲（XYZ）
+function areaTileRange(lat, lon, halfKm, z) {
+  const n = 2 ** z, dLat = halfKm / 111.32, dLon = halfKm / (111.32 * Math.cos(lat * Math.PI / 180));
+  const tx = lo => Math.floor((lo + 180) / 360 * n);
+  const ty = la => { const r = la * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n); };
+  return { x0: tx(lon - dLon), x1: tx(lon + dLon), y0: Math.max(0, ty(lat + dLat)), y1: Math.min(n - 1, ty(lat - dLat)) };
+}
+// 1 枚の URL と鍵。⚠ URL は demFetchBlob と同じ式（DEM_SRC の url・x の折り返し）。鍵は ciTileKey と同じ（std は 'std/z/x/y'）
+function areaTile(src, z, x, y) {
+  const n = 2 ** z; x = ((x % n) + n) % n;
+  const tpl = src === 'std' ? AREA_STD_URL : DEM_SRC[src].url;
+  return { src, z, x, y, url: tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y), key: src === 'std' ? `std/${z}/${x}/${y}` : ciTileKey(z, x, y, src) };
+}
+function areaTilesIn(src, lat, lon, halfKm, z, nearFirst) {
+  const r = areaTileRange(lat, lon, halfKm, z), out = [];
+  for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) out.push(areaTile(src, z, x, y));
+  if (nearFirst) {
+    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+    out.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+  }
+  return out;
+}
+// 5A が 404 だった鍵から、要る 10B（z13〜14。z15 は z14 の親）とその周り1枚
+function areaTiles10b(missKeys) {
+  const seen = new Set(), out = [];
+  for (const k of missKeys) {
+    const m = /^gsi5a\/(\d+)\/(\d+)\/(\d+)$/.exec(k); if (!m) continue;
+    const z = +m[1], sh = Math.max(0, z - 14), zz = z - sh, x = +m[2] >> sh, y = +m[3] >> sh;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (y + oy < 0 || y + oy >= 2 ** zz) continue;
+      const t = areaTile('gsi10b', zz, x + ox, y + oy);
+      if (!seen.has(t.key)) { seen.add(t.key); out.push(t); }
+    }
+  }
+  return out;
+}
+/* 山域の取る順と上限。missKeys（その山域で 404 だった鍵）から 10B を足す。
+   → { dem: [...], std: [...] }（どちらも上限で切った後）。保存・削除の両方がこれで同じ集合を作る */
+function areaPlan(lat, lon, missKeys = []) {
+  const dem = [
+    ...[13, 14, 15].flatMap(z => areaTilesIn('gsi5a', lat, lon, 5, z)),
+    ...areaTiles10b(missKeys),
+    ...areaTilesIn('gsi1a', lat, lon, 5, 16),
+    ...areaTilesIn('gsi1a', lat, lon, 2.5, 17, true),
+  ].slice(0, AREA_DEM_MAX);
+  const std = [12, 13, 14, 15, 16].flatMap(z => areaTilesIn('std', lat, lon, 5, z)).slice(0, AREA_STD_MAX);
+  return { dem, std };
+}
+function loadSavedAreas() {
+  try { const a = JSON.parse(localStorage.getItem(AREA_LS) || '[]'); return Array.isArray(a) ? a.filter(x => x && typeof x.lat === 'number' && typeof x.lon === 'number') : []; }
+  catch (e) { return []; }
+}
+let areaMissSet = null;   // 保存した山域の 404 の鍵（areaMissHas の控え。保存・削除で作り直す）
+function storeSavedAreas(list) {
+  try { localStorage.setItem(AREA_LS, JSON.stringify(list)); } catch (e) { /* 入らなければ表示が古いだけ（箱が正） */ }
+  areaMissSet = null;
+}
+// 鍵のどれかが、保存した山域で 404 だったか（期限切れにならない。消すのは山域の削除だけ）
+function areaMissHas(keys) {
+  if (!areaMissSet) { areaMissSet = new Set(); loadSavedAreas().forEach(a => (a.miss || []).forEach(k => areaMissSet.add(k))); }
+  for (const k of keys) if (areaMissSet.has(k)) return true;
+  return false;
+}
+const areaJob = { running: null, cancel: false, text: '' };
+function areaIdOf(lat, lon) { return `${lat.toFixed(3)},${lon.toFixed(3)}`; }
+async function saveArea(fav) {
+  if (areaJob.running) return;
+  if (!(navigator.serviceWorker && navigator.serviceWorker.controller)) { alert('いまは保存できません（アプリを一度開き直してください）'); return; }
+  const plan0 = areaPlan(fav.lat, fav.lon);
+  if (!confirm(`「${fav.name}」のまわりの地形（標高 最大${AREA_DEM_MAX}枚・約90MB）と標準地図（最大${AREA_STD_MAX}枚・約15MB）を保存します。\n` +
+    `合わせて 約100MB 前後（1A の無い山域は少なくなります）。電波のよい所で行ってください（毎秒4枚ずつ取ります。途中でやめても、そこまでは残ります）。\n` +
+    `保存した地図は端末の中で見るためのものです（公開などするときは「判定とデータ」の注意を見てください）。\n始めますか？`)) return;
+  // ⚠ 確認の直後（await の前）に走行中にする。後に置くと、persist を待つ間にもう一度押せて2本走る
+  if (areaJob.running) return;
+  const id = areaIdOf(fav.lat, fav.lon);
+  areaJob.running = id; areaJob.cancel = false;
+  let stopped = '';
+  try {
+    if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      if (est && est.quota && est.quota - (est.usage || 0) < AREA_MIN_FREE_BYTES) { stopped = '端末の空きが足りないため保存できません（120MB 以上の空きが要ります）'; alert(stopped); throw null; }
+    }
+  } catch (e) { if (stopped) { areaJob.running = null; areaJob.text = stopped; renderAreaPanel(); return; } /* 分からなければ進める（足りなければ保存が失敗するだけ） */ }
+  let list = loadSavedAreas(), area = list.find(a => a.id === id);
+  if (!area) { area = { id, name: fav.name, lat: fav.lat, lon: fav.lon, at: Date.now(), done: 0, bytes: 0, miss: [], complete: false }; list.push(area); }
+  area.at = Date.now(); area.complete = false; area.name = fav.name;
+  storeSavedAreas(list);
+  try {
+    const cache = await caches.open(AREA_CACHE_NAME);
+    const miss = new Set(area.miss || []);
+    const put = () => { const l = loadSavedAreas(), i = l.findIndex(a => a.id === id); if (i >= 0) { l[i] = area; storeSavedAreas(l); } };
+    // 1 段ずつ：5A → 10B（5A の 404 から）→ 1A → 標準地図。どこまで入ったかは箱を見る（続き・やり直し）
+    const phases = [
+      () => plan0.dem.filter(t => t.src === 'gsi5a'),
+      () => areaPlan(fav.lat, fav.lon, [...miss]).dem.filter(t => t.src === 'gsi10b'),
+      () => areaPlan(fav.lat, fav.lon, [...miss]).dem.filter(t => t.src === 'gsi1a'),
+      () => plan0.std,
+    ];
+    const total = plan0.dem.length + plan0.std.length;
+    let seen = 0, skipped = 0;
+    area.done = 0;
+    for (const phase of phases) {
+      const todo = [];
+      // 箱にあるものは取らない（done は「箱にある枚数」にそろえるので、ここで数える）
+      for (const t of phase()) { seen++; if (miss.has(t.key)) continue; if (await cache.match(t.url)) skipped++; else todo.push(t); }
+      for (let i = 0; i < todo.length && !stopped; i += AREA_BATCH) {
+        if (areaJob.cancel) { stopped = 'やめました（そこまでは保存しました）'; break; }
+        const t0 = Date.now(), batch = todo.slice(i, i + AREA_BATCH);
+        const res = await swMessage({ type: 'area-fetch', urls: batch.map(t => t.url) }, AREA_FETCH_TIMEOUT_MS);
+        if (!res) { stopped = '応答がありません。もう一度押すと続きから取ります'; break; }
+        let fails = 0;
+        res.forEach((r, j) => {
+          const t = batch[j];
+          if (r.status >= 200 && r.status < 300) { area.done++; area.bytes += r.size || 0; }
+          else if (r.status === 403 || r.status === 404) { miss.add(t.key); area.miss = [...miss]; }
+          else fails++;
+        });
+        // 404 は端末の記録にも入れる（圏外で取りに行かない・10B に落ちる）
+        const m1 = batch.filter((t, j) => t.src === 'gsi1a' && (res[j].status === 403 || res[j].status === 404)).map(t => t.key);
+        const m5 = batch.filter((t, j) => t.src === 'gsi5a' && (res[j].status === 403 || res[j].status === 404)).map(t => t.key);
+        if (m1.length) csMissMark(m1, CS_MISS1A_KEY);
+        if (m5.length) csMissMark(m5);
+        put();
+        if (fails === batch.length) { stopped = '通信できません。電波のよい所で、もう一度押すと続きから取ります'; break; }
+        areaJob.text = `保存中…（${Math.min(seen, total)} / ${total} 枚の範囲・${formatBytes(area.bytes)}）`;
+        renderAreaPanel();
+        const wait = AREA_BATCH_MS - (Date.now() - t0);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+      }
+      if (stopped) break;
+    }
+    area.done += skipped; put();
+    if (!stopped) { area.complete = true; area.at = Date.now(); put(); }
+  } catch (e) {
+    stopped = '保存できませんでした（' + (e && e.message || e) + '）';
+  } finally {
+    areaJob.running = null;
+    areaJob.text = stopped || '保存しました';
+    renderAreaPanel();
+  }
+}
+// 山域を消す。ほかの山域と重なるタイルは残す
+async function deleteArea(id) {
+  const list = loadSavedAreas(), area = list.find(a => a.id === id);
+  if (!area || areaJob.running) return;
+  if (!confirm(`「${area.name}」の保存を削除します。圏外ではこの山域の細かい地図が出なくなります。削除しますか？`)) return;
+  const urlsOf = a => { const p = areaPlan(a.lat, a.lon, a.miss || []); return [...p.dem, ...p.std].map(t => t.url); };
+  const keep = new Set(list.filter(a => a.id !== id).flatMap(urlsOf));
+  const urls = urlsOf(area).filter(u => !keep.has(u));
+  const res = await swMessage({ type: 'area-delete', urls }, AREA_FETCH_TIMEOUT_MS);
+  if (!res) { alert('削除できませんでした（アプリを開き直してから、もう一度）'); return; }
+  storeSavedAreas(list.filter(a => a.id !== id));
+  areaJob.text = '';
+  renderAreaPanel();
+}
+function renderAreaPanel() {
+  const box = document.getElementById('layer-areas');
+  if (!box) return;
+  box.innerHTML = '';
+  const areas = loadSavedAreas(), favs = loadFavs();
+  const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
+  areas.forEach(a => {
+    const row = mk('div', 'area-row');
+    const d = new Date(a.at);
+    row.append(mk('span', 'area-name', a.name),
+      mk('span', 'area-meta', `${d.getMonth() + 1}/${d.getDate()}・${formatBytes(a.bytes)}・${a.done}枚${a.complete ? '' : '（途中）'}`));
+    const del = mk('button', 'area-btn', '削除');
+    del.disabled = !!areaJob.running;
+    del.onclick = () => deleteArea(a.id);
+    row.append(del);
+    box.append(row);
+  });
+  favs.filter(f => typeof f.lat === 'number' && typeof f.lon === 'number').forEach(f => {
+    const id = areaIdOf(f.lat, f.lon), a = areas.find(x => x.id === id);
+    if (a && a.complete) return;
+    const row = mk('div', 'area-row');
+    row.append(mk('span', 'area-name', f.name));
+    const b = mk('button', 'area-btn', a ? '続きを保存' : 'この山域を保存');
+    b.disabled = !!areaJob.running;
+    b.onclick = () => saveArea(f);
+    row.append(b);
+    box.append(row);
+  });
+  if (!favs.length && !areas.length) box.append(mk('div', 'area-meta', 'お気に入りに登録した地点ごとに保存できます'));
+  if (areaJob.running) {
+    const row = mk('div', 'area-row');
+    row.append(mk('span', 'area-meta', areaJob.text || '保存中…'));
+    const c = mk('button', 'area-btn', 'やめる');
+    c.onclick = () => { areaJob.cancel = true; };
+    row.append(c);
+    box.append(row);
+  } else if (areaJob.text) box.append(mk('div', 'area-meta', areaJob.text));
 }
 
 /* ------ 地名検索（Nominatim） ------ */

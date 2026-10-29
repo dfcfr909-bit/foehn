@@ -7,6 +7,7 @@
  *                            通信できないときだけキャッシュへフォールバックする
  *   同梱の静的ファイル      … キャッシュ優先＋裏で更新（stale-while-revalidate）
  *   地図タイル              … 別キャッシュにcache-firstで保存（訪問済みのみ・LRUで上限管理）
+ *   保存した山域のタイル    … さらに別の箱（AREA_CACHE）。自動では消さない。タイルはまずここを引く（#244 段2）
  *   気象API・地名検索等     … 一切キャッシュしない（常に最新を取りに行く）
  *
  * CACHE_VERSION を上げると古いキャッシュは activate 時に消える。
@@ -57,7 +58,7 @@ self.addEventListener('activate', e => {
     const keys = await caches.keys();
     // 地図タイルはアプリシェルと寿命が別。バージョンを上げても巻き添えで消さないこと
     await Promise.all(keys
-      .filter(k => k !== CACHE_NAME && k !== TILE_CACHE)
+      .filter(k => k !== CACHE_NAME && k !== TILE_CACHE && k !== AREA_CACHE)
       .map(k => caches.delete(k)));
     await self.clients.claim();
   })());
@@ -78,6 +79,9 @@ function isAppAsset(url) {
    仕様は docs/map-selector-requirements.md §7
    ============================================================ */
 const TILE_CACHE = 'sotoki-tiles-v1';
+/* 保存した山域（#244 段2・ADR-0020）。利用者が「この山域を保存」で前もって入れたタイル。
+   ⚠ LRU の上限・tiles-clear・CACHE_VERSION の更新・activate の掃除のどれでも消さない。消すのは area-delete だけ */
+const AREA_CACHE = 'sotoki-areas-v1';
 const TILE_CACHE_LIMIT_BYTES = 150 * 1024 * 1024;   // 150MB。iOS実測後に調整する
 const TILE_TOUCH_INTERVAL_MS = 60 * 60 * 1000;      // LRUの更新はこの間隔に間引く（書き込み過多を防ぐ）
 
@@ -206,8 +210,41 @@ self.addEventListener('message', e => {
     e.waitUntil(tileCacheUsage().then(reply).catch(() => reply(null)));
   } else if (msg.type === 'tiles-clear') {
     e.waitUntil(clearTiles().then(reply).catch(() => reply(null)));
+  } else if (msg.type === 'area-fetch') {
+    e.waitUntil(areaFetch(msg.urls || []).then(reply).catch(() => reply(null)));
+  } else if (msg.type === 'area-delete') {
+    e.waitUntil(areaDelete(msg.urls || []).then(reply).catch(() => reply(null)));
   }
 });
+
+/* 山域の保存（#244 段2）：ページが小分け（数枚ずつ）に頼み、間隔もページが管理する（毎秒4枚まで）。
+   ⚠ SW 自身の fetch はこの SW の fetch ハンドラを通らない＝LRU（TILE_CACHE）に二重に入らない。
+   結果は1枚ずつ {url, status, size}。status は HTTP の値（0＝通信の失敗）。保存するのは ok で opaque でないものだけ */
+async function areaFetch(urls) {
+  const cache = await caches.open(AREA_CACHE);
+  const out = [];
+  for (const u of urls) {
+    if (!isTileRequest(new URL(u))) { out.push({ url: u, status: -1, size: 0 }); continue; }   // 地図の配信元だけ
+    try {
+      const res = await fetch(u, { mode: 'cors' });
+      let size = 0;
+      if (res.ok && res.type !== 'opaque') {
+        size = (await res.clone().blob()).size;
+        await cache.put(u, res);
+      }
+      out.push({ url: u, status: res.status, size });
+    } catch (err) {
+      out.push({ url: u, status: 0, size: 0 });
+    }
+  }
+  return out;
+}
+async function areaDelete(urls) {
+  const cache = await caches.open(AREA_CACHE);
+  let n = 0;
+  for (const u of urls) if (await cache.delete(u)) n++;
+  return { deleted: n };
+}
 
 self.addEventListener('fetch', e => {
   const req = e.request;
@@ -217,6 +254,9 @@ self.addEventListener('fetch', e => {
   // 地図タイルはcache-first（訪問済みのぶんが圏外でも出るように）
   if (isTileRequest(url)) {
     e.respondWith((async () => {
+      // 保存した山域を先に引く（LRU に押し出されない・圏外でも出る）
+      // ⚠ 読めなくても（例外）LRU・ネットへ進む。ここで落とすとタイルが全部出なくなる
+      try { const saved = await (await caches.open(AREA_CACHE)).match(req.url); if (saved) return saved; } catch (err) { /* 先へ */ }
       const cache = await caches.open(TILE_CACHE);
       const hit = await cache.match(req.url);
       if (hit) {
