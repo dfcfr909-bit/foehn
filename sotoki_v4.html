@@ -9553,7 +9553,7 @@ function ensureWindField(bounds) {
   let fetchPts = f.missing.length ? f.missing : f.needFull;
   let span = f.missing.length ? 'near' : 'full';
   // 保存した風を描いている（圏外・#228）：取得時刻と古さを必ず言う。範囲の外は描かない。
-  // 通信が戻ったかは WIND_OFFLINE_RETRY_MS ごとに、画面の点をまとめて取り直して確かめる（取れたら windOffline が外れる）
+  // 通信が戻ったかは、描き直しのとき WIND_OFFLINE_RETRY_MS たっていれば、画面の点をまとめて取り直して確かめる（取れたら windOffline が外れる）
   if (windOffline) {
     const savedNote = windSavedNote(f);
     if (Date.now() < windOfflineRetryAt) { if (savedNote) windError(savedNote); else windNote(windModeNote(f)); return f; }
@@ -9610,11 +9610,12 @@ async function windUseSaved(pts) {
   const now = Date.now(), want = new Set(pts.map(p => p.key));
   let n = 0;
   for (const r of recs) {
-    if (!r || now - r.at > WX_MAX_AGE_MS) continue;
+    // 使う点だけ入れる（全件入れると上限の削除で画面の点が押し出される。動かした先は、また取れなかったときに入る）
+    if (!r || !want.has(r.key) || now - r.at > WX_MAX_AGE_MS) continue;
     const cur = windCols.get(r.key);
     if (cur && !cur.saved && now - cur.at < WIND_CACHE_MS) continue;   // 新しいものがある
     windCols.set(r.key, { ...windRecHydrate(r), saved: true });
-    if (want.has(r.key)) n++;
+    n++;
   }
   while (windCols.size > WIND_CACHE_MAX) windCols.delete(windCols.keys().next().value);
   if (!n) return false;
