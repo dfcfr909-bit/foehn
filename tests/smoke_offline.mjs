@@ -9,8 +9,9 @@
  *   ADR-0011（`elevation` の意味が変わり、判定が黙って甘くなった件）と同じ形になる。
  *   だから **帯が出ること・通信できたら必ず消えること・距離が添うこと**を見る。
  *
- * ⚠ **24時間より古いものは使わない**（数字を出さず「古すぎる」とだけ言う）。
- *   利用者判断（2026-09-13）。緩めるならこの検査ごと直すこと。
+ * ⚠ **7日より古いものは使わない**（数字を出さず「古すぎる」とだけ言う）。
+ *   24時間（利用者判断 2026-09-13）を、お気に入りの裏取り（#228）に合わせて7日へ広げた（2026-10-30）。
+ *   **24時間を超えたものは帯の色を変え「1日以上前の予報」と言う**（E）。お気に入りの裏取りは I。
  *
  * ⚠ バックグラウンドでの定期取得は**していない**（iOSに手段が無い）。
  *   ここが見るのは「開いている間に取れたものを、次に開いたとき圏外でも出す」まで。
@@ -108,7 +109,7 @@ const note = () => page.evaluate(() => {
   return { cls: el.className, text: el.textContent, shown: !!el.offsetParent };
 });
 const cached = () => page.evaluate(() => new Promise(res => {
-  const r = indexedDB.open('sotoki-wx', 1);
+  const r = indexedDB.open('sotoki-wx');
   r.onerror = () => res([]);
   r.onsuccess = () => {
     const g = r.result.transaction('points', 'readonly').objectStore('points').getAll();
@@ -134,10 +135,11 @@ await openAt(P1);
 {
   const n = await note();
   ok(!n.shown && n.cls === '', '★★★通信で取れたときは帯を出さない（出しっぱなしにすると印の意味が消える）', n);
-  const c = await cached();
-  ok(c.length === 1 && c[0].hasJson, '★前提: 応答を控えている（この検査が空振りしていない）', c);
-  ok(c[0].hasSup, '★補助データ（突風・気圧面の雲量）も控えている', c);
-  ok(c[0].name === P1.name, '★取得した地点の名前も一緒に控えている', c);
+  // ⚠ 最初の goto で既定の地点（立山・黒部）の控えもできることがある（取得が reload より先に済んだとき）。キーで引く
+  const c = await cached(), r1 = c.find(x => x.key === `${P1.lat.toFixed(3)},${P1.lon.toFixed(3)}`);
+  ok(r1 && r1.hasJson, '★前提: 応答を控えている（この検査が空振りしていない）', c);
+  ok(r1 && r1.hasSup, '★補助データ（突風・気圧面の雲量）も控えている', c);
+  ok(r1 && r1.name === P1.name, '★取得した地点の名前も一緒に控えている', c);
 }
 
 /* ============ B. 圏外で、控えてあるものを出す ============ */
@@ -199,10 +201,32 @@ await openAt(P1);
   ok(dialogs.length > 0, '★出せるものが無いときは従来どおり取得失敗を知らせる', dialogs);
 }
 
-/* ============ E. 24時間より古い控えは使わない ============ */
+/* ============ E. 24時間を超えた控えは「1日以上前」と言って出す・7日より古い控えは使わない ============ */
+const ageAll = hoursOld => page.evaluate(hoursOld => new Promise(res => {
+  const r = indexedDB.open('sotoki-wx');
+  r.onsuccess = () => {
+    const st = r.result.transaction('points', 'readwrite').objectStore('points');
+    const g = st.getAll();
+    g.onsuccess = () => {
+      for (const rec of g.result) { rec.at = Date.now() - hoursOld * 3600e3; st.put(rec); }
+      res(g.result.length);
+    };
+  };
+}), hoursOld);
+{
+  const aged = await ageAll(26);
+  ok(aged > 0, '★前提: 控えを26時間前にできた', aged);
+  dialogs.length = 0;
+  await openAt(P1);
+  const n = await note();
+  const d = await drawn();
+  ok(d.points > 0, '★★7日以内なら1日を超えた控えも出す（#228）', d);
+  ok(/\bstale\b/.test(n.cls) && !/expired/.test(n.cls) && n.shown, '★★★1日を超えた控えは帯の見た目を変える', n);
+  ok(n.text.includes('1日以上前の予報です') && /1日2時間前/.test(n.text), '★★★1日以上前の予報だと、取得日時と「◯日前」で言う', n.text);
+}
 {
   const aged = await page.evaluate(hoursOld => new Promise(res => {
-    const r = indexedDB.open('sotoki-wx', 1);
+    const r = indexedDB.open('sotoki-wx');
     r.onsuccess = () => {
       const st = r.result.transaction('points', 'readwrite').objectStore('points');
       const g = st.getAll();
@@ -211,8 +235,8 @@ await openAt(P1);
         res(g.result.length);
       };
     };
-  }), 26);
-  ok(aged > 0, '★前提: 控えを古くできた（この検査が空振りしていない）', aged);
+  }), 7 * 24 + 2);
+  ok(aged > 0, '★前提: 控えを7日より古くできた（この検査が空振りしていない）', aged);
 
   dialogs.length = 0;
   await openAt(P1);
@@ -352,6 +376,70 @@ await openAt(P1);
   const got = await page.evaluate(() => ({ lat: state.lat, t: state.allData[0].temp }));
   ok(Math.abs(got.lat - 34.1) < 1e-9 && got.t === 9, '★控えの無い地点は届いたら描く', got);
   slowMs = 0; slowFor = ''; weatherTemp = 5;
+}
+
+/* ============ I. お気に入りの予報と風を裏で控える（#228） ============
+   ⚠ 本丸は「画面に触らない」こと（見ている地点の予報・標高・帯が、裏取りで別の地点に化けない） */
+{
+  online = true; slowMs = 0; slowFor = ''; weatherTemp = 5;
+  const FA = { name: 'お気に入りA', lat: 36.70, lon: 138.50 }, FB = { name: 'お気に入りB', lat: 35.80, lon: 137.60 };
+  await page.evaluate(f => localStorage.setItem('sotoki_favs', JSON.stringify(f)), [FA, FB]);
+  await openAt(P1);
+  const before = await page.evaluate(() => ({ lat: state.lat, name: state.locationName, dem: state.demElevation, n: state.allData.length }));
+  weatherTemp = 21;
+  const hits0 = apiHits;
+  await page.evaluate(() => prefetchFavs());
+  const after = await page.evaluate(() => ({ lat: state.lat, name: state.locationName, dem: state.demElevation, n: state.allData.length, t: state.allData[0].temp }));
+  ok(after.lat === before.lat && after.name === before.name && after.dem === before.dem && after.t === 5,
+    '★★★裏取りは画面の地点・名前・標高・予報に触らない', { before, after });
+  const c = await cached();
+  const ka = `${FA.lat.toFixed(3)},${FA.lon.toFixed(3)}`, kb = `${FB.lat.toFixed(3)},${FB.lon.toFixed(3)}`;
+  const ra = c.find(x => x.key === ka), rb = c.find(x => x.key === kb);
+  ok(ra && rb && ra.hasJson && rb.hasJson && ra.name === FA.name, '★★お気に入り全地点の予報を控える（名前つき）', c);
+  ok(ra && ra.hasSup, '★補助データ（気圧面の雲量）も控える', ra);
+  const wind = await page.evaluate(() => new Promise(res => {
+    const r = indexedDB.open('sotoki-wx');
+    r.onsuccess = () => { const g = r.result.transaction('wind', 'readonly').objectStore('wind').getAll(); g.onsuccess = () => res(g.result.map(x => ({ key: x.key, n: x.time.length, size: x.size }))); };
+    r.onerror = () => res([]);
+  }));
+  ok(wind.length === 50 && wind.every(w => w.size > 0), '★★まわりの風の格子（5×5 点×2地点）を控える', wind.length);
+  const hits1 = apiHits;
+  ok(hits1 > hits0, '★前提: 裏取りで気象APIを叩いた', { hits0, hits1 });
+  await page.evaluate(() => prefetchFavs());
+  ok(apiHits === hits1, '★★自動の裏取りは3時間以内に取った地点を取り直さない', { hits1, now: apiHits });
+  await page.evaluate(() => prefetchFavs({ manual: true }));
+  ok(apiHits > hits1, '★手動の「いま保存」は新しくても取り直す', { hits1, now: apiHits });
+  // 一覧の状態の行
+  await page.evaluate(() => openFav());
+  await page.waitForTimeout(300);
+  const row = await page.evaluate(() => document.getElementById('fav-wx-save').textContent);
+  ok(/2 \/ 2地点/.test(row) && /いま保存/.test(row), '★一覧に控えの状態とボタンが出る', row);
+  await page.evaluate(() => closeFav());
+
+  // 圏外：お気に入りの地点を開くと、控えた予報（気温 21）が出る
+  online = false;
+  await openAt(FA);
+  const d = await drawn(), n = await note();
+  const t = await page.evaluate(() => state.allData[0].temp);
+  ok(d.points > 0 && t === 21 && n.text.includes(FA.name), '★★★圏外でもお気に入りの予報が出る（開いたことが無くても）', { d, t, n });
+  // 圏外：保存した風が場に入り、取得時刻を言う
+  const w = await page.evaluate(async f => {
+    const pts = favWindPoints(f.lat, f.lon);
+    const okUse = await windUseSaved(pts);
+    const rec = windRecord(pts[12].key);
+    return { okUse, offline: windOffline, has: !!rec, saved: !!(rec && rec.saved), idx: !!(rec && rec.idx instanceof Map), ph: !!(rec && rec.phases) };
+  }, FA);
+  ok(w.okUse && w.offline && w.has && w.saved && w.idx && w.ph, '★★★圏外では保存した風を使う（索引とモデルの判別を作り直す）', w);
+  const wn = await page.evaluate(f => {
+    const pts = favWindPoints(f.lat, f.lon);
+    const cells = pts.map(p => ({ i: p.i, j: p.j }));
+    return windSavedNote({ cells, missing: [] });
+  }, FA);
+  ok(/保存した風を表示中/.test(wn) && /\d+\/\d+ \d\d:\d\d取得/.test(wn), '★★保存した風の状態の文に取得時刻を出す', wn);
+  const back = await page.evaluate(f => { windOffline = false; return !!windRecord(favWindPoints(f.lat, f.lon)[12].key); }, FA);
+  ok(!back, '★★通信が戻れば保存した風は使わない（取り直す）', back);
+  online = true;
+  await page.evaluate(() => localStorage.removeItem('sotoki_favs'));
 }
 
 ok(errors.length === 0, '★ページ内で例外が出ていない', errors);
