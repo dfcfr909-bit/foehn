@@ -2,7 +2,7 @@
 #   B: 「適用」のクリック → redraw → 計算開始 → load の時刻と、その間に出た画面フレーム（CDP screencast）を並べる。
 #      フレームの画像は out/（.gitignore 対象）。画像の中身は目で見て確かめる（このスクリプトは文字を読まない）。
 #   C: タイルが0枚になる場合（ズーム 6 < minZoom 8）と、層「なし」で、load が来るか・ボタンが戻るかを見る。
-# 使い方（experiments/relief で）: ../landmark/.venv/Scripts/python.exe check_busy.py
+# 使い方（experiments/relief で）: 初回は python -m venv .venv → .venv/Scripts/pip install -r requirements.txt → .venv/Scripts/python -m playwright install chromium。実行は .venv/Scripts/python check_busy.py
 import base64, functools, http.server, json, threading, time
 from playwright.sync_api import sync_playwright
 
