@@ -442,7 +442,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `windTraceText(res)` | 矢印を押したときの根拠の文 | 約 7450 |
 | `ensureWindField(bounds)` | **矢印と流れが使う場を用意**（取得・控え・429・状態の文） | 約 7590 |
 | `fetchWindRaw(pts, span)` / `windRecHydrate(r)` | 問い合わせて保存できる形の記録を返す／`idx`・`phases` を付ける（保存した風を戻すときも通す） | — |
-| `windOffline` / `windUseSaved(pts)` / `windSavedNote(f)` | 圏外で保存した風（#228）を使う。`windRecord` は `saved` を `windOffline` の間だけ通す。2分ごと（`WIND_OFFLINE_RETRY_MS`）と `online` で取り直しを試す | — |
+| `windOffline` / `windUseSaved(pts)` / `windSavedNote(f)` | 圏外で保存した風（#228）を使う。`windRecord` は `saved` を `windOffline` の間だけ通す。描き直しのとき2分たっていれば（`WIND_OFFLINE_RETRY_MS`）・`online` ではすぐ、取り直しを試す | — |
 | `WIND_FLOW` / `windFlow` | 風の流れ（粒子）の設定と状態 | 約 7700 |
 | `buildFlowGrid(f)` / `flowAt(g, x, y)` | 場を画面の速度の格子に写す／粒の位置の速度 | 約 7740 |
 | `updateWindFlow(f)` / `stopWindFlow()` / `pauseWindFlow()` | 流す・止める（動かしている間・閉じた・隠れた） | 約 7780 |

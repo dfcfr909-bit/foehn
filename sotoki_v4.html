@@ -3175,7 +3175,8 @@ function wxDb() {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(WX_STORE)) db.createObjectStore(WX_STORE, { keyPath: 'key' });
-      if (!db.objectStoreNames.contains(WX_WIND_STORE)) db.createObjectStore(WX_WIND_STORE, { keyPath: 'key' });
+      // 索引 meta（[at, size]）：整理のとき中身（列）を読まずに取得時刻と大きさだけ拾う
+      if (!db.objectStoreNames.contains(WX_WIND_STORE)) db.createObjectStore(WX_WIND_STORE, { keyPath: 'key' }).createIndex('meta', ['at', 'size']);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -3230,7 +3231,7 @@ function wxUpdate(key, mutate) {
 function wxRecSize(json, sup) {
   try { return JSON.stringify(json || null).length + JSON.stringify(sup || null).length; } catch (e) { return 0; }
 }
-async function saveWxCache(lat, lon, json, dem, name, modelKey) {
+async function saveWxCache(lat, lon, json, dem, name, modelKey, noTrim) {
   try {
     const key = wxKey(lat, lon, modelKey);
     await wxUpdate(key, prev => ({
@@ -3246,7 +3247,7 @@ async function saveWxCache(lat, lon, json, dem, name, modelKey) {
       sup: prev ? prev.sup : null,
       supAt: prev ? prev.supAt : null,
     }));
-    await trimWxCache();
+    if (!noTrim) await trimWxCache();     // 裏取り（#228）は最後に1回だけ整理する
   } catch (e) { /* 控えられなくても本体は動く */ }
 }
 
@@ -3290,11 +3291,21 @@ async function loadWxCache(lat, lon, modelKey) {
 async function trimWxCache() {
   try {
     const now = Date.now(), recs = [];
-    for (const name of [WX_STORE, WX_WIND_STORE]) {
-      const st = await wxStore('readonly', name);
-      const all = await wxReq(st.getAll());
-      (all || []).forEach(r => recs.push({ name, key: r.key, at: r.at || 0, size: r.size || wxRecSize(r.json || r.cols, r.sup) }));
-    }
+    const st = await wxStore('readonly');
+    const all = await wxReq(st.getAll());
+    (all || []).forEach(r => recs.push({ name: WX_STORE, key: r.key, at: r.at || 0, size: r.size || wxRecSize(r.json, r.sup) }));
+    // ⚠ 風は中身（列）を読まない。saveWxCache のたびに呼ばれるので、数MBを毎回読み込まないように索引の鍵だけ拾う
+    const ws = await wxStore('readonly', WX_WIND_STORE);
+    await new Promise((resolve, reject) => {
+      const c = ws.index('meta').openKeyCursor();
+      c.onerror = () => reject(c.error);
+      c.onsuccess = () => {
+        const cur = c.result;
+        if (!cur) return resolve();
+        recs.push({ name: WX_WIND_STORE, key: cur.primaryKey, at: cur.key[0] || 0, size: cur.key[1] || 0 });
+        cur.continue();
+      };
+    });
     if (!recs.length) return;
     const fresh = recs.filter(r => now - r.at <= WX_MAX_AGE_MS).sort((a, b) => b.at - a.at);
     const victims = recs.filter(r => now - r.at > WX_MAX_AGE_MS);
@@ -9605,6 +9616,7 @@ async function windUseSaved(pts) {
     windCols.set(r.key, { ...windRecHydrate(r), saved: true });
     if (want.has(r.key)) n++;
   }
+  while (windCols.size > WIND_CACHE_MAX) windCols.delete(windCols.keys().next().value);
   if (!n) return false;
   windOffline = true; windOfflineRetryAt = Date.now() + WIND_OFFLINE_RETRY_MS;
   return true;
@@ -9617,8 +9629,12 @@ function windSavedNote(f) {
   return `${age > WX_STALE_MS ? '⚠ 1日以上前の' : '📴 保存した'}風を表示中　${wxStampText(at)}取得（${wxAgeText(age)}）` +
     (f.missing.length ? '・保存した範囲の外は描けません' : '');
 }
-// 電波が戻った：次の描き直しで取り直す（保存した風は鮮度切れとして扱われる前に、取り直しの間隔だけ外す）
-if (typeof window !== 'undefined') window.addEventListener('online', () => { windOfflineRetryAt = 0; });
+// 電波が戻った：すぐ取り直す（保存した風のまま描いておき、取れたら替える）。
+// ⚠ 2分ごとの取り直しは、地図の描き直し（動かす・時刻を変える）のときに間隔を見るだけ（タイマーは持たない）
+if (typeof window !== 'undefined') window.addEventListener('online', () => {
+  windOfflineRetryAt = 0;
+  if (windOffline && isMapOpen() && windAnyOn()) refreshWeatherPoints();
+});
 
 // 場の格子点に矢印（数値を読むため）。推定値は点線、地中は「地中」
 function drawWindArrows(f, opacity) {
@@ -16132,7 +16148,7 @@ async function prefetchFavs(opts = {}) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const json = await res.json();
         if (!weatherJsonUsable(json)) throw new Error('データが空でした');
-        await saveWxCache(f.lat, f.lon, json, dem, f.name, DEFAULT_MODEL);
+        await saveWxCache(f.lat, f.lon, json, dem, f.name, DEFAULT_MODEL, true);
         const h = await fetchSupplementalHourly(f.lat, f.lon, json.elevation);
         if (h) await saveWxSupplemental(f.lat, f.lon, h, DEFAULT_MODEL);
         // 風の格子：ほかのお気に入りと重なる点は1回だけ
