@@ -122,16 +122,18 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 
 | 名前 | 役割 | 行 |
 |---|---|---|
-| `WX_MAX_AGE_MS` | **これより古い控えは使わない**（24時間） | 2349 |
-| `WX_MAX_ENTRIES` | 控える地点数の上限（40件・古い順に消す） | 2350 |
+| `WX_MAX_AGE_MS` | **これより古い控えは使わない**（7日・#228。もとは24時間） | — |
+| `WX_STALE_MS` | 24時間。これを超えた控えは帯を `stale` にして「1日以上前の予報です」。弱電波の6秒の先出しはこれ以内だけ | — |
+| `WX_MAX_BYTES` / `WX_MAX_ENTRIES` | 容量の上限（20MB・予報と風の合計・取得の古い順に消す）／件数は暴走よけの300 | — |
 | `WX_NEAR_KM` | 完全一致が無いとき流用してよい距離（20km） | 2354 |
-| `wxDb()` / `wxReq(r)` / `wxStore(mode)` | IndexedDB（`sotoki-wx` / `points`）の包み | 2357 |
+| `wxDb()` / `wxReq(r)` / `wxStore(mode, name)` | IndexedDB（`sotoki-wx` 版2 / `points`・`wind`）の包み | 2357 |
 | `wxKey(lat, lon)` | 座標のキー（小数3桁に丸める） | 2382 |
 | `wxUpdate(key, mutate)` | **1つのトランザクションの中で読んで書き戻す**（同時実行で古い `at` が戻る事故の対策） | 2389 |
 | `saveWxCache(lat, lon, json, dem, name)` | 本体の応答を控える。⚠ **名前は引数**（`state.locationName` を読むと取得中の地点移動で入れ替わる） | 2404 |
 | `saveWxSupplemental(lat, lon, h)` | 補助データを後付けする（`at` は触らない） | 2425 |
 | `loadWxCache(lat, lon)` | 完全一致 → 無ければ最寄り。**古くても返す**（古さの判断は呼び手） | 2435 |
-| `trimWxCache()` | 期限切れと上限超過を消す | 2456 |
+| `trimWxCache()` | 7日超と容量超過（`points`＋`wind`・取得の古い順）を消す | 2456 |
+| `wxRecSize(json, sup)` | 控え1件のおよその大きさ（容量の見積もり） | — |
 | `wxAgeText(ms)` / `wxStampText(at)` | 経過時間・取得時刻の言い方 | 2472 |
 | `WX_SOFT_MS` / `WX_HARD_MS` / `wxReqSeq` / `wxNormalBusy` | 弱電波（#227・v4.182.0）。通常の取得は6秒で控えを先に出し（帯「通信を続けています」）、届いた新しいデータは帯の「押すと更新」で替える（勝手に描き直さない）。strict は30秒で打ち切る。`wxReqSeq` で追い越された取得は画面に触らない（控えへの保存だけ）。通常の取得の最中は `switchModel` しない（`wxNormalBusy`） | — |
 | `setWxSource(info)` | **帯（`#offline-note`）の出し分け。** 通信で取れたら `null` で必ず消す | 2490 |
@@ -142,7 +144,11 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 |---|---|---|
 | `fetchWeather(lat, lon)` | Open-Meteo（`jma_seamless`）本体。**`wind_speed_unit=ms` 必須** | 2510 |
 | `applyWeatherJson(json, dem, lat, lon)` | **応答を状態へ入れて描画まで。通信でも控えでも必ずここを通す** | 2561 |
+| `wxForecastUrl(lat, lon, fm)` | 本体の URL（お気に入りの裏取りも同じもの） | — |
 | `fetchSupplemental(lat, lon)` | 突風・気圧面ごとの雲量（models未指定の補助リクエスト） | 2595 |
+| `fetchSupplementalHourly(lat, lon, elevation)` | 補助を取るだけ（画面に混ぜない。裏取りが使う） | — |
+| `prefetchFavs(opts)` / `renderFavPrefetch()` | **お気に入りの予報と風を裏で控える（#228）。画面の state に触らない。** 起動15秒後・`online`・一覧の「予報と風をいま保存」。3時間以内の地点は自動では飛ばす（`wxRecordExact` の完全一致で見る）。429 は `windBackoffUntil` と共有 | — |
+| `favWindPoints(lat, lon)` | お気に入りのまわりの風の格子点（k=1・±2） | — |
 | `applySupplemental(h, redraw)` | 補助データを状態へ混ぜる（通信・控えで共通） | 2620 |
 | `CLOUD_LEVELS` | 気圧面14層の定義 | 約 1957 |
 | `cloudProfileAt(d)` | 時刻→高度別の雲量プロファイル | 約 2017 |
@@ -435,6 +441,8 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `sampleWindField(f, lat, lon)` | 場の任意の点の U/V（双線形） | 約 7435 |
 | `windTraceText(res)` | 矢印を押したときの根拠の文 | 約 7450 |
 | `ensureWindField(bounds)` | **矢印と流れが使う場を用意**（取得・控え・429・状態の文） | 約 7590 |
+| `fetchWindRaw(pts, span)` / `windRecHydrate(r)` | 問い合わせて保存できる形の記録を返す／`idx`・`phases` を付ける（保存した風を戻すときも通す） | — |
+| `windOffline` / `windUseSaved(pts)` / `windSavedNote(f)` | 圏外で保存した風（#228）を使う。`windRecord` は `saved` を `windOffline` の間だけ通す。2分ごと（`WIND_OFFLINE_RETRY_MS`）と `online` で取り直しを試す | — |
 | `WIND_FLOW` / `windFlow` | 風の流れ（粒子）の設定と状態 | 約 7700 |
 | `buildFlowGrid(f)` / `flowAt(g, x, y)` | 場を画面の速度の格子に写す／粒の位置の速度 | 約 7740 |
 | `updateWindFlow(f)` / `stopWindFlow()` / `pauseWindFlow()` | 流す・止める（動かしている間・閉じた・隠れた） | 約 7780 |
