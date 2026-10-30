@@ -1852,6 +1852,17 @@ html, body {
   flex-shrink: 0; width: 44px; align-self: stretch; font-size: 15px; padding: 0;
   background: none; border: none; cursor: pointer; color: var(--text3);
 }
+#fav-wx-save {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 12px 8px; font-size: 11px; color: var(--text2); line-height: 1.4;
+}
+#fav-wx-save:empty { display: none; }
+#fav-wx-save .fav-wx-text { flex: 1; }
+#fav-wx-save button {
+  flex-shrink: 0; padding: 6px 10px; font-size: 12px; font-weight: 700; font-family: var(--font-ui);
+  color: var(--text); background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+#fav-wx-save button:disabled { opacity: .5; cursor: default; }
 #fav-save-btn {
   margin: 0 12px calc(12px + var(--sa-bottom));
   padding: 13px;
@@ -2477,6 +2488,12 @@ html, body {
   background: #ffe0e0;
   border-bottom-color: var(--c-col);
 }
+/* 1日以上前の控えを出している（#228）。数字は出ているので「古すぎる」の赤とは分け、橙より強く */
+#offline-note.stale {
+  color: #7a3300;
+  background: #ffd9b3;
+  border-bottom: 3px solid var(--c-col);
+}
 </style>
 </head>
 <body>
@@ -2620,7 +2637,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.183.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.184.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2817,6 +2834,8 @@ html, body {
       <button id="btn-fav-close" onclick="closeFav()">✕</button>
     </div>
     <div id="fav-list"></div>
+    <!-- 圏外用に、お気に入りの予報と風をまとめて保存（#228）。状態の行とボタン -->
+    <div id="fav-wx-save"></div>
     <button id="fav-save-btn" onclick="saveCurrentAsFav()">⭐ 現在地点を保存</button>
   </div>
 
@@ -3119,8 +3138,11 @@ const THRESH = {
    ⚠⚠ **黙って古い数字を出さないこと。** この仕組みでいちばん危ない失敗の仕方で、
      ADR-0011（`elevation` の意味が変わり、判定が黙って甘くなった件）と同じ形になる。
      だから **`sw.js` ではなくアプリ側**に置いた——古さと取得地点を画面に出せる場所が要る。
-   ⚠ **24時間より古いものは使わない**（数字を出さず「古すぎる」とだけ言う）。
-     利用者判断（2026-09-13）。緩めるなら画面の出し方ごと考え直すこと。
+   ⚠ **7日より古いものは使わない**（数字を出さず「古すぎる」とだけ言う）。
+     24時間（利用者判断 2026-09-13）を、お気に入りの裏取り（#228）に合わせて7日へ広げた（利用者の決定 2026-10-30）。
+     その代わり **24時間を超えたものは帯の色を変え「1日以上前の予報」と言う**（WX_STALE_MS）。
+     弱電波の6秒の先出し（#227）は24時間以内だけ（すぐ新しいデータが届く場面で古い判定を先に出さない）。
+   ⚠ 消すのは7日超と、容量（WX_MAX_BYTES・風の控えと合わせて）を超えたぶん（取得の古い順）。
    ⚠ 控えるのは **API応答そのもの**で、整形後（`fullData`）ではない。
      復元も通信時と同じ `processData` を通す（`applyWeatherJson` に一本化してある）。
      整形後を保存すると、判定の直し忘れが片側にだけ残る。
@@ -3131,8 +3153,14 @@ const THRESH = {
    ============================================================ */
 const WX_DB_NAME     = 'sotoki-wx';
 const WX_STORE       = 'points';
-const WX_MAX_AGE_MS  = 24 * 3600 * 1000;   // これより古い保存データは使わない
-const WX_MAX_ENTRIES = 40;                 // 上限。超えたら取得が古いものから消す
+const WX_WIND_STORE  = 'wind';     // お気に入りのまわりの風の格子（#228・版2で追加）
+const WX_MAX_AGE_MS  = 7 * 24 * 3600 * 1000;   // これより古い保存データは使わない（#228・7日）
+const WX_STALE_MS    = 24 * 3600 * 1000;       // これを超えたら帯を変える／弱電波の先出しに使わない
+/* 容量の上限（予報と風の控えの合計・#228）。超えたら取得の古い順に消す。
+   ⚠ 件数ではなく容量で切る：お気に入りの数に上限が無く、件数で切ると裏取りが他のお気に入りを消す。
+     件数は暴走よけに大きめに残すだけ */
+const WX_MAX_BYTES   = 20 * 1024 * 1024;
+const WX_MAX_ENTRIES = 300;
 /* 完全一致が無いとき、この距離までなら流用する。
    ⚠ **0にはできない。** GPSは毎回わずかに違う座標を返すので、現在地は完全一致しない。
    ⚠ そのかわり**離れている距離を必ず画面に出す**（黙って隣の山の予報を出さないため）。 */
@@ -3142,10 +3170,12 @@ let wxDbPromise = null;
 function wxDb() {
   if (wxDbPromise) return wxDbPromise;
   wxDbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(WX_DB_NAME, 1);
+    // 版2（#228）：風の格子の箱を足す。⚠ points には触らない（保存済みの控えを消さない）
+    const req = indexedDB.open(WX_DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(WX_STORE)) db.createObjectStore(WX_STORE, { keyPath: 'key' });
+      if (!db.objectStoreNames.contains(WX_WIND_STORE)) db.createObjectStore(WX_WIND_STORE, { keyPath: 'key' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -3160,8 +3190,8 @@ function wxReq(r) {
 }
 /* ⚠ 呼ぶたびに開き直す。IndexedDBのトランザクションは await をまたぐと閉じるので、
    使い回すと2つ目の操作が InvalidStateError で落ちる（sw.js のタイルキャッシュと同じ作り）。 */
-function wxStore(mode) {
-  return wxDb().then(db => db.transaction(WX_STORE, mode).objectStore(WX_STORE));
+function wxStore(mode, name = WX_STORE) {
+  return wxDb().then(db => db.transaction(name, mode).objectStore(name));
 }
 // 座標のキー。小数3桁（約100m）に丸める。GPSの揺れで件数が無限に増えないように
 /* ⚠ **既定（JMA）のキーは従来と1文字も変えない**（保存済みの控えを無効にしない）。
@@ -3196,11 +3226,15 @@ function wxUpdate(key, mutate) {
    通信とIndexedDBの往復のあいだに別の地点が選ばれた場合に**後から選んだ名前が
    先の地点の控えに焼き付く**。座標は正しいまま名前だけ別の山になるので、
    帯が「女峰山（19.2km先）」のように**実在しない組み合わせ**を出す（実機で踏んだ）。 */
+// 控え1件のおよその大きさ（文字数。容量の上限の見積もりに使う）
+function wxRecSize(json, sup) {
+  try { return JSON.stringify(json || null).length + JSON.stringify(sup || null).length; } catch (e) { return 0; }
+}
 async function saveWxCache(lat, lon, json, dem, name, modelKey) {
   try {
     const key = wxKey(lat, lon, modelKey);
     await wxUpdate(key, prev => ({
-      key, lat, lon,
+      key, lat, lon, size: wxRecSize(json, prev ? prev.sup : null),
       model: modelKey || DEFAULT_MODEL,   // 古い控え（この欄が無い）は JMA として扱う
       name: name || '',
       at: Date.now(),
@@ -3221,7 +3255,7 @@ async function saveWxCache(lat, lon, json, dem, name, modelKey) {
 async function saveWxSupplemental(lat, lon, h, modelKey) {
   try {
     await wxUpdate(wxKey(lat, lon, modelKey), prev =>
-      prev ? Object.assign(prev, { sup: h, supAt: Date.now() }) : null);   // 本体が無ければ置き場所も無い
+      prev ? Object.assign(prev, { sup: h, supAt: Date.now(), size: wxRecSize(prev.json, h) }) : null);   // 本体が無ければ置き場所も無い
   } catch (e) { /* 任意データなので握りつぶす */ }
 }
 
@@ -3251,17 +3285,27 @@ async function loadWxCache(lat, lon, modelKey) {
   } catch (e) { return null; }
 }
 
-/* 期限切れと、上限を超えたぶん（取得が古い順）を消す */
+/* 期限切れと、上限を超えたぶん（取得が古い順）を消す。
+   予報（points）と風（wind）を合わせた容量で切る（#228）。新しい順に足していき、上限を超えたところから先を消す */
 async function trimWxCache() {
   try {
-    const st = await wxStore('readonly');
-    const all = await wxReq(st.getAll());
-    if (!all || !all.length) return;
-    const now = Date.now();
-    const fresh = all.filter(r => now - r.at <= WX_MAX_AGE_MS).sort((a, b) => b.at - a.at);
-    const victims = all.filter(r => now - r.at > WX_MAX_AGE_MS).concat(fresh.slice(WX_MAX_ENTRIES));
+    const now = Date.now(), recs = [];
+    for (const name of [WX_STORE, WX_WIND_STORE]) {
+      const st = await wxStore('readonly', name);
+      const all = await wxReq(st.getAll());
+      (all || []).forEach(r => recs.push({ name, key: r.key, at: r.at || 0, size: r.size || wxRecSize(r.json || r.cols, r.sup) }));
+    }
+    if (!recs.length) return;
+    const fresh = recs.filter(r => now - r.at <= WX_MAX_AGE_MS).sort((a, b) => b.at - a.at);
+    const victims = recs.filter(r => now - r.at > WX_MAX_AGE_MS);
+    let bytes = 0, pts = 0;
+    for (const r of fresh) {
+      bytes += r.size;
+      if (r.name === WX_STORE) pts++;
+      if (bytes > WX_MAX_BYTES || (r.name === WX_STORE && pts > WX_MAX_ENTRIES)) victims.push(r);
+    }
     for (const v of victims) {
-      const s = await wxStore('readwrite');
+      const s = await wxStore('readwrite', v.name);
       await wxReq(s.delete(v.key));
     }
   } catch (e) { /* 整理できなくても実害は無い */ }
@@ -3301,8 +3345,10 @@ function setWxSource(info, extra) {
       + '古すぎるため、画面の数字は更新していません';
     return;
   }
-  el.className = 'on';
-  el.textContent = `📴 保存データを表示中　${wxStampText(rec.at)}取得（${wxAgeText(ageMs)}）／${where}`
+  // 24時間超（#228）：色を変え、1日以上前の予報だと言葉でも言う（判定の色は古い予報から出ている）
+  const stale = ageMs > WX_STALE_MS;
+  el.className = stale ? 'on stale' : 'on';
+  el.textContent = `${stale ? '⚠ 1日以上前の予報です　' : '📴 '}保存データを表示中　${wxStampText(rec.at)}取得（${wxAgeText(ageMs)}）／${where}`
     + (km >= 0.2 ? `（${km.toFixed(1)}km先）` : '') + (extra === 'fetching' ? '　通信を続けています…' : '');
   if (typeof extra === 'function') {
     const b = document.createElement('button');
@@ -3426,6 +3472,12 @@ async function switchModel(key) {
    strict（モデル切り替え）は WX_HARD_MS で打ち切る（控えは出さない）。
    ⚠ wxReqSeq：後から別の取得が始まったら、古い取得は画面に触らない（控えへの保存だけする）。
      strict が追い越されたときは例外を投げない（switchModel が「失敗」と言ってモデルを戻してしまう） */
+/* 予報の URL（本体）。お気に入りの裏取り（#228）も同じものを使う（控えの中身を1つにそろえる） */
+function wxForecastUrl(lat, lon, fm) {
+  const lvVars = windInterpLevels()
+    .map(hPa => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join(',');
+  return `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=${fm.id}`;
+}
 const WX_SOFT_MS = 6000, WX_HARD_MS = 30000;
 let wxReqSeq = 0, wxNormalBusy = 0;   // wxNormalBusy＝取得中の通常の取得の番号（0＝無し。switchModel が見る）
 async function fetchWeather(lat, lon, opts) {
@@ -3451,9 +3503,7 @@ async function fetchWeather(lat, lon, opts) {
   // （models未指定の値と完全一致）。**補助リクエストではなく本体で取る**のは、
   // モデルを混ぜないため／通信を増やさないため／判定が後から覆らないため
   // 気圧面の高さも取る：選んだ層が無い時刻（GSM の期間）に上下の層から山頂高度へ補間するため
-  const lvVars = windInterpLevels()
-    .map(hPa => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join(',');
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=${fm.id}`;
+  const url = wxForecastUrl(lat, lon, fm);
   // 控えを画面に出す（通信の失敗・弱電波の両方から使う）
   const showHit = (hit, extra) => {
     // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
@@ -3471,7 +3521,8 @@ async function fetchWeather(lat, lon, opts) {
     if (settled || !current()) return;
     const hit = await loadWxCache(lat, lon, reqModel);
     // ⚠ 控えを読む間に通信が返った・別の取得が始まったなら出さない（新しいものを控えで上書きしない）
-    if (settled || !current() || !hit || hit.ageMs > WX_MAX_AGE_MS) return;
+    // ⚠ 先出しは24時間以内だけ（#228）。すぐ新しいデータが届く場面で、何日も前の判定を先に出して残さない
+    if (settled || !current() || !hit || hit.ageMs > WX_STALE_MS) return;
     shown = hit;
     showHit(hit, 'fetching');
   }, WX_SOFT_MS);
@@ -3589,7 +3640,15 @@ const CLOUD_LEVELS = [
 // modelsを指定せず（best_match）に別リクエストで取得する。失敗しても本体に影響させない。
 async function fetchSupplemental(lat, lon, modelKey) {
   // メインと同じ標高を指定し、地形条件を揃える（突風が過大にならないように）
-  const elev = (typeof state.elevation === 'number') ? `&elevation=${Math.round(state.elevation)}` : '';
+  const h = await fetchSupplementalHourly(lat, lon, state.elevation);
+  if (!h) return;
+  applySupplemental(h, true);
+  saveWxSupplemental(lat, lon, h, modelKey);   // 圏外でも気圧面の雲量が出るように控える
+}
+/* 補助データ（気圧面の雲量）を取るだけ。画面には混ぜない（お気に入りの裏取り #228 はこれだけを使う）。
+   elevation … 本体の応答のモデル格子の標高（画面の state は読まない） */
+async function fetchSupplementalHourly(lat, lon, elevation) {
+  const elev = (typeof elevation === 'number') ? `&elevation=${Math.round(elevation)}` : '';
   const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${elev}` +
     `&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&hourly=`;
   const cloudVars = CLOUD_LEVELS.map(([hPa]) => `cloud_cover_${hPa}hPa`).join(',');
@@ -3603,9 +3662,7 @@ async function fetchSupplemental(lat, lon, modelKey) {
   // ⚠ 突風はもう取らない（v4.149.0）。突風は山頂の風から作る（summitGust）。
   //   モデルの地上10m突風は山頂の突風ではないので使わない → docs/decisions.md 2026-10-01
   try { h = await get(cloudVars); } catch (e) { h = null; }
-  if (!h) return;
-  applySupplemental(h, true);
-  saveWxSupplemental(lat, lon, h, modelKey);   // 圏外でも気圧面の雲量が出るように控える
+  return h;
 }
 
 /* 補助データを状態へ混ぜる。
@@ -9268,12 +9325,24 @@ function windFieldLattice(bounds, z) {
   }
   return { k, i0, i1, j0, j1, pts };
 }
+/* 保存した風（#228）は圏外（windOffline）の間だけ使う。通信が戻れば鮮度切れとして取り直す */
+let windOffline = false, windOfflineRetryAt = 0;
+const WIND_OFFLINE_RETRY_MS = 2 * 60 * 1000;
 function windRecord(key) {
   const c = windCols.get(key);
-  return (c && Date.now() - c.at < WIND_CACHE_MS) ? c : null;
+  if (!c) return null;
+  if (c.saved) return (windOffline && Date.now() - c.at <= WX_MAX_AGE_MS) ? c : null;
+  return (Date.now() - c.at < WIND_CACHE_MS) ? c : null;
 }
 // 控えに無い点をまとめて取る。全部の層を1回で（AUTO と手動で取り方を分けない）
 async function fetchWindColumns(pts, span) {
+  const recs = await fetchWindRaw(pts, span);
+  recs.forEach(r => windCols.set(r.key, windRecHydrate(r)));
+  while (windCols.size > WIND_CACHE_MAX) windCols.delete(windCols.keys().next().value);
+  windOffline = false;       // 通信で取れた：保存した風（圏外用）はもう使わない
+}
+/* 問い合わせて、点ごとの記録（保存できる形：idx・phases を持たない）を返す。お気に入りの裏取り（#228）も使う */
+async function fetchWindRaw(pts, span) {
   const vars = WIND_FIELD_LEVELS.flatMap(lv => Object.values(wfVars(lv)).filter(Boolean));
   const q = new URLSearchParams({
     latitude: pts.map(p => p.lat).join(','),
@@ -9298,17 +9367,18 @@ async function fetchWindColumns(pts, span) {
   const now = Date.now();
   /* ⚠ 返事に値の無い点も「取った」として控える（空で）。控えないと、描き直すたびに
      その点が「控えに無い」ままになり、**取り直しが止まらない**（429 の元をまた作る） */
-  pts.forEach((p, n) => {
+  return pts.map((p, n) => {
     const r = arr[n], h = r && r.hourly;
     const time = (h && h.time) || [];
     const cols = {};
     for (const v of vars) cols[v] = (h && h[v]) || null;
-    windCols.set(p.key, { at: now, i: p.i, j: p.j, lat: p.lat, lon: p.lon, span,
-      zModel: r && typeof r.elevation === 'number' ? r.elevation : null,
-      time, idx: new Map(time.map((t, k) => [t, k])), cols,
-      phases: windModelPhases(cols, time.length) });
+    return { key: p.key, at: now, i: p.i, j: p.j, lat: p.lat, lon: p.lon, span,
+      zModel: r && typeof r.elevation === 'number' ? r.elevation : null, time, cols };
   });
-  while (windCols.size > WIND_CACHE_MAX) windCols.delete(windCols.keys().next().value);
+}
+// 保存できる形の記録に、引くための索引（idx）とモデルの判別（phases）を付ける。⚠ 保存した風を戻すときも必ずここを通す
+function windRecHydrate(r) {
+  return { ...r, idx: new Map(r.time.map((t, k) => [t, k])), phases: windModelPhases(r.cols, r.time.length) };
 }
 
 /* ------ 1点・1時刻の風 ------ */
@@ -9469,8 +9539,18 @@ function ensureWindField(bounds) {
   const timeKey = isoHour(sel ? sel.time : new Date());
   const f = buildWindField(bounds, leafletMap.getZoom(), mode, timeKey);
   lastWindField = f;
-  const fetchPts = f.missing.length ? f.missing : f.needFull;
-  const span = f.missing.length ? 'near' : 'full';
+  let fetchPts = f.missing.length ? f.missing : f.needFull;
+  let span = f.missing.length ? 'near' : 'full';
+  // 保存した風を描いている（圏外・#228）：取得時刻と古さを必ず言う。範囲の外は描かない。
+  // 通信が戻ったかは WIND_OFFLINE_RETRY_MS ごとに、画面の点をまとめて取り直して確かめる（取れたら windOffline が外れる）
+  if (windOffline) {
+    const savedNote = windSavedNote(f);
+    if (Date.now() < windOfflineRetryAt) { if (savedNote) windError(savedNote); else windNote(windModeNote(f)); return f; }
+    windOfflineRetryAt = Date.now() + WIND_OFFLINE_RETRY_MS;
+    fetchPts = [...f.cells.filter(c => (windCols.get(`${c.i}:${c.j}`) || {}).saved).map(c => ({ key: `${c.i}:${c.j}`, i: c.i, j: c.j, lat: c.lat, lon: c.lon })), ...f.missing];
+    span = 'full';
+    if (savedNote) windError(savedNote);
+  }
   if (!fetchPts.length) { windNote(windModeNote(f)); return f; }
   // 429 のあとは取りに行かない（控えだけ描いて、待っていることを言う）
   const wait = windBackoffUntil - Date.now();
@@ -9497,6 +9577,11 @@ function ensureWindField(bounds) {
       if (e.rateLimited) {
         windError(`問い合わせが多すぎると断られました（HTTP 429）。${Math.round(WIND_BACKOFF_MS / 1000)}秒ほどで取り直します`);
         windFetchTimer = setTimeout(() => { if (isMapOpen() && windAnyOn()) refreshWeatherPoints(); }, WIND_BACKOFF_MS + 200);
+      } else if (windOffline) {
+        const note = lastWindField && windSavedNote(lastWindField);   // まだ圏外：保存した風のまま
+        if (note) windError(note); else windError(`取得できません（${e.message}）`);
+      } else if (gen === windFetchGen && await windUseSaved(fetchPts)) {
+        refreshWeatherPoints();     // 保存した風（お気に入りのまわり・#228）で描き直す
       } else {
         windError(`取得できません（${e.message}）`);
       }
@@ -9504,6 +9589,36 @@ function ensureWindField(bounds) {
   }, WIND_FETCH_DELAY_MS);
   return f;
 }
+
+/* ------ 保存した風（圏外・#228） ------
+   お気に入りの裏取りが IndexedDB（sotoki-wx / wind）へ入れた格子点を、通信できないときだけ windCols に戻す。
+   ⚠ at は元の取得時刻のまま・saved:true。windRecord は windOffline の間だけこれを使う */
+async function windUseSaved(pts) {
+  let recs = [];
+  try { const st = await wxStore('readonly', WX_WIND_STORE); recs = await wxReq(st.getAll()) || []; } catch (e) { return false; }
+  const now = Date.now(), want = new Set(pts.map(p => p.key));
+  let n = 0;
+  for (const r of recs) {
+    if (!r || now - r.at > WX_MAX_AGE_MS) continue;
+    const cur = windCols.get(r.key);
+    if (cur && !cur.saved && now - cur.at < WIND_CACHE_MS) continue;   // 新しいものがある
+    windCols.set(r.key, { ...windRecHydrate(r), saved: true });
+    if (want.has(r.key)) n++;
+  }
+  if (!n) return false;
+  windOffline = true; windOfflineRetryAt = Date.now() + WIND_OFFLINE_RETRY_MS;
+  return true;
+}
+// 保存した風を使っているときの状態の文。使っていなければ ''
+function windSavedNote(f) {
+  const used = f.cells.map(c => windCols.get(`${c.i}:${c.j}`)).filter(r => r && r.saved);
+  if (!used.length) return '';
+  const at = Math.min(...used.map(r => r.at)), age = Date.now() - at;
+  return `${age > WX_STALE_MS ? '⚠ 1日以上前の' : '📴 保存した'}風を表示中　${wxStampText(at)}取得（${wxAgeText(age)}）` +
+    (f.missing.length ? '・保存した範囲の外は描けません' : '');
+}
+// 電波が戻った：次の描き直しで取り直す（保存した風は鮮度切れとして扱われる前に、取り直しの間隔だけ外す）
+if (typeof window !== 'undefined') window.addEventListener('online', () => { windOfflineRetryAt = 0; });
 
 // 場の格子点に矢印（数値を読むため）。推定値は点線、地中は「地中」
 function drawWindArrows(f, opacity) {
@@ -15953,6 +16068,126 @@ function saveFavs(favs) {
   localStorage.setItem('sotoki_favs', JSON.stringify(favs));
 }
 
+/* ------ お気に入りの予報と風を裏で控える（#228・利用者の決定 2026-10-30） ------
+   電波のあるとき、お気に入り全地点の予報（JMA）と、まわりの風の格子を順に取り、圏外の控え（sotoki-wx）へ入れる。
+   ・**画面の state には一切触らない**（applyWeatherJson も fetchPointElevation も呼ばない）。
+     例外は loadTerrainRef()（地図の AUTO の風が圏外でも使えるように一度読むだけ。地図を開いていれば描き直す）
+   ・自動：起動から FAV_PREFETCH_DELAY_MS 後と、電波が戻ったとき。FAV_PREFETCH_FRESH_MS 以内に取った地点は飛ばす
+   ・手動：お気に入りの一覧の「予報と風をいま保存」。新しくても取り直す
+   ・地点ごとに FAV_PREFETCH_GAP_MS 空ける。429 は地図と共有の windBackoffUntil に入れて打ち切る（同じ回線の枠）
+   ・地点の通常の取得（fetchWeather）の最中は、次の地点へ進むのを待つ（回線を譲る）
+   ⚠ 新しい予報を取れたかどうかは、画面の帯ではなく一覧の状態の行で言う（画面の予報は今のまま） */
+const FAV_PREFETCH_DELAY_MS = 15000;
+const FAV_PREFETCH_GAP_MS = 3000;
+const FAV_PREFETCH_FRESH_MS = 3 * 3600 * 1000;
+const FAV_WIND_RADIUS = 2;            // 風の格子：中心の升目から ±2（5×5 点・約 50km 四方）
+const favPrefetch = { running: false, text: '' };
+// 控えのうち、この地点・既定モデルにぴったり一致する記録（20km の流用はしない：近くの別のお気に入りを「取得済み」と見なさない）
+async function wxRecordExact(lat, lon) {
+  try { const st = await wxStore('readonly'); return await wxReq(st.get(wxKey(lat, lon, DEFAULT_MODEL))) || null; }
+  catch (e) { return null; }
+}
+// お気に入りのまわりの風の格子点（WIND_GRID の k=1）
+function favWindPoints(lat, lon) {
+  const ci = Math.round((lat - WIND_GRID.lat0) / WIND_GRID.dlat), cj = Math.round((lon - WIND_GRID.lon0) / WIND_GRID.dlon), out = [];
+  for (let i = ci - FAV_WIND_RADIUS; i <= ci + FAV_WIND_RADIUS; i++) {
+    for (let j = cj - FAV_WIND_RADIUS; j <= cj + FAV_WIND_RADIUS; j++) {
+      out.push({ key: `${i}:${j}`, i, j, lat: +(WIND_GRID.lat0 + i * WIND_GRID.dlat).toFixed(4), lon: +(WIND_GRID.lon0 + j * WIND_GRID.dlon).toFixed(4) });
+    }
+  }
+  return out;
+}
+function favPrefetchTargets() {
+  return loadFavs().filter(f => f && typeof f.lat === 'number' && typeof f.lon === 'number' && isFinite(f.lat) && isFinite(f.lon));
+}
+const favPrefetchWait = ms => new Promise(r => setTimeout(r, ms));
+async function prefetchFavs(opts = {}) {
+  const manual = !!opts.manual;
+  if (favPrefetch.running) return;
+  const favs = favPrefetchTargets();
+  if (!favs.length) return;
+  if (!manual && typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  if (Date.now() < windBackoffUntil) {
+    if (manual) { favPrefetch.text = '問い合わせが多すぎると断られています。1分ほどしてからもう一度押してください'; renderFavPrefetch(); }
+    return;
+  }
+  favPrefetch.running = true;
+  const fm = forecastModel(DEFAULT_MODEL);
+  let done = 0, failed = 0, stopped = '';
+  const windKeys = new Set();
+  try {
+    try { loadTerrainRef(); } catch (e) { /* 地形表は任意（AUTO の風に要る） */ }
+    for (let n = 0; n < favs.length; n++) {
+      const f = favs[n];
+      if (!manual) {
+        const rec = await wxRecordExact(f.lat, f.lon);
+        if (rec && Date.now() - rec.at < FAV_PREFETCH_FRESH_MS) continue;
+      }
+      while (wxNormalBusy) await favPrefetchWait(500);   // 地点の通常の取得に回線を譲る
+      favPrefetch.text = `保存中…（${n + 1} / ${favs.length}）${f.name || ''}`;
+      renderFavPrefetch();
+      try {
+        const [res, dem] = await Promise.all([fetch(wxForecastUrl(f.lat, f.lon, fm)), readDemElevation(f.lat, f.lon).catch(() => null)]);
+        if (res.status === 429) { windBackoffUntil = Date.now() + WIND_BACKOFF_MS; stopped = '問い合わせが多すぎると断られたため、途中でやめました'; break; }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        if (!weatherJsonUsable(json)) throw new Error('データが空でした');
+        await saveWxCache(f.lat, f.lon, json, dem, f.name, DEFAULT_MODEL);
+        const h = await fetchSupplementalHourly(f.lat, f.lon, json.elevation);
+        if (h) await saveWxSupplemental(f.lat, f.lon, h, DEFAULT_MODEL);
+        // 風の格子：ほかのお気に入りと重なる点は1回だけ
+        const pts = favWindPoints(f.lat, f.lon).filter(p => !windKeys.has(p.key));
+        pts.forEach(p => windKeys.add(p.key));
+        for (let k = 0; k < pts.length; k += WIND_FETCH_MAX_POINTS) {
+          const recs = await fetchWindRaw(pts.slice(k, k + WIND_FETCH_MAX_POINTS), 'full');
+          for (const r of recs) {
+            r.size = wxRecSize(r.cols, null);
+            const st = await wxStore('readwrite', WX_WIND_STORE);
+            await wxReq(st.put(r));
+          }
+        }
+        done++;
+      } catch (e) {
+        if (e && e.rateLimited) { stopped = '問い合わせが多すぎると断られたため、途中でやめました'; break; }
+        failed++;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) { stopped = '通信できないため、途中でやめました'; break; }
+      }
+      if (n < favs.length - 1) await favPrefetchWait(FAV_PREFETCH_GAP_MS);
+    }
+    await trimWxCache();
+  } finally {
+    favPrefetch.running = false;
+    favPrefetch.text = stopped || (failed ? `${failed}地点は取れませんでした` : '');
+    renderFavPrefetch();
+  }
+}
+// 一覧の下の状態の行：何地点を控えているか・いちばん古い取得
+async function renderFavPrefetch() {
+  const box = document.getElementById('fav-wx-save');
+  if (!box) return;
+  const favs = favPrefetchTargets();
+  if (!favs.length) { box.innerHTML = ''; return; }
+  const recs = await Promise.all(favs.map(f => wxRecordExact(f.lat, f.lon)));
+  const now = Date.now(), ok = recs.filter(r => r && now - r.at <= WX_MAX_AGE_MS);
+  let text;
+  if (favPrefetch.running) text = favPrefetch.text;
+  else {
+    const oldest = ok.length ? Math.min(...ok.map(r => r.at)) : null;
+    text = `圏外用の予報と風：${ok.length} / ${favs.length}地点` +
+      (oldest ? `・いちばん古い ${wxStampText(oldest)}（${wxAgeText(now - oldest)}）` : '') +
+      (favPrefetch.text ? `　${favPrefetch.text}` : '');
+  }
+  box.innerHTML = '';
+  const t = document.createElement('span'); t.className = 'fav-wx-text'; t.textContent = text;
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = '予報と風をいま保存';
+  b.disabled = favPrefetch.running;
+  b.onclick = () => prefetchFavs({ manual: true });
+  box.append(t, b);
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => setTimeout(() => prefetchFavs(), FAV_PREFETCH_DELAY_MS));
+}
+
 /* 自宅・職場の設定は、見出しの右の🏠／🏥から開く（v4.108.0）。
    利用者：「一回登録したらそんなに変えるものじゃない」「お気に入り地点の右側が空いてる。
    そこに🏠🏥ってマークを置くだけでいい」。
@@ -15966,6 +16201,7 @@ function toggleFavSpots(kind) {
 function openFav() {
   favSpotsOpen = null;
   renderFavList();
+  renderFavPrefetch();
   document.getElementById('fav-overlay').classList.add('open');
 }
 function closeFav() {
@@ -16870,6 +17106,8 @@ loadOutlook();
 const BOOT_GEO_WAIT_MS = 8000;
 (function boot() {
   hideLoading();
+  // お気に入りの予報と風を裏で控える（#228）。最初の取得に回線を譲ってから
+  setTimeout(() => prefetchFavs(), FAV_PREFETCH_DELAY_MS);
   const last = loadLast();
   if (last) {
     // 前回地点がある → そのままフェッチ（GPSはスキップ）
