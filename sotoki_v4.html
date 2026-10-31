@@ -1333,8 +1333,14 @@ html, body {
 }
 .me-pin { background: none; border: none; }
 
-/* ヘディングアップ中は地図を回す。角が欠けないよう地図の実体を大きくしておく */
-#map-stage.rotating #map { inset: -40%; }
+/* ヘディングアップ中は地図を回す。角が欠けないよう地図の実体を大きくしておく。
+   ⚠ どの角度に回しても画面の四隅を覆うには、画面の対角線を一辺とする正方形が要る（--map-diag・updateMapDiag）。
+     以前の inset:-40% は横向きで高さが足りず、回すと四隅が黒く欠けた（v4.183.0 の実機） */
+#map-stage.rotating #map {
+  inset: auto; left: 50%; top: 50%;
+  width: var(--map-diag, 180%); height: var(--map-diag, 180%);
+  margin: calc(var(--map-diag, 0px) / -2) 0 0 calc(var(--map-diag, 0px) / -2);
+}
 /* レイヤーパネル：ボトムシート */
 #layer-panel {
   position: absolute;
@@ -2620,7 +2626,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.183.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.183.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -14346,12 +14352,22 @@ async function enableHeading() {
 }
 
 /* 画面の回転角（度）。端末を反時計回りに回した角度（W3C の screen.orientation.angle）。
-   古い iOS は window.orientation（-90 は 270 と同じ）。取れなければ 0（縦） */
+   古い iOS は window.orientation（-90 は 270 と同じ）。取れなければ 0（縦）
+   ⚠ 両方あって食い違うとき（横なのに一方が 0 のまま等）は、画面の縦横（innerWidth と innerHeight）と合う方を採る。
+     iOS のホーム画面の PWA で、横にしてもヘディングアップの地図が横へ流れた（v4.183.0 の実機・回転角が 0 のままだった見込み）。
+     どちらも合わなければ window.orientation（iOS で長く使われてきた方）を採る */
 function screenAngle() {
   try {
-    const a = screen.orientation && typeof screen.orientation.angle === 'number'
-      ? screen.orientation.angle : (typeof window.orientation === 'number' ? window.orientation : 0);
-    return ((a % 360) + 360) % 360;
+    const norm = a => ((a % 360) + 360) % 360;
+    const wo = typeof window.orientation === 'number' ? norm(window.orientation) : null;
+    const so = screen.orientation && typeof screen.orientation.angle === 'number' ? norm(screen.orientation.angle) : null;
+    if (wo == null && so == null) return 0;
+    if (wo == null) return so;
+    if (so == null || so === wo) return wo;
+    const landscape = window.innerWidth > window.innerHeight;
+    const fits = a => (a === 90 || a === 270) === landscape;
+    if (fits(so) && !fits(wo)) return so;
+    return wo;
   } catch (e) { return 0; }
 }
 
@@ -14372,6 +14388,18 @@ function setHeading(deg) {
   else drawMe();
 }
 
+/* 回す地図の一辺（画面の対角線＋余白）。縦横が変わったら測り直す */
+function updateMapDiag() {
+  const stage = document.getElementById('map-stage');
+  if (!stage) return;
+  const r = stage.getBoundingClientRect();
+  stage.style.setProperty('--map-diag', `${Math.ceil(Math.hypot(r.width, r.height)) + 16}px`);
+}
+window.addEventListener('resize', () => {
+  if (!mapHeadingUp || !leafletMap) return;
+  updateMapDiag();
+  leafletMap.invalidateSize();
+});
 function applyMapRotation(deg) {
   mapRotationDeg = deg;
   const stage = document.getElementById('map-stage');
@@ -14398,6 +14426,7 @@ function setHeadingUp(on) {
   //   前回の取り消しが黙って残っていると、次に山で使うとき画面が落ちる
   if (!on) wakeLockOptOut = false;
   mapHeadingUp = on;
+  if (on) updateMapDiag();
   document.getElementById('map-stage').classList.toggle('rotating', on);
   if (on) {
     // 回転中に手でパンすると、ドラッグの向きと地図の動きがねじれる。追従中なので止める

@@ -1720,6 +1720,45 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     '横向きでは画面の回転ぶんを方位に足す（90°→+90・270°→+270）', landHeading);
   ok(landHeading.back === 90 && landHeading.angleNow === 0, '縦に戻せば補正は0', landHeading);
 
+  /* 横向きで回転角の2つの取り口が食い違うとき（v4.183.1）：iOS のホーム画面の PWA で、横にしても
+     ヘディングアップの地図が横へ流れた（回転角が 0 のままだった見込み）。画面の縦横と合う方を採る */
+  const vp0 = page.viewportSize();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(300);
+  const mixed = await page.evaluate(async () => {
+    const fire = h => { const ev = new Event('deviceorientation'); ev.webkitCompassHeading = h; window.dispatchEvent(ev); };
+    Object.defineProperty(window, 'orientation', { configurable: true, get: () => 90 });
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 0, addEventListener() {} }) });
+    const a1 = screenAngle();
+    fire(0);
+    await new Promise(r => setTimeout(r, 100));
+    const h1 = headingDeg;
+    Object.defineProperty(window, 'orientation', { configurable: true, get: () => 0 });
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 270, addEventListener() {} }) });
+    const a2 = screenAngle();
+    delete window.orientation; delete screen.orientation;
+    /* 回した地図が画面の四隅を覆う（横向きで 45° 回しても黒く欠けない） */
+    applyMapRotation(-45);
+    await new Promise(r => setTimeout(r, 100));
+    const st = document.getElementById('map-stage').getBoundingClientRect();
+    const m = document.getElementById('map');
+    const side = m.offsetWidth, cx = st.left + st.width / 2, cy = st.top + st.height / 2;
+    // 回した正方形の中か：中心から見た座標を地図の向きへ戻して、半辺に収まるか
+    const inside = (x, y) => {
+      const t = 45 * Math.PI / 180, dx = x - cx, dy = y - cy;
+      const u = dx * Math.cos(t) - dy * Math.sin(t), v = dx * Math.sin(t) + dy * Math.cos(t);
+      return Math.abs(u) <= side / 2 && Math.abs(v) <= side / 2;
+    };
+    const corners = [[st.left, st.top], [st.right, st.top], [st.left, st.bottom], [st.right, st.bottom]].map(([x, y]) => inside(x, y));
+    const square = m.offsetWidth === m.offsetHeight;
+    return { a1, h1, a2, corners, square, side, stage: [st.width, st.height] };
+  });
+  await page.setViewportSize(vp0);
+  await page.waitForTimeout(300);
+  ok(mixed.a1 === 90 && mixed.h1 === 90, '★★横なのに一方の回転角が 0 のままでも、画面の縦横と合う方（90）を足す', mixed);
+  ok(mixed.a2 === 270, '★逆の食い違い（window.orientation が 0）でも合う方（270）を採る', mixed);
+  ok(mixed.square && mixed.corners.every(Boolean), '★★横向きで地図を回しても画面の四隅が欠けない（対角線の正方形）', mixed);
+
   /* ★自位置は車のナビと同じ矢尻で描く（進行方向が一目で分かるように）。
      方位が取れたら丸（.me-dot）から矢尻（.me-arrow）へ入れ替わる。 */
   const arrowUp = await page.evaluate(() => {
