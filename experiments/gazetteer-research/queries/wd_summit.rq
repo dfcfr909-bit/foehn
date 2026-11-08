@@ -1,0 +1,5 @@
+# 「山頂（summit Q207326）」として入っている日本の項目の数（Q8502 系とは別に数える）
+SELECT (COUNT(DISTINCT ?item) AS ?n) (COUNT(DISTINCT ?k) AS ?nKana) WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q207326 ; wdt:P17 wd:Q17 .
+  OPTIONAL { ?item wdt:P1814 ?k }
+}

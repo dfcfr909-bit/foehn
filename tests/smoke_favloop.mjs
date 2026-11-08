@@ -162,6 +162,9 @@ for (const w of [390, 360]) {
     return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width),
       rightGap: Math.round(bar.right - r.right), hit: !!(el && el.closest('#btn-work')) };
   });
+  // ⚠ iPhone と同じ下の余白（34px）で比べる（smoke_home と同じ理由・v4.162.0）
+  await page.evaluate(() => document.documentElement.style.setProperty('--sa-bottom', '34px'));
+  await page.waitForTimeout(200);
   const onChart = await rect();
   ok(onChart.rightGap < 12 && onChart.w >= 40, `★★(w=${w}) 🏥は最下段の右端`, onChart);
   ok(onChart.hit, `(w=${w}) 🏥が押せる`);
@@ -171,6 +174,7 @@ for (const w of [390, 360]) {
   ok(Math.abs(onChart.x - onMap.x) <= 1 && Math.abs(onChart.y - onMap.y) <= 1 && onMap.hit,
     `★★★(w=${w}) 🏥がグラフと地図で同じ位置`, { onChart, onMap });
   await page.evaluate(() => closeMap());
+  await page.evaluate(() => document.documentElement.style.removeProperty('--sa-bottom'));
 
   if (w === 390) {
     // 一覧の「しごと」の行の🏥で指定

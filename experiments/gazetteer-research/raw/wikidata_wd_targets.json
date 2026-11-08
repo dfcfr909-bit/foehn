@@ -1,0 +1,1060 @@
+{
+  "head" : {
+    "vars" : [ "item", "label", "kana", "ele", "coord", "classes", "adm", "parentRange" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11355744"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "三本槍岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1916.9"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.961666666 37.149722222)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "福島県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11355744"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "三本槍岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1916.9"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.961389 37.150139)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "福島県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3695441"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "光岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2591"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.08388889 35.33805556)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "静岡県/長野県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "赤石山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3695441"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "光岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2591"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.0858 35.3342)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "静岡県/長野県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "赤石山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3047571"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "八甲田山"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(140.877222222 40.658888888)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q46831 http://www.wikidata.org/entity/Q2895674"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "青森県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "奥羽山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q31481271"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "大岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1584.5"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(140.87726 40.6589)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "青森県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "八甲田山"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q28686368"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "大岳"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q5327369"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "東区"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q31395464"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "大岳"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(127.147777777 26.36)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q54050"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "沖縄県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q124880829"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "大岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "99.3"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(123.978417 24.346979)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "竹富町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q30926500"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "富士山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "152"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(140.183611111 36.223611111)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "石岡市"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q55521778"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "富士山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "160"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.31516667 36.41502778)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : ""
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q86729935"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "富士山"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.23835 36.34175)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q424857"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "上田市"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q39231"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "富士山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "3777.24"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.7275 35.360555555)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502 http://www.wikidata.org/entity/Q169358 http://www.wikidata.org/entity/Q1330974 http://www.wikidata.org/entity/Q3393392 http://www.wikidata.org/entity/Q11571545 http://www.wikidata.org/entity/Q11588709"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "静岡県/山梨県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      },
+      "kana" : {
+        "type" : "literal",
+        "value" : "ふじさん"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11479929"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "巻機山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1967"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.964167 36.978611)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "みなかみ町/南魚沼市"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "三国山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3695505"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "燧ヶ岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2356"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.28716 36.95298)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8072 http://www.wikidata.org/entity/Q3393392"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "檜枝岐村/福島県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6922490"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "笈ヶ岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1841"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(136.79222222 36.29861111)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "南砺市/白川村/白山市"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "両白山地"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6922490"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "笈ヶ岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1841"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(136.79229 36.29927)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "南砺市/白川村/白山市"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "両白山地"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11618024"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "茶臼岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2604"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.13333 35.36667)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "飯田市/葵区"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "赤石山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11618024"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "茶臼岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2604"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.14055556 35.36916667)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "飯田市/葵区"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "赤石山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11618022"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "茶臼岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1915"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.963888888 37.125)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "那須町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q31474050"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "茶臼岳"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(140.89889 39.95091)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "岩手県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3915982"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "赤岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2899"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(138.37 35.97055556)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "山梨県/長野県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "八ヶ岳"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q8527518"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "赤岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2078.5"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(142.92666667 43.67444444)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "上川町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "大雪山"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q130532740"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "赤岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2.416"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(137.632777777 36.369722222)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "長野県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "飛騨山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q130538370"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "赤岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "2900"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(137.608333333 36.419444444)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "富山県/長野県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "飛騨山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q31486517"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "赤岳"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(140.1617 41.7025)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "北海道"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3695587"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "那須岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1917"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.95 37.15)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "栃木県"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "奥羽山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6923579"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "釈迦ヶ岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1800"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(135.903055555 34.114166666)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "下北山村/十津川村"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "大峰山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6923579"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "釈迦ヶ岳"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1800"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(135.903333333 34.114722222)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "下北山村/十津川村"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "大峰山脈"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q31690309"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "釈迦ヶ岳"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.776388888 36.900277777)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q8502"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "塩谷町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : "高原山"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11668908"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "高原山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1599"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.770833333 36.904722222)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q46831 http://www.wikidata.org/entity/Q169358"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "日光市/塩谷町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11668908"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "高原山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1794.9"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.770833333 36.904722222)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q46831 http://www.wikidata.org/entity/Q169358"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "日光市/塩谷町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11668908"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "高原山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1599"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.776666666 36.9)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q46831 http://www.wikidata.org/entity/Q169358"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "日光市/塩谷町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11668908"
+      },
+      "label" : {
+        "xml:lang" : "ja",
+        "type" : "literal",
+        "value" : "高原山"
+      },
+      "ele" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "1794.9"
+      },
+      "coord" : {
+        "datatype" : "http://www.opengis.net/ont/geosparql#wktLiteral",
+        "type" : "literal",
+        "value" : "Point(139.776666666 36.9)"
+      },
+      "classes" : {
+        "type" : "literal",
+        "value" : "http://www.wikidata.org/entity/Q46831 http://www.wikidata.org/entity/Q169358"
+      },
+      "adm" : {
+        "type" : "literal",
+        "value" : "日光市/塩谷町"
+      },
+      "parentRange" : {
+        "type" : "literal",
+        "value" : ""
+      }
+    } ]
+  }
+}

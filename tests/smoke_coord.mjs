@@ -98,6 +98,15 @@ REF.forEach(([n, la, lo, zone, e, nn, mg], i) => {
   const mgWant = `${mg.slice(0, -12)} ${mg.slice(-12, -10)} ${mg.slice(-10, -5)} ${mg.slice(-5)}`;
   ok(g.mgrs === mgWant, `★★★MGRS が mgrs ライブラリと一致: ${n}`, { want: mgWant, got: g.mgrs });
 });
+/* 逆変換（fromUTM・v4.159.0）：pyproj の東距・北距から元の緯度経度に戻るか。
+   ⚠ fromUTM は北半球だけなので、北半球の点に限る（南半球・西半球の点は入れない）。
+     日本の他の帯（51〜53・55・56）は smoke_coordsearch の「本体の表示との往復」で見る */
+const INV = REF.filter(([n]) => ['燧ヶ岳', '岩手山', '富士山', '那須岳', '帯の境目（138°は54帯）', '赤道のすぐ北'].includes(n));
+const inv = await page.evaluate(ref => ref.map(([n, la, lo, zone, e, nn]) => ({ n, la, lo, r: fromUTM(zone, e, nn) })), INV);
+inv.forEach(({ n, la, lo, r }) => {
+  ok(Math.abs(r.lat - la) < 2e-7 && Math.abs(r.lon - lo) < 2e-7, `★★★逆変換が pyproj の値から約2cm以内で戻る: ${n}`, { want: [la, lo], got: [r.lat, r.lon] });
+});
+ok(inv.length === 6, '逆変換の照合点は6つ', inv.length);
 const utmRow = await page.evaluate(() => coordFormats(36.953, 139.2873).find(x => x.k === 'UTM座標').v);
 ok(utmRow === '54S 347510 4091028', '★★UTM座標の書き方（帯＋緯度帯・東距・北距、1m 切り捨て）', utmRow);
 const polar = await page.evaluate(() => coordFormats(85, 10).filter(x => x.none).map(x => x.k));

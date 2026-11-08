@@ -1,0 +1,13 @@
+# 実測: 配布物（tarball）の単体ファイルの大きさ（バイト / gzip -9 後）。コードは実行していない
+file	bytes	gzip9
+geodesy/package/dms.js	16289	4389
+geodesy/package/latlon-ellipsoidal-datum.js	18118	5477
+geodesy/package/latlon-ellipsoidal.js	17828	5077
+geodesy/package/mgrs.js	13100	4046
+geodesy/package/utm.js	17092	5175
+geodesy/package/vector3d.js	8276	2369
+mgrs/package/dist/mgrs.esm.js	5929	2612
+mgrs/package/dist/mgrs.min.js	6154	2735
+mgrs/package/mgrs.js	21519	6219
+utm-latlng/package/UTMLatLng.js	11040	2497
+utm-latlng/package/es6.js	9056	2240

@@ -20,7 +20,6 @@ on:
           - jma-weekly-reliability
           - map-area-offices
           - wind-vs-report
-          - wind-elev-gap
           - wind-field
           - wind-seam
           - terrain-ref
@@ -28,6 +27,7 @@ on:
           - gust-obs
           - snow-thunder
           - snow-verify
+          - wind-profile
       peak:
         description: '（wind-vs-report のとき）峰の名前。areas.json の表記どおりに'
         required: false
@@ -75,9 +75,12 @@ jobs:
           DATE: ${{ inputs.date }}
         run: node scripts/probeWind.mjs | tee result.txt
 
-      - name: 安全弁に掛かっている峰を数える
-        if: ${{ inputs.target == 'wind-elev-gap' }}
-        run: node scripts/probeWindGap.mjs | tee result.txt
+      - name: 地点の高さごとの風と気温
+        if: ${{ inputs.target == 'wind-profile' }}
+        env:
+          PEAK: ${{ inputs.peak }}
+          DATE: ${{ inputs.date }}
+        run: node scripts/probeProfile.mjs | tee result.txt
 
       - name: 高度別の風の場と自動選択の前提
         if: ${{ inputs.target == 'wind-field' }}

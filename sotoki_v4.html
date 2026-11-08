@@ -15,10 +15,12 @@
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-<!-- Leaflet CSS -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<!-- Leaflet JS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Leaflet 1.9.4（同梱。山では圏外・弱電波がふつうで、CDN から読むと地図が開かなかった → ADR-0017・#227） -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/leaflet/leaflet.js"></script>
+<!-- Web フォント（取れなくても既定の字で出る）。⚠ 起動を止めないよう media="print" で読み、読めたら切り替える。
+     `<style>` の中の @import は描画を止める外部読み込みで、弱電波では開くまで待たされる（#227） -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap" media="print" onload="this.media='all'">
 <!-- uPlot CSS/JS（v1.6.32 同梱。CDN配信されていないためセルフホスト） -->
 <link rel="stylesheet" href="vendor/uPlot.min.css">
 <script src="vendor/uPlot.iife.min.js"></script>
@@ -29,7 +31,6 @@
 /* ============================================================
    BASE & TYPOGRAPHY
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 
 :root {
   --bg: #f5f4f0;
@@ -62,6 +63,12 @@
      テストは変数を差し替えて全画面ぶんまとめて検査する。 */
   --sa-top: env(safe-area-inset-top, 0px);
   --sa-bottom: env(safe-area-inset-bottom, 0px);
+  /* 左右は横向きのノッチ用（#184）。縦向きでは 0 なので見た目は変わらない */
+  --sa-left: env(safe-area-inset-left, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  /* 右のボタン列だけが使う右の逃げ幅。iOS は横向きでノッチの無い側にも同じ幅を返すので、
+     ノッチが左にあるとき（画面の回転角 90）は 0 にして右端まで寄せる（applyNotchSide・v4.162.0） */
+  --sa-right-tools: var(--sa-right);
 
   --sky-dawn:  #f9a875;
   --sky-day:   #87ceeb;
@@ -828,13 +835,23 @@ html, body {
   background: var(--surface);
 }
 #map-overlay.open { display: flex; }
+/* 横向きでは地図だけ画面いっぱいに広げる（#184）。
+   ⚠ #app の幅（max-width 480px）は触らない。広げるとグラフが広い幅で組み直され、
+     閉じても resize が起きないので幅が合わなくなる。地図から開く画面（天気図・お気に入り・
+     ランキング・座標）も全幅になり、✕がノッチに潜る。fixed なら #app の外へ出られる
+     （#app・body に transform/filter/contain が無いことが前提）。
+   ⚠ 縦向きは absolute のまま。iOS のキーボード表示時に fixed がずれる癖を、縦の主な使い方に持ち込まない */
+@media (orientation: landscape) {
+  #map-overlay { position: fixed; inset: 0; }
+}
+:root.notch-left { --sa-right-tools: 0px; }
 
 /* 上に浮かぶ操作（閉じる＋検索）。
    ⚠**器は pointer-events:none。** 中身以外の場所は地図に触れるようにするため。
    これを外すと帯の下の地図が触れなくなり、全画面にした意味が無くなる。 */
 #map-top {
   position: absolute;
-  left: 8px; right: 8px;
+  left: calc(8px + var(--sa-left)); right: calc(8px + var(--sa-right));
   top: calc(8px + var(--sa-top));
   z-index: 1100;              /* Leaflet標準コントロール(1000)より上 */
   display: flex; align-items: flex-start; gap: 8px;
@@ -875,7 +892,7 @@ html, body {
 /* 検索結果も浮かせる。地図を隠しすぎないよう高さを抑える */
 #map-results {
   position: absolute;
-  left: 8px; right: 8px;
+  left: calc(8px + var(--sa-left)); right: calc(8px + var(--sa-right));
   top: calc(60px + var(--sa-top));
   /* ⚠ 右上の浮きボタン（#map-tools, 1100）より上、レイヤーパネル（1200）より下。
      同じ1100だと後ろに書いたボタンが一覧に被り、行の右端（履歴の✕）が押せない */
@@ -897,7 +914,7 @@ html, body {
    上に重ねると検索結果が読めなくなる（結果のほうが一時的で、優先される） */
 #map-topleft {
   position: absolute;
-  left: 8px;
+  left: calc(8px + var(--sa-left));
   top: calc(60px + var(--sa-top));
   z-index: 1090;
   pointer-events: none;
@@ -961,6 +978,34 @@ html, body {
   color: var(--text3); font-size: 15px; cursor: pointer; }
 .map-hist-clear { border: none; background: none; color: var(--text3); font-size: 11px;
   text-decoration: underline; padding: 4px 0; min-height: 28px; cursor: pointer; }
+/* 手元の山の候補（#171）。山名とチップは折り返さない。文字は地名の行より大きめ。
+   1行目＝山名・チップ・標高、2行目＝都道府県・距離。行頭を揃え、空白を作らない */
+.mtn-item { padding: 8px 14px; min-height: 44px; border-bottom: 1px solid var(--border); cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.mtn-item:active { background: var(--bg2); }
+.mtn-line1 { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.mtn-name { font-size: 16px; font-weight: 700; color: var(--text); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* 名山の区分。⚠ 色だけで区別しない（文字も出す）。押すと全タグ */
+.mtn-tag { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 700; color: #fff;
+  background: var(--accent, #e2703a); border: none; border-radius: 4px; padding: 2px 6px;
+  line-height: 1.3; cursor: pointer; }
+/* 主峰・最高峰（#176）。名山のチップと見分けるため輪郭だけ */
+.mtn-role { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--accent, #e2703a);
+  border: 1px solid var(--accent, #e2703a); border-radius: 4px; padding: 1px 5px; line-height: 1.3; }
+.mtn-elev { flex-shrink: 0; margin-left: auto; font-size: 13px; color: var(--text3); white-space: nowrap; }
+.mtn-sub { font-size: 12px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mtn-hist-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.mtn-hist-row .mtn-item { flex: 1; border-bottom: none; }
+.mtn-sort-row { display: flex; align-items: center; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
+.mtn-sort-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: none;
+  background: var(--panel2, #2a2a2a); color: var(--text3); min-height: 28px; }
+.mtn-sort-chip.on { background: var(--accent, #e2703a); color: #fff; font-weight: 700; }
+.mtn-sort-chip:disabled { opacity: 0.4; }
+.mtn-origin { font-size: 11px; color: var(--text3); margin-left: auto; white-space: nowrap; }
+/* 手元の山と地名検索の結果の区切り */
+.place-sep { padding: 5px 14px; font-size: 11px; color: var(--text3); background: var(--bg2);
+  border-bottom: 1px solid var(--border); }
 /* overflow:hidden が要る。レイヤーパネルは閉じているとき translateY(101%) で
    下へ逃がしているので、切り抜かないと下のコントロールバーに覆いかぶさる。 */
 #map-stage { flex: 1; position: relative; min-height: 0; overflow: hidden; }
@@ -973,10 +1018,28 @@ html, body {
   bottom: 0;
   z-index: 1100;
   display: flex; flex-direction: column; gap: 4px;
-  padding: 0 8px calc(6px + var(--sa-bottom));
+  /* 右の余白（横向きでは下の @media でボタン列の分を足す）。出典の帯も同じ値を使う */
+  --mb-pr: calc(8px + var(--sa-right));
+  /* 下の余白。出典の帯（#map-attribution）は円柱の下のこの余白に重ねて置く（v4.162.0）。
+     ⚠ 🏠を「グラフと同じ位置」に保つ式：グラフでは🏠の下が (52−44)/2＋6＋safe-area＝10＋safe-area。
+       地図では円柱の器を 46px に削るので (46−44)/2＋余白＝1＋余白 → 余白＝9＋safe-area。
+       ただし帯が入りきらなければ帯の高さ＋3px まで広げる（その分だけ円柱が上がる。
+       iPhone はホームバーの分 safe-area が 34px あるので、2行の帯でも上がらない）。
+       --attr-h は JS（watchAttributionHeight）が帯の実測の高さを入れる */
+  --mb-pad: max(calc(9px + var(--sa-bottom)), calc(var(--attr-h, 14px) + 3px));
+  padding: 0 var(--mb-pr) var(--mb-pad) calc(8px + var(--sa-left));
   pointer-events: none;
 }
+/* 地図では円柱の器を少し削る（52→46px・利用者の指定）。ボタンは 44px のまま */
+#map-fav-slot #fav-bar { height: 46px; }
+#map-fav-slot #fav-rotary { height: 44px; }
 #map-bottom > * { pointer-events: auto; }
+/* 横向きでは下の帯（時刻・地点名・円柱・出典）を右のボタン列の手前で止める（v4.162.0）。
+   背が低いので、ボタン列の下の方と帯が同じ高さに来て重なった（v4.161.0 の実機）。44px＝丸ボタンの幅。
+   ⚠ 上の #map-bottom の padding より後ろに書くこと（先に書くと打ち消される） */
+@media (orientation: landscape) {
+  #map-bottom { --mb-pr: calc(8px + var(--sa-right-tools) + 44px + 8px); }
+}
 #map-foot {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
   pointer-events: none;
@@ -1077,6 +1140,11 @@ html, body {
   box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
 #map-scale.hidden { display: none; }
+#map-orient-diag {
+  margin-top: 4px; padding: 2px 7px; border-radius: 6px; width: max-content;
+  font-size: 10px; line-height: 1.4; color: #333; background: rgba(255,255,255,0.88);
+}
+#map-orient-diag.hidden { display: none; }
 /* 目盛り棒。両端に脚を出す「コの字」（地図の慣例）。⚠ 上辺は引かない */
 #map-scale-bar {
   display: block;
@@ -1093,16 +1161,25 @@ html, body {
   white-space: nowrap;
 }
 /* 出典表記。常時表示（利用条件） */
+/* 円柱の下に横幅いっぱいの細い帯（v4.162.0・利用者の指定）。地図を占有しないよう字を小さく行を詰め、地を薄くする。
+   ⚠ **1行に切り詰めたり横スクロールで隠したりしない。** 出典明示は利用条件（地理院の回答・docs/decisions.md 2026-10-06）。
+     全文を常に見せ、収まらなければ折り返す（390px で3行・横向きで1〜2行） */
 #map-attribution {
-  max-width: 60%;
-  padding: 3px 6px;
-  font-size: 9px;
-  line-height: 1.4;
+  /* 円柱のすぐ下（#map-bottom の下の余白の中）に重ねる。流れに置くと円柱が帯の分だけ上がり、
+     🏠・🏥がグラフ画面とずれる（★★★の決まり。smoke_home / smoke_favloop） */
+  position: absolute;
+  left: calc(8px + var(--sa-left)); right: var(--mb-pr);
+  top: calc(100% - var(--mb-pad) + 1px);
+  padding: 1px 6px;
+  font-size: 8.5px;
+  line-height: 1.25;
   color: #333;
-  background: rgba(255,255,255,0.82);
-  border-radius: 6px;
-  margin-left: auto;
+  background: rgba(255,255,255,0.55);
+  border-radius: 4px;
+  pointer-events: none;   /* 帯は地図の操作を邪魔しない（#map-bottom > * の auto を打ち消す） */
 }
+/* 出典のリンクだけ押せるようにする（帯自体は pointer-events: none。枠全体に付けると地図の操作を邪魔する） */
+#map-attribution a { pointer-events: auto; color: inherit; text-decoration: underline; }
 /* 選択中の地点（名前＋標高）。地図を閉じずに選べるようにしたので常に出す */
 #map-picked {
   max-width: 60%;
@@ -1123,7 +1200,7 @@ html, body {
 #map-fav-slot { min-width: 0; }
 #map-tools {
   position: absolute;
-  right: 8px;
+  right: calc(8px + var(--sa-right-tools));   /* ノッチの無い側では右端まで寄せる（applyNotchSide） */
   top: calc(60px + var(--sa-top));   /* 浮いた検索行の下から */
   z-index: 1100;
   display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
@@ -1164,6 +1241,29 @@ html, body {
 }
 .map-round svg { width: 34px; height: 34px; display: block; overflow: visible; }
 .map-round.map-emoji { font-size: 20px; line-height: 1; }
+
+/* --- 地図の上の情報を隠す（#185） ---
+   押すと地図だけを見られる。残すのは 出典（利用条件）・閉じる✕・縮尺・右のボタン列（6つ・v4.162.0 から）。
+   ⚠ display:none ではなく visibility で消す。
+     下の帯の高さも変わらないので出典の位置も動かない。状態は覚えない（開くたびに表示へ戻す） */
+.dc-eye { fill: none; stroke: var(--text3); stroke-width: 2.2; stroke-linejoin: round; }
+.dc-pupil { fill: var(--text3); }
+.dc-slash { stroke: var(--text3); stroke-width: 2.4; stroke-linecap: round; display: none; }
+#btn-declutter[aria-pressed="true"] { background: var(--text); border-color: var(--text); }
+#btn-declutter[aria-pressed="true"] .dc-eye { stroke: var(--surface); }
+#btn-declutter[aria-pressed="true"] .dc-pupil { fill: var(--surface); }
+#btn-declutter[aria-pressed="true"] .dc-slash { display: inline; stroke: var(--surface); }
+#map-stage.declutter #map-search-row,
+#map-stage.declutter #map-results,
+#map-stage.declutter #map-when,
+#map-stage.declutter #map-hint,
+#map-stage.declutter #map-rain,
+#map-stage.declutter #map-trouble,
+#map-stage.declutter #map-awake,
+#map-stage.declutter #map-time,
+#map-stage.declutter #map-picked,
+#map-stage.declutter #map-fav-slot { visibility: hidden; pointer-events: none; }
+/* ⚠ 右のボタン列（6つ）は隠さない（v4.162.0・利用者の指定）。隠すと地図だけ見ながら現在地・方位を操作できない */
 
 /* --- 方位バッジ --- */
 .orient-rim { fill: none; stroke: var(--text3); stroke-width: 1.8; }
@@ -1238,8 +1338,14 @@ html, body {
 }
 .me-pin { background: none; border: none; }
 
-/* ヘディングアップ中は地図を回す。角が欠けないよう地図の実体を大きくしておく */
-#map-stage.rotating #map { inset: -40%; }
+/* ヘディングアップ中は地図を回す。角が欠けないよう地図の実体を大きくしておく。
+   ⚠ どの角度に回しても画面の四隅を覆うには、画面の対角線を一辺とする正方形が要る（--map-diag・updateMapDiag）。
+     以前の inset:-40% は横向きで高さが足りず、回すと四隅が黒く欠けた（v4.183.0 の実機） */
+#map-stage.rotating #map {
+  inset: auto; left: 50%; top: 50%;
+  width: var(--map-diag, 180%); height: var(--map-diag, 180%);
+  margin: calc(var(--map-diag, 0px) / -2) 0 0 calc(var(--map-diag, 0px) / -2);
+}
 /* レイヤーパネル：ボトムシート */
 #layer-panel {
   position: absolute;
@@ -1259,17 +1365,65 @@ html, body {
 #layer-panel.open { transform: translateY(0); }
 #layer-panel-head {
   display: flex; align-items: center;
-  padding: 10px 14px;
+  padding: 10px calc(14px + var(--sa-right)) 10px calc(14px + var(--sa-left));
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 #layer-panel-head h3 { flex: 1; font-size: 14px; }
+/* 並べ替え・隠す（#205 段階1） */
+#btn-layer-edit {
+  min-height: 44px; padding: 0 12px; margin-right: 4px;
+  border: 2px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text2);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700; cursor: pointer;
+}
+#btn-layer-edit[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+#layer-panel.editing #layer-bases { display: block; }
+#layer-panel.editing #layer-base-op { display: none; }
+/* 下地の透過率（#211）。地形図の行のスライダー（.layer-ov-op）と同じ見た目 */
+#layer-base-op { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 2px 0; }
+#layer-base-op .layer-base-op-name { flex: 1; font-size: 12px; font-weight: 700; color: var(--text2); }
+#map.base-faded { background: #fff; }   /* 下地を薄くしたときの地は白で固定（Leaflet 既定は灰 #ddd） */
+.layer-edit-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 0; border-bottom: 1px solid var(--border);
+}
+.layer-edit-row.is-hidden .layer-edit-name { opacity: 0.4; text-decoration: line-through; }
+.layer-edit-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+.layer-edit-on {
+  font-style: normal; font-size: 9px; font-weight: 700; color: var(--text2);
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; vertical-align: 1px;
+}
+.layer-edit-btn {
+  min-width: 44px; min-height: 44px; flex-shrink: 0;
+  border: 2px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); font-size: 14px; cursor: pointer;
+}
+.layer-edit-btn:disabled { opacity: 0.3; cursor: default; }
+.layer-edit-reset {
+  margin: 6px 0 2px; min-height: 44px; padding: 0 12px;
+  border: 1px dashed var(--border); border-radius: 10px;
+  background: none; color: var(--text2); font-family: var(--font-ui); font-size: 12px; cursor: pointer;
+}
+.layer-hidden-sum { grid-column: 1 / -1; font-size: 10px; color: var(--text3); padding: 4px 2px; }
+/* レイヤーセット（#205 段階2） */
+.layer-sets-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 4px; }
+.layer-set-chip {
+  min-height: 44px; padding: 4px 14px; border-radius: 22px; font-size: 12px;   /* タッチターゲット 44px（smoke_mapui） */
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer;
+}
+.layer-set-chip.active { background: var(--text); color: var(--surface); border-color: var(--text); font-weight: 700; }   /* .amedas-el.active と同じ（ダークで白地に白文字にしない） */
+.layer-set-add { border-style: dashed; color: var(--text2); }
+.layer-set-add:disabled { opacity: 0.4; }
+.layer-set-acts { display: inline-flex; gap: 4px; }
+.layer-set-act { min-height: 44px; padding: 2px 8px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: var(--font-ui); cursor: pointer; }
+.layer-set-del { color: var(--c-col); }
 #btn-layer-close {
   min-width: 44px; min-height: 44px;
   border: none; background: none; cursor: pointer;
   font-size: 20px; color: var(--text);
 }
-#layer-panel-body { overflow-y: auto; padding: 4px 12px 14px; }
+#layer-panel-body { overflow-y: auto; padding: 4px calc(12px + var(--sa-right)) 14px calc(12px + var(--sa-left)); }
 /* パネルを開いている間は地図の浮きボタンを引っ込める。
    パネルの✕と現在地ボタンが重なって押し間違える（実機で指摘された）。
    どのみちパネルが地図を覆っているので、この間は地図の操作をしない */
@@ -1404,6 +1558,21 @@ html, body {
   padding: 0 3px; border-radius: 4px;
   background: rgba(var(--surface-rgb), 0.78);
 }
+/* 施設（OSM・#199）。記号と、z13 から名前 */
+.poi-box {
+  transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
+  display: inline-flex; flex-direction: column; align-items: center;
+  line-height: 1; white-space: nowrap;
+}
+.poi-box i {
+  font-style: normal; font-size: 13px;
+  text-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 3px rgba(255,255,255,0.8);
+}
+.poi-box span {
+  font-size: 8px; font-weight: 600; color: var(--text);
+  padding: 0 3px; border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.78);
+}
 
 .wind-box {
   transform: translate(-50%, -50%) rotate(var(--map-rot, 0deg));
@@ -1479,6 +1648,9 @@ html, body {
 #wind-hud .wh-btns { flex-wrap: wrap; }
 /* 風の流れの設定（レイヤー一覧の行の下・v4.141.0） */
 .wind-set .amedas-el { min-height: 36px; padding: 0 10px; }
+.windexp-set select { min-height: 36px; font: inherit; font-size: 12px; border-radius: 8px; padding: 0 6px; background: var(--surface); color: inherit; border: 1px solid var(--border); }
+.windexp-set .amedas-el { min-height: 36px; padding: 0 10px; }
+.windexp-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
 .wind-set-sl { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 0 0 8px 30px;
   font-family: var(--font-ui); font-size: 12px; font-weight: 700; color: var(--text2); }
 .wind-set-sl label { display: flex; align-items: center; gap: 6px; }
@@ -1519,7 +1691,14 @@ html, body {
   -webkit-user-drag: none;
 }
 
-.layer-ov-op { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.layer-ov-op { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.layer-blend { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.layer-blend-btn {
+  min-height: 32px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text2);
+  font-family: var(--font-ui); font-size: 11px; cursor: pointer;
+}
+.layer-blend-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .layer-ov-op input[type=range] { width: 92px; height: 44px; }
 .layer-ov-op input[type=range]:disabled { opacity: 0.35; }
 .layer-op-val {
@@ -1528,6 +1707,12 @@ html, body {
 }
 #layer-cache { font-size: 11px; color: var(--text2); }
 #layer-cache-usage { font-family: var(--font-mono); margin-bottom: 6px; }
+/* 山域の保存（#244 段2） */
+.area-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.area-name { font-weight: 700; flex-shrink: 0; }
+.area-meta { color: var(--muted, #888); font-size: 11px; flex: 1; }
+.area-btn { margin-left: auto; padding: 4px 10px; font: inherit; font-size: 12px; border-radius: 6px; }
+#layer-areas-note { font-size: 11px; color: var(--muted, #888); margin: 4px 0 8px; }
 #btn-cache-clear {
   min-height: 44px; padding: 0 14px;
   border: 2px solid var(--c-col); border-radius: 10px;
@@ -1536,6 +1721,9 @@ html, body {
   cursor: pointer;
 }
 #layer-cache-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
+#layer-opens { font-size: 11px; color: var(--text2); }
+#layer-map-opens { font-family: var(--font-mono); }
+#layer-opens-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
 
 /* 地図画面だけOSのダークテーマに追従する（全画面オーバーレイなので本体と並ばない）。
    本体アプリはlight固定のまま。 */
@@ -1552,7 +1740,7 @@ html, body {
     --gps-col: #6aa8ff;   /* 暗い地に#1a73e8では沈むので明るめの青にする */
     background: #16181c;
   }
-  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.82); }
+  #map-overlay #map-attribution { color: #eceff3; background: rgba(12,14,17,0.55); }
   #map-overlay #map-scale { background: rgba(12,14,17,0.82); }
   #map-overlay #map-scale-bar { border-color: #f2f4f7; }
   #map-overlay #map-scale-label { color: #f2f4f7; }
@@ -2263,6 +2451,11 @@ html, body {
   border-bottom: 2px solid var(--b-col);
 }
 #offline-note.on { display: block; }
+/* 弱電波で控えを先に出したあと、新しいデータが届いたときのボタン（#227） */
+#offline-note .wx-fresh-btn {
+  margin-left: 4px; padding: 3px 8px; font: inherit; font-size: 11px;
+  color: #fff; background: #0b6e8a; border: 0; border-radius: 4px;
+}
 
 /* ⚠ レーダー実況とモデル予報の食い違いを出す帯（v4.98.0）。
    ⚠⚠ **一致しているときは出さない。** 常時出すと読まなくなり、
@@ -2438,7 +2631,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.155.4</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.183.1</span></a>
   </div>
 
   <!-- Footer -->
@@ -2461,8 +2654,9 @@ html, body {
 
   <!-- 最下段：🏠（自宅）＋お気に入り円柱（v4.105.0）。
        ⚠ **グラフと地図で🏠が同じ位置に来るようにする。** 器ごと地図の下へ引っ越す
-       （moveFavRotaryTo）。上下左右の余白はグラフ側（#fav-bar-slot）と地図側
-       （#map-bottom）で同じにしてある。片方だけ変えると🏠の位置がずれる -->
+       （moveFavRotaryTo）。左右の余白はグラフ側（#fav-bar-slot）と地図側（#map-bottom）で同じ。
+       下は v4.162.0 から式で合わせている（地図は器 46px・出典の帯を下の余白に重ねる。#map-bottom の --mb-pad）。
+       一致するのは下の safe-area がある端末（iPhone）だけ。片方だけ変えると🏠の位置がずれる -->
   <div id="fav-bar-slot">
     <div id="fav-bar">
       <button id="btn-home" class="spot-btn" type="button" onclick="goSpot('home')" aria-label="自宅" title="自宅（お気に入り一覧で設定）">🏠</button>
@@ -2485,7 +2679,7 @@ html, body {
         <button id="btn-map-close" class="map-round" onclick="closeMap()"
                 aria-label="地図を閉じる">✕</button>
         <div id="map-search-row">
-          <input type="search" id="map-search-input" placeholder="山名・地名で検索"
+          <input type="search" id="map-search-input" placeholder="山名 よみ 地名 住所 座標"
             enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off">
           <button id="map-search-btn" onclick="doMapSearch()">検索</button>
         </div>
@@ -2499,6 +2693,8 @@ html, body {
         <div id="map-scale" class="hidden" aria-hidden="true">
           <i id="map-scale-bar"></i><span id="map-scale-label"></span>
         </div>
+        <!-- 仮（v4.183.1）：横向きのヘディングアップで、回転角の取り口ごとの値を出す。実機で原因を確かめたら外す -->
+        <div id="map-orient-diag" class="hidden"></div>
       </div>
 
       <!-- 下に浮かぶもの：案内文／地点名＋出典／お気に入り円柱 -->
@@ -2526,11 +2722,12 @@ html, body {
         </div>
         <div id="map-foot">
           <div id="map-picked"><b id="map-picked-name">—</b><span id="map-elev"></span></div>
-          <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと -->
-          <div id="map-attribution"></div>
         </div>
         <!-- ヘッダーのお気に入り円柱をここへ引っ越してくる（実体は1つだけ） -->
         <div id="map-fav-slot"></div>
+        <!-- 出典表記。地理院・OSM・Esriいずれも表示が利用条件なので消さないこと。
+             円柱の下に横幅いっぱいの細い帯で出す（v4.162.0。右下の箱は横向きで何行にも折り返して煩かった） -->
+        <div id="map-attribution"></div>
       </div>
 
       <div id="map-tools">
@@ -2571,17 +2768,34 @@ html, body {
                 aria-label="天気図" title="天気図"><span aria-hidden="true">🌐</span></button>
         <button id="btn-about" class="map-round map-emoji" onclick="location.href='about.html'"
                 aria-label="このアプリについて" title="このアプリについて（判定の基準・データの参照元・妥協点）"><span aria-hidden="true">ℹ️</span></button>
+        <!-- 地図の上の情報をいったん隠す（#185）。列の末尾に置く。
+             v4.160.0 では列のほかのボタンも隠していたので位置が動かない末尾にした。v4.162.0 から列は隠さない -->
+        <button id="btn-declutter" class="map-round" onclick="toggleMapDeclutter()" aria-pressed="false"
+                aria-label="地図の上の情報を隠す" title="地図の上の情報を隠す">
+          <svg viewBox="0 0 44 44" aria-hidden="true">
+            <path class="dc-eye" d="M8 22 C13 14 31 14 36 22 C31 30 13 30 8 22 Z"/>
+            <circle class="dc-pupil" cx="22" cy="22" r="4"/>
+            <line class="dc-slash" x1="11" y1="33" x2="33" y2="11"/>
+          </svg>
+        </button>
       </div>
 
       <!-- レイヤーパネル（ボトムシート） -->
       <div id="layer-panel" role="dialog" aria-label="地図レイヤー">
         <div id="layer-panel-head">
           <h3>地図レイヤー</h3>
+          <!-- 並べ替え・隠す（#205 段階1）。押すと編集モード（ON/OFF・透過率は出さない）。もう一度で「完了」 -->
+          <button id="btn-layer-edit" type="button" onclick="toggleLayerEdit()" aria-pressed="false">並べ替え</button>
           <button id="btn-layer-close" onclick="closeLayerPanel()" aria-label="閉じる">✕</button>
         </div>
         <div id="layer-panel-body">
+          <!-- レイヤーセット（#205 段階2）。押すと組み合わせを丸ごと置き換える。名前・上書き・削除は編集モードで -->
+          <div class="layer-section-title" id="layer-sets-title">セット</div>
+          <div id="layer-sets" aria-labelledby="layer-sets-title"></div>
           <div class="layer-section-title" id="layer-bases-title">ベースマップ</div>
           <div id="layer-bases" role="radiogroup" aria-labelledby="layer-bases-title"></div>
+          <!-- 選んでいる下地の透過率（#211）。編集モードでは隠す -->
+          <div id="layer-base-op"></div>
           <div class="layer-section-title" id="layer-overlays-title">重ねる地形図</div>
           <div id="layer-overlays" aria-labelledby="layer-overlays-title"></div>
           <div class="layer-section-title" id="layer-weather-title">気象を重ねる</div>
@@ -2591,6 +2805,15 @@ html, body {
             <div id="layer-cache-usage">—</div>
             <button id="btn-cache-clear" onclick="clearTileCache()">タイルキャッシュを削除</button>
             <div id="layer-cache-note">一度表示した範囲は自動で保存され、圏外でも表示できる。</div>
+          </div>
+          <div class="layer-section-title">山域の保存（圏外用）</div>
+          <div id="layer-areas"></div>
+          <div id="layer-areas-note">お気に入りの地点を中心に、地形（CS立体図風・風の当たり方の元）と標準地図を前もって保存する。自動では消えない。電波のよい所で。
+            ⚠ 圏外の下地は標準地図の z16 まで（それより寄ると下地が出ないことがある）。淡色地図・写真は保存しない。</div>
+          <div class="layer-section-title">地図を開いた回数（この端末）</div>
+          <div id="layer-opens">
+            <div id="layer-map-opens">—</div>
+            <div id="layer-opens-note">この端末の中だけで数え、外へは送らない。Google マップを下地にした場合の費用の見当に使う（課金の回数とぴったりは一致しない目安）。</div>
           </div>
         </div>
       </div>
@@ -3076,7 +3299,10 @@ function wxStampText(at) {
      次に本当に古いものを出したときに気づけない。
    ⚠ **距離を必ず添える。** 完全一致でない地点のものを黙って出すのがいちばん危ない
      （GPSは毎回わずかに違う座標を返すので、現在地はまず完全一致しない）。 */
-function setWxSource(info) {
+/* extra（#227・v4.182.0）：'fetching' … 通信は続いている（弱電波で 6 秒待って控えを先に出した）。
+   function … 新しいデータが届いた。帯に「押すと更新」を出し、押したらそれを呼ぶ。
+   ⚠ 届いても**勝手に描き直さない**（判定が後から覆るのを避ける・ADR-0006 と同じ考え）。利用者が押して初めて替える */
+function setWxSource(info, extra) {
   const el = document.getElementById('offline-note');
   if (!el) return;
   if (!info) { el.className = ''; el.textContent = ''; return; }
@@ -3090,7 +3316,13 @@ function setWxSource(info) {
   }
   el.className = 'on';
   el.textContent = `📴 保存データを表示中　${wxStampText(rec.at)}取得（${wxAgeText(ageMs)}）／${where}`
-    + (km >= 0.2 ? `（${km.toFixed(1)}km先）` : '');
+    + (km >= 0.2 ? `（${km.toFixed(1)}km先）` : '') + (extra === 'fetching' ? '　通信を続けています…' : '');
+  if (typeof extra === 'function') {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wx-fresh-btn'; b.textContent = '新しいデータがあります。押すと更新';
+    b.onclick = extra;
+    el.append(' ', b);
+  }
 }
 
 /* ============================================================
@@ -3177,6 +3409,9 @@ let modelSwitching = false;
 async function switchModel(key) {
   closeModelSheet();
   if (!FORECAST_MODELS[key] || modelSwitching) return;
+  /* ⚠ 地点の取得（通常）の最中は切り替えない（#227）。切り替えの取得が通常の取得を追い越して失敗すると、
+     state.lat は前の地点のまま・地点名は新しい地点のまま画面が残る（新しい地点が二度と描かれない） */
+  if (wxNormalBusy) { showModelNote('予報を取得中です。取れてから切り替えてください'); return; }
   const shown = FORECAST_MODELS[state.dataModel] ? state.dataModel : DEFAULT_MODEL;
   if (key === shown && key === state.model) return;      // すでにそのモデルを見ている
   const prev = state.model;
@@ -3199,8 +3434,20 @@ async function switchModel(key) {
 /* 予報の取得。opts.strict … モデルを切り替えたときの取得（B-3）。
    失敗したら**画面のデータには触らずに例外を投げる**（呼び手が理由を出す）。従来の「控えを出す」は使わない
    （選んだモデルの控えではなく、直前に見ていたデータをそのまま残すため）。戻り値は成功で true */
+/* 弱電波（#227・v4.182.0）：通常の取得は WX_SOFT_MS 待っても返らなければ、24時間以内の控えを先に出し、通信は続ける。
+   届いた新しいデータは勝手に描き直さず、帯の「押すと更新」で替える（判定が後から覆らない）。
+   strict（モデル切り替え）は WX_HARD_MS で打ち切る（控えは出さない）。
+   ⚠ wxReqSeq：後から別の取得が始まったら、古い取得は画面に触らない（控えへの保存だけする）。
+     strict が追い越されたときは例外を投げない（switchModel が「失敗」と言ってモデルを戻してしまう） */
+const WX_SOFT_MS = 6000, WX_HARD_MS = 30000;
+let wxReqSeq = 0, wxNormalBusy = 0;   // wxNormalBusy＝取得中の通常の取得の番号（0＝無し。switchModel が見る）
 async function fetchWeather(lat, lon, opts) {
   const strict = !!(opts && opts.strict);
+  const seq = ++wxReqSeq, current = () => seq === wxReqSeq;
+  if (!strict) wxNormalBusy = seq;
+  // 前の取得の「押すと更新」は、新しい取得が始まったら外す（押しても何もしないボタンを残さない）
+  const oldBtn = document.querySelector('#offline-note .wx-fresh-btn');
+  if (oldBtn) oldBtn.remove();
   showLoading(strict ? `${forecastModel(state.model).label} を取得中…` : '気象データ取得中…');
   /* ⚠ **この要求の地点名を、awaitを挟む前に写し取る。**
      呼び出し側はどれも fetchWeather の前に `state.locationName` を入れている。
@@ -3220,17 +3467,53 @@ async function fetchWeather(lat, lon, opts) {
   const lvVars = windInterpLevels()
     .map(hPa => `wind_speed_${hPa}hPa,wind_direction_${hPa}hPa,geopotential_height_${hPa}hPa`).join(',');
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation,snowfall,surface_pressure,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,cloudcover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,${lvVars}&daily=sunrise,sunset&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=3&forecast_days=9&models=${fm.id}`;
+  // 控えを画面に出す（通信の失敗・弱電波の両方から使う）
+  const showHit = (hit, extra) => {
+    // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
+    //   あとから出すと帯のぶんの高さがチャートに入らず、下端が隠れる
+    setWxSource(hit, extra);
+    applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon, reqModel);
+    // ⚠ 補助データも**描画が走る前に**混ぜる。あとから混ぜると
+    //   突風の目盛りと右軸だけが一拍遅れて動く
+    if (hit.rec.sup) { try { applySupplemental(hit.rec.sup, false); } catch (e2) { /* 任意 */ } }
+  };
+  let settled = false, shown = null, soft = null;
+  const ctl = strict ? new AbortController() : null;
+  const hard = strict ? setTimeout(() => ctl.abort(), WX_HARD_MS) : null;
+  if (!strict) soft = setTimeout(async () => {
+    if (settled || !current()) return;
+    const hit = await loadWxCache(lat, lon, reqModel);
+    // ⚠ 控えを読む間に通信が返った・別の取得が始まったなら出さない（新しいものを控えで上書きしない）
+    if (settled || !current() || !hit || hit.ageMs > WX_MAX_AGE_MS) return;
+    shown = hit;
+    showHit(hit, 'fetching');
+  }, WX_SOFT_MS);
   try {
     // 山頂標高（地理院DEM）は**判定の入力**なので、気象データと一緒に待つ。
     // 先に判定を出してから覆ると、安全に関わる表示が化ける（ADR-0006）
     const [res, dem] = await Promise.all([
-      fetch(url),
+      fetch(url, ctl ? { signal: ctl.signal } : undefined),
       fetchPointElevation(lat, lon).catch(() => null),
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     // strict：中身が空の応答（そのモデルがこの地点を返さない等）も失敗として扱う
     if (strict && !weatherJsonUsable(json)) throw new Error('データが空でした');
+    settled = true; clearTimeout(soft); clearTimeout(hard);
+    if (wxNormalBusy === seq) wxNormalBusy = 0;
+    // 追い越された・控えを先に出していた：画面はそのまま、控えにだけ入れる
+    if (!current() || shown) {
+      await saveWxCache(lat, lon, json, dem, reqName, reqModel);
+      if (!current()) return false;
+      // 届いた。押したら替える（その間に別の取得が始まっていたら何もしない）
+      setWxSource(shown, () => {
+        if (!current()) return;
+        setWxSource(null);
+        applyWeatherJson(json, dem, lat, lon, reqModel);
+        fetchSupplemental(lat, lon, reqModel);
+      });
+      return true;
+    }
     setWxSource(null);                           // 通信で取れた＝帯は消す
     applyWeatherJson(json, dem, lat, lon, reqModel);
     // 圏外で出せるように控える（失敗しても無視）。
@@ -3241,17 +3524,20 @@ async function fetchWeather(lat, lon, opts) {
     fetchSupplemental(lat, lon, reqModel);
     return true;
   } catch (e) {
-    if (strict) { hideLoading(); throw e; }      // 画面は直前のまま。理由は呼び手が出す
+    settled = true; clearTimeout(soft); clearTimeout(hard);
+    if (wxNormalBusy === seq) wxNormalBusy = 0;
+    if (!current()) return false;                // 追い越された：新しい画面に触らない（strict も投げない）
+    if (strict) {
+      hideLoading();
+      throw (e && e.name === 'AbortError') ? new Error(`${WX_HARD_MS / 1000}秒たっても返りませんでした`) : e;   // 画面は直前のまま。理由は呼び手が出す
+    }
+    // 控えを先に出していた：そのまま（「通信を続けています」だけ消す）
+    if (shown) { setWxSource(shown); return; }
     // 通信できない／APIが不調。控えてあるものがあれば出す（無ければ従来どおり諦める）
     const hit = await loadWxCache(lat, lon, reqModel);
+    if (!current()) return false;
     if (hit && hit.ageMs <= WX_MAX_AGE_MS) {
-      // ⚠ **帯を先に出す。** applyWeatherJson は rAF で描画を予約するので、
-      //   あとから出すと帯のぶんの高さがチャートに入らず、下端が隠れる
-      setWxSource(hit);
-      applyWeatherJson(hit.rec.json, hit.rec.dem, lat, lon, reqModel);
-      // ⚠ 補助データも**描画が走る前に**混ぜる。あとから混ぜると
-      //   突風の目盛りと右軸だけが一拍遅れて動く
-      if (hit.rec.sup) { try { applySupplemental(hit.rec.sup, false); } catch (e2) { /* 任意 */ } }
+      showHit(hit);
       return;
     }
     hideLoading();
@@ -3935,6 +4221,11 @@ function updateFavStar() {
   btn.classList.toggle('on', on);
 }
 
+/* ダイヤル（円柱）・🏠／🏥で地点を選んだときに寄る倍率（#216）。家の並びと道が読める程度。
+   z16 は 390px 幅で縮尺の棒が 200 m（z14 で 1 km）。すでにそれより拡大していれば縮めない。
+   v4.170.0 は 14 だったが、実機で「まだ広い」（利用者・2026-10-11。縮尺 200 m の画面を指定）
+   ⚠ 地図を初めて開いたときの z10 は変えない（山域の位置関係を見るのに使う） */
+const FAV_GO_ZOOM = 16;
 // 地点選択（現在地点と同じなら正面合わせのみ、違えば天気取得）
 function selectFav(lat, lon, name) {
   state.summitElev = null;      // お気に入りは標高を持たない。DEMに任せる
@@ -3943,7 +4234,7 @@ function selectFav(lat, lon, name) {
   state.lon = lon;
   state.locationName = name;
   // 地図を見ている最中なら、その地点へなめらかに寄る（一瞬で飛ばさない）
-  if (isMapOpen()) { releaseFollow(); setPickedName(name); mapFlyTo(lat, lon); }
+  if (isMapOpen()) { releaseFollow(); setPickedName(name); mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : FAV_GO_ZOOM, FAV_GO_ZOOM)); }
   fetchWeather(lat, lon);
 }
 
@@ -6566,11 +6857,11 @@ const MAP_ZOOM_MAX = 18;   // 地理院のオーバーレイに合わせて18で
 /* ベースマップ（排他選択）。maxNativeZoom を超えた分はオーバーズームで引き伸ばす */
 const MAP_BASES = [
   { id: 'std',   name: '標準地図',        url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
-    minNativeZoom: 5, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#eae6dc' },
+    minNativeZoom: 5, maxNativeZoom: 18, attribution: '地理院タイル', swatch: '#eae6dc' },
   { id: 'pale',  name: '淡色地図',        url: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
-    minNativeZoom: 5, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#f2f0ea' },
+    minNativeZoom: 5, maxNativeZoom: 18, attribution: '地理院タイル', swatch: '#f2f0ea' },
   { id: 'photo', name: '航空写真',        url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',
-    minNativeZoom: 2, maxNativeZoom: 18, attribution: '国土地理院', swatch: '#4d6640' },
+    minNativeZoom: 2, maxNativeZoom: 18, attribution: '地理院タイル', swatch: '#4d6640' },
   { id: 'osm',   name: 'OpenStreetMap',  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     minNativeZoom: 0, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors', swatch: '#e8e2d8' },
   // EsriだけURLのタイル座標順が {z}/{y}/{x}（xとyが逆）
@@ -6579,6 +6870,10 @@ const MAP_BASES = [
 ];
 const MAP_BASE_DEFAULT = 'pale';   // オーバーレイの下地として最も見やすい
 
+/* 栃木県の森林資源データの出典（CS立体図・CIマップで共通。同じ文字列なので出典欄では1つにまとまる）。
+   規約（航空レーザ計測に基づく森林資源データの利用規約）の記載例「…を加工して作成」に合わせる */
+const TOCHIGI_CREDIT = '栃木県森林資源データ（2021〜2022年度計測）を加工して作成';
+
 /* オーバーレイ（複数同時可）。opacityは既定の透過率 */
 const MAP_OVERLAYS = [
   /* 山域・百名山（areas.json から描く。タイルではないので配信元も利用条件も無い）。
@@ -6586,15 +6881,20 @@ const MAP_OVERLAYS = [
      ここで描くのは**ランキングの評価単位そのもの**なので、地図と一覧が必ず一致する。 */
   { id: 'areas', name: '山域・百名山', kind: 'areas', opacity: 0.45,
     note: '山域の範囲と百名山。ランキングを開いた後は判定の色になる' },
+  /* 施設（OSM・#199）。data/poi.json（scripts/buildPoi.mjs で前もって取り出したもの）から描く。
+     出典は updateMapAttribution が poiAttribution() で組み立てる（取り出した日を添える） */
+  { id: 'poi', name: '施設（OSM）', kind: 'poi', opacity: 0.9,
+    attribution: '© OpenStreetMap contributors（ODbL）',
+    note: '登山口・駐車場・山小屋・トイレ・水場・温泉・店。z11 から' },
   { id: 'rrimLike',  name: '赤色立体図風', composite: true, opacity: 0.70,
-    minNativeZoom: 3, maxNativeZoom: 15, attribution: '国土地理院（陰影起伏図・傾斜量図）',
+    minNativeZoom: 3, maxNativeZoom: 15, attribution: '地理院タイル（陰影起伏図・傾斜量図）',
     note: '陰影起伏図に傾斜量図を乗算合成' },
   { id: 'slope',     name: '傾斜量図',     url: 'https://cyberjapandata.gsi.go.jp/xyz/slopemap/{z}/{x}/{y}.png',
-    minNativeZoom: 3, maxNativeZoom: 15, opacity: 0.50, attribution: '国土地理院' },
+    minNativeZoom: 3, maxNativeZoom: 15, opacity: 0.50, attribution: '地理院タイル' },
   { id: 'hillshade', name: '陰影起伏図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png',
-    minNativeZoom: 2, maxNativeZoom: 16, opacity: 0.50, attribution: '国土地理院' },
+    minNativeZoom: 2, maxNativeZoom: 16, opacity: 0.50, attribution: '地理院タイル' },
   { id: 'relief',    name: '色別標高図',   url: 'https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png',
-    minNativeZoom: 5, maxNativeZoom: 15, opacity: 0.40, attribution: '国土地理院' },
+    minNativeZoom: 5, maxNativeZoom: 15, opacity: 0.40, attribution: '地理院タイル' },
   /* CS立体図（曲率＋傾斜＋陰影の合成。長野県林業総合センター 戸田堅一郎氏の考案）。
      ⚠**地理院ではなく第三者の配信を見に行く。URLも利用条件も未確認**なので
      unverified にしてある。タイルが取れなければパネルに理由が出る。
@@ -6609,20 +6909,61 @@ const MAP_OVERLAYS = [
     minNativeZoom: 4, maxNativeZoom: 17, opacity: 0.75,
     attribution: 'エコリス地図タイル（CS立体図）', unverified: true, mayBeEmpty: true,
     note: '曲率＋傾斜＋陰影の合成。配信範囲が限られている可能性あり' },
+  /* CS立体図（栃木県）：G空間情報センター「栃木県『微地形図（CS立体図）』」（csmap_tochigi）の XYZ（#112）。
+     規約は「栃木県 航空レーザ計測に基づく森林資源データの利用規約」（CC BY 4.0 互換・商用可）。
+     出典を書き、透過・重ね方を変えて見せるので「加工して作成」も書く（利用者の決定・2026-10-10）。
+     ⚠ 配信は栃木県内だけ。県外は群馬側が 403、福島側が透明の 200（Actions で確認）。
+       bounds（県を囲む長方形・データ範囲図とは未照合）で外のタイルを取りに行かず、
+       長方形の中の県外で出る 403 は partialCoverage で「失敗」にしない */
+  { id: 'csmapTochigi', name: 'CS立体図（栃木県）',
+    url: 'https://rinya-tochigi.geospatial.jp/2023/rinya/tile/csmap/{z}/{x}/{y}.png',
+    minNativeZoom: 8, maxNativeZoom: 18, opacity: 0.75,
+    bounds: [[36.15, 139.28], [37.20, 140.34]],
+    mayBeEmpty: true, partialCoverage: true,
+    attribution: TOCHIGI_CREDIT,
+    note: '栃木県内だけ。尾根＝赤・谷＝青・急斜面＝暗い' },
+  /* CIマップ（栃木県）（#202）：栃木県の標高タイル（Terrain-RGB・dem05_tochigi）から、端末の中で
+     収束度（Convergence Index）を計算して描く。図法と名称「CIマップ」は考案論文による（書誌は about）。
+     出典欄は短く「CIマップ（上原ほか）」と栃木県の加工の旨。
+     ⚠ iPhone では1タイル約1.2秒（試作の実測）。計算は Web Worker（使えなければメインで1枚ずつ譲る）。
+     ⚠ 計算は z13〜16（minZoom・maxNativeZoom）。z12 以下は「拡大すると表示」、z17 以上は z16 を引き伸ばす。
+     ⚠ 県外・東部の平地は描かない（地理院の標高でつながない。つなぎ目に偽の尾根・谷が出る） */
+  { id: 'ciMapTochigi', name: 'CIマップ（栃木県）', kind: 'ciMap', opacity: 0.75,
+    minZoom: 13, maxNativeZoom: 16,
+    bounds: [[36.15, 139.28], [37.20, 140.34]],
+    mayBeEmpty: true, partialCoverage: true,
+    attribution: ['CIマップ（上原ほか）', TOCHIGI_CREDIT],
+    note: '栃木県内・z13 から。尾根（発散）＝赤・谷（収束）＝青' },
+  /* CS立体図風（全国）（v4.176.0・ADR-0018）：地理院の標高タイル（DEM5A 5m／無い所は DEM10B 10m）から、端末で
+     曲率と傾斜を計算して描く。本物の CS立体図（航空レーザー 0.5〜1m から作る）ではないので「風」。
+     出典は持たない（「地理院タイル（標高タイル）を加工して作成」は出典欄が常に1回出している）。
+     ⚠ 計算は z12〜17（minZoom・maxNativeZoom）。z16〜17 は DEM1A（1m）が9枚とも欠け無くあるときだけ 1m、
+       無ければ z15 を引き伸ばす（ADR-0020）。z18 は z17 を引き伸ばす */
+  /* ⚠ スライダーは「濃さ」（strength・v4.181.0）：0〜50% は透過率 0〜100%、50〜100% は不透明のまま色を濃くする（csStrength） */
+  { id: 'csLike', name: 'CS立体図風（全国）', kind: 'demRelief', opacity: 0.5, strength: true,
+    minZoom: 12, maxNativeZoom: 17,
+    mayBeEmpty: true, partialCoverage: true,   // 海の上など両方とも配信の無い所（404）を赤い失敗にしない
+    note: 'z12 から。谷＝青・尾根＝赤・急斜面＝暗い。端末で計算（5m、無い所は 10m。z16 から配信のある所は 1m）。一度見た範囲は圏外でも出る。スライダーは濃さ（50% で不透明、それより上は色を濃く）' },
+  /* 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md）：細かい地形 × 風向で、風上の地形の仰角 Sx を塗る。
+     風速は出さない。風向は選択地点の判定の風（自動）か16方位。⚠ 計算は z13〜15。z16 以上は z15 を引き伸ばす */
+  { id: 'windExp', name: '風の当たり方', kind: 'windExp', opacity: 0.75,
+    minZoom: 13, maxNativeZoom: 15,
+    mayBeEmpty: true, partialCoverage: true,
+    note: 'z13 から。風が当たる＝橙・風の陰＝青（風速ではない）。端末で計算（5m、無い所は 10m）' },
   { id: 'gazo1', name: '過去空中写真1', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo2', name: '過去空中写真2', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo2/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo3', name: '過去空中写真3', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo3/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   { id: 'gazo4', name: '過去空中写真4', url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo4/{z}/{x}/{y}.jpg',
-    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '国土地理院', note: '地域により配信なし' },
+    minNativeZoom: 10, maxNativeZoom: 17, opacity: 1.0, attribution: '地理院タイル', note: '地域により配信なし' },
   /* 火山土地条件図：要件定義 §11-1 の「実装前に要確認」がまだ確認できていない
      （開発環境から地理院に到達できずレイヤーIDと配信範囲を確かめられない）。
      推測でURLを書くと黙って壊れるので pending にしてUIに出していない。
      正しいIDが分かったら url と minNativeZoom/maxNativeZoom を埋めて pending を消すこと。 */
   { id: 'volcano', name: '火山土地条件図', url: null, pending: true,
-    minNativeZoom: 10, maxNativeZoom: 16, opacity: 0.60, attribution: '国土地理院' },
+    minNativeZoom: 10, maxNativeZoom: 16, opacity: 0.60, attribution: '地理院タイル' },
 ];
 // 赤色立体図風が使う2枚（単独トグルと同じURLを参照する）
 const RRIM_SHADE = 'hillshade';
@@ -6654,9 +6995,32 @@ function amedasDirDeg(i) { return (i >= 1 && i <= 16) ? i * 22.5 : null; }
 
 const MAP_LS_BASE = 'sotoki.map.baseLayer';
 const MAP_LS_OVERLAYS = 'sotoki.map.overlays';
+const MAP_LS_CS_STRENGTH = 'sotoki.map.csStrength';   // CS立体図風の「濃さ」への移し替えを済ませた印（v4.181.0）
 const MAP_LS_AMEDAS_EL = 'sotoki.map.amedasElement';
 const MAP_LS_WIND_MODE = 'sotoki.map.windMode';   // 風の場：AUTO／手動の層（高度別の風の場）
 const MAP_LS_SAT_BAND = 'sotoki.map.satBand';
+const MAP_LS_OPENS = 'sotoki.map.openCount';    // 地図画面を開いた回数（#210 段階0）：{ since, days: { 'YYYY-MM-DD': 回数 } }
+const MAP_LS_BLEND = 'sotoki.map.blend';           // 地形図ごとの重ね方（#194）：{ id: 'normal'|'multiply'|'screen' }
+/* レイヤーパネルの並びと、一覧から隠した項目（#205 段階1）。⚠ **一覧の見た目だけ。** 重ね順（mapPrefs.overlays の配列順）には使わない */
+const MAP_LS_LAYER_ORDER = 'sotoki.map.layerOrder';       // { bases: [id], overlays: [id], weather: [id] }
+const MAP_LS_LAYER_HIDDEN = 'sotoki.map.layerHiddenIds';  // [id]（利用者が隠した項目。定義表の hidden＝予備の層 とは別物）
+const MAP_LS_BASE_OPACITY = 'sotoki.map.baseOpacity';     // 下地ごとの透過率（#211）：{ baseId: 0〜1 }。無ければ 1
+const LAYER_SECTIONS = ['bases', 'overlays', 'weather'];
+const MAP_BLEND_MODES = [{ id: 'normal', name: '通常' }, { id: 'multiply', name: '乗算' }, { id: 'screen', name: 'スクリーン' }];
+/* 重ね方を選べる地形図。通常の地形図（def.url の単純なタイル）だけ。
+   赤色立体図風（composite）・時刻つき・点で描くものは、今の合成のまま触らない。 */
+const MAP_BLEND_KINDS_EXCLUDED = ['jmaNowcast', 'jmaSat', 'amedas', 'windArrows', 'snowHint', 'thunderHint', 'windFlow', 'windFlowGL', 'areas', 'poi'];
+/* 重ね方を選べるタイル系（#194・v4.164.0）。値は「どの pane（合成の箱）に掛けるか」。
+   赤色立体図風は傾斜量図の pane（乗算が既定）。雨雲と雷は別々の箱。衛星は輝度→透明度で抜く方式のため対象外。 */
+const BLEND_HOST = { rrimLike: 'rrimSlope', radar: 'mapNowcastMask', thunder: 'mapThunderMask' };
+const BLEND_DEFAULT = { rrimLike: 'multiply' };
+function isBlendable(def) {
+  if (!def) return false;
+  if (BLEND_HOST[def.id]) return true;
+  if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp' || def.kind === 'windDown') return true;   // 自前で描くタイル（#202・CS立体図風・風の当たり方）。pane に重ね方を掛けられる・風の強さ（地形）は画像1枚
+  return !!def.url && !def.composite && !MAP_BLEND_KINDS_EXCLUDED.includes(def.kind);
+}
+function blendOf(id) { return (mapPrefs.blend && mapPrefs.blend[id]) || BLEND_DEFAULT[id] || 'normal'; }
 
 /* 気象を重ねるレイヤー（地形図とは別枠。時間で中身が変わるのでキャッシュしない）
 
@@ -6765,18 +7129,23 @@ const MAP_WEATHER = [
   /* ⚠ v4.141.0（ADR-0014）から Canvas 版は**予備**。レイヤー一覧には出さない（hidden）。WebGL が使えない端末で windFlowGL の代わりに流す。
      前の版で windFlow を入れていた人は、読み込み時に windFlowGL へ移す（loadMapPrefs） */
   { id: 'windFlow', name: '風の流れ（Canvas・予備）', kind: 'windFlow', opacity: 0.9, hidden: true,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。AUTO／層の切り替えは風向風速と共通' },
+    attribution: 'Open-Meteo', note: '選択時刻の風を粒子で流す。AUTO／層の切り替えは風向風速と共通' },
   /* 風の流れ（WebGL）。v4.120.0 の PoC（ADR-0013）を v4.141.0 で正式に（ADR-0014）。矢印と**同じ場**を WebGL で描く。
      設定（色・補正・高さ・粒・背景・計測表示）はこの行の下に出す（windFlowSettings）。WebGL が使えなければ Canvas 版で流す */
   { id: 'windFlowGL', name: '風の流れ', kind: 'windFlowGL', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風を粒子で流す。パン・ズーム中も流れる。AUTO／層の切り替えは風向風速と共通' },
+    attribution: 'Open-Meteo', note: '選択時刻の風を粒子で流す。パン・ズーム中も流れる。AUTO／層の切り替えは風向風速と共通' },
   { id: 'windArrows', name: '風向風速', kind: 'windArrows', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
+    attribution: 'Open-Meteo', note: '選択時刻の風。AUTO は地形に合わせて高さを自動で選ぶ。矢印を押すと根拠' },
+  /* 風の強さ（地形）（v4.178.0・ADR-0019）：選択地点・選択時刻の判定の風を、WindNinja の倍率の表で地図の各点へ配る（推定）。
+     表のある山域だけ（WIND_TABLE_AREAS）。地理院の標高タイルの加工の表記は出典欄が常に1回出す */
+  { id: 'windDown', name: '風の強さ（地形）', kind: 'windDown', opacity: 0.7,
+    attribution: ['Open-Meteo', 'WindNinja（米国農務省林野局）で計算'],
+    note: '推定。選択地点に近い峰で判定の風と一致させ、地形の倍率で配る（谷川・上越国境だけ）。色は風の流れと同じ m/s' },
   /* 降雪の目安（段階2・#131）。風の矢印と同じ格子点に、選択時刻の雨・みぞれ・雪の記号を置く。
      ⚠ 予報モデルの値であって観測ではない。判定（ABC評価）でもない（閾値は SNOW_HINT・仮置き）。
      説明は「降雪の目安」の節（drawSnowHint の上） */
   { id: 'snowHint', name: '降雪の目安', kind: 'snowHint', opacity: 0.9,
-    attribution: 'Open-Meteo・国土地理院（地形）', note: '選択時刻の雨・みぞれ・雪の目安（予報モデルの値。観測ではありません）。記号を押すと根拠' },
+    attribution: 'Open-Meteo', note: '選択時刻の雨・みぞれ・雪の目安（予報モデルの値。観測ではありません）。記号を押すと根拠' },
   /* 雷雨の目安（段階3・#138）。風の矢印と同じ格子点に、ショワルター安定指数（SSI）が不安定側の点だけ記号を置く。
      ⚠ 予報モデルの値であって観測ではない。雷ナウキャスト（観測）の代わりではない。説明は「雷雨の目安」の節 */
   { id: 'thunderHint', name: '雷雨の目安', kind: 'thunderHint', opacity: 0.9,
@@ -6791,6 +7160,48 @@ function findOverlay(id) {
 function usableOverlays() { return MAP_OVERLAYS.filter(o => !o.pending); }
 function usableWeather() { return MAP_WEATHER.filter(o => !o.pending); }
 
+/* パネルの区分ごとに出しうる項目（定義表の順）。pending（URL未確認）と hidden（予備の層）は利用者に見えないので含めない */
+function layerSectionDefs(sec) {
+  if (sec === 'bases') return MAP_BASES;
+  if (sec === 'overlays') return usableOverlays();
+  if (sec === 'weather') return usableWeather().filter(o => !o.hidden);
+  return [];
+}
+/* 保存した順に並べる。保存に無い項目（版で足されたレイヤー）は定義表の順で末尾に足す。
+   知らない id・重複は黙って捨てる。ids が配列でなければ定義表の順のまま */
+function orderLayers(defs, ids) {
+  const byId = new Map(defs.map(d => [d.id, d]));
+  const out = [];
+  const seen = new Set();
+  if (Array.isArray(ids)) {
+    for (const id of ids) {
+      if (typeof id !== 'string' || seen.has(id) || !byId.has(id)) continue;
+      seen.add(id);
+      out.push(byId.get(id));
+    }
+  }
+  for (const d of defs) if (!seen.has(d.id)) out.push(d);
+  return out;
+}
+// 保存値を区分ごとの id の並びに直す（知らない区分・知らない id・重複は捨てる）
+function sanitizeLayerOrder(raw) {
+  const order = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return order;
+  for (const sec of LAYER_SECTIONS) {
+    if (!Array.isArray(raw[sec])) continue;
+    const ids = orderLayers(layerSectionDefs(sec), raw[sec]).map(d => d.id);
+    // 保存に無い項目まで書き足すと「版で足した項目は末尾」が固定されてしまうので、保存にあった分だけ残す
+    const keep = new Set(raw[sec]);
+    order[sec] = ids.filter(id => keep.has(id));
+  }
+  return order;
+}
+function sanitizeLayerHiddenIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const known = new Set(LAYER_SECTIONS.flatMap(sec => layerSectionDefs(sec).map(d => d.id)));
+  return [...new Set(raw.filter(id => typeof id === 'string' && known.has(id)))];
+}
+
 /* ------ 永続化（不正値はデフォルトへ落とす） ------ */
 function loadMapPrefs() {
   let base = MAP_BASE_DEFAULT;
@@ -6801,14 +7212,22 @@ function loadMapPrefs() {
   const overlays = [];
   try {
     const raw = JSON.parse(localStorage.getItem(MAP_LS_OVERLAYS) || '[]');
+    const migrate = localStorage.getItem(MAP_LS_CS_STRENGTH) !== '1';
     if (Array.isArray(raw)) {
       for (const item of raw) {
         if (!item || typeof item !== 'object') continue;
         const def = findOverlay(item.id);
         if (!def || def.pending) continue;                 // 未知ID・未確認レイヤーは捨てる
         const o = Number(item.opacity);
-        overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? o : def.opacity });
+        // ⚠ 濃さへの移し替え（下）は正常な値だけ。既定（新しい尺度）へ戻した値は半分にしない
+        overlays.push({ id: def.id, opacity: (o >= 0 && o <= 1) ? (migrate && def.strength ? o / 2 : o) : def.opacity });
       }
+    }
+    /* v4.181.0：CS立体図風のスライダーを「濃さ」にした（50% で今までの 100%）。覚えていた値を一度だけ半分にして（上の migrate）、見え方を変えない。
+       ⚠ 印を立てるときに overlays も書き戻す（印だけ立って値が戻らないと、次の起動で濃さが倍になる） */
+    if (migrate) {
+      localStorage.setItem(MAP_LS_OVERLAYS, JSON.stringify(overlays));
+      localStorage.setItem(MAP_LS_CS_STRENGTH, '1');
     }
     // v4.141.0：Canvas 版の「風の流れ」は予備になった（一覧に出ない）。入れていた人は WebGL 版へ移す
     const wf = overlays.findIndex(x => x.id === 'windFlow');
@@ -6817,6 +7236,16 @@ function loadMapPrefs() {
       else overlays[wf] = { id: 'windFlowGL', opacity: overlays[wf].opacity };
     }
   } catch (e) { /* 壊れていたらオーバーレイなし */ }
+  const blend = {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_BLEND) || '{}');
+    if (raw && typeof raw === 'object') {
+      for (const id of Object.keys(raw)) {
+        const def = findOverlay(id);
+        if (isBlendable(def) && MAP_BLEND_MODES.some(m => m.id === raw[id])) blend[id] = raw[id];
+      }
+    }
+  } catch (e) { /* 読めなければ通常 */ }
   let amedasElement = AMEDAS_ELEMENT_DEFAULT;
   try {
     const raw = localStorage.getItem(MAP_LS_AMEDAS_EL);
@@ -6833,7 +7262,26 @@ function loadMapPrefs() {
     const raw = localStorage.getItem(MAP_LS_WIND_MODE);
     if (raw && WIND_FIELD_MODES.some(m => m.id === raw)) windMode = raw;
   } catch (e) { /* 読めなければ既定 */ }
-  return { base, overlays, amedasElement, satBand, windMode };
+  let layerOrder = {};
+  try { layerOrder = sanitizeLayerOrder(JSON.parse(localStorage.getItem(MAP_LS_LAYER_ORDER) || '{}')); }
+  catch (e) { /* 壊れていたら定義表の順 */ }
+  let layerHiddenIds = [];
+  try { layerHiddenIds = sanitizeLayerHiddenIds(JSON.parse(localStorage.getItem(MAP_LS_LAYER_HIDDEN) || '[]')); }
+  catch (e) { /* 壊れていたら隠さない */ }
+  // 下地ごとの透過率（#211）。⚠ Number() で読まない（null・"" が 0 になり、黙って下地が消える）
+  const baseOpacity = {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_BASE_OPACITY) || '{}');
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const id of Object.keys(raw)) {
+        const v = raw[id];
+        if (findBase(id) && typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) baseOpacity[id] = v;
+      }
+    }
+  } catch (e) { /* 読めなければ全部 100% */ }
+  // 選択中の下地は隠さない（排他選択なので、隠すと一覧に選択中の印が無くなる）
+  layerHiddenIds = layerHiddenIds.filter(id => id !== base);
+  return { base, overlays, amedasElement, satBand, windMode, blend, layerOrder, layerHiddenIds, baseOpacity };
 }
 function saveMapPrefs() {
   try {
@@ -6842,6 +7290,10 @@ function saveMapPrefs() {
     localStorage.setItem(MAP_LS_AMEDAS_EL, mapPrefs.amedasElement);
     localStorage.setItem(MAP_LS_SAT_BAND, mapPrefs.satBand);
     localStorage.setItem(MAP_LS_WIND_MODE, mapPrefs.windMode);
+    localStorage.setItem(MAP_LS_BLEND, JSON.stringify(mapPrefs.blend));
+    localStorage.setItem(MAP_LS_LAYER_ORDER, JSON.stringify(mapPrefs.layerOrder || {}));
+    localStorage.setItem(MAP_LS_LAYER_HIDDEN, JSON.stringify(mapPrefs.layerHiddenIds || []));
+    localStorage.setItem(MAP_LS_BASE_OPACITY, JSON.stringify(mapPrefs.baseOpacity || {}));
   } catch (e) { /* 保存できなくても地図は動く */ }
 }
 
@@ -6852,7 +7304,8 @@ let leafletMap = null;
 let leafletMarker = null;
 let mapPrefs = { base: MAP_BASE_DEFAULT, overlays: [], amedasElement: AMEDAS_ELEMENT_DEFAULT,
                  // ⚠ WIND_MODE_DEFAULT はこの下で定義する。ここで参照すると読み込み時に止まる（TDZ）
-                 satBand: SAT_BAND_DEFAULT, windMode: 'auto' };
+                 satBand: SAT_BAND_DEFAULT, windMode: 'auto', blend: {},
+                 layerOrder: {}, layerHiddenIds: [], baseOpacity: {} };
 let baseTileLayer = null;
 const overlayTileLayers = {};    // id -> TileLayer（rrimLikeは配列）
 
@@ -6864,15 +7317,41 @@ function tileOpts(def, extra) {
     minNativeZoom: def.minNativeZoom,
     maxNativeZoom: def.maxNativeZoom,
     crossOrigin: true,
+    // 配信が一部の地域だけのもの（CS立体図（栃木県））は、範囲の外のタイルを取りに行かない
+    ...(def.bounds ? { bounds: L.latLngBounds(def.bounds) } : {}),
   }, extra || {});
 }
 
+/* 下地の透過率（#211）。下地ごとに覚え、無ければ 1（いまと同じ）。0（下地なし）も許す。
+   薄くしたときの地は白で固定（#map に base-faded。Leaflet 既定の灰 #ddd の代わり）。
+   ⚠ 白は重ね方（mix-blend-mode）の混ざる範囲（.leaflet-map-pane）の外にある。それでも地形図が不透明な所は
+     「薄い下地＋白」に乗算したのと同じ色になる（透明な相手との混合は元の色、白との乗算も元の色）。
+     違うのは地形図自体が半透明な所だけ（実機で確認） */
+function baseOpacity(id) {
+  const v = (mapPrefs.baseOpacity || {})[id];
+  return (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) ? v : 1;
+}
+function paintBaseFaded() {
+  const el = document.getElementById('map');
+  if (el) el.classList.toggle('base-faded', baseOpacity(mapPrefs.base) < 1);
+}
+function setBaseOpacity(value) {
+  const v = Math.max(0, Math.min(1, Number(value)));
+  if (!isFinite(v)) return;
+  mapPrefs.baseOpacity = Object.assign({}, mapPrefs.baseOpacity, { [mapPrefs.base]: v });
+  saveMapPrefs();
+  if (baseTileLayer) baseTileLayer.setOpacity(v);
+  paintBaseFaded();
+  const label = document.getElementById('layer-base-op-val');
+  if (label) label.textContent = Math.round(v * 100) + '%';
+}
 function applyBaseLayer() {
   if (!leafletMap) return;
   if (baseTileLayer) { leafletMap.removeLayer(baseTileLayer); baseTileLayer = null; }
   const def = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT);
   clearLayerStatus(def.id);              // 貼り直したら前の失敗は持ち越さない
-  baseTileLayer = L.tileLayer(def.url, tileOpts(def)).addTo(leafletMap);
+  baseTileLayer = L.tileLayer(def.url, tileOpts(def, { opacity: baseOpacity(def.id) })).addTo(leafletMap);
+  paintBaseFaded();
   /* ⚠ **下地こそ見張る。** これまで watchTileStatus が付いておらず、地図そのものが
      取れていなくても誰も気づかなかった。帯や筋が出る原因として最初に疑う所（2026-09-19） */
   watchTileStatus(baseTileLayer, def);
@@ -6894,6 +7373,885 @@ function buildRrimLayers(opacity) {
   ];
 }
 
+/* ------ CIマップ（栃木県）（#202） ------
+   栃木県の標高タイル（Terrain-RGB）から収束度（Convergence Index）を計算して描く。試作は experiments/relief/viewer.html。
+   ⚠⚠ **下の計算の関数（ci* と decodeTochigiDem）は Worker にも fn.toString() で渡す。**
+      外の定数・ほかの関数を参照しないこと（Worker の中でだけ ReferenceError になる）。
+      定数は prm（CI_PRM）で渡す。呼んでよいのは CI_WORKER_FNS の中の関数だけ。
+   ⚠ 取得はメインスレッド（fetch → Service Worker のタイルキャッシュを確実に通す。圏外でも一度見た範囲は描ける）。
+      復号と計算は Worker。Worker か OffscreenCanvas が無い・壊れたら、メインで1枚ずつ譲りながら計算する。
+   ⚠ CI の符号：＋＝発散＝尾根（赤）、−＝収束＝谷（青）。 */
+const CI_TERRAIN_URL = 'https://rinya-tochigi.geospatial.jp/2023/rinya/tile/terrainRGB/{z}/{x}/{y}.png';
+const CI_PRM = { tile: 256, radM: 30, sigM: 1.5, fullPct: 20 };   // 半径 R=30m・下ならし 1.5m・満色 ±20%（試作の既定）
+const CI_ZOOM_NOTE = '拡大すると表示（z13 から）';
+/* 標高タイルの源（CIマップ #202 を一般化・CS立体図風 v4.176.0）。dec＝復号の方式、zmax＝配信の最大ズーム。
+   ⚠ 地理院の2つは同じホスト（sw.js の TILE_HOSTS にある＝一度見た範囲は圏外でも読める） */
+const DEM_SRC = {
+  tochigi: { url: CI_TERRAIN_URL, dec: 'tochigi', zmax: 18 },
+  gsi5a:  { url: 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png', dec: 'gsi', zmax: 15 },   // 5m・航空レーザー
+  gsi10b: { url: 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png', dec: 'gsi', zmax: 14 },     // 10m・全国
+  gsi1a:  { url: 'https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/{z}/{x}/{y}.png', dec: 'gsi', zmax: 17 },  // 1m・欠けが多い。CS立体図風の z16〜17 だけ（ADR-0020）
+};
+const CI_BLOB_MAX = 120;      // 標高タイルの Blob を覚えておく枚数（メイン側）
+const ciStats = { worker: 0, main: 0 };   // どちらの経路で何枚計算したか（検査用。Worker が黙って壊れていないかを見る）
+
+// 栃木の Terrain-RGB を標高（m）へ。標高＝−10000＋(R·65536＋G·256＋B)·0.1。A=0 は欠け（NaN）。全部欠けなら null
+function decodeTochigiDem(d, n) {
+  const out = new Float32Array(n * n); let valid = 0;
+  for (let i = 0, j = 0; i < out.length; i++, j += 4) {
+    if (d[j + 3] === 0) out[i] = NaN; else { out[i] = -10000 + (d[j] * 65536 + d[j + 1] * 256 + d[j + 2]) * 0.1; valid++; }
+  }
+  return valid ? out : null;
+}
+// 地理院の標高タイル（PNG）を標高（m）へ。x＝R·65536＋G·256＋B。x＝2^23 は欠け、x＞2^23 は (x−2^24)·0.01（負の標高）。全部欠けなら null
+function decodeGsiDem(d, n) {
+  const out = new Float32Array(n * n); let valid = 0;
+  for (let i = 0, j = 0; i < out.length; i++, j += 4) {
+    const x = d[j] * 65536 + d[j + 1] * 256 + d[j + 2];
+    if (x === 8388608) out[i] = NaN; else { out[i] = (x < 8388608 ? x : x - 16777216) * 0.01; valid++; }
+  }
+  return valid ? out : null;
+}
+// 欠け（NaN）を除いた重み付きのならし。中心が欠けなら NaN のまま
+function ciGaussBlur(a, W, s) {
+  const k = Math.ceil(3 * s), ker = new Float32Array(k + 1);
+  for (let i = 0; i <= k; i++) ker[i] = Math.exp(-(i * i) / (2 * s * s));
+  const N = W * W, num = new Float32Array(N), den = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const v = a[i]; if (v === v) { num[i] = v; den[i] = 1; } }
+  const n2 = new Float32Array(N), d2 = new Float32Array(N);
+  const pass = (sn, sd, dn, dd, horiz) => {
+    const st = horiz ? 1 : W, ls = horiz ? W : 1;
+    for (let l = 0; l < W; l++) {
+      const base = l * ls;
+      for (let p = 0; p < W; p++) {
+        let a1 = 0, a2 = 0;
+        const lo = Math.max(0, p - k), hi = Math.min(W - 1, p + k);
+        for (let m = lo; m <= hi; m++) { const w = ker[Math.abs(m - p)], i = base + m * st; a1 += w * sn[i]; a2 += w * sd[i]; }
+        dn[base + p * st] = a1; dd[base + p * st] = a2;
+      }
+    }
+  };
+  pass(num, den, n2, d2, true);
+  pass(n2, d2, num, den, false);
+  const out = new Float32Array(N);
+  for (let i = 0; i < N; i++) out[i] = a[i] === a[i] ? num[i] / den[i] : NaN;
+  return out;
+}
+function ciAcos(v) {   // Abramowitz-Stegun 4.4.45（acos の近似）
+  const a = v < 0 ? -v : v, r = Math.sqrt(1 - (a > 1 ? 1 : a)) * (1.5707288 + a * (-0.2121144 + a * (0.0742610 - a * 0.0187293)));
+  return v < 0 ? Math.PI - r : r;
+}
+// タイル (z, y) の中心の緯度での、1画素の地上距離（m）
+function ciMetersPerPx(z, y, n) {
+  const t = Math.PI - 2 * Math.PI * (y + 0.5) / 2 ** z, lat = Math.atan(Math.sinh(t));
+  return 40075016.686 * Math.cos(lat) / (n * 2 ** z);
+}
+// 余白（升目の数）：R＋3σ。隣の1周（n 升目）まで
+function ciMargin(px, prm) { return Math.min(prm.tile, Math.ceil((prm.radM + 3 * prm.sigM) / px) + 2); }
+// 周り9枚（並びは y=-1..1 × x=-1..1）を、余白 M を付けた (W×W) の格子にする。欠けは NaN
+function ciAssembleGrid(tiles, M, n) {
+  const W = n + 2 * M, grid = new Float32Array(W * W).fill(NaN);
+  for (let k = 0; k < 9; k++) {
+    const t = tiles[k]; if (!t) continue;
+    const ox = k % 3 - 1, oy = Math.floor(k / 3) - 1;
+    const x0 = ox < 0 ? n - M : 0, x1 = ox > 0 ? M : n, y0 = oy < 0 ? n - M : 0, y1 = oy > 0 ? M : n;
+    const gx0 = ox < 0 ? 0 : ox === 0 ? M : M + n, gy0 = oy < 0 ? 0 : oy === 0 ? M : M + n;
+    for (let y = y0; y < y1; y++) grid.set(t.subarray(y * n + x0, y * n + x1), (gy0 + y - y0) * W + gx0);
+  }
+  return grid;
+}
+// 格子 → n×n の RGBA。欠けの升目は透明
+function computeCiTile(grid, M, px, prm) {
+  const n = prm.tile, W = n + 2 * M, out = new Uint8ClampedArray(n * n * 4);
+  const s = prm.sigM / px, Zc = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
+  const ux = new Float32Array(W * W), uy = new Float32Array(W * W);
+  for (let y = 1; y < W - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x, gx = (Zc[i + 1] - Zc[i - 1]) / (2 * px), gy = (Zc[i + W] - Zc[i - W]) / (2 * px);
+    const g = Math.hypot(gx, gy);
+    if (g === g && g > 1e-6) { ux[i] = -gx / g; uy[i] = -gy / g; } else if (g !== g) ux[i] = NaN;
+  }
+  // 半径 R の中の見る点（4つの半径 × 16方向）。全升目を舐めると重すぎるので間引く
+  const Rc = Math.max(prm.radM / px, 1.5), offX = [], offY = [], offD = [], offR = [];
+  for (let r = 1; r <= 4; r++) for (let a = 0; a < 16; a++) {
+    const th = (a + (r % 2) * 0.5) * Math.PI / 8, rr = Rc * r / 4;
+    const dx = Math.round(rr * Math.cos(th)), dy = Math.round(rr * Math.sin(th));
+    if (!dx && !dy) continue;
+    offX.push(dx); offY.push(dy); offD.push(dy * W + dx); offR.push(1 / Math.hypot(dx, dy));
+  }
+  const RAD = 180 / Math.PI, GRAY = [232, 232, 232], RIDGE = [238, 82, 40], VALLEY = [36, 78, 224];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = (y + M) * W + (x + M), j = (y * n + x) * 4;
+    if (Zc[i] !== Zc[i] || ux[i] !== ux[i]) continue;
+    let sum = 0, cnt = 0;
+    for (let k = 0; k < offX.length; k++) {
+      const ii = i + offD[k], vx = ux[ii], vy = uy[ii];
+      if (vx !== vx) continue;
+      // 隣の升目の下り向きと、そこから中心へ向かう向きのなす角 θ（0°＝中心へ流れ込む）
+      const c = (vx * -offX[k] + vy * -offY[k]) * offR[k];
+      sum += vx === 0 && vy === 0 ? 90 : ciAcos(c) * RAD; cnt++;
+    }
+    if (!cnt) continue;
+    const ci = (sum / cnt - 90) / 0.9;   // −100〜+100 %
+    const t = Math.max(-1, Math.min(1, ci / prm.fullPct)), u = Math.abs(t), col = t >= 0 ? RIDGE : VALLEY;
+    out[j] = GRAY[0] + (col[0] - GRAY[0]) * u;
+    out[j + 1] = GRAY[1] + (col[1] - GRAY[1]) * u;
+    out[j + 2] = GRAY[2] + (col[2] - GRAY[2]) * u;
+    out[j + 3] = Math.round(255 * Math.max(0, Math.min(1, 0.2 + 1.1 * u)));
+  }
+  return out;
+}
+/* ------ CS立体図風（v4.176.0）：曲率（谷＝青・尾根＝赤）＋傾斜（急なほど暗い）。v4.179.0 までは試作 experiments/relief/viewer.html と同じ式、v4.180.0 で色を本物の CS立体図に寄せた ------
+   ⚠ これも Worker に toString で渡す（外の定数を見ない。prm＝CS_PRM を引数で） */
+// 余白（升目の数）：ならしの 3σ ＋ 隣の1升目
+function csMargin(px, prm) { return Math.min(prm.tile, Math.ceil(3 * prm.sigM / px) + 2); }
+// 格子 → n×n の RGBA。欠けの升目（自分か上下左右が NaN）は透明。
+// prm.whole（1m 用）なら、格子（余白込み＝計算に使う範囲）に欠けが1つでもあれば null（縁に偽の崖を出さない・ADR-0020）
+function computeCsTile(grid, M, px, prm) {
+  const n = prm.tile, W = n + 2 * M, out = new Uint8ClampedArray(n * n * 4);
+  if (prm.whole) for (let i = 0; i < grid.length; i++) if (grid[i] !== grid[i]) return null;
+  const s = prm.sigM / px, Z = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
+  // 色は本物の CS立体図に寄せる（v4.180.0）：地は白に近い灰、曲率の色は最大 70%、急な斜面は青みの灰へ寄せて暗くする
+  const RAD = 180 / Math.PI, GRAY = [245, 245, 245], RIDGE = [238, 82, 40], VALLEY = [36, 78, 224], SLOPE = [90, 105, 130];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = (y + M) * W + (x + M), j = (y * n + x) * 4, z0 = Z[i];
+    const e = Z[i + 1], w = Z[i - 1], no = Z[i - W], so = Z[i + W];
+    if (z0 !== z0 || e !== e || w !== w || no !== no || so !== so) continue;
+    // 曲率（ラプラシアン）：負＝凸＝尾根。傾斜（度）で暗くする
+    const lap = (e + w + no + so - 4 * z0) / (px * px), gx = (e - w) / (2 * px), gy = (so - no) / (2 * px);
+    const t = Math.max(-1, Math.min(1, -lap / prm.cs0)), u = (t < 0 ? -t : t) * 0.7, col = t >= 0 ? RIDGE : VALLEY;
+    const f = 1 - 0.6 * Math.min(1, Math.atan(Math.sqrt(gx * gx + gy * gy)) * RAD / 45);
+    out[j] = (GRAY[0] + (col[0] - GRAY[0]) * u) * (f + (1 - f) * SLOPE[0] / 255);
+    out[j + 1] = (GRAY[1] + (col[1] - GRAY[1]) * u) * (f + (1 - f) * SLOPE[1] / 255);
+    out[j + 2] = (GRAY[2] + (col[2] - GRAY[2]) * u) * (f + (1 - f) * SLOPE[2] / 255);
+    out[j + 3] = 255;
+  }
+  return out;
+}
+/* ------ 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md）：風上の地形の仰角 Sx（度）------
+   ⚠ これも Worker に toString で渡す（外の定数を見ない。prm＝{ tile, sigM, dmaxM, fromDeg } を引数で）
+   ⚠ 余白は ならしの 3σ ＋ 風上を見る距離 DMAX。csMargin（数 px）では縁から DMAX の帯で風上が欠け、タイルの継ぎ目が出る */
+function sxMargin(px, prm) { return Math.min(prm.tile, Math.ceil((prm.dmaxM + 3 * prm.sigM) / px) + 2); }
+/* 格子 → n×n の Sx（Float32・度）。式は terrainSx（粒子の遮蔽）と同じ：風上へ DMAX まで歩いた最大の見上げ角。
+   負＝風上が下がっている（風が当たる）、正＝風上に高まり（陰）。欠け・風上がすべて欠けは NaN。
+   fromDeg は**吹いてくる向き**（気象の表記・北風＝0°）。風上＝その向きへ歩く */
+function computeSxTile(grid, M, px, prm) {
+  const n = prm.tile, W = n + 2 * M, out = new Float32Array(n * n).fill(NaN);
+  const s = prm.sigM / px, Z = s < 0.6 ? grid : ciGaussBlur(grid, W, s);
+  const r = prm.fromDeg * Math.PI / 180, ux = Math.sin(r), uy = -Math.cos(r);   // 風上へ（東・南の成分）
+  const steps = Math.max(1, Math.round(prm.dmaxM / px)), RAD = 180 / Math.PI;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const h0 = Z[(y + M) * W + (x + M)];
+    if (h0 !== h0) continue;
+    let best = -Infinity;
+    for (let k = 1; k <= steps; k++) {
+      const fx = x + M + ux * k, fy = y + M + uy * k, ix = Math.floor(fx), iy = Math.floor(fy);
+      if (ix < 0 || iy < 0 || ix >= W - 1 || iy >= W - 1) break;
+      const tx = fx - ix, ty = fy - iy, i = iy * W + ix;
+      const h = (Z[i] * (1 - tx) + Z[i + 1] * tx) * (1 - ty) + (Z[i + W] * (1 - tx) + Z[i + W + 1] * tx) * ty;
+      if (h !== h) continue;
+      const a = (h - h0) / (k * px);
+      if (a > best) best = a;
+    }
+    if (best > -Infinity) out[y * n + x] = Math.atan(best) * RAD;
+  }
+  return out;
+}
+// Worker の本体（これも toString で渡す）。依頼は1枚ずつ順に処理し、取り消された依頼は飛ばす
+function ciWorkerMain() {
+  const cache = new Map(), MAX = 120, queue = []; let busy = false, cv = null, cx = null;
+  // ⚠ key には源の名前が入っている（ciTileKey）。同じ z/x/y でも源が違えば別の標高
+  async function dem(key, blob, dec) {
+    if (cache.has(key)) { const v = cache.get(key); cache.delete(key); cache.set(key, v); return v; }
+    const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+    if (!cv) { cv = new OffscreenCanvas(256, 256); cx = cv.getContext('2d', { willReadFrequently: true }); }
+    cx.clearRect(0, 0, 256, 256); cx.drawImage(bmp, 0, 0); bmp.close();
+    const d = cx.getImageData(0, 0, 256, 256).data;
+    const v = dec === 'gsi' ? decodeGsiDem(d, 256) : decodeTochigiDem(d, 256);
+    cache.set(key, v);
+    if (cache.size > MAX) cache.delete(cache.keys().next().value);
+    return v;
+  }
+  async function pump() {
+    if (busy) return; busy = true;
+    while (queue.length) {
+      const m = queue.shift();
+      try {
+        const t0 = performance.now();
+        const tiles = await Promise.all(m.keys.map((k, i) => m.blobs[i] ? dem(k, m.blobs[i], m.dec || 'tochigi') : null));
+        if (!tiles[4]) { self.postMessage({ id: m.id, empty: true }); continue; }
+        const t1 = performance.now(), cs = m.alg === 'cs', sx = m.alg === 'sx';
+        const M = sx ? sxMargin(m.px, m.prm) : cs ? csMargin(m.px, m.prm) : ciMargin(m.px, m.prm), grid = ciAssembleGrid(tiles, M, m.prm.tile);
+        const pix = sx ? computeSxTile(grid, M, m.px, m.prm) : cs ? computeCsTile(grid, M, m.px, m.prm) : computeCiTile(grid, M, m.px, m.prm);
+        if (!pix) { self.postMessage({ id: m.id, empty: true }); continue; }   // 1m の欠け（computeCsTile の whole）
+        self.postMessage({ id: m.id, pix, t: { decode: t1 - t0, compute: performance.now() - t1 } }, [pix.buffer]);
+      } catch (e) { self.postMessage({ id: m.id, error: String(e && e.message || e) }); }
+    }
+    busy = false;
+  }
+  self.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'cancel') { const i = queue.findIndex(q => q.id === m.id); if (i >= 0) { queue.splice(i, 1); self.postMessage({ id: m.id, cancelled: true }); } return; }
+    queue.push(m); pump();
+  };
+}
+const CI_WORKER_FNS = [decodeTochigiDem, decodeGsiDem, ciGaussBlur, ciAcos, ciMargin, csMargin, sxMargin, ciAssembleGrid, computeCiTile, computeCsTile, computeSxTile];
+
+let ciWorker = null, ciWorkerBroken = false, ciSeq = 0;
+const ciPending = new Map();   // id -> { resolve, reject }
+function getCiWorker() {
+  if (ciWorkerBroken) return null;
+  if (ciWorker) return ciWorker;
+  try {
+    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') throw new Error('unsupported');
+    const src = CI_WORKER_FNS.map(f => f.toString()).join('\n') + '\n(' + ciWorkerMain.toString() + ')();';
+    ciWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    ciWorker.onmessage = e => {
+      const m = e.data, p = ciPending.get(m.id);
+      if (!p) return;
+      ciPending.delete(m.id);
+      // 1枚の失敗（壊れた PNG など）では Worker を捨てない。その1枚だけメインでやり直す
+      if (m.error) p.reject(new Error(m.error));
+      else { if (m.t && p.onTime) p.onTime(m.t); p.resolve(m.cancelled ? undefined : (m.empty ? null : m.pix)); }
+    };
+    ciWorker.onerror = () => ciBreakWorker();
+  } catch (e) { ciWorkerBroken = true; ciWorker = null; }
+  return ciWorker;
+}
+// Worker が使えない・壊れた：以後はメインで計算する。待っている依頼はメインでやり直す（reject で知らせる）
+function ciBreakWorker() {
+  ciWorkerBroken = true;
+  if (ciWorker) { try { ciWorker.terminate(); } catch (e) { /* 無視 */ } }
+  ciWorker = null;
+  for (const p of ciPending.values()) p.reject(new Error('worker'));
+  ciPending.clear();
+}
+
+// 標高タイルの Blob（メインで取得。Service Worker のタイルキャッシュを通る）。無い・403 は null
+const ciBlobCache = new Map();
+// 鍵に源の名前を入れる（栃木は従来どおり z/x/y）。取得・Worker・メインの復号のキャッシュがみなこの鍵を使う
+function ciTileKey(z, x, y, src) { return !src || src === 'tochigi' ? `${z}/${x}/${y}` : `${src}/${z}/${x}/${y}`; }
+/* 標高タイル1枚。→ { blob } ／ { missing: true }（403・404＝配信なし）／ { error: true }（通信の失敗）。
+   覚えてよい「無い」は 403・404 だけ。通信の失敗は覚えない（圏内に戻ったら取り直す）。
+   ⚠ 圏外では例外ではなく、Service Worker が作る 504 が届く（sw.js）。これも覚えない */
+function demFetchBlob(src, z, x, y) {
+  const n = 2 ** z;
+  if (y < 0 || y >= n) return Promise.resolve({ missing: true });
+  x = ((x % n) + n) % n;
+  const key = ciTileKey(z, x, y, src);
+  if (ciBlobCache.has(key)) { const v = ciBlobCache.get(key); ciBlobCache.delete(key); ciBlobCache.set(key, v); return v; }
+  const url = DEM_SRC[src].url.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  const forget = () => { if (ciBlobCache.get(key) === p) ciBlobCache.delete(key); return { error: true }; };
+  const p = fetch(url)
+    .then(r => (r.ok ? r.blob().then(blob => ({ blob })) : (r.status === 403 || r.status === 404) ? { missing: true } : forget()))
+    .catch(forget);
+  ciBlobCache.set(key, p);
+  if (ciBlobCache.size > CI_BLOB_MAX) ciBlobCache.delete(ciBlobCache.keys().next().value);
+  return p;
+}
+// CIマップ（栃木）用：Blob か null（無い・失敗）。戻り値は従来どおり
+function ciFetchBlob(z, x, y) { return demFetchBlob('tochigi', z, x, y).then(r => r.blob || null); }
+
+// メインで計算するとき（Worker が使えない）の復号。標高をメモリに覚える
+const ciDemCache = new Map();
+let ciCv = null, ciCx = null;
+async function ciDecodeMain(key, blob, dec) {
+  if (ciDemCache.has(key)) return ciDemCache.get(key);
+  const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  if (!ciCv) { ciCv = document.createElement('canvas'); ciCv.width = ciCv.height = 256; ciCx = ciCv.getContext('2d', { willReadFrequently: true }); }
+  ciCx.clearRect(0, 0, 256, 256); ciCx.drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+  const d = ciCx.getImageData(0, 0, 256, 256).data;
+  const v = dec === 'gsi' ? decodeGsiDem(d, 256) : decodeTochigiDem(d, 256);
+  ciDemCache.set(key, v);
+  if (ciDemCache.size > CI_BLOB_MAX) ciDemCache.delete(ciDemCache.keys().next().value);
+  return v;
+}
+// メインの計算は1枚ずつ直列に、間でブラウザへ譲る（地図の操作を挟めるように。試作と同じ）
+let ciMainChain = Promise.resolve();
+function ciComputeMain(job) {
+  const run = ciMainChain.then(() => new Promise(r => setTimeout(r, 0))).then(async () => {
+    if (job.cancelled) return undefined;
+    // job.alg／job.dec／job.prm／job.stats が無ければ栃木の CI（従来どおり）
+    const cs = job.alg === 'cs', sx = job.alg === 'sx', prm = job.prm || CI_PRM, t0 = performance.now();
+    const tiles = await Promise.all(job.keys.map((k, i) => job.blobs[i] ? ciDecodeMain(k, job.blobs[i], job.dec || 'tochigi') : null));
+    if (!tiles[4]) return null;
+    const t1 = performance.now();
+    const M = sx ? sxMargin(job.px, prm) : cs ? csMargin(job.px, prm) : ciMargin(job.px, prm), grid = ciAssembleGrid(tiles, M, prm.tile);
+    const pix = sx ? computeSxTile(grid, M, job.px, prm) : cs ? computeCsTile(grid, M, job.px, prm) : computeCiTile(grid, M, job.px, prm);
+    if (!pix) return null;   // 1m の欠け（computeCsTile の whole）
+    (job.stats || ciStats).main++;
+    if (job.onTime) job.onTime({ decode: t1 - t0, compute: performance.now() - t1 });
+    return pix;
+  });
+  ciMainChain = run.catch(() => {});
+  return run;
+}
+
+// 1枚ぶん：周り9枚の標高を取り、Worker（だめならメイン）で計算する。中心が無ければ null
+async function ciRenderTile(coords, job) {
+  const { x, y, z } = coords, keys = [], reqs = [];
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    keys.push(ciTileKey(z, x + ox, y + oy)); reqs.push(ciFetchBlob(z, x + ox, y + oy));
+  }
+  const blobs = await Promise.all(reqs);
+  if (job.cancelled) return undefined;
+  if (!blobs[4]) return null;
+  job.keys = keys; job.blobs = blobs; job.px = ciMetersPerPx(z, y, CI_PRM.tile);
+  const w = getCiWorker();
+  if (w) {
+    try {
+      const pix = await new Promise((resolve, reject) => {
+        ciPending.set(job.id, { resolve, reject });
+        w.postMessage({ id: job.id, keys, blobs, px: job.px, prm: CI_PRM });
+      });
+      if (pix) ciStats.worker++;
+      return pix;
+    } catch (e) { /* Worker が壊れた：メインでやり直す */ }
+  }
+  return ciComputeMain(job);
+}
+function ciCancel(tile) {
+  const job = tile && tile._ciJob;
+  if (!job || job.done) return;
+  job.cancelled = true;
+  if (ciWorker && ciPending.has(job.id)) ciWorker.postMessage({ type: 'cancel', id: job.id });
+}
+
+/* ------ CS立体図風の1枚（v4.176.0）。判断は ADR-0018 ------
+   ・まず DEM5A（5m）の9枚。**1枚でも配信なし（403・404）なら9枚とも DEM10B（10m）**（1枚の計算で源を混ぜない＝偽の尾根・谷を出さない）
+   ・DEM10B に落ちるのは配信なしのときだけ。通信の失敗（圏外の 504）では落とさない。ただし、以前に「DEM5A が無い」と
+     記録した鍵が9枚の中にあれば（30日以内）DEM10B で描く（圏外でも、一度見た 10B の範囲は描けるように）
+   ・圏内ではいつも DEM5A を取りに行く（地理院が範囲を広げたら自然に 5A へ戻る）
+   ・DEM10B は z14 まで。z15 で 10B なら z14 の親を計算し、その4分の1を引き伸ばす（親の結果は4枚の子で共有） */
+// ならし σ=5m・曲率の満色 0.03/m（v4.180.0。0.01（試作の既定）では赤青が満色で埋まり、本物の CS立体図より読みにくかった）
+const CS_PRM = { tile: 256, sigM: 5, cs0: 0.03 };
+// 1m（z16〜17・ADR-0020）。σ=3m・満色 0.1/m（1m の曲率は大きいので満色も大きく。茶臼岳の実タイルで z15 の 0.03 と色の混み具合をそろえた）
+// ⚠ σ=2m・満色 0.01（v4.179.0）は実機で砂のようにざらついた（生の |ラプラシアン| の中央値 0.14/m²＝満色の14倍・茶臼岳）。
+//   ざらつきの元は満色が小さすぎたこと（σ を 5m にしても赤青の満色で埋まる）
+const CS_PRM_1M = { tile: 256, sigM: 3, cs0: 0.1, whole: true };
+const CS_MISS_KEY = 'demMiss5a', CS_MISS_MAX = 4000, CS_MISS_DAYS = 30;
+const CS_MISS1A_KEY = 'demMiss1a';   // DEM1A が 404 だった鍵（作りは demMiss5a と同じ。記録のある9枚は取りに行かない）
+/* 計数と時間（検査用。画面には出さない）。iPhone の実測（2026-10-12・#231）：中央値で 取得 56／復号 8／計算 3 ms、
+   Worker 1887 枚・メイン 0・5m 2155／10m 7 → 端末で描いて足りる（Actions で画像を作る案は採らない） */
+const csStats = { worker: 0, main: 0, fetch: [], decode: [], compute: [], src5a: 0, src10b: 0, src1a: 0 };
+const CS_SRC_STAT = { gsi5a: 'src5a', gsi10b: 'src10b', gsi1a: 'src1a' };
+function csPushTime(k, ms) { const a = csStats[k]; a.push(ms); if (a.length > 200) a.shift(); }
+function csMissLoad(lsKey = CS_MISS_KEY) {
+  try { const o = JSON.parse(localStorage.getItem(lsKey) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
+}
+function csMissMark(keys, lsKey = CS_MISS_KEY) {
+  if (!keys.length) return;
+  const o = csMissLoad(lsKey), now = Date.now();
+  keys.forEach(k => { delete o[k]; o[k] = now; });
+  const ks = Object.keys(o);
+  if (ks.length > CS_MISS_MAX) ks.sort((a, b) => o[a] - o[b]).slice(0, ks.length - CS_MISS_MAX).forEach(k => delete o[k]);
+  try { localStorage.setItem(lsKey, JSON.stringify(o)); } catch (e) { /* 入らなければ覚えないだけ */ }
+}
+// 鍵のどれかが「DEM5A が無い」と記録されているか（30日を過ぎたものは消す）
+function csMissAny(keys, lsKey = CS_MISS_KEY) {
+  const o = csMissLoad(lsKey), lim = Date.now() - CS_MISS_DAYS * 86400000;
+  let hit = false, dirty = false;
+  for (const k of Object.keys(o)) if (!(o[k] >= lim)) { delete o[k]; dirty = true; }
+  if (dirty) { try { localStorage.setItem(lsKey, JSON.stringify(o)); } catch (e) { /* 無視 */ } }
+  for (const k of keys) if (o[k]) { hit = true; break; }
+  return hit;
+}
+// 通信の失敗の印つきのエラー（watchTileStatus が「表示なし」と取り違えないように。復号・計算の失敗には付けない）
+function csNetError() { return Object.assign(new Error('通信できません'), { network: true }); }
+// 9枚を取る → { ok, keys, blobs, missKeys, error }
+async function csGather(src, z, x, y) {
+  const t0 = performance.now(), keys = [], reqs = [];
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    keys.push(ciTileKey(z, x + ox, y + oy, src)); reqs.push(demFetchBlob(src, z, x + ox, y + oy));
+  }
+  const rs = await Promise.all(reqs);
+  csPushTime('fetch', performance.now() - t0);
+  const missKeys = [];
+  rs.forEach((r, i) => { if (r.missing) missKeys.push(keys[i]); });
+  return { keys, blobs: rs.map(r => r.blob || null), missKeys, error: rs.some(r => r.error) };
+}
+// 1回の計算（Worker か、だめならメイン）。中心が無ければ null。alg・prm・stats を渡せば風の当たり方（'sx'）にも使う
+async function csCompute(job, g, src, z, y, alg = 'cs', prm = CS_PRM, stats = csStats) {
+  if (!g.blobs[4]) return null;
+  Object.assign(job, { keys: g.keys, blobs: g.blobs, px: ciMetersPerPx(z, y, prm.tile), prm, dec: 'gsi', alg,
+    stats, onTime: stats === csStats ? t => { csPushTime('decode', t.decode); csPushTime('compute', t.compute); } : null });
+  // 源の計数は結果が出てから（1m の欠けで null なら数えない）。sxStats には src1a が無いので (|| 0)
+  const count = pix => { if (pix) { const k = CS_SRC_STAT[src]; stats[k] = (stats[k] || 0) + 1; } return pix; };
+  const w = getCiWorker();
+  if (w) {
+    try {
+      const pix = await new Promise((resolve, reject) => {
+        ciPending.set(job.id, { resolve, reject, onTime: job.onTime });
+        w.postMessage({ id: job.id, keys: job.keys, blobs: job.blobs, px: job.px, prm, dec: 'gsi', alg });
+      });
+      if (pix) stats.worker++;
+      return count(pix);
+    } catch (e) { /* Worker が壊れた：メインでやり直す */ }
+  }
+  return ciComputeMain(job).then(count);
+}
+// z15 で DEM10B のとき：z14 の親の結果（4枚の子で共有。子が取り消されても止めない）
+const csParentCache = new Map(), CS_PARENT_MAX = 32;
+function csParent(px, py) {
+  const key = `cs|gsi10b|14/${px}/${py}`;
+  if (csParentCache.has(key)) return csParentCache.get(key);
+  const p = (async () => {
+    const g = await csGather('gsi10b', 14, px, py);
+    if (g.error) throw csNetError();
+    return csCompute({ id: ++ciSeq, cancelled: false }, g, 'gsi10b', 14, py);
+  })();
+  p.catch(() => { if (csParentCache.get(key) === p) csParentCache.delete(key); });
+  csParentCache.set(key, p);
+  if (csParentCache.size > CS_PARENT_MAX) csParentCache.delete(csParentCache.keys().next().value);
+  return p;
+}
+// 親の k×k 分の1（左上から qx, qy 番目）を切り出して 256 に引き伸ばす。z15 の 10B の親は k=2、z16 は k=2・z17 は k=4（z15 から）
+function csCropPart(pix, k, qx, qy) {
+  const n = CS_PRM.tile, h = n / k, src = document.createElement('canvas'), dst = document.createElement('canvas');
+  src.width = src.height = dst.width = dst.height = n;
+  src.getContext('2d').putImageData(new ImageData(pix, n, n), 0, 0);
+  const g = dst.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.drawImage(src, qx * h, qy * h, h, h, 0, 0, n, n);
+  return g.getImageData(0, 0, n, n).data;
+}
+/* z16〜17（ADR-0020）：DEM1A の9枚がすべてあり、計算に使う範囲に画素の欠けも無いときだけ 1m で計算する。
+   それ以外（404・通信の失敗・画素の欠け）は z15 の結果を切り出して引き伸ばす（いまと同じ見え方。1枚の中で源を混ぜない）。
+   404 の記録（demMiss1a・30日）がある9枚は、圏内でも取りに行かない（落ちても見え方は今と同じ・圏外で待たない） */
+const csZ15Cache = new Map();
+// z15 の結果（子の z16・z17 で共有。子が取り消されても止めない。失敗は覚えない）
+function csZ15(x15, y15) {
+  const key = `cs|15/${x15}/${y15}`;
+  if (csZ15Cache.has(key)) return csZ15Cache.get(key);
+  const p = csRenderTile({ z: 15, x: x15, y: y15 }, { id: ++ciSeq, cancelled: false });
+  p.catch(() => { if (csZ15Cache.get(key) === p) csZ15Cache.delete(key); });
+  csZ15Cache.set(key, p);
+  if (csZ15Cache.size > CS_PARENT_MAX) csZ15Cache.delete(csZ15Cache.keys().next().value);
+  return p;
+}
+async function csStretch15(coords, job) {
+  const { x, y, z } = coords, sh = z - 15, k = 1 << sh;   // ⚠ 親は必ず z15 の1段（z17 も z16 を経ない）
+  const pix = await csZ15(x >> sh, y >> sh);
+  if (job.cancelled) return undefined;
+  return pix ? csCropPart(pix, k, x & (k - 1), y & (k - 1)) : null;
+}
+async function csRender1m(coords, job) {
+  const { x, y, z } = coords, keys = [];
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) keys.push(ciTileKey(z, x + ox, y + oy, 'gsi1a'));
+  // 保存した山域で 404 だった所も（期限切れにならない・#244 段2）。1A は圏内でも取りに行かない（ADR-0020）
+  if (csMissAny(keys, CS_MISS1A_KEY) || areaMissHas(keys)) return csStretch15(coords, job);
+  const g = await csGather('gsi1a', z, x, y);
+  if (job.cancelled) return undefined;
+  if (g.missKeys.length) { csMissMark(g.missKeys, CS_MISS1A_KEY); return csStretch15(coords, job); }
+  if (g.error) return csStretch15(coords, job);
+  let pix = null;
+  try { pix = await csCompute(job, g, 'gsi1a', z, y, 'cs', CS_PRM_1M); } catch (e) { /* 壊れた 1A は z15 で描く */ }
+  if (job.cancelled) return undefined;
+  return pix || csStretch15(coords, job);
+}
+async function csRenderTile(coords, job) {
+  const { x, y, z } = coords;
+  if (z > 15) return csRender1m(coords, job);
+  const g5 = await csGather('gsi5a', z, x, y);
+  if (job.cancelled) return undefined;
+  let use10b = false;
+  if (g5.missKeys.length) { csMissMark(g5.missKeys); use10b = true; }
+  else if (g5.error) {
+    // 覚えていない：失敗（圏内で取り直す）。保存した山域の 404 も根拠にする（5A は圏内では今どおり取りに行く・ADR-0018）
+    if (!csMissAny(g5.keys) && !areaMissHas(g5.keys)) throw csNetError();
+    use10b = true;
+  }
+  if (!use10b) return csCompute(job, g5, 'gsi5a', z, y);
+  if (z > DEM_SRC.gsi10b.zmax) {
+    const pix = await csParent(x >> 1, y >> 1);
+    if (job.cancelled) return undefined;
+    return pix ? csCropPart(pix, 2, x & 1, y & 1) : null;
+  }
+  const g10 = await csGather('gsi10b', z, x, y);
+  if (job.cancelled) return undefined;
+  if (g10.error) throw csNetError();
+  return csCompute(job, g10, 'gsi10b', z, y);
+}
+
+/* ------ 風の当たり方（v4.177.0・docs/requirements_wind_exposure.md） ------
+   細かい地形（DEM5A 5m／無い所は DEM10B）× 風向で、風上の地形の仰角 Sx を塗る。**風速は出さない**（約11km格子の風を
+   細かい地形で何倍にするかは分からない。物理で解く案は experiments/windninja/）。
+   ・取得・源の選び方（5A → 1枚でも 404 なら 10B）・Worker・控えは CS立体図風（csGather / csCompute）と同じ
+   ・Worker が返すのは Float32 の Sx（度）。色はメインで塗る（sxColorize）
+   ・風向は16方位に丸める。方位・見る距離が変わったときだけ描き直す（sxSync）。時刻を動かしても方位が同じなら描き直さない
+   ・⚠ 粒子の遮蔽（terrainSx・30m の升目）と式は同じだが升目が違うので、数値は一致しない */
+const SX_PRM = { tile: 256, sigM: 5 };              // ならし σ=5m（CS と同じ）
+const SX_DMAX = [100, 300];                         // 風上を見る距離（m）。100＝沢・肩の小さな陰、300＝尾根1本ぶんの陰（利用者の選択で両方）
+// ⚠ 色の境は仮（実機で調整）。陰の側は粒子の遮蔽（WIND_SHELTER の SX_LO_DEG / SX_HI_DEG）と同じ 2°〜20°
+const SX_COLOR = { EXP_LO: 2, EXP_HI: 12, SH_LO: 2, SH_HI: 20, EXP: [236, 112, 24], SH: [36, 88, 220], ALPHA: 0.85 };
+const SX_WEAK_MS = 3;                               // これ未満は「風が弱い」と添える（塗りは消さない）
+const SX_DIR16 = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+const sxStats = { worker: 0, main: 0, src5a: 0, src10b: 0 };   // 検査用
+// mode … 'auto'（選択地点の判定の風）か 0〜15（吹いてくる向きの16方位）。dmax … SX_DMAX のどれか。端末に覚える
+const windExp = { mode: 'auto', dmax: 300, sector: null, drawn: null };
+const WINDEXP_KEY = 'windExp';
+function windExpLoad() {
+  try {
+    const o = JSON.parse(localStorage.getItem(WINDEXP_KEY) || '{}') || {};
+    if (o.mode === 'auto' || (Number.isInteger(o.mode) && o.mode >= 0 && o.mode < 16)) windExp.mode = o.mode;
+    if (SX_DMAX.includes(o.dmax)) windExp.dmax = o.dmax;
+  } catch (e) { /* 読めなければ既定 */ }
+}
+function windExpSave() {
+  try { localStorage.setItem(WINDEXP_KEY, JSON.stringify({ mode: windExp.mode, dmax: windExp.dmax })); } catch (e) { /* 覚えないだけ */ }
+}
+windExpLoad();
+/* 使う風向。→ { sector（0〜15 か null）, src: 'auto'|'manual', wind, idx, missing }
+   自動は processData が埋めた data[i].wdir（判定・グラフ・ポップアップと同じ風。**吹いてくる向き**） */
+function windExpDir() {
+  if (windExp.mode !== 'auto') return { sector: windExp.mode, src: 'manual' };
+  const i = state.sliderIndex, d = state.allData && state.allData[i];
+  if (!d || d.windMissing || typeof d.wdir !== 'number' || !isFinite(d.wdir)) return { sector: null, src: 'auto', missing: true, idx: i };
+  return { sector: Math.round((((d.wdir % 360) + 360) % 360) / 22.5) % 16, src: 'auto', wind: d.wind, idx: i };
+}
+function windExpInfoText(r) {
+  if (r.missing) return '風データなし（この時刻）：塗りません';
+  const name = SX_DIR16[r.sector] + 'の風';
+  if (r.src === 'manual') return `${name}（手動）`;
+  const t = state.allData[r.idx].time, when = `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:00`;
+  const spd = typeof r.wind === 'number' ? ` ${r.wind.toFixed(1)} m/s` : '';
+  const weak = typeof r.wind === 'number' && r.wind < SX_WEAK_MS ? '・風が弱い：当たり方の差は小さい' : '';
+  return `${name}${spd}（地点の予報・${when}）${weak}`;
+}
+// Sx（度）→ 色。当たる（負）＝橙・陰（正）＝青。境の内側は透明
+function sxColorize(f, n) {
+  const out = new Uint8ClampedArray(n * n * 4), C = SX_COLOR;
+  for (let i = 0, j = 0; i < n * n; i++, j += 4) {
+    const v = f[i];
+    if (v !== v) continue;
+    let t, col;
+    if (v <= -C.EXP_LO) { t = Math.min(1, (-v - C.EXP_LO) / (C.EXP_HI - C.EXP_LO)); col = C.EXP; }
+    else if (v >= C.SH_LO) { t = Math.min(1, (v - C.SH_LO) / (C.SH_HI - C.SH_LO)); col = C.SH; }
+    else continue;
+    out[j] = col[0]; out[j + 1] = col[1]; out[j + 2] = col[2]; out[j + 3] = Math.round(255 * C.ALPHA * t);
+  }
+  return out;
+}
+// 親（z14）の Sx の4分の1を n×n へ双線形で引き伸ばす（色ではなく数値で。欠けが混ざる所は近い方の値）
+function sxCropQuarter(f, qx, qy, n) {
+  const out = new Float32Array(n * n), h = n / 2;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const fx = Math.min(n - 1.001, Math.max(0, qx * h + (x + 0.5) / 2 - 0.5)), fy = Math.min(n - 1.001, Math.max(0, qy * h + (y + 0.5) / 2 - 0.5));
+    const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, i = iy * n + ix;
+    const a = f[i], b = f[i + 1], c = f[i + n], d = f[i + n + 1];
+    const v = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+    out[y * n + x] = v === v ? v : f[(ty < 0.5 ? iy : iy + 1) * n + (tx < 0.5 ? ix : ix + 1)];
+  }
+  return out;
+}
+// 計算の結果の控え（源・方位・距離・z/x/y）。Float32 で1枚 256KB
+const sxCache = new Map(), SX_CACHE_MAX = 48;
+function sxCacheGet(key) { if (!sxCache.has(key)) return undefined; const v = sxCache.get(key); sxCache.delete(key); sxCache.set(key, v); return v; }
+function sxCacheSet(key, v) { sxCache.set(key, v); if (sxCache.size > SX_CACHE_MAX) sxCache.delete(sxCache.keys().next().value); }
+function sxPrm(sector, dmax) { return { tile: SX_PRM.tile, sigM: SX_PRM.sigM, dmaxM: dmax, fromDeg: sector * 22.5 }; }
+async function sxComputeCached(job, g, src, z, x, y, sector, dmax) {
+  const key = `${src}|${z}/${x}/${y}|${sector}|${dmax}`, hit = sxCacheGet(key);
+  if (hit !== undefined) return hit;
+  const f = await csCompute(job, g, src, z, y, 'sx', sxPrm(sector, dmax), sxStats);
+  if (f) sxCacheSet(key, f);
+  return f;
+}
+// z15 で DEM10B のとき：z14 の親（4枚の子で共有）
+const sxParentCache = new Map();
+function sxParent(px, py, sector, dmax) {
+  const key = `sx|gsi10b|14/${px}/${py}|${sector}|${dmax}`;
+  if (sxParentCache.has(key)) return sxParentCache.get(key);
+  const p = (async () => {
+    const g = await csGather('gsi10b', 14, px, py);
+    if (g.error) throw csNetError();
+    return sxComputeCached({ id: ++ciSeq, cancelled: false }, g, 'gsi10b', 14, px, py, sector, dmax);
+  })();
+  p.catch(() => { if (sxParentCache.get(key) === p) sxParentCache.delete(key); });
+  sxParentCache.set(key, p);
+  if (sxParentCache.size > CS_PARENT_MAX) sxParentCache.delete(sxParentCache.keys().next().value);
+  return p;
+}
+// 1枚の Sx（Float32）。源の選び方は csRenderTile と同じ（ADR-0018）
+async function sxRenderTile(coords, job, sector, dmax) {
+  const { x, y, z } = coords;
+  const g5 = await csGather('gsi5a', z, x, y);
+  if (job.cancelled) return undefined;
+  let use10b = false;
+  if (g5.missKeys.length) { csMissMark(g5.missKeys); use10b = true; }
+  else if (g5.error) {
+    if (!csMissAny(g5.keys) && !areaMissHas(g5.keys)) throw csNetError();
+    use10b = true;
+  }
+  if (!use10b) return sxComputeCached(job, g5, 'gsi5a', z, x, y, sector, dmax);
+  if (z > DEM_SRC.gsi10b.zmax) {
+    const f = await sxParent(x >> 1, y >> 1, sector, dmax);
+    if (job.cancelled) return undefined;
+    return f ? sxCropQuarter(f, x & 1, y & 1, SX_PRM.tile) : null;
+  }
+  const g10 = await csGather('gsi10b', z, x, y);
+  if (job.cancelled) return undefined;
+  if (g10.error) throw csNetError();
+  return sxComputeCached(job, g10, 'gsi10b', z, x, y, sector, dmax);
+}
+// 方位・距離・説明を今の状態に合わせる。変わったときだけ描き直す（refreshWeatherPoints・設定の変更から呼ぶ）
+function sxSync() {
+  const r = windExpDir();
+  windExp.sector = r.sector;
+  const info = document.getElementById('windexp-info');
+  if (info) info.textContent = windExpInfoText(r);
+  const drawn = r.sector == null ? 'none' : `${r.sector}|${windExp.dmax}`;
+  const layer = overlayTileLayers.windExp;
+  if (layer && windExp.drawn !== drawn) { windExp.drawn = drawn; layer.redraw(); }
+  else if (!layer) windExp.drawn = null;
+}
+function setWindExpMode(v) {
+  windExp.mode = v === 'auto' ? 'auto' : Math.max(0, Math.min(15, parseInt(v, 10) || 0));
+  windExpSave(); sxSync(); updateMapTime();
+}
+function setWindExpDmax(m) {
+  if (!SX_DMAX.includes(m)) return;
+  windExp.dmax = m; windExpSave(); renderLayerPanel(); sxSync();
+}
+// レイヤーの行の下：風向（自動／16方位）・見る距離・使っている風・凡例
+function windExpSettings() {
+  const opt = (v, label) => `<option value="${v}"${String(windExp.mode) === String(v) ? ' selected' : ''}>${label}</option>`;
+  const r = windExpDir();
+  return `<div class="amedas-els windexp-set">` +
+    `<select id="windexp-dir" aria-label="風向" onchange="setWindExpMode(this.value)">${opt('auto', '風向:自動（地点の予報）')}${SX_DIR16.map((d, i) => opt(i, '風向:' + d)).join('')}</select>` +
+    SX_DMAX.map(m => `<button type="button" class="amedas-el${windExp.dmax === m ? ' active' : ''}" onclick="setWindExpDmax(${m})">風上${m}m</button>`).join('') +
+    `</div><span class="layer-ov-note" id="windexp-info">${escapeHtml(windExpInfoText(r))}</span>` +
+    `<span class="layer-ov-note windexp-legend"><span class="windexp-sw" style="background:rgb(${SX_COLOR.EXP.join(',')})"></span>風が当たる　<span class="windexp-sw" style="background:rgb(${SX_COLOR.SH.join(',')})"></span>風の陰　（風速ではない・吹きだまりの判定ではない）</span>`;
+}
+
+/* ------ 風の強さ（地形）（v4.178.0・docs/requirements_wind_downscale.md・ADR-0019） ------
+   Actions で WindNinja（質量保存）を解いて作った表（data/wind/<山域>.png・.json）を読み、選択時刻の判定の風を地図の各点へ配る（案A）。
+     その点の風 ＝ 判定の風 × 倍率(点) ÷ 倍率(基準の峰)。基準の峰＝選択地点にいちばん近い、表の範囲内の峰
+   ・表は 8方位（0〜157.5°）。逆向き（＋180°）は同じ表。挟む2方位を角度で按分（findings-02）
+   ・**推定。** 風下の陰は出ない（逆向きの風でも倍率が同じ計算）。陰は「風の当たり方」で見る。判定（A/B/C）・グラフ・矢印には使わない
+   ・塗らないとき：範囲外・表の無い山域・風の欠け・地上10m風に落ちた時刻（峰の高さの風ではないので案Aの前提が崩れる）・基準の峰の倍率 0.3 未満
+   ・⚠ Worker は使わない（要件は Worker だったが、PNG の取り出しは山域ごとに1回・毎時刻の計算は 20万升の掛け算で軽い）
+   ・⚠ 表は緯度経度の等間隔のまま imageOverlay で貼る（メルカトルとの縦のずれは谷川の 30km 四方で十数 m・升目 67m より小さい） */
+const WIND_TABLE_AREAS = ['tanigawa'];               // 表のある山域（areas.json の id）。足すときは Actions で作ってから
+const WD = { RATIO_MIN: 0.3, LOW_M: 300 };   // 基準の峰の倍率の下限・選択地点が峰より低いと注記する差（濃さはレイヤーの透過率だけで決める）
+const wdTables = new Map();                          // 山域 id → Promise<{ meta, r, a }>（1回だけ読む）
+const wd = { key: null, url: null, info: '', plan: null };
+// PNG を読んで R（倍率×rScale）と A（255＝値あり）を取り出す。⚠ 色空間の変換と乗算済みアルファを切る（R がずれる・A=0 で R が壊れる）
+async function wdDecodePng(blob, w, h) {
+  const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  if (bmp.width !== w || bmp.height !== h) throw new Error(`表の大きさが違う（${bmp.width}×${bmp.height}）`);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0);
+  const d = g.getImageData(0, 0, w, h).data, n = w * h, r = new Uint8Array(n), a = new Uint8Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) { r[i] = d[j]; a[i] = d[j + 3]; }
+  return { r, a };
+}
+function wdLoadTable(id) {
+  if (wdTables.has(id)) return wdTables.get(id);
+  const p = (async () => {
+    const mr = await fetch(`data/wind/${id}.json`);
+    if (!mr.ok) throw new Error(`表の JSON HTTP ${mr.status}`);
+    const meta = await mr.json();
+    const pr = await fetch(`data/wind/${id}.png`);
+    if (!pr.ok) throw new Error(`表の PNG HTTP ${pr.status}`);
+    const { r, a } = await wdDecodePng(await pr.blob(), meta.nx, meta.ny * meta.dirs.length);
+    return { meta, r, a };
+  })();
+  p.catch(() => { if (wdTables.get(id) === p) wdTables.delete(id); });   // 失敗は覚えない（次に入れたとき取り直す）
+  wdTables.set(id, p);
+  return p;
+}
+// 風向（吹いてくる向き・度）→ 挟む2方位と重み。表は 0〜157.5° の 8方位で、180° は 0° と同じ表
+function wdDirWeights(wdir, nDir = 8) {
+  const f = ((((wdir % 180) + 180) % 180) / 180) * nDir;
+  const i0 = Math.floor(f) % nDir;
+  return { i0, i1: (i0 + 1) % nDir, t: f - Math.floor(f) };
+}
+function wdInterp(arr, w) { return arr[w.i0] * (1 - w.t) + arr[w.i1] * w.t; }
+// 地点が表の範囲に入るか・その升（表を作った式と同じ：buildWindTable.py）
+function wdCell(meta, lat, lon) {
+  const b = meta.bounds;
+  if (!(lat >= b.south && lat < b.north && lon >= b.west && lon < b.east)) return null;
+  return { c: Math.floor((lon - b.west) / ((b.east - b.west) / meta.nx)), r: Math.floor((b.north - lat) / ((b.north - b.south) / meta.ny)) };
+}
+function wdDistKm(lat1, lon1, lat2, lon2) {
+  const k = 111.0, dx = (lon2 - lon1) * k * Math.cos((lat1 + lat2) / 2 * Math.PI / 180), dy = (lat2 - lat1) * k;
+  return Math.hypot(dx, dy);
+}
+/* 塗るかどうかと、使う値を決める（純関数）。→ { ok, reason } か { ok:true, w, ref, refR, wind, wdir, low, distKm }
+   tables … [{ id, meta, peaks:[{ name, lat, lon, elev }] }]（表の範囲内の峰だけ）。d … state.allData の1時刻 */
+function wdPlan(tables, lat, lon, d, pointElev) {
+  if (!(isFinite(lat) && isFinite(lon))) return { ok: false, reason: '地点が決まっていない' };
+  const tb = tables.find(t => wdCell(t.meta, lat, lon));
+  if (!tb) return { ok: false, reason: 'この地点は表の範囲外（いまは谷川・上越国境だけ）' };
+  if (!d || d.windMissing) return { ok: false, reason: '風データなし（この時刻）：塗りません' };
+  const tr = d.windTrace;
+  if (tr && (tr.kind === 'missing')) return { ok: false, reason: '風データなし（この時刻）：塗りません' };
+  if (tr && tr.kind === 'ground') return { ok: false, reason: '判定の風が地上10m風（峰の高さの風ではない）：塗りません' };
+  if (typeof d.wind !== 'number' || !isFinite(d.wind) || typeof d.wdir !== 'number' || !isFinite(d.wdir)) return { ok: false, reason: '風データなし（この時刻）：塗りません' };
+  let ref = null, best = Infinity;
+  tb.peaks.forEach(p => { const k = wdDistKm(lat, lon, p.lat, p.lon); if (k < best) { best = k; ref = p; } });
+  if (!ref) return { ok: false, reason: '基準の峰が決まらない' };
+  const w = wdDirWeights(d.wdir, tb.meta.dirs.length);
+  const pr = tb.meta.peakRatio[ref.name];
+  // ⚠ 表は峰の値が読めない方位に null を入れうる（null は掛け算で 0 になり、もう一方の方位だけで比較を通ってしまう）
+  if (![pr[w.i0], pr[w.i1]].every(v => typeof v === 'number' && isFinite(v))) return { ok: false, reason: `基準の峰（${ref.name}）の倍率が表に無い：塗りません` };
+  const refR = wdInterp(pr, w);
+  if (!(refR >= WD.RATIO_MIN)) return { ok: false, reason: `基準の峰（${ref.name}）の倍率が小さすぎる（${refR.toFixed(2)}）：塗りません` };
+  const low = typeof pointElev === 'number' && typeof ref.elev === 'number' && pointElev <= ref.elev - WD.LOW_M;
+  return { ok: true, id: tb.id, w, ref, refR, wind: d.wind, wdir: d.wdir, low, distKm: best };
+}
+// 表と計画から色の画素（nx×ny×4）。欠けの升（どちらかの方位で A≠255）は透明
+function wdPaint(tbl, plan) {
+  const { meta, r, a } = tbl, n = meta.nx * meta.ny, s = meta.encoding.rScale, out = new Uint8ClampedArray(n * 4);
+  const o0 = plan.w.i0 * n, o1 = plan.w.i1 * n, t = plan.w.t, k = plan.wind / plan.refR / s;
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    if (a[o0 + i] !== 255 || a[o1 + i] !== 255) continue;
+    const rgb = windBgRGB((r[o0 + i] * (1 - t) + r[o1 + i] * t) * k);
+    out[j] = rgb[0]; out[j + 1] = rgb[1]; out[j + 2] = rgb[2]; out[j + 3] = 255;
+  }
+  return out;
+}
+function wdInfoText(plan) {
+  if (!plan) return '表を読み込み中…';
+  if (!plan.ok) return plan.reason;
+  const dir = SX_DIR16[Math.round((((plan.wdir % 360) + 360) % 360) / 22.5) % 16];
+  return `${dir}の風 ${plan.wind.toFixed(1)} m/s を、${plan.ref.name}（${plan.distKm.toFixed(1)} km）で一致させた推定` +
+    (plan.low ? '・選択地点が峰より低い：峰の風は予報より強い見込み' : '');
+}
+// 表の範囲内の峰（areas.json の座標・標高）を添える
+async function wdTablesFor() {
+  const areas = await loadAreas();
+  return Promise.all(WIND_TABLE_AREAS.map(async id => {
+    const tbl = await wdLoadTable(id), area = (areas.areas || []).find(x => x.id === id);
+    const peaks = ((area && area.peaks) || []).filter(p => tbl.meta.peakRatio[p.name] && wdCell(tbl.meta, p.lat, p.lon))
+      .map(p => ({ name: p.name, lat: p.lat, lon: p.lon, elev: p.elev }));
+    return { id, meta: tbl.meta, peaks, tbl };
+  }));
+}
+/* 今の選択地点・時刻に合わせて塗る。鍵が同じなら塗り直さないが、層が無ければ（applyOverlays が外した）手元の画像で貼り直す */
+async function wdSync() {
+  if (!leafletMap || !isOverlayOn('windDown')) return;
+  let tables;
+  try { tables = await wdTablesFor(); }
+  catch (e) { wd.info = '表を読めませんでした（' + e.message + '）'; wdSetInfo(); setLayerNote('windDown', wd.info); wdClear(); return; }
+  if (!isOverlayOn('windDown')) return;
+  clearLayerStatus('windDown');   // 前の失敗の文言を消す
+  const d = state.allData && state.allData[state.sliderIndex];
+  const plan = wdPlan(tables, state.lat, state.lon, d, state.summitElev ?? state.demElevation);
+  wd.plan = plan; wd.info = wdInfoText(plan); wdSetInfo();
+  const key = plan.ok ? `${plan.id}|${plan.ref.name}|${plan.wdir.toFixed(1)}|${plan.wind.toFixed(2)}` : 'none';
+  if (key !== wd.key) {
+    wd.key = key; wd.url = null;
+    if (plan.ok) {
+      const tb = tables.find(t => t.id === plan.id), m = tb.meta;
+      const c = document.createElement('canvas'); c.width = m.nx; c.height = m.ny;
+      c.getContext('2d').putImageData(new ImageData(wdPaint(tb.tbl, plan), m.nx, m.ny), 0, 0);
+      wd.url = c.toDataURL('image/png');
+      wd.bounds = [[m.bounds.south, m.bounds.west], [m.bounds.north, m.bounds.east]];
+    }
+  }
+  const layer = overlayTileLayers.windDown;
+  if (!wd.url) { wdClear(); return; }
+  if (layer && layer._wdUrl !== wd.url) { layer.setUrl(wd.url); layer.setBounds(L.latLngBounds(wd.bounds)); layer._wdUrl = wd.url; }
+}
+const WD_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+// 層を空にする。⚠ 貼った画像の控え（_wdUrl）も消す（同じ画素は同じ dataURL になるので、残すと戻ったときに貼り直されず空のまま）
+function wdClear() {
+  const layer = overlayTileLayers.windDown;
+  if (layer) { layer.setUrl(WD_BLANK); layer._wdUrl = null; }
+}
+function wdSetInfo() { const el = document.getElementById('winddown-info'); if (el) el.textContent = wd.info; }
+// レイヤーの行の下：使った風・基準の峰・塗らない理由と、必ず書くこと（要件「画面と about に必ず書くこと」）
+function windDownSettings() {
+  return `<span class="layer-ov-note" id="winddown-info">${escapeHtml(wd.info || wdInfoText(wd.plan))}</span>` +
+    `<span class="layer-ov-note">推定。風下の斜面は強めに出る（風上と同じ倍率の計算）。陰は「風の当たり方」で見る。` +
+    `谷・樹林の中は強めの見込み。判定（A/B/C）には使わない</span>`;
+}
+
+/* ⚠⚠ **L.GridLayer.extend を読み込み時（最上位）で呼ばない。** Leaflet が読めないと（v4.175.0 で同梱したが、
+   壊れた控えなどで無いことはありうる）本体のスクリプトが丸ごと止まり、グラフまで出なくなる（検査で26件落ちた）。使うときに初めて作る */
+let ciMapLayerClass = null;
+function CiMapLayerClass() {
+  if (ciMapLayerClass) return ciMapLayerClass;
+  ciMapLayerClass = L.GridLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = CI_PRM.tile;
+    const job = { id: ++ciSeq, cancelled: false, done: false };
+    tile._ciJob = job;
+    ciRenderTile(coords, job).then(pix => {
+      job.done = true;
+      if (pix === undefined) return;                       // 取り消された（地図から外れた）
+      if (!pix) { done(new Error('範囲外'), tile); return; } // 配信の範囲外・欠け → watchTileStatus が文言を決める
+      tile.getContext('2d').putImageData(new ImageData(pix, CI_PRM.tile, CI_PRM.tile), 0, 0);
+      done(null, tile);
+    }).catch(e => { job.done = true; done(e, tile); });
+    return tile;
+  },
+  });
+  return ciMapLayerClass;
+}
+// CS立体図風の GridLayer（CIマップと同じ作り。使うときに作る）
+let csLayerClass = null;
+function CsLayerClass() {
+  if (csLayerClass) return csLayerClass;
+  csLayerClass = L.GridLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = CS_PRM.tile;
+    const job = { id: ++ciSeq, cancelled: false, done: false };
+    tile._ciJob = job;
+    csRenderTile(coords, job).then(pix => {
+      job.done = true;
+      if (pix === undefined) return;
+      if (!pix) { done(new Error('範囲外'), tile); return; }
+      tile.getContext('2d').putImageData(new ImageData(pix, CS_PRM.tile, CS_PRM.tile), 0, 0);
+      done(null, tile);
+    }).catch(e => { job.done = true; done(e, tile); });   // 通信の失敗は csNetError（network の印つき）
+    return tile;
+  },
+  });
+  return csLayerClass;
+}
+
+// 風の当たり方の GridLayer（CS立体図風と同じ作り）。風向が無い（風データなし）ときは空のタイル
+let sxLayerClass = null;
+function SxLayerClass() {
+  if (sxLayerClass) return sxLayerClass;
+  sxLayerClass = L.GridLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = SX_PRM.tile;
+    const job = { id: ++ciSeq, cancelled: false, done: false };
+    tile._ciJob = job;
+    const sector = windExp.sector, dmax = windExp.dmax;
+    if (sector == null) { job.done = true; setTimeout(() => done(null, tile), 0); return tile; }
+    sxRenderTile(coords, job, sector, dmax).then(f => {
+      job.done = true;
+      if (f === undefined) return;
+      if (!f) { done(new Error('範囲外'), tile); return; }
+      tile.getContext('2d').putImageData(new ImageData(sxColorize(f, SX_PRM.tile), SX_PRM.tile, SX_PRM.tile), 0, 0);
+      done(null, tile);
+    }).catch(e => { job.done = true; done(e, tile); });
+    return tile;
+  },
+  });
+  return sxLayerClass;
+}
+
+// z13 未満で CIマップを入れているときは「拡大すると表示」。z13 以上に戻ったら消す
+// 自前で描く地形の図（CIマップ・CS立体図風）ぜんぶ。文言は各レイヤーの minZoom から作る（CI は従来どおり z13）
+function updateCiZoomNote() {
+  if (!leafletMap) return;
+  mapPrefs.overlays.forEach(o => {
+    const def = findOverlay(o.id);
+    if (!def || (def.kind !== 'ciMap' && def.kind !== 'demRelief' && def.kind !== 'windExp') || !def.minZoom) return;
+    const note = `拡大すると表示（z${def.minZoom} から）`;
+    if (leafletMap.getZoom() < def.minZoom) setLayerNote(def.id, note);
+    else if (layerStatus[def.id] === note) clearLayerStatus(def.id);
+  });
+}
+
 function applyOverlays() {
   if (!leafletMap) return;
   // いったん全部外してから、有効なものだけ積み直す（重ね順を毎回そろえるため）
@@ -6903,23 +8261,43 @@ function applyOverlays() {
     delete overlayTileLayers[id];
   });
   dropAllStaleWxLayers();          // 貼り替え待ちの置き去りも一緒に掃除する
-  mapPrefs.overlays.forEach(item => {
+  mapPrefs.overlays.forEach((item, idx) => {
     const def = findOverlay(item.id);
     if (!def || def.pending) return;
     if (def.composite) {
       overlayTileLayers[def.id] = buildRrimLayers(item.opacity);
     } else if (def.kind === 'jmaNowcast' || def.kind === 'jmaSat') {
       addTimedTileLayer(def, item.opacity);
-    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas') {
+    } else if (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'windFlow' || def.kind === 'windFlowGL' || def.kind === 'areas' || def.kind === 'poi') {
       weatherPointsDirty = true;             // 点で描くものは再描画で載せる
-    } else if (def.url) {
+    } else if (def.kind === 'windDown') {
+      // ⚠ isBlendable の分岐より前に置く（url が無い）。中身は wdSync が貼る（鍵が同じでも、作り直したこの層へ貼り直す）
+      const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
+      overlayTileLayers[def.id] = L.imageOverlay(WD_BLANK, [[0, 0], [0.001, 0.001]], { pane, opacity: item.opacity, interactive: false }).addTo(leafletMap);
+    } else if (def.kind === 'ciMap' || def.kind === 'demRelief' || def.kind === 'windExp') {
+      // ⚠ isBlendable の分岐より前に置く（url が無いので L.tileLayer にすると壊れる）
+      const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
+      if (def.kind === 'windExp') { const r = windExpDir(); windExp.sector = r.sector; windExp.drawn = r.sector == null ? 'none' : `${r.sector}|${windExp.dmax}`; }
+      const Cls = def.kind === 'windExp' ? SxLayerClass() : def.kind === 'demRelief' ? CsLayerClass() : CiMapLayerClass();
+      const layer = new Cls(tileOpts(def, { pane, opacity: def.strength ? csStrength(item.opacity).opacity : item.opacity, minZoom: def.minZoom }));
+      if (def.strength) leafletMap.getPane(pane).style.filter = csStrength(item.opacity).filter;
+      layer.on('tileunload', e => ciCancel(e.tile));
+      layer.addTo(leafletMap);
+      watchTileStatus(layer, def);
+      overlayTileLayers[def.id] = layer;
+    } else if (isBlendable(def)) {
+      // 重ね方はレイヤーごとの pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
+      // 並び順は z-index で決める（overlays の順。後ろほど上）。DOM は動かさない
+      const pane = overlayPane(def.id, 340 + Math.min(idx, 9));
       const layer = L.tileLayer(def.url,
-        tileOpts(def, { pane: 'mapOverlays', opacity: item.opacity })).addTo(leafletMap);
+        tileOpts(def, { pane, opacity: item.opacity })).addTo(leafletMap);
       watchTileStatus(layer, def);     // 失敗を黙って空にしない
       overlayTileLayers[def.id] = layer;
     }
   });
+  orderNowcastBoxes();
   refreshWeatherPoints();
+  updateCiZoomNote();
   updateMapAttribution();
 }
 
@@ -6994,7 +8372,7 @@ function dropAllStaleWxLayers() {
    マスク用の入れ物（z-indexつき）がその境になるので、その内側に掛けても
    ベースマップとは混ざらず、黒いままになる。
    そのため合成するレイヤーは専用のpane（mapSat）に分けてある。 */
-function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : 'mapNowcast'; }
+function wxPaneFor(def) { return def.kind === 'jmaSat' ? 'mapSat' : def.id === 'thunder' ? 'mapThunder' : 'mapNowcast'; }
 /* 合成モードはマスク用の入れ物（z-indexを持つ外側）に掛ける。内側だと下と混ざらない。
    ⚠**合成の前に黒レベルを切り捨てること（floor）。** ひまわりの画像はタイルごとに
    暗部の水準がわずかに違う（特に夜のカラーバンドは可視光がほぼ無く、その差が支配的）。
@@ -7105,6 +8483,7 @@ async function addTimedTileLayer(def, opacity, replace) {
     // 雷はべた塗りで境目が固いので、レイヤーごとぼかす（paneに掛けると雨雲まで滲む）
     if (def.glow && layer.getContainer()) layer.getContainer().classList.add('wx-glow');
     applyWxBlend(def);                           // 衛星の雲は暗い所を透かす合成にする
+    if (isBlendable(def)) applyBlendHost(def.id); // 雨雲・雷は選んだ重ね方を箱に掛ける（既定は通常）
     overlayTileLayers[def.id] = layer;
   } catch (e) {
     const cur = replace ? overlayTileLayers[def.id] : null;
@@ -7552,11 +8931,17 @@ const WX_FAIL_MIN_TILES = 6;      // これだけ届くまでは判定しない�
 const WX_FAIL_RATIO = 0.4;        // 4割以上落ちたら「一部しか出ていない」と言う
 const WX_FAIL_SETTLE_MS = 1500;   // タイルは非同期に届くので、落ち着いてから数える
 function watchTileStatus(layer, def, hooks) {
-  let errors = 0, loaded = 0, badZ = null, timer = null;
+  let errors = 0, loaded = 0, badZ = null, timer = null, netErrors = 0;
   const judge = () => {
     timer = null;
     const total = loaded + errors;
     if (!errors || total < WX_FAIL_MIN_TILES) return;
+    /* 通信の失敗だと分かっている枚（e.error.network。いまは CS立体図風だけが付ける）は、mayBeEmpty・partialCoverage でも
+       「表示なし」「配信の範囲外」にしない（圏外を範囲外と取り違えない） */
+    if (netErrors && (loaded === 0 || netErrors / total >= WX_FAIL_RATIO)) {
+      setLayerError(def.id, loaded === 0 ? `通信できません（z${badZ}）` : `一部しか取得できません（${Math.round(netErrors / total * 100)}%が通信できない・z${badZ}）`);
+      return;
+    }
     if (loaded === 0) {
       // ⚠ 雷などは「そもそも無い」ことがある。これは失敗ではないので警告に混ぜない
       if (def.mayBeEmpty) setLayerNote(def.id, `この範囲に表示なし（z${badZ}のタイルが無い）`);
@@ -7564,12 +8949,15 @@ function watchTileStatus(layer, def, hooks) {
       return;
     }
     if (errors / total < WX_FAIL_RATIO) { clearLayerStatus(def.id); return; }
+    // 配信の範囲が県の形で、外は 403 を返すもの（CS立体図（栃木県））。一部欠けは失敗ではない
+    if (def.partialCoverage) { setLayerNote(def.id, 'この範囲の一部は配信の範囲外'); return; }
     const pct = Math.round(errors / total * 100);
     setLayerError(def.id, `一部しか取得できません（${pct}%が取得不可・z${badZ}）`);
   };
   const later = () => { if (!timer) timer = setTimeout(judge, WX_FAIL_SETTLE_MS); };
   layer.on('tileerror', e => {
     errors++;
+    if (e && e.error && e.error.network) netErrors++;
     if (e && e.coords) badZ = e.coords.z;
     // 1枚も読めていないうちは、従来どおり早めに理由を出す
     if (loaded === 0 && errors >= 3 && hooks && hooks.onFail) hooks.onFail();
@@ -8864,6 +10252,11 @@ const WIND_BG = {
   SPEED_MIN_MODE: 'relative',   // 'relative'（C級の半分）または 'absolute'（絶対値）
   SPEED_MIN_RELATIVE: 5,         // 相対：C級（10m/s）の半分
   SPEED_MIN_ABSOLUTE: 3,         // 絶対：3m/s
+  /* 最小風速から上へ「最小×RAMP_FRAC」の幅で、濃さを 0 からなめらかに上げる（#219・v4.171.0）。
+     最小で透明→いちばん淡い色に一段で切り替えると、ちょうど最小をまたぐ所（風の極大の高さ）に
+     等高線に沿うくっきりした縁が出て「そこだけ風が強い」ように見えた（男体山・極大 3.0 m/s ＝ 絶対の最小）。
+     ⚠ 最小未満は今までどおり塗らない（透明） */
+  RAMP_FRAC: 0.5,                // 絶対 3→4.5 m/s・相対 5→7.5 m/s で濃さが満ちる
 };
 // 計測表示のスライダー（v4.139.0・利用者の要望「粒の数多すぎ、背景薄めに感じる。スライダーで別々に調整」）
 /* 粒のスライダー（v4.140.0 利用者の指定）：100〜10,000。500 までは 100 刻み、500 からは 500 刻み（段の並びを添字で動かす）。
@@ -8934,6 +10327,12 @@ function windBgRGB(ms) {
   }
   return C[C.length - 1].slice();
 }
+// 風速 → 背景の濃さの倍率 0〜1（最小未満は 0・最小から幅 RAMP_FRAC×最小 で smoothstep）
+function windBgFade(ms, minSpd) {
+  if (!(ms > minSpd)) return 0;
+  const t = Math.min(1, (ms - minSpd) / (minSpd * WIND_BG.RAMP_FRAC));
+  return t * t * (3 - 2 * t);
+}
 // 格子 → 背景のテクスチャ（乗算済みアルファ）。返り値の data は検査用
 function windGLBgTexture(g) {
   const gl = windGL.gl, n = g.cols * g.rows, data = new Uint8Array(n * 4), A = windBgAlpha();
@@ -8941,12 +10340,13 @@ function windGLBgTexture(g) {
   for (let k = 0; k < n; k++) {
     if (!g.ok[k]) continue;
     const ms = Math.hypot(g.u[k], g.v[k]);
-    if (ms < minSpd) {
+    const f = windBgFade(ms, minSpd);
+    if (f <= 0) {
       data[k * 4] = 0; data[k * 4 + 1] = 0; data[k * 4 + 2] = 0; data[k * 4 + 3] = 0;  // 透明
       continue;
     }
-    const c = windBgRGB(ms);
-    data[k * 4] = Math.round(c[0] * A); data[k * 4 + 1] = Math.round(c[1] * A); data[k * 4 + 2] = Math.round(c[2] * A); data[k * 4 + 3] = Math.round(255 * A);
+    const c = windBgRGB(ms), a = A * f;
+    data[k * 4] = Math.round(c[0] * a); data[k * 4 + 1] = Math.round(c[1] * a); data[k * 4 + 2] = Math.round(c[2] * a); data[k * 4 + 3] = Math.round(255 * a);
   }
   if (!windGL.bgTex) windGL.bgTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, windGL.bgTex);
@@ -11124,11 +12524,125 @@ function drawAreas(bounds, opacity) {
   else if (!areaGradeById) setLayerNote('areas', 'ランキングを開くと判定の色になります');
 }
 
+/* ------ 施設（OSM）レイヤー（#199・v4.166.0） ------
+   data/poi.json（scripts/buildPoi.mjs が Actions で前もって取り出したもの。ODbL）から描く。
+   実行中に OSM へは問い合わせない（圏外でも出る。sw.js の PRECACHE に入れてある）。
+   ・z11 未満は出さない ・z11〜12 は画面の升目ごとに種類ごとに1つへ間引く ・z13 から名前を添える
+   ・押すと札（名前・種類）。**地点は変えない**（pickMapPoint を呼ばない。施設で天気を見る地点を動かさない）
+   ⚠ 名前は OSM の誰でも書き換えられる値。HTML に入れる前に必ず escapeHtml に通す */
+const POI_MIN_ZOOM = 11;
+const POI_NAME_MIN_ZOOM = 13;
+const POI_THIN_PX = 48;          // z11〜12 の間引きの升目（画面の px）
+const POI_MAX_MARKERS = 400;     // 1回に置く上限（重さの守り）
+const POI_LS_HIDDEN = 'sotoki.map.poiHidden';   // 隠した種類の key の配列
+const POI_ICONS = { trailhead: '🚩', parking: '🅿️', hut: '🛖', toilets: '🚻', water: '🚰', onsen: '♨️', shop: '🏪' };
+// データを読む前・読めないときのチップの名前（読めたら data の types の名前を使う）
+const POI_NAMES = { trailhead: '登山口', parking: '駐車場', hut: '山小屋', toilets: 'トイレ', water: '水場', onsen: '温泉', shop: '店' };
+let poiData = null;              // { generated, types:[{id,key,name}], items:[[lat,lon,typeId,name?]] }
+let poiLoading = null;           // 取得中の Promise（同時に2本走らせない）
+
+// 取得。失敗したら覚えず、次の描き直しでもう一度取りに行く
+function loadPoi() {
+  if (poiData) return Promise.resolve(poiData);
+  if (poiLoading) return poiLoading;
+  poiLoading = fetch('data/poi.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => {
+      if (!d || !Array.isArray(d.items) || !Array.isArray(d.types)) throw new Error('形が違う');
+      poiData = d;
+      return d;
+    })
+    .finally(() => { poiLoading = null; });
+  return poiLoading;
+}
+
+// 出典。取り出した日が分かれば添える（読み込む前は日付なし）
+function poiAttribution() {
+  const g = poiData && /^\d{4}-\d{2}-\d{2}$/.test(poiData.generated || '') ? poiData.generated : '';
+  return '© OpenStreetMap contributors（ODbL' + (g ? `・施設は ${g} 時点` : '') + '）';
+}
+
+// 隠した種類（key の集合）。知らない key は描くときに無視されるだけ
+function poiHiddenSet() {
+  try {
+    const a = JSON.parse(localStorage.getItem(POI_LS_HIDDEN) || '[]');
+    return new Set(Array.isArray(a) ? a.filter(k => typeof k === 'string' && POI_ICONS[k]) : []);
+  } catch (e) { return new Set(); }
+}
+function togglePoiType(key) {
+  if (!POI_ICONS[key]) return;
+  const h = poiHiddenSet();
+  if (h.has(key)) h.delete(key); else h.add(key);
+  try { localStorage.setItem(POI_LS_HIDDEN, JSON.stringify([...h])); } catch (e) { /* 覚えられなくても動く */ }
+  refreshWeatherPoints();
+  renderLayerPanel();
+}
+// 種類の絞り込みチップ（アメダスの要素チップと同じ見た目・複数選択）
+function poiTypeChips() {
+  const h = poiHiddenSet();
+  const types = (poiData && poiData.types) || Object.keys(POI_ICONS).map(k => ({ key: k, name: POI_NAMES[k] }));
+  return `<div class="amedas-els">` + types.filter(t => POI_ICONS[t.key]).map(t =>
+    `<button class="amedas-el${h.has(t.key) ? '' : ' active'}"
+             onclick="togglePoiType('${t.key}')">${POI_ICONS[t.key]}${escapeHtml(t.name)}</button>`).join('') + `</div>`;
+}
+
+function drawPoi(bounds, opacity) {
+  if (!poiData) {
+    // 前に失敗していたら、取り直しの間もエラーを見せたままにする（「取得中…」で上書きしない）
+    if (!layerFailed.poi) setLayerNote('poi', '取得中…');
+    // ⚠ 2引数の then にする（描き直しの中の例外を「取得できません」と取り違えない）
+    loadPoi().then(() => {
+      clearLayerStatus('poi'); updateMapAttribution(); refreshWeatherPoints();
+      const panel = document.getElementById('layer-panel');
+      if (panel && panel.classList.contains('open')) renderLayerPanel();   // 種類の名前をデータのものに
+    }, e => setLayerError('poi', `取得できません（${e.message}）`));
+    return;
+  }
+  const z = leafletMap.getZoom();
+  if (z < POI_MIN_ZOOM) { setLayerNote('poi', `拡大すると出ます（z${POI_MIN_ZOOM} から）`); return; }
+  const hidden = poiHiddenSet();
+  const typeById = new Map(poiData.types.map(t => [t.id, t]));
+  const thin = z < POI_NAME_MIN_ZOOM;
+  const seen = new Set();
+  let placed = 0, over = false;
+  for (const it of poiData.items) {
+    const [lat, lon, typeId, name] = it;
+    const t = typeById.get(typeId);
+    if (!t || !POI_ICONS[t.key] || hidden.has(t.key)) continue;
+    if (!bounds.contains([lat, lon])) continue;
+    if (thin) {
+      const pt = leafletMap.latLngToContainerPoint([lat, lon]);
+      const cell = `${t.key}:${Math.floor(pt.x / POI_THIN_PX)}:${Math.floor(pt.y / POI_THIN_PX)}`;
+      if (seen.has(cell)) continue;
+      seen.add(cell);
+    }
+    if (placed >= POI_MAX_MARKERS) { over = true; break; }
+    const label = !thin && name ? `<span>${escapeHtml(name)}</span>` : '';
+    const m = L.marker([lat, lon], {
+      pane: 'mapWeather', opacity,
+      icon: L.divIcon({
+        className: 'poi-mark',
+        html: `<div class="poi-box"><i>${POI_ICONS[t.key]}</i>${label}</div>`,
+        iconSize: null,
+      }),
+    }).addTo(leafletMap);
+    m.bindTooltip(`${name ? escapeHtml(name) + '<br>' : ''}${escapeHtml(t.name)}（OpenStreetMap）`);
+    // 押して開く（タッチ端末でマウスオーバーが無くても札が出るように明示する）。地点は変えない
+    m.on('click', () => m.openTooltip());
+    weatherMarkers.push(m);
+    placed++;
+  }
+  if (over) setLayerNote('poi', '多すぎるので一部だけ表示しています（拡大すると増えます）');
+  else if (!placed) setLayerNote('poi', 'この範囲に施設がありません');
+  else clearLayerStatus('poi');
+}
+
 function refreshWeatherPoints() {
   if (!leafletMap) return;
   clearWeatherMarkers();
   const bounds = leafletMap.getBounds();
   if (isOverlayOn('areas')) drawAreas(bounds, overlayOpacity('areas'));
+  if (isOverlayOn('poi')) drawPoi(bounds, overlayOpacity('poi'));
   updateMapWhen();
   if (isOverlayOn('amedas')) drawAmedas(bounds, overlayOpacity('amedas'));
   // 風：矢印と流れは同じ場（ensureWindField）から描く
@@ -11150,6 +12664,8 @@ function refreshWeatherPoints() {
     if (cells) drawThunderHint(cells, overlayOpacity('thunderHint'));
   }
   updateThunderIcons();
+  if (isOverlayOn('windExp')) sxSync();
+  if (isOverlayOn('windDown')) wdSync();
   updateMapTime();
   weatherPointsDirty = false;
 }
@@ -11172,7 +12688,8 @@ function mapTimeLabel(idx) {
 function updateMapTime() {
   const box = document.getElementById('map-time');
   if (!box) return;
-  const show = isMapOpen() && !!state.allData && typeof pointHintAnyOn === 'function' && pointHintAnyOn();
+  // 風の当たり方も自動の風向なら時刻で変わる（v4.177.0）
+  const show = isMapOpen() && !!state.allData && typeof pointHintAnyOn === 'function' && (pointHintAnyOn() || isOverlayOn('windDown') || (isOverlayOn('windExp') && windExp.mode === 'auto'));
   box.classList.toggle('hidden', !show);
   if (!show) return;
   const r = document.getElementById('map-time-range');
@@ -11310,6 +12827,23 @@ function paintThunderIcons() {
 }
 
 // 出典表記。地理院・OSM・Esri いずれも表示が利用条件なので省略・非表示にしないこと
+const GSI_TILE_LIST_URL = 'https://maps.gsi.go.jp/development/ichiran.html';
+const GSI_DEM_CREDIT = '地理院タイル（標高タイル）を加工して作成';
+/* 出典の帯の実測の高さを #map-bottom の --attr-h に入れる（下の余白の計算に使う・v4.162.0）。
+   中身（選んだレイヤー）や画面の幅で行数が変わるので ResizeObserver で追う */
+function watchAttributionHeight() {
+  const el = document.getElementById('map-attribution');
+  const mb = document.getElementById('map-bottom');
+  if (!el || !mb) return;
+  const put = () => {
+    const h = el.getBoundingClientRect().height;
+    if (h > 0) mb.style.setProperty('--attr-h', Math.ceil(h) + 'px');
+  };
+  put();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(put).observe(el);
+}
+watchAttributionHeight();
+
 function updateMapAttribution() {
   const el = document.getElementById('map-attribution');
   if (!el) return;
@@ -11318,9 +12852,30 @@ function updateMapAttribution() {
   if (base) parts.push(base.attribution);
   mapPrefs.overlays.forEach(item => {
     const def = findOverlay(item.id);
-    if (def && def.attribution && !parts.includes(def.attribution)) parts.push(def.attribution);
+    if (def && def.id === 'poi') {
+      // 施設は取り出した日を添える。下地の OSM と同じ出典なので1つにまとめる（重ねて出さない）
+      const t = poiAttribution();
+      const i = parts.indexOf('© OpenStreetMap contributors');
+      if (i >= 0) parts[i] = t; else if (!parts.includes(t)) parts.push(t);
+      return;
+    }
+    // 文字列か、文字列の配列（CIマップ：名称と栃木県の加工の旨）。同じ文字列は1つにまとめる
+    if (def && def.attribution) [].concat(def.attribution).forEach(t => { if (!parts.includes(t)) parts.push(t); });
   });
-  el.textContent = parts.join(' / ');
+  // 地理院の回答（2026-10）：地図は「地理院タイル＋URL」、加工した標高タイルは「地理院タイル（標高タイル）を加工して作成」。
+  // 標高タイルはレイヤーの選択に関係なく使う（地点の標高・風の地形補正）ので、加工の表記は常に出す
+  parts.push(GSI_DEM_CREDIT);
+  el.textContent = '';
+  parts.forEach((t, i) => {
+    if (i) el.appendChild(document.createTextNode(' / '));
+    if (t.startsWith('地理院タイル')) {
+      const a = document.createElement('a');
+      a.href = GSI_TILE_LIST_URL; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '地理院タイル';
+      el.appendChild(a);
+      if (t.length > 6) el.appendChild(document.createTextNode(t.slice(6)));
+    } else el.appendChild(document.createTextNode(t));
+  });
 }
 
 function setMapBase(id) {
@@ -11329,6 +12884,49 @@ function setMapBase(id) {
   saveMapPrefs();
   applyBaseLayer();
   renderLayerPanel();
+}
+
+/* レイヤーごとの pane。親は地図の pane（createPane の第2引数なし）。
+   ⚠ 既存の pane を作り直さず取る（重複させない）。 */
+function overlayPane(id, z) {
+  const name = 'mapOv_' + id;
+  const pane = leafletMap.getPane(name) || leafletMap.createPane(name);
+  pane.style.zIndex = String(z);
+  pane.style.mixBlendMode = blendOf(id);
+  return name;
+}
+
+/* 重ね方を、その地形図・気象レイヤーの合成の箱に掛ける（作り直さない）。
+   ⚠ 合成は必ず「タイルの div」ではなく箱（pane）に掛ける。内側に掛けると下の地図と混ざらない（wxPaneFor）。 */
+/* 雨雲と雷の上下は overlays の順（後に入れた方が上）。箱の z で決める（#194）。
+   既定の並び（雨雲の下・雷の上）から、雨雲を後から入れたときに逆転させる。 */
+function orderNowcastBoxes() {
+  if (!leafletMap) return;
+  const at = id => mapPrefs.overlays.findIndex(o => o.id === id);
+  const thunderTop = at('radar') < 0 || at('thunder') > at('radar');   // 雨雲が無いときは雷を上（既定）
+  leafletMap.getPane('mapNowcastMask').style.zIndex = thunderTop ? 380 : 381;
+  leafletMap.getPane('mapThunderMask').style.zIndex = thunderTop ? 381 : 380;
+}
+function applyBlendHost(id) {
+  if (!leafletMap) return;
+  const host = BLEND_HOST[id] ? leafletMap.getPane(BLEND_HOST[id]) : leafletMap.getPane('mapOv_' + id);
+  if (host) host.style.mixBlendMode = blendOf(id);
+}
+// 重ね方を変える。作り直さず箱の合成だけ差し替え、覚えてから表示を直す（#194）
+function setOverlayBlend(id, mode) {
+  const def = findOverlay(id);
+  if (!isBlendable(def) || !MAP_BLEND_MODES.some(m => m.id === mode)) return;
+  mapPrefs.blend[id] = mode;
+  saveMapPrefs();
+  applyBlendHost(id);
+  renderLayerPanel();
+}
+
+function blendChips(id) {
+  const cur = blendOf(id);
+  return `<span class="layer-blend" role="radiogroup" aria-label="重ね方">` +
+    MAP_BLEND_MODES.map(m => `<button class="layer-blend-btn${m.id === cur ? ' active' : ''}" role="radio" aria-checked="${m.id === cur}" onclick="setOverlayBlend('${id}', '${m.id}')">${m.name}</button>`).join('') +
+    `</span>`;
 }
 
 function isOverlayOn(id) { return mapPrefs.overlays.some(o => o.id === id); }
@@ -11358,6 +12956,12 @@ function toggleOverlay(id) {
   renderLayerPanel();
 }
 
+/* 「濃さ」（strength のレイヤー・v4.181.0）：スライダーの値 v → 透過率と pane のフィルタ。
+   v≦0.5 は透過率 2v（色はそのまま）。v＞0.5 は不透明のまま、彩度・コントラストを上げ少し暗くする（v=1 で彩度 2.2 倍・コントラスト 1.5 倍・明るさ 0.85） */
+function csStrength(v) {
+  const k = Math.max(0, Math.min(1, (v - 0.5) / 0.5));
+  return { opacity: Math.min(1, 2 * v), filter: k > 0 ? `saturate(${(1 + 1.2 * k).toFixed(3)}) contrast(${(1 + 0.5 * k).toFixed(3)}) brightness(${(1 - 0.15 * k).toFixed(3)})` : '' };
+}
 // スライダーはドラッグ中も即座に反映する（作り直さず不透明度だけ差し替える）
 function setOverlayOpacity(id, value) {
   const item = mapPrefs.overlays.find(o => o.id === id);
@@ -11369,10 +12973,13 @@ function setOverlayOpacity(id, value) {
     leafletMap.getPane('rrimShade').style.opacity = String(item.opacity);
     leafletMap.getPane('rrimSlope').style.opacity = String(item.opacity);
   } else if (layer) {
-    layer.setOpacity(item.opacity);
+    const d = findOverlay(id);
+    if (d && d.strength) { const s = csStrength(item.opacity); layer.setOpacity(s.opacity); leafletMap.getPane('mapOv_' + id).style.filter = s.filter; }
+    else layer.setOpacity(item.opacity);
   }
   const def = findOverlay(id);
-  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint')) refreshWeatherPoints();
+  // ⚠ 点で描くものは描き直さないと透過率が効かない（'areas' は v4.166.0 まで漏れていた）
+  if (def && (def.kind === 'amedas' || def.kind === 'windArrows' || def.kind === 'snowHint' || def.kind === 'thunderHint' || def.kind === 'areas' || def.kind === 'poi')) refreshWeatherPoints();
   if (def && def.kind === 'windFlow' && windFlow.cv) windFlow.cv.style.opacity = String(item.opacity);
   if (def && def.kind === 'windFlowGL' && windGL.cv) windGL.cv.style.opacity = String(item.opacity);
   const label = document.querySelector(`.layer-op-val[data-id="${id}"]`);
@@ -11401,7 +13008,9 @@ function restoreFavRotary() {
 }
 
 function openMap() {
+  if (!isMapOpen()) recordMapOpen();   // 開いたまま呼ばれても数えない（#210 段階0）
   document.getElementById('map-overlay').classList.add('open');
+  setMapDeclutter(false);   // 隠した状態は覚えない（#185）
   document.getElementById('map-results').innerHTML = '';   // 前回の検索結果をクリア
   document.getElementById('map-search-input').value = '';
   showMapHint();
@@ -11419,12 +13028,11 @@ function openMap() {
         // 拡大縮小はピンチとダブルタップ＋上下ドラッグで足りる（v4.60.0）
         zoomControl: false,
       }).setView([state.lat, state.lon], 10);
-      // 重ね順：ベース(200) < オーバーレイ(350) < 赤色立体図風(360/361) < マーカー(600)
-      leafletMap.createPane('mapOverlays').style.zIndex = 350;
+      // 重ね順：ベース(200) < オーバーレイ(340〜349・overlayPane で overlays の順) < 赤色立体図風(360/361) < マーカー(600)
       leafletMap.createPane('rrimShade').style.zIndex = 360;
       const slopePane = leafletMap.createPane('rrimSlope');
       slopePane.style.zIndex = 361;
-      slopePane.style.mixBlendMode = 'multiply';
+      slopePane.style.mixBlendMode = blendOf('rrimLike');   // 既定は乗算（#194）
       /* ナウキャスト（雨雲・衛星・雷）は別pane。現在地まわりだけ薄くするマスクを掛ける。
          マーカーと同じpaneに入れると、現在地マーカーごと消えてしまう。
          ⚠**マスクは「実寸のある箱」にしか効かない。** Leafletのpaneは0×0なので、
@@ -11436,8 +13044,10 @@ function openMap() {
       const satMask = leafletMap.createPane('mapSatMask');
       satMask.style.zIndex = 375;
       leafletMap.createPane('mapSat', satMask);
-      leafletMap.createPane('mapNowcastMask').style.zIndex = 380;
+      leafletMap.createPane('mapNowcastMask').style.zIndex = 380;   // 雨雲と雷の上下は orderNowcastBoxes が決める
       leafletMap.createPane('mapNowcast', leafletMap.getPane('mapNowcastMask'));
+      leafletMap.createPane('mapThunderMask').style.zIndex = 381;   // 雷は雨雲と別の箱（重ね方を別に選べる）
+      leafletMap.createPane('mapThunder', leafletMap.getPane('mapThunderMask'));
       // 風の流れ（粒子）。ナウキャスト（380）より上、点のマーカー（400）より下
       leafletMap.createPane('mapWind').style.zIndex = 390;
       leafletMap.getPane('mapWind').style.pointerEvents = 'none';
@@ -11451,6 +13061,7 @@ function openMap() {
       leafletMap.on('move zoom zoomend', updateMeSpotlight);
       // 縮尺は倍率だけでなく緯度でも変わるので、動かしたときも測り直す
       leafletMap.on('moveend zoomend', updateMapScale);
+      leafletMap.on('zoomend', updateCiZoomNote);   // CIマップの「拡大すると表示」（#202）
       applyBaseLayer();
       applyOverlays();
       /* ⚠ **ピンはタップを一切受けない。** Leaflet の既定のピンは `<img>` なので、
@@ -11494,13 +13105,38 @@ function closeMap() {
   if (geoWatchId != null) stopTracking();   // 見ていない間は追跡しない（電池のため）
   syncWakeLock();                           // 閉じたら画面の保持も手放す
   paintTileTrouble();                       // 閉じたら取得失敗の帯も畳む
+  setMapDeclutter(false);                   // 隠した状態は覚えない（開くたびに表示へ戻す・#185）
 }
+
+/* ------ 地図の上の情報を隠す（#185） ------
+   隠すもの・残すものは CSS（#map-stage.declutter）で決める。ここは切り替えだけ */
+let mapDeclutter = false;
+function setMapDeclutter(on) {
+  mapDeclutter = !!on;
+  const stage = document.getElementById('map-stage');
+  if (stage) stage.classList.toggle('declutter', mapDeclutter);
+  const b = document.getElementById('btn-declutter');
+  if (b) {
+    b.setAttribute('aria-pressed', String(mapDeclutter));
+    const label = mapDeclutter ? '地図の上の情報を戻す' : '地図の上の情報を隠す';
+    b.setAttribute('aria-label', label);
+    b.title = label;
+  }
+  /* 検索の途中で隠したら、キーボードも畳む。visibility で消しても入力中の状態は残る
+     （toggleLayerPanel と同じ理由） */
+  if (mapDeclutter) {
+    const q = document.getElementById('map-search-input');
+    if (q) q.blur();
+  }
+}
+function toggleMapDeclutter() { setMapDeclutter(!mapDeclutter); }
 function isMapOpen() {
   const el = document.getElementById('map-overlay');
   return !!el && el.classList.contains('open');
 }
 
 /* ------ レイヤーパネル（ボトムシート） ------ */
+let layerEditMode = false;       // 並べ替え・隠すの編集モード（#205 段階1。覚えない）
 function toggleLayerPanel() {
   const el = document.getElementById('layer-panel');
   if (el.classList.contains('open')) closeLayerPanel();
@@ -11515,10 +13151,13 @@ function toggleLayerPanel() {
     if (q) q.blur();
     renderLayerPanel();
     refreshTileCacheUsage();
+    renderAreaPanel();
+    refreshMapOpensView();
   }
 }
 function closeLayerPanel() {
   document.getElementById('layer-panel').classList.remove('open');
+  layerEditMode = false;          // 編集モードは覚えない（次に開いたら通常の一覧）
   const stage = document.getElementById('map-stage');
   if (stage) stage.classList.remove('panel-open');
 }
@@ -11570,11 +13209,349 @@ function windFlowSettings() {
     `<label class="wind-set-hud"><input type="checkbox" id="wind-set-hud" ${windGL.hudOn ? 'checked' : ''} onchange="windGLSetHud(this.checked)"> 計測表示（開発用）</label>` +
     `</div>`;
 }
+/* ------ 一覧の並べ替え・隠す（#205 段階1） ------
+   ⚠ **一覧の見た目だけ。** 重ね順（mapPrefs.overlays の配列順）は変えない。並べ替えで地図の見え方は変わらない。
+   ⚠ 隠しても ON/OFF はそのまま（ON のまま一覧から消えるだけ）。区分の末尾に件数を出して所在を失わせない。
+   ⚠ 選択中の下地は隠せない（排他選択なので、隠すと一覧に選択中の印が無くなる） */
+function toggleLayerEdit() {
+  layerEditMode = !layerEditMode;
+  renderLayerPanel();
+}
+function sectionLayers(sec) { return orderLayers(layerSectionDefs(sec), (mapPrefs.layerOrder || {})[sec]); }
+function isLayerHidden(id) { return (mapPrefs.layerHiddenIds || []).includes(id); }
+// 区分の中で1つ上（dir=-1）／下（+1）へ。編集モードでは隠した行も出しているので、その並びの中で入れ替える
+function moveLayer(sec, id, dir) {
+  const ids = sectionLayers(sec).map(d => d.id);
+  const i = ids.indexOf(id), j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  mapPrefs.layerOrder = Object.assign({}, mapPrefs.layerOrder, { [sec]: ids });
+  saveMapPrefs();
+  renderLayerPanel();
+}
+function toggleLayerHidden(id) {
+  if (id === mapPrefs.base) return;
+  const set = new Set(mapPrefs.layerHiddenIds || []);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  mapPrefs.layerHiddenIds = [...set];
+  saveMapPrefs();
+  renderLayerPanel();
+}
+// 並びだけ定義表の順に戻す（隠した項目はそのまま）
+function resetLayerOrder(sec) {
+  const order = Object.assign({}, mapPrefs.layerOrder);
+  delete order[sec];
+  mapPrefs.layerOrder = order;
+  saveMapPrefs();
+  renderLayerPanel();
+}
+// 編集モードの行。⚠ ボタンを layer-ov-toggle（行全体のボタン）の中に入れない（入れ子のボタンは押した先が外へ抜ける）
+function layerEditRows(sec) {
+  const list = sectionLayers(sec);
+  const rows = list.map((d, i) => {
+    const hidden = isLayerHidden(d.id);
+    const on = sec === 'bases' ? d.id === mapPrefs.base : isOverlayOn(d.id);
+    const name = escapeHtml(d.name);
+    const lock = sec === 'bases' && on;
+    return `
+      <div class="layer-edit-row${hidden ? ' is-hidden' : ''}" data-id="${d.id}">
+        <span class="layer-edit-name">${name}${on ? ' <em class="layer-edit-on">' + (sec === 'bases' ? '選択中' : 'ON') + '</em>' : ''}</span>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を上へ" ${i === 0 ? 'disabled' : ''}
+                onclick="moveLayer('${sec}', '${d.id}', -1)">▲</button>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を下へ" ${i === list.length - 1 ? 'disabled' : ''}
+                onclick="moveLayer('${sec}', '${d.id}', 1)">▼</button>
+        <button type="button" class="layer-edit-btn layer-edit-eye" aria-pressed="${hidden}"
+                aria-label="${name}を一覧から隠す${lock ? '（選択中の下地は隠せません）' : ''}"
+                ${lock ? 'disabled' : ''} onclick="toggleLayerHidden('${d.id}')">${hidden ? '🙈' : '👁'}</button>
+      </div>`;
+  }).join('');
+  return rows + `<button type="button" class="layer-edit-reset" onclick="resetLayerOrder('${sec}')">初期の並びに戻す</button>`;
+}
+// 通常時、区分の末尾に隠している件数を出す（ON のまま隠したものがどこへ行ったか分からなくならないように）
+function layerHiddenSummary(sec) {
+  const hid = layerSectionDefs(sec).filter(d => isLayerHidden(d.id));
+  if (!hid.length) return '';
+  const onN = sec === 'bases' ? 0 : hid.filter(d => isOverlayOn(d.id)).length;
+  return `<div class="layer-hidden-sum">隠している項目 ${hid.length}件${onN ? `（うちON ${onN}件）` : ''}。「並べ替え」で戻せます</div>`;
+}
+/* ------ レイヤーセット（#205 段階2） ------
+   いまの組み合わせ（下地・下地の透過率・重ねるレイヤーと透過率と重ね順・重ね方・風の層・衛星のバンド・アメダスの要素）に
+   名前をつけて端末に覚え、押すと丸ごと置き換える（セットに無いレイヤーは OFF）。
+   ⚠ 含めないもの：風の流れの粒の設定（windPref）・施設の種類の絞り込み・一覧の並び／隠した項目
+   ⚠ 版でレイヤーが消えたら、その項目だけ黙って捨てる。下地が分からなければ下地と透過率は変えない
+   ⚠ 名前は利用者の入力なので HTML に出す前に escapeHtml。onclick に渡すのは採番した id（英数字）だけ */
+const MAP_LS_LAYER_SETS = 'sotoki.map.layerSets';
+const MAP_LS_CS_STRENGTH_SETS = 'sotoki.map.csStrengthSets';   // セットの CS立体図風を「濃さ」へ移し替えた印（v4.181.0）
+const LAYER_SETS_MAX = 8;
+const LAYER_SET_NAME_MAX = 20;
+const LAYER_SET_ID_RE = /^[a-z0-9]{1,16}$/;
+let layerSetSeq = 0;
+// 名前は前後の空白を落として20字まで。⚠ 文字（コードポイント）で数える（slice だと絵文字の途中で切れる）
+function cutLayerSetName(t) { return Array.from(t.trim()).slice(0, LAYER_SET_NAME_MAX).join('').trim(); }
+
+// 透過率は 0〜1 の数だけ通す（Number() で読まない。null・"" が 0 になる）
+function layerSetOpacity(v, fallback) {
+  return (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) ? v : fallback;
+}
+/* overlays を検査する。loadMapPrefs と同じ条件（未知・pending・予備の層は捨てる。Canvas 版の風の流れは WebGL 版へ寄せる）。
+   赤色立体図風と傾斜量図・陰影起伏図が両方あれば赤色立体図風を残す */
+function sanitizeSetOverlays(raw) {
+  const out = [];
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    let id = item.id === 'windFlow' ? 'windFlowGL' : item.id;
+    const def = findOverlay(id);
+    if (!def || def.pending || def.hidden) continue;
+    if (out.some(o => o.id === def.id)) continue;
+    out.push({ id: def.id, opacity: layerSetOpacity(item.opacity, def.opacity) });
+  }
+  return out.some(o => o.id === 'rrimLike') ? out.filter(o => !RRIM_CONFLICTS.includes(o.id)) : out;
+}
+// 1件を検査する。壊れていれば null。分からない下地・風の層などは null にして「呼び出しで変えない」
+function sanitizeLayerSet(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (typeof raw.id !== 'string' || !LAYER_SET_ID_RE.test(raw.id)) return null;
+  const name = typeof raw.name === 'string' ? cutLayerSetName(raw.name) : '';
+  if (!name) return null;
+  const base = (typeof raw.base === 'string' && findBase(raw.base)) ? raw.base : null;
+  const overlays = sanitizeSetOverlays(raw.overlays);
+  const blend = {};
+  if (raw.blend && typeof raw.blend === 'object') {
+    for (const o of overlays) {
+      const m = raw.blend[o.id];
+      if (isBlendable(findOverlay(o.id)) && MAP_BLEND_MODES.some(x => x.id === m)) blend[o.id] = m;
+    }
+  }
+  return {
+    id: raw.id, name, base,
+    baseOpacity: base ? layerSetOpacity(raw.baseOpacity, 1) : null,
+    overlays, blend,
+    windMode: WIND_FIELD_MODES.some(m => m.id === raw.windMode) ? raw.windMode : null,
+    satBand: satBands().some(b => b.id === raw.satBand) ? raw.satBand : null,
+    amedasElement: AMEDAS_ELEMENTS.some(e => e.id === raw.amedasElement) ? raw.amedasElement : null,
+  };
+}
+function sanitizeLayerSets(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const r of raw) {
+    const s = sanitizeLayerSet(r);
+    if (s && !out.some(x => x.id === s.id)) out.push(s);
+    if (out.length >= LAYER_SETS_MAX) break;
+  }
+  return out;
+}
+let layerSetsCache = null;
+function loadLayerSets() {
+  if (layerSetsCache) return layerSetsCache;
+  let migrate = false;
+  try { migrate = localStorage.getItem(MAP_LS_CS_STRENGTH_SETS) !== '1'; } catch (e) { /* 読めなければ移し替えない */ }
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAP_LS_LAYER_SETS) || '[]');
+    /* v4.181.0：セットに覚えた CS立体図風の値も一度だけ半分にする（loadMapPrefs と同じ理由。印は別に持つ）。
+       ⚠ 整える前の生の値に掛ける（壊れた値を既定＝新しい尺度へ戻した後に半分にしない） */
+    if (migrate && Array.isArray(raw)) raw.forEach(s => s && Array.isArray(s.overlays) && s.overlays.forEach(o => {
+      const def = o && findOverlay(o.id), v = o && Number(o.opacity);
+      if (def && def.strength && v >= 0 && v <= 1) o.opacity = v / 2;
+    }));
+    layerSetsCache = sanitizeLayerSets(raw);
+  }
+  catch (e) { layerSetsCache = []; }    // 壊れていたらセットなし（地図は動く）
+  if (migrate) {
+    try {
+      localStorage.setItem(MAP_LS_LAYER_SETS, JSON.stringify(layerSetsCache));
+      localStorage.setItem(MAP_LS_CS_STRENGTH_SETS, '1');
+    } catch (e) { /* 書けなければ移し替えは次の機会に */ }
+  }
+  return layerSetsCache;
+}
+function saveLayerSets(sets) {
+  layerSetsCache = sets;
+  try { localStorage.setItem(MAP_LS_LAYER_SETS, JSON.stringify(sets)); } catch (e) { /* 保存できなくても動く */ }
+}
+/* いまの組み合わせを写し取る（参照で渡さない。setOverlayOpacity は item.opacity を直接書き換える）。
+   重ね方は実効値（既定のもの＝保存に無いものも書く。書かないと呼び出しで既定に戻らない） */
+function captureLayerSet() {
+  const overlays = mapPrefs.overlays.map(o => ({ id: o.id, opacity: o.opacity }));
+  const blend = {};
+  overlays.forEach(o => { if (isBlendable(findOverlay(o.id))) blend[o.id] = blendOf(o.id); });
+  return {
+    base: mapPrefs.base, baseOpacity: baseOpacity(mapPrefs.base), overlays, blend,
+    windMode: mapPrefs.windMode, satBand: mapPrefs.satBand, amedasElement: mapPrefs.amedasElement,
+  };
+}
+// 一致の比較に使う形。透過率は整数 %。null（分からない項目）は比べない
+function layerSetKey(s) {
+  return JSON.stringify([
+    s.base, s.base ? Math.round(s.baseOpacity * 100) : null,
+    s.overlays.map(o => [o.id, Math.round(o.opacity * 100), s.blend[o.id] || null]),
+    s.windMode, s.satBand, s.amedasElement,
+  ]);
+}
+function isLayerSetActive(set) {
+  const cur = captureLayerSet();
+  // セット側で分からない項目は、いまの値で埋めて比べる（比べない）
+  const view = Object.assign({}, cur, {
+    overlays: set.overlays, blend: set.blend,
+    ...(set.base ? { base: set.base, baseOpacity: set.baseOpacity } : {}),
+    ...(set.windMode ? { windMode: set.windMode } : {}),
+    ...(set.satBand ? { satBand: set.satBand } : {}),
+    ...(set.amedasElement ? { amedasElement: set.amedasElement } : {}),
+  });
+  const norm = s => layerSetKey(Object.assign({}, s, {
+    blend: Object.fromEntries(s.overlays.filter(o => isBlendable(findOverlay(o.id))).map(o => [o.id, s.blend[o.id] || BLEND_DEFAULT[o.id] || 'normal'])),
+  }));
+  return norm(view) === norm(cur);
+}
+function newLayerSetId() {
+  return (Date.now().toString(36) + (layerSetSeq++).toString(36)).slice(-16);
+}
+function saveCurrentLayerSet() {
+  const sets = loadLayerSets();
+  if (sets.length >= LAYER_SETS_MAX) return;
+  const input = window.prompt(`セットの名前（${LAYER_SET_NAME_MAX}字まで）`, `セット${sets.length + 1}`);
+  if (input === null) return;
+  const name = cutLayerSetName(String(input));
+  if (!name) return;
+  let id = newLayerSetId();
+  while (sets.some(s => s.id === id)) id = newLayerSetId();
+  saveLayerSets(sets.concat([Object.assign({ id, name }, captureLayerSet())]));
+  renderLayerPanel();
+}
+function applyLayerSet(id) {
+  const set = loadLayerSets().find(s => s.id === id);
+  if (!set) return;
+  const prevBase = mapPrefs.base, prevOp = baseOpacity(mapPrefs.base);
+  if (set.base) {
+    mapPrefs.base = set.base;
+    mapPrefs.baseOpacity = Object.assign({}, mapPrefs.baseOpacity, { [set.base]: set.baseOpacity });
+    // 下地は隠した項目に入っていたら外す（選択中の下地は隠せない・段階1）
+    mapPrefs.layerHiddenIds = (mapPrefs.layerHiddenIds || []).filter(x => x !== set.base);
+  }
+  mapPrefs.overlays = set.overlays.map(o => ({ id: o.id, opacity: o.opacity }));
+  // 重ね方：セットにあるレイヤーは必ず書き直す（保存に無ければ既定へ戻す）。セットに無いものは触らない（OFF なので害なし）
+  const blend = Object.assign({}, mapPrefs.blend);
+  set.overlays.forEach(o => {
+    if (!isBlendable(findOverlay(o.id))) return;
+    const m = set.blend[o.id];
+    if (m && m !== (BLEND_DEFAULT[o.id] || 'normal')) blend[o.id] = m; else delete blend[o.id];
+  });
+  mapPrefs.blend = blend;
+  if (set.windMode) mapPrefs.windMode = set.windMode;
+  if (set.satBand) mapPrefs.satBand = set.satBand;
+  if (set.amedasElement) mapPrefs.amedasElement = set.amedasElement;
+  saveMapPrefs();
+  if (leafletMap) {
+    // 下地はタイルを作り直すので、変わったときだけ
+    if (mapPrefs.base !== prevBase || baseOpacity(mapPrefs.base) !== prevOp) applyBaseLayer();
+    // 重ね方は pane に残るので、セットのものを掛け直す（applyOverlays は既存の pane の合成を作り直さない）
+    set.overlays.forEach(o => { if (isBlendable(findOverlay(o.id))) applyBlendHost(o.id); });
+    applyOverlays();
+  }
+  renderLayerPanel();
+}
+function renameLayerSet(id) {
+  const sets = loadLayerSets();
+  const set = sets.find(s => s.id === id);
+  if (!set) return;
+  const input = window.prompt('セットの名前', set.name);
+  if (input === null) return;
+  const name = cutLayerSetName(String(input));
+  if (!name) return;
+  saveLayerSets(sets.map(s => s.id === id ? Object.assign({}, s, { name }) : s));
+  renderLayerPanel();
+}
+function overwriteLayerSet(id) {
+  const sets = loadLayerSets();
+  const set = sets.find(s => s.id === id);
+  if (!set || !window.confirm(`「${set.name}」をいまの組み合わせで上書きしますか`)) return;
+  saveLayerSets(sets.map(s => s.id === id ? Object.assign({ id: s.id, name: s.name }, captureLayerSet()) : s));
+  renderLayerPanel();
+}
+function deleteLayerSet(id) {
+  const sets = loadLayerSets();
+  const set = sets.find(s => s.id === id);
+  if (!set || !window.confirm(`「${set.name}」を削除しますか`)) return;
+  saveLayerSets(sets.filter(s => s.id !== id));
+  renderLayerPanel();
+}
+function moveLayerSet(id, dir) {
+  const sets = loadLayerSets().slice();
+  const i = sets.findIndex(s => s.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= sets.length) return;
+  [sets[i], sets[j]] = [sets[j], sets[i]];
+  saveLayerSets(sets);
+  renderLayerPanel();
+}
+// 通常時はチップ＋「＋いまを保存」、編集モードでは行（名前＋▲▼＋名前・上書き・削除）
+function renderLayerSets() {
+  const wrap = document.getElementById('layer-sets');
+  if (!wrap) return;
+  const sets = loadLayerSets();
+  if (layerEditMode) {
+    wrap.innerHTML = sets.length ? sets.map((s, i) => {
+      const name = escapeHtml(s.name);
+      return `
+      <div class="layer-edit-row layer-set-row" data-set="${s.id}">
+        <span class="layer-edit-name">${name}</span>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を上へ" ${i === 0 ? 'disabled' : ''} onclick="moveLayerSet('${s.id}', -1)">▲</button>
+        <button type="button" class="layer-edit-btn" aria-label="${name}を下へ" ${i === sets.length - 1 ? 'disabled' : ''} onclick="moveLayerSet('${s.id}', 1)">▼</button>
+        <span class="layer-set-acts">
+          <button type="button" class="layer-set-act" onclick="renameLayerSet('${s.id}')">名前</button>
+          <button type="button" class="layer-set-act" onclick="overwriteLayerSet('${s.id}')">上書き</button>
+          <button type="button" class="layer-set-act layer-set-del" onclick="deleteLayerSet('${s.id}')">削除</button>
+        </span>
+      </div>`;
+    }).join('') : '<div class="layer-hidden-sum">セットはまだありません</div>';
+    return;
+  }
+  const full = sets.length >= LAYER_SETS_MAX;
+  wrap.innerHTML = `<div class="layer-sets-chips">` +
+    sets.map(s => {
+      const on = isLayerSetActive(s);
+      return `<button type="button" class="layer-set-chip${on ? ' active' : ''}" aria-pressed="${on}" onclick="applyLayerSet('${s.id}')">${escapeHtml(s.name)}</button>`;
+    }).join('') +
+    `<button type="button" class="layer-set-chip layer-set-add" ${full ? 'disabled' : ''} onclick="saveCurrentLayerSet()">＋いまを保存</button>` +
+    `</div>` +
+    (full ? `<div class="layer-hidden-sum">セットは${LAYER_SETS_MAX}件までです。「並べ替え」で削除・上書きできます</div>` : '');
+}
+
 function renderLayerPanel() {
   const baseWrap = document.getElementById('layer-bases');
   const ovWrap = document.getElementById('layer-overlays');
   if (!baseWrap || !ovWrap) return;
-  baseWrap.innerHTML = MAP_BASES.map(b => `
+  const panel = document.getElementById('layer-panel');
+  if (panel) panel.classList.toggle('editing', layerEditMode);
+  const editBtn = document.getElementById('btn-layer-edit');
+  if (editBtn) {
+    editBtn.textContent = layerEditMode ? '完了' : '並べ替え';
+    editBtn.setAttribute('aria-pressed', String(layerEditMode));
+  }
+  const wxWrap = document.getElementById('layer-weather');
+  renderLayerSets();              // セット（#205 段階2）は通常時も編集モードも描く（下の早い return より前）
+  if (layerEditMode) {
+    const opRow = document.getElementById('layer-base-op');
+    if (opRow) opRow.innerHTML = '';     // 下地の透過率（#211）も編集モードでは出さない（CSS で隠すだけでなく中身ごと消す）
+    baseWrap.innerHTML = layerEditRows('bases');
+    ovWrap.innerHTML = layerEditRows('overlays');
+    if (wxWrap) wxWrap.innerHTML = layerEditRows('weather');
+    updateMapAttribution();
+    return;
+  }
+  const shown = sec => sectionLayers(sec).filter(d => !isLayerHidden(d.id));
+  const opWrap = document.getElementById('layer-base-op');
+  if (opWrap) {
+    const b = findBase(mapPrefs.base) || findBase(MAP_BASE_DEFAULT), op = baseOpacity(b.id);
+    opWrap.innerHTML = `
+      <span class="layer-base-op-name">${escapeHtml(b.name)}の透過率</span>
+      <span class="layer-ov-op">
+        <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
+               aria-label="${escapeHtml(b.name)}の透過率" oninput="setBaseOpacity(this.value / 100)">
+        <span class="layer-op-val" id="layer-base-op-val">${Math.round(op * 100)}%</span>
+      </span>`;
+  }
+  baseWrap.innerHTML = shown('bases').map(b => `
     <button class="layer-base${b.id === mapPrefs.base ? ' active' : ''}"
             role="radio" aria-checked="${b.id === mapPrefs.base}"
             onclick="setMapBase('${b.id}')">
@@ -11593,19 +13570,20 @@ function renderLayerPanel() {
           <span class="layer-ov-name">${escapeHtml(o.name)}${o.unverified ? ' <em>要確認</em>' : ''}
             ${o.note ? `<span class="layer-ov-note">${escapeHtml(o.note)}</span>` : ''}
             <span class="layer-status" data-id="${o.id}">${escapeHtml(st)}</span></span>
-        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}
+        </button>${o.id === 'amedas' && on ? amedasElementChips() : ''}${o.id === 'satellite' && on ? satBandChips() : ''}${(o.id === 'windArrows' || o.id === 'windFlow' || o.id === 'windFlowGL') && on ? windModeChips() : ''}${o.id === 'windFlowGL' && on ? windFlowSettings() : ''}${o.id === 'snowHint' && on ? snowHintLegend() : ''}${o.id === 'thunderHint' && on ? thunderHintLegend() : ''}${o.id === 'poi' && on ? poiTypeChips() : ''}${o.id === 'windExp' && on ? windExpSettings() : ''}${o.id === 'windDown' && on ? windDownSettings() : ''}
         <div class="layer-ov-op">
+          ${on && isBlendable(o) ? blendChips(o.id) : ''}
           <input type="range" min="0" max="100" step="1" value="${Math.round(op * 100)}"
-                 aria-label="${escapeHtml(o.name)}の透過率" ${on ? '' : 'disabled'}
+                 aria-label="${escapeHtml(o.name)}の${o.strength ? '濃さ' : '透過率'}" ${on ? '' : 'disabled'}
                  oninput="setOverlayOpacity('${o.id}', this.value / 100)">
           <span class="layer-op-val" data-id="${o.id}">${Math.round(op * 100)}%</span>
         </div>
       </div>`;
   };
-  ovWrap.innerHTML = usableOverlays().map(row).join('');
-
-  const wxWrap = document.getElementById('layer-weather');
-  if (wxWrap) wxWrap.innerHTML = usableWeather().filter(o => !o.hidden).map(row).join('');   // hidden … 予備の層（Canvas 版の風の流れ）
+  baseWrap.insertAdjacentHTML('beforeend', layerHiddenSummary('bases'));
+  ovWrap.innerHTML = shown('overlays').map(row).join('') + layerHiddenSummary('overlays');
+  // 予備の層（定義表の hidden。Canvas 版の風の流れ）は layerSectionDefs が外している
+  if (wxWrap) wxWrap.innerHTML = shown('weather').map(row).join('') + layerHiddenSummary('weather');
   updateMapAttribution();
 }
 
@@ -11817,12 +13795,13 @@ function updateMapScale() {
 }
 
 /* ------ タイルキャッシュの使用量表示・削除（Service Workerと会話する） ------ */
-function swMessage(payload) {
+// timeoutMs：既定 3 秒（使用量・削除）。山域の保存は数枚の取得を待つので長くする（AREA_FETCH_TIMEOUT_MS）
+function swMessage(payload, timeoutMs = 3000) {
   return new Promise(resolve => {
     const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
     if (!sw) return resolve(null);
     const ch = new MessageChannel();
-    const timer = setTimeout(() => resolve(null), 3000);
+    const timer = setTimeout(() => resolve(null), timeoutMs);
     ch.port1.onmessage = e => { clearTimeout(timer); resolve(e.data); };
     sw.postMessage(payload, [ch.port2]);
   });
@@ -11849,11 +13828,301 @@ async function refreshTileCacheUsage() {
     ? `地図タイル ${formatBytes(res.bytes)}（${res.count}枚）${quotaText}`
     : `地図タイルのキャッシュ情報を取得できません${quotaText}`;
 }
+/* ------ 地図を開いた回数（#210 段階0） ------
+   Google マップを下地にした場合の費用（Dynamic Maps は地図の読み込みごとに課金）の当たりをつけるため、
+   地図画面を開いた回数を日ごとに数える。⚠ **端末の中（localStorage）だけ。外へは送らない。**
+   ⚠ 課金の回数とは一致しない目安（Leaflet の地図は一度作れば使い回している）。
+   ⚠ 日付は**端末のローカル日付**で組む。toISOString（UTC）だと日本の 0〜9時が前日に入る。
+   ⚠ 数え始め（since）は日ごとの表と別に持つ。表は古い日を落とすので、そこから取ると
+      長く開かなかった後に「今日から数え始めた」ことになり、平均が膨らむ。 */
+const MAP_OPENS_KEEP_DAYS = 60;   // 日ごとの表に残す日数
+const MAP_OPENS_WINDOW = 30;      // 平均を取る日数
+function localDayKey(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function dayKeyToUtcMs(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+function normalizeMapOpens(log) {
+  const days = {};
+  if (log && log.days && typeof log.days === 'object') {
+    for (const [k, v] of Object.entries(log.days)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(v) && v > 0) days[k] = Math.floor(v);
+    }
+  }
+  const since = (log && typeof log.since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(log.since)) ? log.since : null;
+  return { since, days };
+}
+function bumpMapOpens(log, dayKey) {
+  const { since, days } = normalizeMapOpens(log);
+  days[dayKey] = (days[dayKey] || 0) + 1;
+  const limit = dayKeyToUtcMs(dayKey) - (MAP_OPENS_KEEP_DAYS - 1) * 86400e3;
+  for (const k of Object.keys(days)) if (dayKeyToUtcMs(k) < limit) delete days[k];
+  return { since: since || dayKey, days };   // 時計を戻しても数え始めは書き換えない
+}
+function summarizeMapOpens(log, dayKey) {
+  const norm = normalizeMapOpens(log);
+  const days = norm.days;
+  // 時計を戻して数え始めが今日より後になったら、表の今日以前の最古の日を数え始めとみなす
+  // （そのままだと割る日数が1日になり、平均が膨らむ）
+  let since = norm.since;
+  if (since && since > dayKey) since = Object.keys(days).filter(k => k <= dayKey).sort()[0] || dayKey;
+  const todayMs = dayKeyToUtcMs(dayKey);
+  const from = todayMs - (MAP_OPENS_WINDOW - 1) * 86400e3;
+  let sum30 = 0;
+  for (const [k, v] of Object.entries(days)) {
+    const t = dayKeyToUtcMs(k);
+    if (t >= from && t <= todayMs) sum30 += v;
+  }
+  // 数え始めが30日より新しければ、その日から今日までで割る（始めたばかりで平均を薄めない）
+  const sinceMs = since ? dayKeyToUtcMs(since) : todayMs;
+  const elapsed = Math.floor((todayMs - sinceMs) / 86400e3) + 1;
+  const span = Math.max(1, Math.min(MAP_OPENS_WINDOW, elapsed));
+  const avg = sum30 / span;
+  return { today: days[dayKey] || 0, sum30, span, avg, perMonth: Math.round(avg * 30),
+           since: (since && elapsed < MAP_OPENS_WINDOW) ? since : null };
+}
+function loadMapOpens() {
+  // ⚠ 読み出しの失敗（getItem の例外）は呼び手へ投げる。飲み込むと「0回」と出て、
+  //   「数えていない」と「読めない」の区別がつかなくなる。壊れた値だけを null にする
+  const raw = localStorage.getItem(MAP_LS_OPENS);
+  try { return JSON.parse(raw || 'null'); }
+  catch (e) { return null; }
+}
+function recordMapOpen() {
+  // 数えられなくても地図は開く（数えるのは脇の仕事）
+  try {
+    const next = bumpMapOpens(loadMapOpens(), localDayKey(new Date()));
+    localStorage.setItem(MAP_LS_OPENS, JSON.stringify(next));
+  } catch (e) { /* 書けなければ数えない */ }
+}
+function refreshMapOpensView() {
+  const el = document.getElementById('layer-map-opens');
+  if (!el) return;
+  try {
+    const s = summarizeMapOpens(loadMapOpens(), localDayKey(new Date()));
+    const avgText = s.avg < 10 ? s.avg.toFixed(1) : String(Math.round(s.avg));
+    const sinceText = s.since ? `・${Number(s.since.slice(5, 7))}/${Number(s.since.slice(8, 10))} から` : '';
+    el.textContent = `今日 ${s.today}回／直近${s.span}日 計${s.sum30}回` +
+      `（1日平均 ${avgText}回・月に直すと約${s.perMonth}回${sinceText}）`;
+  } catch (e) {
+    el.textContent = '回数を読めません';
+  }
+}
 async function clearTileCache() {
   // 破壊的操作なので必ず確認を挟む
-  if (!confirm('保存した地図タイルをすべて削除します。\n圏外では削除した範囲の地図が表示できなくなります。\n削除しますか？')) return;
+  if (!confirm('見た範囲の地図タイル（自動の控え）をすべて削除します。\n圏外では削除した範囲の地図が表示できなくなります。\n「山域の保存」で保存した山域は消えません。\n削除しますか？')) return;
   await swMessage({ type: 'tiles-clear' });
   await refreshTileCacheUsage();
+}
+
+/* ------ 山域の保存（#244 段2＋#229・ADR-0020） ------
+   お気に入りの地点を中心に、地形（標高タイル）と標準地図を前もって Service Worker の別の箱（AREA_CACHE）へ入れる。
+   ・取るのは SW（ページが数枚ずつ頼む）。SW 自身の fetch は LRU に入らない。間隔はページが管理（毎秒4枚まで）
+   ・範囲：5A z13〜15（10km 四方）→ 5A が 404 の所の 10B（z13〜14・周り1枚）→ 1A z16（10km 四方）→ 1A z17（中心5km 四方・中心から近い順）。
+     標高は合わせて AREA_DEM_MAX 枚まで（超える分は z17 の外側から削る）。標準地図 std は z12〜16 の 10km 四方（#229 の半径約5km）で AREA_STD_MAX 枚まで
+   ・どこまで保存したかの正は箱そのもの。続き・やり直しは「箱に無く、404 でもない」ものを取る。山域の記録（sotoki.areas）は表示用
+   ・404 は保存しない。山域の miss（鍵）は期限切れにならない「無い」の根拠（areaMissHas。csMissAny の 30 日とは別）
+   ⚠ 地理院の回答（decisions 2026-10-22）：端末の中で私的に使うなら申請不要。サーバーの負荷は別なので控えめに取る */
+const AREA_LS = 'sotoki.areas', AREA_CACHE_NAME = 'sotoki-areas-v1';
+const AREA_DEM_MAX = 1100, AREA_STD_MAX = 750, AREA_BATCH = 8, AREA_BATCH_MS = 2000;   // 8 枚を 2 秒ごと＝毎秒 4 枚
+const AREA_FETCH_TIMEOUT_MS = 60000, AREA_MIN_FREE_BYTES = 120 * 1024 * 1024;
+const AREA_STD_URL = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png';   // MAP_BASES の std と同じ
+// 中心から half km 四方の半分のタイルの範囲（XYZ）
+function areaTileRange(lat, lon, halfKm, z) {
+  const n = 2 ** z, dLat = halfKm / 111.32, dLon = halfKm / (111.32 * Math.cos(lat * Math.PI / 180));
+  const tx = lo => Math.floor((lo + 180) / 360 * n);
+  const ty = la => { const r = la * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n); };
+  return { x0: tx(lon - dLon), x1: tx(lon + dLon), y0: Math.max(0, ty(lat + dLat)), y1: Math.min(n - 1, ty(lat - dLat)) };
+}
+// 1 枚の URL と鍵。⚠ URL は demFetchBlob と同じ式（DEM_SRC の url・x の折り返し）。鍵は ciTileKey と同じ（std は 'std/z/x/y'）
+function areaTile(src, z, x, y) {
+  const n = 2 ** z; x = ((x % n) + n) % n;
+  const tpl = src === 'std' ? AREA_STD_URL : DEM_SRC[src].url;
+  return { src, z, x, y, url: tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y), key: src === 'std' ? `std/${z}/${x}/${y}` : ciTileKey(z, x, y, src) };
+}
+function areaTilesIn(src, lat, lon, halfKm, z, nearFirst) {
+  const r = areaTileRange(lat, lon, halfKm, z), out = [];
+  for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) out.push(areaTile(src, z, x, y));
+  if (nearFirst) {
+    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+    out.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+  }
+  return out;
+}
+// 5A が 404 だった鍵から、要る 10B（z13〜14。z15 は z14 の親）とその周り1枚
+function areaTiles10b(missKeys) {
+  const seen = new Set(), out = [];
+  for (const k of missKeys) {
+    const m = /^gsi5a\/(\d+)\/(\d+)\/(\d+)$/.exec(k); if (!m) continue;
+    const z = +m[1], sh = Math.max(0, z - 14), zz = z - sh, x = +m[2] >> sh, y = +m[3] >> sh;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (y + oy < 0 || y + oy >= 2 ** zz) continue;
+      const t = areaTile('gsi10b', zz, x + ox, y + oy);
+      if (!seen.has(t.key)) { seen.add(t.key); out.push(t); }
+    }
+  }
+  return out;
+}
+/* 山域の取る順と上限。missKeys（その山域で 404 だった鍵）から 10B を足す。
+   → { dem: [...], std: [...] }（どちらも上限で切った後）。保存・削除の両方がこれで同じ集合を作る */
+function areaPlan(lat, lon, missKeys = []) {
+  const dem = [
+    ...[13, 14, 15].flatMap(z => areaTilesIn('gsi5a', lat, lon, 5, z)),
+    ...areaTiles10b(missKeys),
+    ...areaTilesIn('gsi1a', lat, lon, 5, 16),
+    ...areaTilesIn('gsi1a', lat, lon, 2.5, 17, true),
+  ].slice(0, AREA_DEM_MAX);
+  const std = [12, 13, 14, 15, 16].flatMap(z => areaTilesIn('std', lat, lon, 5, z)).slice(0, AREA_STD_MAX);
+  return { dem, std };
+}
+function loadSavedAreas() {
+  try { const a = JSON.parse(localStorage.getItem(AREA_LS) || '[]'); return Array.isArray(a) ? a.filter(x => x && typeof x.lat === 'number' && typeof x.lon === 'number') : []; }
+  catch (e) { return []; }
+}
+let areaMissSet = null;   // 保存した山域の 404 の鍵（areaMissHas の控え。保存・削除で作り直す）
+function storeSavedAreas(list) {
+  try { localStorage.setItem(AREA_LS, JSON.stringify(list)); } catch (e) { /* 入らなければ表示が古いだけ（箱が正） */ }
+  areaMissSet = null;
+}
+// 鍵のどれかが、保存した山域で 404 だったか（期限切れにならない。消すのは山域の削除だけ）
+function areaMissHas(keys) {
+  if (!areaMissSet) { areaMissSet = new Set(); loadSavedAreas().forEach(a => (a.miss || []).forEach(k => areaMissSet.add(k))); }
+  for (const k of keys) if (areaMissSet.has(k)) return true;
+  return false;
+}
+const areaJob = { running: null, cancel: false, text: '' };
+function areaIdOf(lat, lon) { return `${lat.toFixed(3)},${lon.toFixed(3)}`; }
+async function saveArea(fav) {
+  if (areaJob.running) return;
+  if (!(navigator.serviceWorker && navigator.serviceWorker.controller)) { alert('いまは保存できません（アプリを一度開き直してください）'); return; }
+  const plan0 = areaPlan(fav.lat, fav.lon);
+  if (!confirm(`「${fav.name}」のまわりの地形（標高 最大${AREA_DEM_MAX}枚・約90MB）と標準地図（最大${AREA_STD_MAX}枚・約15MB）を保存します。\n` +
+    `合わせて 約100MB 前後（1A の無い山域は少なくなります）。電波のよい所で行ってください（毎秒4枚ずつ取ります。途中でやめても、そこまでは残ります）。\n` +
+    `保存した地図は端末の中で見るためのものです（公開などするときは「判定とデータ」の注意を見てください）。\n始めますか？`)) return;
+  // ⚠ 確認の直後（await の前）に走行中にする。後に置くと、persist を待つ間にもう一度押せて2本走る
+  if (areaJob.running) return;
+  const id = areaIdOf(fav.lat, fav.lon);
+  areaJob.running = id; areaJob.cancel = false;
+  let stopped = '';
+  try {
+    if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      if (est && est.quota && est.quota - (est.usage || 0) < AREA_MIN_FREE_BYTES) { stopped = '端末の空きが足りないため保存できません（120MB 以上の空きが要ります）'; alert(stopped); throw null; }
+    }
+  } catch (e) { if (stopped) { areaJob.running = null; areaJob.text = stopped; renderAreaPanel(); return; } /* 分からなければ進める（足りなければ保存が失敗するだけ） */ }
+  let list = loadSavedAreas(), area = list.find(a => a.id === id);
+  if (!area) { area = { id, name: fav.name, lat: fav.lat, lon: fav.lon, at: Date.now(), done: 0, bytes: 0, miss: [], complete: false }; list.push(area); }
+  area.at = Date.now(); area.complete = false; area.name = fav.name;
+  storeSavedAreas(list);
+  try {
+    const cache = await caches.open(AREA_CACHE_NAME);
+    const miss = new Set(area.miss || []);
+    const put = () => { const l = loadSavedAreas(), i = l.findIndex(a => a.id === id); if (i >= 0) { l[i] = area; storeSavedAreas(l); } };
+    // 1 段ずつ：5A → 10B（5A の 404 から）→ 1A → 標準地図。どこまで入ったかは箱を見る（続き・やり直し）
+    const phases = [
+      () => plan0.dem.filter(t => t.src === 'gsi5a'),
+      () => areaPlan(fav.lat, fav.lon, [...miss]).dem.filter(t => t.src === 'gsi10b'),
+      () => areaPlan(fav.lat, fav.lon, [...miss]).dem.filter(t => t.src === 'gsi1a'),
+      () => plan0.std,
+    ];
+    const total = plan0.dem.length + plan0.std.length;
+    let seen = 0, skipped = 0;
+    area.done = 0;
+    for (const phase of phases) {
+      const todo = [];
+      // 箱にあるものは取らない（done は「箱にある枚数」にそろえるので、ここで数える）
+      for (const t of phase()) { seen++; if (miss.has(t.key)) continue; if (await cache.match(t.url)) skipped++; else todo.push(t); }
+      for (let i = 0; i < todo.length && !stopped; i += AREA_BATCH) {
+        if (areaJob.cancel) { stopped = 'やめました（そこまでは保存しました）'; break; }
+        const t0 = Date.now(), batch = todo.slice(i, i + AREA_BATCH);
+        const res = await swMessage({ type: 'area-fetch', urls: batch.map(t => t.url) }, AREA_FETCH_TIMEOUT_MS);
+        if (!res) { stopped = '応答がありません。もう一度押すと続きから取ります'; break; }
+        let fails = 0;
+        res.forEach((r, j) => {
+          const t = batch[j];
+          if (r.status >= 200 && r.status < 300) { area.done++; area.bytes += r.size || 0; }
+          else if (r.status === 403 || r.status === 404) { miss.add(t.key); area.miss = [...miss]; }
+          else fails++;
+        });
+        // 404 は端末の記録にも入れる（圏外で取りに行かない・10B に落ちる）
+        const m1 = batch.filter((t, j) => t.src === 'gsi1a' && (res[j].status === 403 || res[j].status === 404)).map(t => t.key);
+        const m5 = batch.filter((t, j) => t.src === 'gsi5a' && (res[j].status === 403 || res[j].status === 404)).map(t => t.key);
+        if (m1.length) csMissMark(m1, CS_MISS1A_KEY);
+        if (m5.length) csMissMark(m5);
+        put();
+        if (fails === batch.length) { stopped = '通信できません。電波のよい所で、もう一度押すと続きから取ります'; break; }
+        areaJob.text = `保存中…（${Math.min(seen, total)} / ${total} 枚の範囲・${formatBytes(area.bytes)}）`;
+        renderAreaPanel();
+        const wait = AREA_BATCH_MS - (Date.now() - t0);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+      }
+      if (stopped) break;
+    }
+    area.done += skipped; put();
+    if (!stopped) { area.complete = true; area.at = Date.now(); put(); }
+  } catch (e) {
+    stopped = '保存できませんでした（' + (e && e.message || e) + '）';
+  } finally {
+    areaJob.running = null;
+    areaJob.text = stopped || '保存しました';
+    renderAreaPanel();
+  }
+}
+// 山域を消す。ほかの山域と重なるタイルは残す
+async function deleteArea(id) {
+  const list = loadSavedAreas(), area = list.find(a => a.id === id);
+  if (!area || areaJob.running) return;
+  if (!confirm(`「${area.name}」の保存を削除します。圏外ではこの山域の細かい地図が出なくなります。削除しますか？`)) return;
+  const urlsOf = a => { const p = areaPlan(a.lat, a.lon, a.miss || []); return [...p.dem, ...p.std].map(t => t.url); };
+  const keep = new Set(list.filter(a => a.id !== id).flatMap(urlsOf));
+  const urls = urlsOf(area).filter(u => !keep.has(u));
+  const res = await swMessage({ type: 'area-delete', urls }, AREA_FETCH_TIMEOUT_MS);
+  if (!res) { alert('削除できませんでした（アプリを開き直してから、もう一度）'); return; }
+  storeSavedAreas(list.filter(a => a.id !== id));
+  areaJob.text = '';
+  renderAreaPanel();
+}
+function renderAreaPanel() {
+  const box = document.getElementById('layer-areas');
+  if (!box) return;
+  box.innerHTML = '';
+  const areas = loadSavedAreas(), favs = loadFavs();
+  const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
+  areas.forEach(a => {
+    const row = mk('div', 'area-row');
+    const d = new Date(a.at);
+    row.append(mk('span', 'area-name', a.name),
+      mk('span', 'area-meta', `${d.getMonth() + 1}/${d.getDate()}・${formatBytes(a.bytes)}・${a.done}枚${a.complete ? '' : '（途中）'}`));
+    const del = mk('button', 'area-btn', '削除');
+    del.disabled = !!areaJob.running;
+    del.onclick = () => deleteArea(a.id);
+    row.append(del);
+    box.append(row);
+  });
+  favs.filter(f => typeof f.lat === 'number' && typeof f.lon === 'number').forEach(f => {
+    const id = areaIdOf(f.lat, f.lon), a = areas.find(x => x.id === id);
+    if (a && a.complete) return;
+    const row = mk('div', 'area-row');
+    row.append(mk('span', 'area-name', f.name));
+    const b = mk('button', 'area-btn', a ? '続きを保存' : 'この山域を保存');
+    b.disabled = !!areaJob.running;
+    b.onclick = () => saveArea(f);
+    row.append(b);
+    box.append(row);
+  });
+  if (!favs.length && !areas.length) box.append(mk('div', 'area-meta', 'お気に入りに登録した地点ごとに保存できます'));
+  if (areaJob.running) {
+    const row = mk('div', 'area-row');
+    row.append(mk('span', 'area-meta', areaJob.text || '保存中…'));
+    const c = mk('button', 'area-btn', 'やめる');
+    c.onclick = () => { areaJob.cancel = true; };
+    row.append(c);
+    box.append(row);
+  } else if (areaJob.text) box.append(mk('div', 'area-meta', areaJob.text));
 }
 
 /* ------ 地名検索（Nominatim） ------ */
@@ -12081,11 +14350,57 @@ async function enableHeading() {
     if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
     else if (typeof e.alpha === 'number') h = 360 - e.alpha;
     if (h == null || isNaN(h)) return;
-    setHeading(h);
+    /* センサーの方位は端末の上端が基準。横向きでは画面の上＝端末の横の辺なので、
+       画面の回転ぶんを足す（#184）。⚠ GPS の進む向き（onGeoUpdate）には足さないので setHeading には入れない */
+    setHeading(h + screenAngle());
+    showOrientDiag(h);
   };
   window.addEventListener('deviceorientation', headingHandler, true);
   return true;
 }
+
+/* 画面の回転角（度）。端末を反時計回りに回した角度（W3C の screen.orientation.angle）。
+   古い iOS は window.orientation（-90 は 270 と同じ）。取れなければ 0（縦）
+   ⚠ 両方あって食い違うとき（横なのに一方が 0 のまま等）は、画面の縦横（innerWidth と innerHeight）と合う方を採る。
+     iOS のホーム画面の PWA で、横にしてもヘディングアップの地図が横へ流れた（v4.183.0 の実機・回転角が 0 のままだった見込み）。
+     どちらも合わなければ window.orientation（iOS で長く使われてきた方）を採る */
+function screenAngle() {
+  try {
+    const norm = a => ((a % 360) + 360) % 360;
+    const wo = typeof window.orientation === 'number' ? norm(window.orientation) : null;
+    const so = screen.orientation && typeof screen.orientation.angle === 'number' ? norm(screen.orientation.angle) : null;
+    if (wo == null && so == null) return 0;
+    if (wo == null) return so;
+    if (so == null || so === wo) return wo;
+    const landscape = window.innerWidth > window.innerHeight;
+    const fits = a => (a === 90 || a === 270) === landscape;
+    if (fits(so) && !fits(wo)) return so;
+    return wo;
+  } catch (e) { return 0; }
+}
+
+/* 仮（v4.183.1）：横向きのヘディングアップ中だけ、回転角の2つの取り口・採った値・センサーの方位を出す。
+   v4.183.0 の実機で横向きのとき地図が横へ流れた。どちらの取り口が何を返しているかを実機で見て、確かめたら外す */
+function showOrientDiag(h) {
+  const el = document.getElementById('map-orient-diag');
+  if (!el) return;
+  const landscape = window.innerWidth > window.innerHeight;
+  if (!mapHeadingUp || !landscape) { el.classList.add('hidden'); return; }
+  const so = screen.orientation && typeof screen.orientation.angle === 'number' ? screen.orientation.angle : '—';
+  const wo = typeof window.orientation === 'number' ? window.orientation : '—';
+  el.textContent = `向きの補正 screen ${so}°／window ${wo}°／採用 ${screenAngle()}°／方位 ${Math.round(h)}°`;
+  el.classList.remove('hidden');
+}
+
+/* ノッチ（Dynamic Island）がどちら側にあるかで、右のボタン列の逃げ幅を変える。
+   回転角 90＝端末を反時計回りに倒した＝端末の上（ノッチ）が左。270 なら右（逃げ幅はそのまま） */
+function applyNotchSide() {
+  document.documentElement.classList.toggle('notch-left', screenAngle() === 90);
+}
+applyNotchSide();
+window.addEventListener('orientationchange', applyNotchSide);
+window.addEventListener('resize', applyNotchSide);
+try { if (screen.orientation) screen.orientation.addEventListener('change', applyNotchSide); } catch (e) {}
 
 function setHeading(deg) {
   headingDeg = ((deg % 360) + 360) % 360;
@@ -12094,6 +14409,18 @@ function setHeading(deg) {
   else drawMe();
 }
 
+/* 回す地図の一辺（画面の対角線＋余白）。縦横が変わったら測り直す */
+function updateMapDiag() {
+  const stage = document.getElementById('map-stage');
+  if (!stage) return;
+  const r = stage.getBoundingClientRect();
+  stage.style.setProperty('--map-diag', `${Math.ceil(Math.hypot(r.width, r.height)) + 16}px`);
+}
+window.addEventListener('resize', () => {
+  if (!mapHeadingUp || !leafletMap) return;
+  updateMapDiag();
+  leafletMap.invalidateSize();
+});
 function applyMapRotation(deg) {
   mapRotationDeg = deg;
   const stage = document.getElementById('map-stage');
@@ -12120,6 +14447,7 @@ function setHeadingUp(on) {
   //   前回の取り消しが黙って残っていると、次に山で使うとき画面が落ちる
   if (!on) wakeLockOptOut = false;
   mapHeadingUp = on;
+  if (on) updateMapDiag();
   document.getElementById('map-stage').classList.toggle('rotating', on);
   if (on) {
     // 回転中に手でパンすると、ドラッグの向きと地図の動きがねじれる。追従中なので止める
@@ -12128,6 +14456,8 @@ function setHeadingUp(on) {
   } else {
     leafletMap.dragging.enable();
     applyMapRotation(0);
+    const dg = document.getElementById('map-orient-diag');
+    if (dg) dg.classList.add('hidden');
     if (headingHandler) {
       window.removeEventListener('deviceorientation', headingHandler, true);
       headingHandler = null;
@@ -12158,7 +14488,7 @@ function updateMeSpotlight() {
   spotRaf = requestAnimationFrame(() => { spotRaf = null; paintMeSpotlight(); });
 }
 // マスクを掛ける組（外＝実寸の箱／内＝タイルの入る所）。雨雲・雷と衛星で1組ずつ
-const SPOT_PANES = [['mapNowcastMask', 'mapNowcast'], ['mapSatMask', 'mapSat']];
+const SPOT_PANES = [['mapNowcastMask', 'mapNowcast'], ['mapThunderMask', 'mapThunder'], ['mapSatMask', 'mapSat']];
 function paintMeSpotlight() {
   if (!leafletMap) return;
   for (const [hostName, tilesName] of SPOT_PANES) {
@@ -12544,7 +14874,8 @@ function setMapSearchSort(mode) {
 }
 
 function renderMapResults() {
-  const results = document.getElementById('map-results');
+  // ⚠ 地名検索の結果だけを描く（手元の山は #mtn-results。#171）
+  const results = document.getElementById('place-results');
   if (!results) return;
   results.innerHTML = '';
   if (!mapSearchItems.length) return;
@@ -12624,9 +14955,38 @@ let mapSearchSeq = 0;   // 打ち直したとき、前の検索の遅い応答�
 async function doMapSearch() {
   const input = document.getElementById('map-search-input');
   const q = input.value.trim();
-  const results = document.getElementById('map-results');
-  if (!q) { results.innerHTML = ''; return; }
+  const root = document.getElementById('map-results');
+  if (!q) { root.innerHTML = ''; return; }
+  /* ⚠ 通し番号は座標の判定より前に進める。地名の検索が途中のまま座標で Enter したとき、
+     遅れて届いた地名の結果が移動後の画面に描かれないように */
   const seq = ++mapSearchSeq;
+  // 座標の入力は外（Nominatim・地理院）に投げずに、その地点へ移る（v4.158.0）
+  const pc = parseCoordInput(q);
+  if (pc) {
+    if (pc.outOfRange) root.innerHTML = `<div class="map-result-msg">${COORD_OUT_MSG}</div>`;
+    else if (pc.bad) root.innerHTML = `<div class="map-result-msg">緯度帯の文字（${pc.band}）と北距が合いません（${pc.fmt}）</div>`;
+    else goCoordPoint(pc.lat, pc.lon);
+    return;
+  }
+  /* 手元の山（#171）を上に残し、区切りの下に地名検索の結果を足す（決定2）。
+     ⚠ 手元の一覧は同梱のファイルなので待っても短い。読めなければ地名検索だけになる */
+  if (!mtnIndex) await ensureMtnIndex();
+  if (seq !== mapSearchSeq) return;
+  root.innerHTML = '';
+  const mbox = document.createElement('div');
+  mbox.id = 'mtn-results';
+  renderMtnSection(mbox, q);
+  const hasMtn = mbox.childNodes.length > 0;
+  if (hasMtn) {
+    root.appendChild(mbox);
+    const sep = document.createElement('div');
+    sep.className = 'place-sep';
+    sep.textContent = '地名（OSM・国土地理院）';
+    root.appendChild(sep);
+  }
+  const results = document.createElement('div');
+  results.id = 'place-results';
+  root.appendChild(results);
   results.innerHTML = '<div class="map-result-msg">検索中…</div>';
   try {
     /* 日本国内に限定して山名・地名を検索。表記揺れぶんだけ順に引き、
@@ -12636,7 +14996,10 @@ async function doMapSearch() {
       const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
       if (!isFinite(lat) || !isFinite(lon)) return;
       // 情報源が違えば座標も少し違う。名前と約1km四方で畳む
-      const name = normalizeSearchName((item.display_name || '').split(',')[0]);
+      const rawName = (item.display_name || '').split(',')[0];
+      // 手元の行に出している峰と同じ山は外す（同じ山が2行出ないように。#171）
+      if (isShownMtn(rawName, lat, lon)) return;
+      const name = normalizeSearchName(rawName);
       const key = `${name}@${lat.toFixed(2)},${lon.toFixed(2)}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -12671,7 +15034,7 @@ async function doMapSearch() {
     if (gsi.status === 'fulfilled') gsi.value.forEach(add);
     if (!items.length && osm.status === 'rejected') throw osm.reason;
     if (!items.length) {
-      results.innerHTML = '<div class="map-result-msg">見つかりませんでした</div>';
+      results.innerHTML = `<div class="map-result-msg">${hasMtn ? '地名は見つかりませんでした' : '見つかりませんでした'}</div>`;
       return;
     }
     /* いま見ている場所に近いものから並べる。
@@ -12709,6 +15072,33 @@ async function doMapSearch() {
   }
 }
 
+/* 座標の入力で移る（v4.158.0）。長押しのピンと同じ扱い（標高は DEM・地点名は逆ジオコーディング）。
+   ⚠ 長押しとちがい**検索として扱い、地名の履歴に残す**（印 coord。履歴から押しても同じ動きになる）
+   ⚠ ズームは打った地点が見える細かさまで寄せる（地名を選ぶときの 11 より細かく） */
+const COORD_GO_ZOOM = 14;
+const COORD_OUT_MSG = '日本の範囲外の座標です（緯度20〜46・経度122〜154）';
+function goCoordPoint(lat, lon) {
+  addSearchHist(`${lat.toFixed(5)}, ${lon.toFixed(5)}`, lat, lon, undefined, { coord: true });
+  document.getElementById('map-results').innerHTML = '';
+  mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : 11, COORD_GO_ZOOM));
+  pickPinPoint(lat, lon);
+}
+// 入力中の窓の先頭に出す「座標へ移動」の行（範囲外は出さない。renderSearchHist の注記）
+function coordGoRow(pc) {
+  const el = document.createElement('div');
+  el.className = 'map-result-item coord-go';
+  const nm = document.createElement('div');
+  nm.className = 'map-result-name';
+  nm.textContent = `📍 ${pc.lat.toFixed(5)}, ${pc.lon.toFixed(5)} へ移動`;
+  const sub = document.createElement('div');
+  sub.className = 'map-result-sub';
+  sub.textContent = pc.swapped ? '経度・緯度の順と読んで入れ替えました（世界測地系）'
+    : (pc.fmt === 'UTM' || pc.fmt === 'MGRS') ? `${pc.fmt} として読みました（世界測地系）` : '座標として読みました（世界測地系）';
+  el.append(nm, sub);
+  el.addEventListener('click', () => goCoordPoint(pc.lat, pc.lon));
+  return el;
+}
+
 // Enterキーで検索実行
 document.getElementById('map-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); doMapSearch(); }
@@ -12740,12 +15130,13 @@ function sameHistPlace(h, name, lat, lon) {
   return normalizeSearchName(h.name) === normalizeSearchName(name) &&
     Math.abs(h.lat - lat) < 0.01 && Math.abs(h.lon - lon) < 0.01;
 }
-function addSearchHist(name, lat, lon, elev) {
+function addSearchHist(name, lat, lon, elev, opts) {
   if (!name || !isFinite(lat) || !isFinite(lon)) return;
   // 同じ地点は重ねず先頭へ移す
   const list = loadSearchHist().filter(h => !sameHistPlace(h, name, lat, lon));
   const h = { name, lat: +lat.toFixed(5), lon: +lon.toFixed(5), t: Date.now() };
   if (typeof elev === 'number' && isFinite(elev)) h.elev = Math.round(elev);
+  if (opts && opts.coord) h.coord = true;   // 座標の入力（v4.158.0）。押すと goCoordPoint
   list.unshift(h);
   saveSearchHist(list.slice(0, SEARCH_HIST_MAX));
 }
@@ -12762,12 +15153,29 @@ function renderSearchHist() {
   const results = document.getElementById('map-results');
   const input = document.getElementById('map-search-input');
   if (!results || !input) return;
-  const q = normalizeSearchName(input.value.trim());
+  const raw = input.value;
+  const q = normalizeSearchName(raw.trim());
   const all = loadSearchHist();
   const shown = all.map((h, i) => ({ h, i }))
     .filter(({ h }) => !q || normalizeSearchName(h.name).includes(q));
   results.innerHTML = '';
   mapSearchItems = [];              // 並べ替えの札の対象を残さない
+  /* ⚠ 入力中は「範囲外」も「帯の文字が合わない」も出さない。打っている途中（35 1 → 35 13 → 35 139）は2つ目の数が育つまで
+     一時的に範囲外になるため。理由を言うのは Enter したときだけ */
+  const pc = parseCoordInput(raw);
+  if (pc && pc.lat != null) results.appendChild(coordGoRow(pc));
+
+  /* 手元の山（#171）を上に。空の窓では 山の履歴 → 地名の履歴 の順（決定3）。
+     峰の一覧がまだ無ければ裏で作り、入力が変わっていなければ描き直す */
+  if (!mtnIndex) {
+    ensureMtnIndex().then(ix => {
+      if (ix && input.value === raw && document.activeElement === input) renderSearchHist();
+    });
+  }
+  const mbox = document.createElement('div');
+  mbox.id = 'mtn-results';
+  renderMtnSection(mbox, raw);
+  if (mbox.childNodes.length) results.appendChild(mbox);
   if (!shown.length) return;        // 空なら #map-results:empty で消える
 
   const head = document.createElement('div');
@@ -12775,18 +15183,8 @@ function renderSearchHist() {
   const label = document.createElement('span');
   label.textContent = `🕘 最近選んだ地点（${all.length}件）`;
   head.appendChild(label);
-  if (!q) {
-    const clr = document.createElement('button');
-    clr.type = 'button';
-    clr.className = 'map-hist-clear';
-    clr.textContent = '履歴を消去';
-    clr.addEventListener('click', () => {
-      if (!confirm('検索の履歴をすべて消します。よろしいですか？')) return;
-      saveSearchHist([]);
-      renderSearchHist();
-    });
-    head.appendChild(clr);
-  }
+  // 全消去は1つだけ（山の履歴の見出しに出ていればそちら）。山・地名の両方を消す
+  if (!q && !mbox.querySelector('.map-hist-clear')) head.appendChild(mtnClearButton());
   results.appendChild(head);
 
   for (const { h, i } of shown) {
@@ -12816,6 +15214,7 @@ function renderSearchHist() {
     /* ⚠ 標高は pickMapPoint の第4引数に渡さない（DEMの読みで公称値ではない。
        検索結果から選ぶときと同じ扱い） */
     el.addEventListener('click', () => {
+      if (h.coord) { goCoordPoint(h.lat, h.lon); return; }   // 打ったときと同じ動き（先頭へ移すのも中で行う）
       addSearchHist(h.name, h.lat, h.lon, h.elev);   // 使ったものを先頭へ
       pickMapPoint(h.lat, h.lon, h.name);
     });
@@ -12833,6 +15232,416 @@ function renderSearchHist() {
     results.appendChild(row);
   }
 }
+/* ============================================================
+   手元の山の検索（#171・第1段階）
+   ⚠ 引くのは areas.json の110峰だけ（読み・都道府県・総称・別名は data/peak_meta.json）。
+      外部（Nominatim・地理院）は Enter のときだけ、これまでどおり下に足す。
+   ⚠ 点数 = 一致度 ＋ 履歴 ＋ 名山。**一致しなかった山は候補から外す**ので、
+      履歴・名山の上乗せは一致した候補の中の並びにしか効かない。
+   ⚠ 数値は仮置き（実機で調整）。ABC評価には触れない。
+   ============================================================ */
+const MTN_SEARCH = {
+  MATCH: { exact: 120, prefix: 80, part: 60, fuzzy: 30 },
+  FUZZY_MIN_LEN: 3,          // 曖昧一致は3文字以上打ったときだけ
+  HIST_BOOST_MAX: 40,        // 履歴の上乗せの上限
+  HIST_HALF_LIFE_DAYS: 14,   // 半減期
+  TIERS: [['百', 30], ['二百', 20], ['三百', 12], ['新百', 8]],   // 上乗せは最上位の1つだけ
+  RESULT_MAX: 8,             // 入力中に出す候補の上限
+  SUGGEST_MAX: 20,           // 空の窓で履歴が無いとき、名山を出す上限
+  HIST_MAX: 50,              // 山の履歴の上限
+};
+const MTN_HIST_KEY = 'mtnSearchHistory.v1';   // ⚠ 旧アプリ名を含めない（#171）
+
+/* 照合用に揃える。⚠ 既存の normalizeSearchName は外部検索の重複判定・地名の履歴で使っているので変えない。
+   順番に意味がある：
+   ① ひらがな化は「ヵ・ヶ」を除く（U+30F5/30F6 を足すと ゕ・ゖ になり、畳む集合から外れる）
+   ② 畳む集合 {ヶ,ヵ,け,が,か} は、利用者の決定「ヶケガがヵカを1字に」をひらがな化のあとに写したもの。
+      ひらがな化の前に畳むと「ヤリガタケ」と「やりがたけ」が一致しない
+      （既存の normalizeSearchName もカタカナのカ・ケを語のどこでも畳んでいる。それをひらがなに広げた） */
+const MTN_KA_GROUP = /[ヶヵけがか]/g;
+function mtnKey(s) {
+  let t = String(s == null ? '' : s).normalize('NFKC').toLowerCase();
+  t = t.replace(/[\s・･ー－\-‐()（）［］\[\]「」『』〈〉<>＜＞【】]/g, '');
+  for (const [old, now] of KANJI_VARIANT_PAIRS) t = t.split(old).join(now);
+  t = t.replace(/[ァ-ヴ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+  t = t.replace(MTN_KA_GROUP, 'ヶ').replace(/[ノの之]/g, 'の');
+  return t;
+}
+
+// 編集距離（短い語だけを比べるので素直な表で足りる）
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/* 1つの照合キーに対する一致度。0 は不一致。
+   曖昧一致：入力が3文字以上のとき、キーの先頭 n 文字（n＝入力長±1）との編集距離が1以下 */
+function mtnMatchKey(q, key) {
+  if (!q || !key) return 0;
+  const M = MTN_SEARCH.MATCH;
+  if (key === q) return M.exact;
+  if (key.startsWith(q)) return M.prefix;
+  if (key.includes(q)) return M.part;
+  if (q.length >= MTN_SEARCH.FUZZY_MIN_LEN) {
+    for (let n = q.length - 1; n <= q.length + 1; n++) {
+      if (n < 1 || n > key.length) continue;
+      if (editDistance(key.slice(0, n), q) <= 1) return M.fuzzy;
+    }
+  }
+  return 0;
+}
+// 名前・読み・別名（総称を含む）のうち最良
+function mtnMatchScore(q, peak) {
+  let best = 0;
+  for (const k of peak.keys) best = Math.max(best, mtnMatchKey(q, k));
+  return best;
+}
+
+// 名山の上乗せ：最上位のティア1つ分だけ
+function mtnTopTier(tags) {
+  for (const [t] of MTN_SEARCH.TIERS) if (tags && tags.includes(t)) return t;
+  return null;
+}
+function mtnTierBoost(tags) {
+  const top = mtnTopTier(tags);
+  const hit = MTN_SEARCH.TIERS.find(([t]) => t === top);
+  return hit ? hit[1] : 0;
+}
+// 履歴の上乗せ：上限 × 半減期14日の減衰 × 回数（log2(count+1)/3、上限1）
+function mtnHistBoost(h, now = Date.now()) {
+  if (!h) return 0;
+  const days = Math.max(0, (now - h.lastAt) / 86400000);
+  const decay = Math.pow(0.5, days / MTN_SEARCH.HIST_HALF_LIFE_DAYS);
+  const cnt = Math.min(1, Math.log2(h.count + 1) / 3);
+  return MTN_SEARCH.HIST_BOOST_MAX * decay * cnt;
+}
+
+/* 総称の中での立場（#176）。base＝峰の表示名（山頂名）、g＝groups の1件 {main, highest}。
+   ⚠ 純関数にしておく（#173 の楕円からも呼ぶ）。名前は山頂名で比べる。
+   返り値 roles＝['主峰','最高峰'] の部分集合、note＝「※最高峰は三本槍岳」のような注釈（無ければ ''） */
+function mtnRoleInfo(base, g) {
+  if (!g) return { roles: [], note: '' };
+  const roles = [];
+  if (g.main && g.main === base) roles.push('主峰');
+  if (g.highest && g.highest === base) roles.push('最高峰');
+  let note = '';
+  if (!roles.length && g.main && g.main === g.highest) note = `※主峰・最高峰は${g.main}`;
+  else {
+    const parts = [];
+    if (g.main && g.main !== base) parts.push(`主峰は${g.main}`);
+    if (g.highest && g.highest !== base) parts.push(`最高峰は${g.highest}`);
+    if (parts.length) note = '※' + parts.join('・');
+  }
+  return { roles, note };
+}
+
+/* 峰の一覧を作る。⚠ id は「山域id/山名」（areas.json は変えない・#171 の決定7）。
+   改名すると履歴の id が宙に浮くが、見つからない id は黙って捨てる。
+   summit＝登録点の実際の山頂名（燧ヶ岳→柴安嵓）。表示と照合にだけ使い、選んだ地点名は areas.json の名前のまま（#176 の決定3） */
+function buildPeakIndex(areas, meta) {
+  const out = [];
+  const m = (meta && meta.peaks) || {};
+  const groups = (meta && meta.groups) || {};
+  for (const area of (areas && areas.areas) || []) {
+    for (const p of area.peaks || []) {
+      const id = `${area.id}/${p.name}`;
+      const x = m[id] || {};
+      const base = String(p.name).replace(/[（(].*$/, '');
+      const words = [p.name, base, x.kana, x.summit, x.summitKana, ...(x.aliases || []), x.group, x.groupKana];
+      const summit = x.summit || null;
+      const { roles, note } = mtnRoleInfo(summit || base, x.group ? groups[x.group] : null);
+      out.push({
+        id, name: p.name, kana: x.kana || null, aliases: x.aliases || [],
+        summit, summitKana: x.summitKana || null, roles, roleNote: note,
+        group: x.group || null, lat: p.lat, lon: p.lon, elevation: p.elev,
+        pref: x.pref || [], areaName: area.name,
+        // 決定4：hyakumeizan:true を「百」として出す。他のティアは今回は入れない（出典・版が未決定）
+        tags: p.hyakumeizan ? ['百'] : [],
+        keys: [...new Set(words.filter(Boolean).map(mtnKey).filter(Boolean))],
+      });
+    }
+  }
+  return out;
+}
+
+let mtnIndex = null;          // 峰の一覧（初回に作って持つ）。検査では差し替える
+let mtnIndexLoading = null;
+async function loadPeakMeta() {
+  try {
+    const res = await fetch('data/peak_meta.json');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }   // 読めなければ名前だけで引く
+}
+function ensureMtnIndex() {
+  if (mtnIndex) return Promise.resolve(mtnIndex);
+  if (!mtnIndexLoading) {
+    mtnIndexLoading = Promise.all([loadAreas(), loadPeakMeta()])
+      .then(([areas, meta]) => (mtnIndex = mtnIndex || buildPeakIndex(areas, meta)))
+      .catch(() => null)
+      .finally(() => { mtnIndexLoading = null; });
+  }
+  return mtnIndexLoading;
+}
+function mtnById(id) { return (mtnIndex || []).find(p => p.id === id) || null; }
+
+/* ------ 山の履歴（mtnSearchHistory.v1）------
+   ⚠ 地名の履歴（sotoki_search_hist）とは別。既存の履歴は移さない（決定3）。
+   ⚠ 読めない・壊れた・保存できないときは空として扱い、検索は止めない */
+function loadMtnHist() {
+  try {
+    const a = JSON.parse(localStorage.getItem(MTN_HIST_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(h => h && typeof h.id === 'string' &&
+      isFinite(h.count) && h.count > 0 && isFinite(h.lastAt)) : [];
+  } catch { return []; }
+}
+function saveMtnHist(list) {
+  try { localStorage.setItem(MTN_HIST_KEY, JSON.stringify(list)); } catch { /* 容量超過・無効 */ }
+}
+function addMtnHist(id, now = Date.now()) {
+  if (!id) return;
+  const list = loadMtnHist();
+  const old = list.find(h => h.id === id);
+  const rest = list.filter(h => h.id !== id);
+  rest.unshift({ id, count: (old ? old.count : 0) + 1, lastAt: now });
+  saveMtnHist(rest.slice(0, MTN_SEARCH.HIST_MAX));
+}
+function removeMtnHist(id) { saveMtnHist(loadMtnHist().filter(h => h.id !== id)); }
+
+/* ------ 候補を出す ------ */
+let mtnSort = 'rec';          // 'rec'（おすすめ・既定）| 'dist' | 'high'
+
+/* 距離の基準：現在地があれば現在地、無ければ地図の中心（決定6）。基準は画面に書き添える */
+function mtnDistOrigin() {
+  if (myPos && isFinite(myPos.lat) && isFinite(myPos.lon)) return { lat: myPos.lat, lon: myPos.lon, label: '現在地から' };
+  const c = leafletMap && leafletMap.getCenter && leafletMap.getCenter();
+  if (c && isFinite(c.lat) && isFinite(c.lng)) return { lat: c.lat, lon: c.lng, label: '地図の中心から' };
+  if (isFinite(state.lat) && isFinite(state.lon)) return { lat: state.lat, lon: state.lon, label: '選択地点から' };
+  return null;
+}
+
+// 打った語に一致した峰を、点数つきで返す（並べ替えはしない）
+function mtnSearch(q, index = mtnIndex, hist = loadMtnHist(), now = Date.now()) {
+  const key = mtnKey(q);
+  if (!key || !index) return [];
+  const byId = new Map(hist.map(h => [h.id, h]));
+  const out = [];
+  for (const p of index) {
+    const match = mtnMatchScore(key, p);
+    if (!match) continue;   // 不一致は除外。上乗せは一致した中だけ
+    out.push({ p, match, score: match + mtnHistBoost(byId.get(p.id), now) + mtnTierBoost(p.tags) });
+  }
+  return out;
+}
+
+/* 山名順。⚠ 漢字のまま比べると文字コード順になる（悪沢岳・旭岳・塩見岳…）ので、読みがあれば読みで比べる。
+   表示名が山頂名なら山頂名の読みで（「大岳（八甲田山）」を「は」に並べない） */
+function mtnNameCmp(a, b) {
+  const k = p => p.summitKana || p.kana || p.name;
+  return k(a).localeCompare(k(b), 'ja') || a.name.localeCompare(b.name, 'ja');
+}
+// 並べ替え。同順位はおすすめの点数の降順、さらに同点は山名順
+function mtnSortList(list, mode, origin) {
+  const byRec = (a, b) => (b.score - a.score) || mtnNameCmp(a.p, b.p);
+  for (const r of list) r.dist = origin ? haversineKm(origin.lat, origin.lon, r.p.lat, r.p.lon) : null;
+  const arr = list.slice();
+  if (mode === 'dist' && origin) arr.sort((a, b) => (a.dist - b.dist) || byRec(a, b));
+  else if (mode === 'high') arr.sort((a, b) => ((b.p.elevation || 0) - (a.p.elevation || 0)) || byRec(a, b));
+  else arr.sort(byRec);
+  return arr;
+}
+
+// 表示名：山頂名があればそれを使い、総称があって違えば「新山（鳥海山）」「柴安嵓（燧ヶ岳）」
+function mtnDisplayName(p) {
+  const base = p.summit || p.name;
+  return (p.group && p.group !== base) ? `${base}（${p.group}）` : base;
+}
+
+// 選んで確定：山の履歴に残し、公称の標高を渡して飛ぶ（ADR-0006。△と同じ扱い）
+function pickMtn(p) {
+  addMtnHist(p.id);
+  pickMapPoint(p.lat, p.lon, p.name, p.elevation);
+}
+
+/* ------ 画面 ------
+   #map-results の中に、手元の山（#mtn-results）と地名（#place-results・地名の履歴）を分けて置く。
+   ⚠ 既存の .map-result-item / .map-sort-row は地名検索の結果だけで使う（既存の検査がそこを見ている） */
+
+// 名山のチップ：最上位だけ。押すと全タグ（行の選択には伝えない）
+function mtnTagChip(tags) {
+  const top = mtnTopTier(tags);
+  if (!top) return null;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'mtn-tag';
+  b.textContent = top;
+  b.title = '名山の区分';
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    const all = MTN_SEARCH.TIERS.map(([t]) => t).filter(t => tags.includes(t)).join('・');
+    b.textContent = (b.textContent === top) ? all : top;
+  });
+  return b;
+}
+
+// 1行（山名・チップ・標高／都道府県・距離）。⚠ 保存値・データは textContent で組む
+function mtnRowEl(p, dist) {
+  const el = document.createElement('div');
+  el.className = 'mtn-item';
+  el.dataset.id = p.id;
+  const l1 = document.createElement('div');
+  l1.className = 'mtn-line1';
+  const nm = document.createElement('span');
+  nm.className = 'mtn-name';
+  nm.textContent = mtnDisplayName(p);
+  l1.appendChild(nm);
+  // 主峰・最高峰（#176）。⚠ 名山のチップ（.mtn-tag）と別の見た目・別のクラスにする
+  for (const r of p.roles || []) {
+    const rc = document.createElement('span');
+    rc.className = 'mtn-role';
+    rc.textContent = r;
+    l1.appendChild(rc);
+  }
+  const chip = mtnTagChip(p.tags);
+  if (chip) l1.appendChild(chip);
+  if (typeof p.elevation === 'number') {
+    const ev = document.createElement('span');
+    ev.className = 'mtn-elev';
+    ev.textContent = `${p.elevation.toLocaleString('ja-JP')}m`;
+    l1.appendChild(ev);
+  }
+  const l2 = document.createElement('div');
+  l2.className = 'mtn-sub';
+  const parts = [p.pref.length ? p.pref.join('・') : p.areaName];
+  if (p.roleNote) parts.unshift(p.roleNote);
+  if (typeof dist === 'number' && isFinite(dist)) parts.push(dist < 10 ? `${dist.toFixed(1)}km` : `${Math.round(dist)}km`);
+  l2.textContent = parts.join(' · ');
+  el.append(l1, l2);
+  el.addEventListener('click', () => pickMtn(p));
+  return el;
+}
+
+function mtnHead(text) {
+  const head = document.createElement('div');
+  head.className = 'map-hist-head mtn-head';
+  const label = document.createElement('span');
+  label.textContent = text;
+  head.appendChild(label);
+  return head;
+}
+
+// 全消去（山・地名の両方）。確認あり
+function mtnClearButton() {
+  const clr = document.createElement('button');
+  clr.type = 'button';
+  clr.className = 'map-hist-clear';
+  clr.textContent = '履歴を消去';
+  clr.addEventListener('click', () => {
+    if (!confirm('検索の履歴（山・地名）をすべて消します。よろしいですか？')) return;
+    saveMtnHist([]);
+    saveSearchHist([]);
+    renderSearchHist();
+  });
+  return clr;
+}
+
+/* 手元の山の候補を組む。q が空なら 山の履歴（新しい順）／無ければ名山。
+   返り値は表示した峰（地名検索の重複を外すのに使う） */
+let mtnShown = [];
+function renderMtnSection(box, rawQ) {
+  box.innerHTML = '';
+  mtnShown = [];
+  if (!mtnIndex) return [];
+  const origin = mtnDistOrigin();
+  const q = rawQ.trim();
+  if (!q) {
+    const hist = loadMtnHist().map(h => ({ h, p: mtnById(h.id) })).filter(x => x.p)
+      .sort((a, b) => b.h.lastAt - a.h.lastAt);
+    if (hist.length) {
+      const head = mtnHead(`🕘 最近選んだ山（${hist.length}件）`);
+      head.appendChild(mtnClearButton());
+      box.appendChild(head);
+      for (const { p } of hist) {
+        const row = document.createElement('div');
+        row.className = 'mtn-hist-row';
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'map-hist-del mtn-hist-del';
+        del.textContent = '✕';
+        del.setAttribute('aria-label', `${p.name} を履歴から消す`);
+        del.addEventListener('click', e => { e.stopPropagation(); removeMtnHist(p.id); renderSearchHist(); });
+        row.append(mtnRowEl(p, origin ? haversineKm(origin.lat, origin.lon, p.lat, p.lon) : null), del);
+        box.appendChild(row);
+        mtnShown.push(p);
+      }
+      return mtnShown;
+    }
+    // 履歴が無ければ名山ティア順（同じティアは山名順）
+    const tiers = MTN_SEARCH.TIERS.map(([t]) => t);
+    const rank = p => { const t = mtnTopTier(p.tags); return t ? tiers.indexOf(t) : Infinity; };
+    const list = mtnIndex.filter(p => mtnTopTier(p.tags))
+      .sort((a, b) => (rank(a) - rank(b)) || mtnNameCmp(a, b))
+      .slice(0, MTN_SEARCH.SUGGEST_MAX);
+    if (!list.length) return [];
+    box.appendChild(mtnHead('⛰ 名山'));
+    for (const p of list) {
+      box.appendChild(mtnRowEl(p, origin ? haversineKm(origin.lat, origin.lon, p.lat, p.lon) : null));
+      mtnShown.push(p);
+    }
+    return mtnShown;
+  }
+  const hits = mtnSortList(mtnSearch(q), mtnSort, origin).slice(0, MTN_SEARCH.RESULT_MAX);
+  if (!hits.length) return [];
+  // 並べ替え：おすすめ（既定）／距離／標高。距離の基準を書き添える
+  const row = document.createElement('div');
+  row.className = 'mtn-sort-row';
+  for (const [mode, label] of [['rec', 'おすすめ'], ['dist', '距離'], ['high', '標高']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mtn-sort-chip' + (mtnSort === mode ? ' on' : '');
+    b.textContent = label;
+    b.dataset.mode = mode;
+    if (mode === 'dist' && !origin) b.disabled = true;
+    b.addEventListener('click', () => {
+      if (mtnSort === mode) return;
+      mtnSort = mode;
+      renderMtnSection(box, rawQ);
+    });
+    row.appendChild(b);
+  }
+  if (origin) {
+    const o = document.createElement('span');
+    o.className = 'mtn-origin';
+    o.textContent = `距離は${origin.label}`;
+    row.appendChild(o);
+  }
+  box.appendChild(row);
+  for (const r of hits) {
+    box.appendChild(mtnRowEl(r.p, r.dist));
+    mtnShown.push(r.p);
+  }
+  return mtnShown;
+}
+
+// 地名検索の結果のうち、手元に出している峰と同じもの（名前一致・1km以内）か
+const MTN_DUP_KM = 1;
+function isShownMtn(name, lat, lon) {
+  const want = normalizeSearchName(String(name).replace(/[（(].*$/, ''));
+  if (!want) return false;
+  // areas.json の名前に加えて山頂名（雄山・柴安嵓など）でも同じ山とみなす（#176）
+  const same = p => [p.name, p.summit].filter(Boolean)
+    .some(n => normalizeSearchName(String(n).replace(/[（(].*$/, '')) === want);
+  return mtnShown.some(p => same(p) && haversineKm(lat, lon, p.lat, p.lon) <= MTN_DUP_KM);
+}
+
 /* ============================================================
    座標の表記（DD・DMS・DDM・度分秒）— v4.109.0
    ⚠ 繰り上がりに注意。秒を丸めて60になったら分へ、分が60なら度へ送る
@@ -12911,6 +15720,27 @@ function fmtMGRS(u) {
   const pad5 = v => String(v % 100000).padStart(5, '0');
   return `${u.zone}${u.band} ${col}${row} ${pad5(e)} ${pad5(n)}`;
 }
+/* UTM → 緯度経度（v4.159.0・座標入力の第2段）。toUTM の逆（同じ WGS84・k0・クリューゲル級数の逆向き3項）。
+   ⚠ 北半球だけ（日本の範囲だけを受けるので、南半球の 10,000km の下駄は使わない）。
+   ⚠ 等角緯度から緯度へは級数を使わず反復で解く（toUTM の t の式をそのまま逆に解くので、往復が級数の打ち切りでずれない） */
+function fromUTM(zone, e, n) {
+  const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996;
+  const nn = f / (2 - f), n2 = nn * nn, n3 = n2 * nn;
+  const A = a / (1 + nn) * (1 + n2 / 4 + n2 * n2 / 64);
+  const be = [nn / 2 - 2 * n2 / 3 + 37 * n3 / 96, n2 / 48 + n3 / 15, 17 * n3 / 480];
+  const xi = n / (k0 * A), eta = (e - 500000) / (k0 * A);
+  let xp = xi, ep = eta;
+  for (let j = 1; j <= 3; j++) {
+    xp -= be[j - 1] * Math.sin(2 * j * xi) * Math.cosh(2 * j * eta);
+    ep -= be[j - 1] * Math.cos(2 * j * xi) * Math.sinh(2 * j * eta);
+  }
+  const t = Math.sin(xp) / Math.sqrt(Math.sinh(ep) ** 2 + Math.cos(xp) ** 2);   // 等角緯度の tan
+  const c = 2 * Math.sqrt(nn) / (1 + nn);                                         // 離心率（toUTM と同じ）
+  let s = t / Math.sqrt(1 + t * t);                                               // sinφ の初期値（等角緯度）
+  for (let i = 0; i < 8; i++) s = Math.tanh(Math.asinh(t) + c * Math.atanh(c * s));
+  return { lat: Math.asin(s) * 180 / Math.PI,
+    lon: (zone * 6 - 183) + Math.atan2(Math.sinh(ep), Math.cos(xp)) * 180 / Math.PI };
+}
 
 /* v はコピーする1行、parts は画面での行分け（緯度・経度を2行に）。
    見出しは利用者の指定した「UIでのおすすめ表記」 */
@@ -12948,6 +15778,145 @@ function coordFormats(lat, lon) {
   };
   out.forEach(f => { [f.abbr, f.jp, f.note] = LOOK[f.k]; });
   return out;
+}
+
+/* ============================================================
+   座標の入力を読む（v4.158.0・findings-09 の B・第1段）
+   受けるのは十進度・度＋十進分・度分秒（記号・漢字）と、UTM・MGRS（v4.159.0・第2段）。本体の表示（coordFormats）を貼り戻せることを保証する。
+   返り値：{lat, lon, swapped, fmt}／{outOfRange:true}（座標の形だが日本の範囲の外）／
+           {bad:'band', band, fmt}（UTM・MGRS で緯度帯の文字と北距が合わない）／null（座標ではない＝地名検索へ）
+   ⚠ 呼び手は「lat があるときだけ移る」で見ること（outOfRange と bad は Enter で理由を言うだけ）
+   ⚠ **世界測地系（JGD2011/WGS84）として読む。** 旧日本測地系の座標は約400mずれるが、入力からは見分けられない
+   ⚠ 「数と記号だけで、ちょうど2つ」のときだけ座標とみなす。「三ノ沢 2」のような地名は null
+   ⚠ NFKC で ″ は ′′（プライム2つ）にばらける。秒の記号として読む。º は o に化けるので受けない
+   ============================================================ */
+const COORD_JP = { latMin: 20, latMax: 46, lonMin: 122, lonMax: 154 };
+/* 1成分＝度（と分・秒）。半球の記号は「前に付く形（N33 E131・北緯33 東経131）」と「後ろに付く形（33N 131E）」を
+   入力の先頭で決めて、どちらか一方だけを読む（間にある記号がどちらの数のものか迷わないように） */
+const COORD_NUM = String.raw`(?:(\d+)\.(\d{1,2})\.(\d{1,2}(?:\.\d+)?)` +              // スーパー地形のドット区切り 35.12.34(.5)
+  String.raw`|(\d+(?:\.\d+)?)(?:\s*[°度]\s*(?:(\d+(?:\.\d+)?)\s*['分]\s*` +           // 度・分
+  String.raw`(?:(\d+(?:\.\d+)?)\s*(?:"|秒))?)?)?)`;                                     // 秒
+const COORD_LABEL = '(北緯|南緯|東経|西経|[NSEW])';
+const COORD_COMP_PRE = new RegExp(`${COORD_LABEL}?\\s*${COORD_NUM}`, 'iy');
+const COORD_COMP_POST = new RegExp(`${COORD_NUM}\\s*${COORD_LABEL}?`, 'iy');
+const COORD_SEP = /[\s,、，/]*/y;
+function coordInJapan(lat, lon) {
+  return lat >= COORD_JP.latMin && lat <= COORD_JP.latMax && lon >= COORD_JP.lonMin && lon <= COORD_JP.lonMax;
+}
+function parseCoordComp(m, labelFirst) {
+  // 数のグループ：[ドット区切りの度・分・秒, 度, 分, 秒]。記号は前置きなら先頭、後置きなら末尾
+  const [dd, dm, ds, d, mi, se] = labelFirst ? m.slice(2, 8) : m.slice(1, 7);
+  const lab = ((labelFirst ? m[1] : m[7]) || '').toUpperCase();
+  let deg, min = 0, sec = 0, fmt = 'DD';
+  if (dd != null) { deg = +dd; min = +dm; sec = +ds; fmt = 'DMS'; }
+  else {
+    deg = +d;
+    if (mi != null) { min = +mi; fmt = 'DDM'; }
+    if (se != null) { sec = +se; fmt = 'DMS'; }
+    if (fmt !== 'DD' && !Number.isInteger(deg)) return null;      // 33.5°04' のような形は読まない
+    if (fmt === 'DMS' && !Number.isInteger(min)) return null;
+  }
+  if (min >= 60 || sec >= 60) return null;
+  let v = deg + min / 60 + sec / 3600;
+  const kind = /^(N|S|北緯|南緯)$/.test(lab) ? 'lat' : /^(E|W|東経|西経)$/.test(lab) ? 'lon' : null;
+  if (/^(S|W|南緯|西経)$/.test(lab)) v = -v;
+  return { v, kind, fmt };
+}
+/* ------ UTM・MGRS の入力（v4.159.0・第2段）------
+   緯度は**北距から出し、緯度帯の文字は確認にだけ使う**（findings-09 の B）。合わなければ {bad:'band'}。
+   ⚠ 帯の照合は**表示の精度の升目**で見る（UTM は1m、MGRS は桁に応じて1m〜10km）。帯の境（北緯32°・40°）は日本の中を通り、
+     1m 切り捨ての表示を貼り戻すと境の南に落ちることがある。升目の4隅の緯度の幅が帯と重なれば通す
+   ⚠ UTM の N は「北半球」の意味でも書かれる（GPS 機器）。N 帯（赤道〜8°）は日本の範囲に無いので、UTM の N は照合しない。
+     MGRS の文字は 2,000km の曖昧さを決めるのに使うので、N も緯度帯として読む
+   ⚠ 桁を決めて読む：UTM は東距6桁・北距7桁、MGRS は東・北が同じ桁で1〜5桁。打つ途中で誤った地点を出さないため */
+const UTM_IN = /^(\d{1,2})\s*([C-HJ-NP-X])[\s,、，]+(?:E\s*)?(\d{6}(?:\.\d+)?)[\s,、，]+(?:N\s*)?(\d{7}(?:\.\d+)?)$/;
+const MGRS_IN = /^(\d{1,2})\s*([C-HJ-NP-X])\s*([A-HJ-NP-Z])([A-HJ-NP-V])\s*(\d+)(?:\s+(\d+))?$/;
+const MGRS_ROWS = 'ABCDEFGHJKLMNPQRSTUV';
+function utmBandRange(band) {
+  const i = UTM_BANDS.indexOf(band);
+  return { min: -80 + 8 * i, max: band === 'X' ? 84 : -72 + 8 * i };
+}
+// 升目（南西の隅 e,n と一辺 cell）の4隅の緯度の幅が、緯度帯と重なるか
+function utmCellInBand(zone, e, n, cell, band) {
+  const lats = [[e, n], [e + cell, n], [e, n + cell], [e + cell, n + cell]].map(([x, y]) => fromUTM(zone, x, y).lat);
+  const { min, max } = utmBandRange(band), eps = 1e-7;
+  return Math.max(...lats) >= min - eps && Math.min(...lats) < max + eps;
+}
+function utmResult(zone, band, e, n, cell, fmt, skipBand) {
+  if (!(zone >= 1 && zone <= 60)) return null;
+  if (!skipBand && !utmCellInBand(zone, e, n, cell, band)) return { bad: 'band', band, fmt };
+  const { lat, lon } = fromUTM(zone, e, n);
+  if (!coordInJapan(lat, lon)) return { outOfRange: true };
+  return { lat, lon, swapped: false, fmt };
+}
+function parseUtmMgrs(s) {
+  const t = s.toUpperCase();
+  let m = UTM_IN.exec(t);
+  if (m) return utmResult(+m[1], m[2], +m[3], +m[4], 1, 'UTM', m[2] === 'N');
+  m = MGRS_IN.exec(t);
+  if (!m) return null;
+  const zone = +m[1], band = m[2];
+  let de, dn;
+  if (m[6] != null) { de = m[5]; dn = m[6]; }
+  else { if (m[5].length % 2) return null; de = m[5].slice(0, m[5].length / 2); dn = m[5].slice(m[5].length / 2); }
+  if (de.length !== dn.length || de.length < 1 || de.length > 5) return null;
+  if (!(zone >= 1 && zone <= 60)) return null;
+  const set = ((zone - 1) % 6) + 1;
+  const col = ['ABCDEFGH', 'JKLMNPQR', 'STUVWXYZ'][(set - 1) % 3].indexOf(m[3]);
+  if (col < 0) return null;
+  const cell = 10 ** (5 - de.length);
+  const e = (col + 1) * 100000 + (+de) * cell;
+  let n = ((MGRS_ROWS.indexOf(m[4]) - (set % 2 === 0 ? 5 : 0) + 20) % 20) * 100000 + (+dn) * cell;
+  // 2,000km の曖昧さは緯度帯の南端の北距（中央経線上が最小）で決める。升目が境をまたぐ分だけ余裕を見る
+  const minN = toUTM(utmBandRange(band).min, zone * 6 - 183);
+  if (!minN) return null;
+  while (n + cell <= minN.n - 1) n += 2000000;
+  return utmResult(zone, band, e, n, cell, 'MGRS', false);
+}
+function parseCoordInput(q) {
+  let s = String(q || '').normalize('NFKC').trim();
+  if (!s) return null;
+  // UTM・MGRS の書式に合えば、その結果をそのまま返す（緯度経度の読みには回さない。書式は重ならない）
+  const um = parseUtmMgrs(s);
+  if (um) return um;
+  s = s.replace(/′′|″|”|“/g, '"').replace(/[′’‘]/g, "'");
+  // 記号の付き方は先頭で見当を付け、読めなければ・範囲外ならもう一方でも読む（「33.08 E131.24」のような混在）
+  const first = new RegExp(`^${COORD_LABEL}`, 'i').test(s);
+  const tries = [first, !first].map(labelFirst => parseCoordWith(s, labelFirst)).filter(Boolean);
+  return tries.find(r => !r.outOfRange) || tries[0] || null;
+}
+function parseCoordWith(s, labelFirst) {
+  const COMP = labelFirst ? COORD_COMP_PRE : COORD_COMP_POST;
+  const comps = [];
+  let pos = 0;
+  while (pos < s.length) {
+    COORD_SEP.lastIndex = pos; COORD_SEP.exec(s); pos = COORD_SEP.lastIndex;
+    if (pos >= s.length) break;
+    COMP.lastIndex = pos;
+    const m = COMP.exec(s);
+    if (!m || COMP.lastIndex === pos) return null;
+    pos = COMP.lastIndex;
+    const c = parseCoordComp(m, labelFirst);
+    if (!c) return null;
+    comps.push(c);
+    if (comps.length > 2) return null;
+  }
+  if (comps.length !== 2) return null;
+  const [a, b] = comps;
+  let lat, lon, swapped = false;
+  if (a.kind && b.kind) {
+    if (a.kind === b.kind) return null;
+    [lat, lon] = a.kind === 'lat' ? [a.v, b.v] : [b.v, a.v];        // E が先でも記号で読む
+  } else if (a.kind || b.kind) {
+    [lat, lon] = (a.kind === 'lat' || b.kind === 'lon') ? [a.v, b.v] : [b.v, a.v];
+  } else {
+    [lat, lon] = [a.v, b.v];
+    // 記号が無く、経度・緯度の順で打たれたもの。日本の範囲は緯度と経度が重ならないので一意に決まる
+    if (!coordInJapan(lat, lon) && coordInJapan(lon, lat)) { [lat, lon] = [lon, lat]; swapped = true; }
+  }
+  if (!coordInJapan(lat, lon)) return { outOfRange: true };
+  const fmt = [a.fmt, b.fmt].includes('DMS') ? 'DMS' : [a.fmt, b.fmt].includes('DDM') ? 'DDM' : 'DD';
+  return { lat, lon, swapped, fmt };
 }
 // クリップボードへ。⚠ 使えない端末では選択してコピーする旧方式に落とす
 async function copyText(text) {
@@ -13946,6 +16915,11 @@ function escapeHtml(s) {
 }
 loadOutlook();
 
+/* 起動時（前回の地点が無いとき）に位置情報を待つ上限（v4.159.1）。
+   ⚠ **許可の問いに誰も答えないと getCurrentPosition は成功も失敗も呼ばない**（timeout は許可が出てから数える）。
+     上限が無いと「GPS取得中…」のまま通信0本で止まる（公開URLの検証 run 129 で 30.9 秒）。
+     上限を過ぎたら既定の地点（立山・黒部）で始め、あとから許可されても地点は動かさない（GPS ボタンで取り直せる） */
+const BOOT_GEO_WAIT_MS = 8000;
 (function boot() {
   hideLoading();
   const last = loadLast();
@@ -13957,11 +16931,18 @@ loadOutlook();
     fetchWeather(state.lat, state.lon);
     return;
   }
-  // 前回地点なし → GPS試行 → 失敗時はデフォルト地点
+  // 前回地点なし → GPS試行 → 失敗時・時間切れはデフォルト地点
   if (navigator.geolocation) {
     showLoading('GPS取得中…');
+    /* ⚠ 成功・失敗・時間切れのうち、最初の1回だけが先へ進む（BOOT_GEO_WAIT_MS の注記）。
+       遅れて届いた成功では地点を動かさず、逆ジオコーディングも叩かない */
+    let settled = false;
+    const toDefault = () => { if (settled) return; settled = true; clearTimeout(timer); fetchWeather(state.lat, state.lon); };
+    const timer = setTimeout(toDefault, BOOT_GEO_WAIT_MS);
     navigator.geolocation.getCurrentPosition(
       pos => {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
         state.lat = pos.coords.latitude;
         state.lon = pos.coords.longitude;
         reverseGeocode(state.lat, state.lon).then(name => {
@@ -13969,7 +16950,7 @@ loadOutlook();
           fetchWeather(state.lat, state.lon);
         });
       },
-      () => fetchWeather(state.lat, state.lon),
+      toDefault,
       { timeout: 5000, enableHighAccuracy: false }
     );
   } else {

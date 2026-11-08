@@ -1,0 +1,15 @@
+# 日本の山（mountain Q8502 の下位クラスを含む）で、各属性の付与数を数える
+SELECT (COUNT(DISTINCT ?item) AS ?n)
+       (COUNT(DISTINCT ?jaLabelItem) AS ?nJaLabel)
+       (COUNT(DISTINCT ?kanaItem) AS ?nKana)
+       (COUNT(DISTINCT ?coordItem) AS ?nCoord)
+       (COUNT(DISTINCT ?eleItem) AS ?nEle)
+       (COUNT(DISTINCT ?osmItem) AS ?nOsm)
+WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q8502 ; wdt:P17 wd:Q17 .
+  OPTIONAL { ?item rdfs:label ?l . FILTER(LANG(?l)="ja") BIND(?item AS ?jaLabelItem) }
+  OPTIONAL { ?item wdt:P1814 ?k . BIND(?item AS ?kanaItem) }
+  OPTIONAL { ?item wdt:P625 ?c . BIND(?item AS ?coordItem) }
+  OPTIONAL { ?item wdt:P2044 ?e . BIND(?item AS ?eleItem) }
+  OPTIONAL { ?item wdt:P402 ?o . BIND(?item AS ?osmItem) }
+}

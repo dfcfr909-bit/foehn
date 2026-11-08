@@ -106,6 +106,18 @@ if (ONLY === 'deploy') {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
 
+  /* 起動時の外部通信を記録する（オーバーレイが消えないときの切り分け用）。
+     ⚠ 2026-10-08 の手動実行で「6秒後も表示中」が出たが、位置情報待ち・Open-Meteo・標高タイルの
+       どこで止まったかがログから分からなかった。何秒で何が返ったかを残す */
+  const t0 = Date.now();
+  const net = [];
+  const netHost = u => (u.match(/open-meteo|cyberjapandata|nominatim/) || [])[0];
+  page.on('response', r => { const h = netHost(r.url());
+    if (h) net.push(`${((Date.now() - t0) / 1000).toFixed(1)}s ${h} HTTP ${r.status()}`); });
+  page.on('requestfailed', r => { const h = netHost(r.url());
+    if (h) net.push(`${((Date.now() - t0) / 1000).toFixed(1)}s ${h} 失敗 ${(r.failure() || {}).errorText}`); });
+  page.on('dialog', d => { net.push(`${((Date.now() - t0) / 1000).toFixed(1)}s alert「${d.message()}」`); d.dismiss().catch(() => {}); });
+
   /* ⚠ **到達できないときに例外で落とさないこと。** そこで落ちると以降の検査が
        走らず、サマリーにもスタックトレースしか残らない。
        「届かなかった」も検証結果の一つとして整然と報告する。 */
@@ -119,31 +131,58 @@ if (ONLY === 'deploy') {
 
   try {
     if (!reached) throw new Error('到達できていないので以降は省略');
-    await page.waitForTimeout(6000);   // 気象データの取得を待つ
-
-    const boot = await page.evaluate(() => ({
-      hasState: typeof state !== 'undefined',
-      loading: (() => { const el = document.getElementById('loading-overlay');
-        return !!el && getComputedStyle(el).display !== 'none'; })(),
-    })).catch(e => ({ err: e.message }));
+    /* ⚠ **「GPS取得中…」のまま消えないのは、検査の環境ではなく本体の弱点を映している。**
+         新しいブラウザ（前回の地点が無い）は起動時に位置情報を求める。https のページで許可の問いに
+         誰も答えないと、getCurrentPosition は成功も失敗も呼ばない（`timeout` は許可が出てから数え始める）。
+         手元で再現済み（2026-10-08：30秒たっても通信0本。許可を与えると即座に成功）。
+         実機でも、問いを放置すると同じく止まる。許可を与えてこの ✗ を消すと弱点が見えなくなるので、そうしない */
+    /* 気象データの取得を待つ。⚠ 6秒の固定待ちでは「遅いだけ」と「止まっている」を区別できない。
+       最大30秒まで1秒おきに見て、消えた時刻と、消えないときの文言（GPS取得中… か 気象データ取得中… か）を残す */
+    const readBoot = () => page.evaluate(() => {
+      const el = document.getElementById('loading-overlay');
+      return { hasState: typeof state !== 'undefined',
+        loading: !!el && getComputedStyle(el).display !== 'none',
+        text: el ? el.textContent.trim().slice(0, 40) : null };
+    }).catch(e => ({ err: e.message }));
+    let boot = await readBoot();
+    for (let i = 0; i < 30 && boot.loading; i++) {
+      await page.waitForTimeout(1000);
+      boot = await readBoot();
+    }
+    boot.sec = Number(((Date.now() - t0) / 1000).toFixed(1));
     ok(boot.hasState === true, '★起動する（スクリプトが評価されている）', boot);
     ok(boot.loading === false, '読み込みオーバーレイが消える', boot);
+    console.log(`    オーバーレイ: ${boot.loading ? `${boot.sec}秒たっても表示中「${boot.text}」` : `${boot.sec}秒で消えた`}`);
+    console.log(`    起動時の通信: ${net.length ? '\n      ' + net.join('\n      ') : '（記録なし）'}`);
     ok(errors.length === 0, 'ページ内で例外が出ていない', errors);
 
     /* 検索を1回だけ実行する。⚠ 実際に Nominatim と地理院を叩くので増やさないこと。
        ここで**地理院由来の候補が出れば CORS が通っている**と言える
        （ブラウザでしか確かめられない。#27 では人の目に頼るしかなかった）。 */
     const rows = await page.evaluate(async () => {
+      /* 手元の山（#171）は通信しないので、ここで別に確かめる（同梱の data/peak_meta.json と areas.json）。
+         ⚠ 地名検索の検査では手元の検索を止める。止めないと、手元に出した五竜岳と同じ山が
+           地名検索の側から外れ、地理院の候補が残らないことがある */
+      const ix = await ensureMtnIndex();
+      const box = document.createElement('div');
+      renderMtnSection(box, '五竜岳');
+      const mtnHyaku = [...box.querySelectorAll('.mtn-item')]
+        .some(el => (el.querySelector('.mtn-tag') || {}).textContent === '百');
+      const metaOk = !!(ix && ix.some(p => p.kana));
+      mtnIndex = [];
       document.getElementById('map-search-input').value = '五竜岳';
       await doMapSearch();
       await new Promise(r => setTimeout(r, 3000));   // 標高の読み取りを待つ
-      return [...document.querySelectorAll('#map-results .map-result-item')].map(el => ({
+      mtnIndex = ix;
+      const place = [...document.querySelectorAll('#place-results .map-result-item')].map(el => ({
         name: el.querySelector('.map-result-name').textContent,
         sub: el.querySelector('.map-result-sub').textContent,
         elev: el.querySelector('.map-result-elev').textContent,
         badge: (el.querySelector('.map-result-badge') || {}).textContent || '',
       }));
-    }).catch(e => ({ err: e.message }));
+      return { place, mtnHyaku, metaOk };
+    }).then(r => (r && r.place ? Object.assign(r.place, { mtnHyaku: r.mtnHyaku, metaOk: r.metaOk }) : r))
+      .catch(e => ({ err: e.message }));
 
     if (Array.isArray(rows)) {
       console.log('    検索結果:', JSON.stringify(rows));
@@ -153,6 +192,8 @@ if (ONLY === 'deploy') {
       ok(rows.some(r => /\d+m/.test(r.elev)),
         '★標高が読める（標高タイルをCanvasで読めている）', rows);
       ok(rows.some(r => r.badge === '百名山'), '百名山の印が出る', rows);
+      ok(rows.mtnHyaku, '手元の山の行に [百] が出る（#171）', rows);
+      ok(rows.metaOk, '読み（data/peak_meta.json）が配信されている（#171）', rows);
     } else {
       ok(false, '検索を実行できる', rows);
     }

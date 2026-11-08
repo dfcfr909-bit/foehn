@@ -376,6 +376,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       hasVolcano: ovRows.some(r => /火山/.test(r.textContent)),
       volcanoDefined: MAP_OVERLAYS.some(o => o.id === 'volcano' && o.pending),
       attribution: document.getElementById('map-attribution').textContent,
+      attrLinks: [...document.querySelectorAll('#map-attribution a')].map(a => ({ href: a.href, text: a.textContent, target: a.target, rel: a.rel })),
+      attrNoInnerHTML: !/innerHTML/.test(updateMapAttribution.toString()),
       tooSmall: small,
       // 既定はオーバーレイなし
       overlaysOn: mapPrefs.overlays.length,
@@ -389,7 +391,11 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(init.overlaysOn === 0, '既定はオーバーレイなし');
   ok(!init.hasVolcano && init.volcanoDefined, '火山土地条件図はpendingでUIに出さない',
     { hasVolcano: init.hasVolcano, defined: init.volcanoDefined });
-  ok(init.attribution === '国土地理院', '出典が有効ベースと一致', init.attribution);
+  ok(init.attribution.startsWith('地理院タイル / '), '出典が有効ベースと一致（地理院タイル）', init.attribution);
+  ok(init.attribution.endsWith('地理院タイル（標高タイル）を加工して作成'), '★加工した標高タイルの出典を常に出す（地理院の回答 2026-10）', init.attribution);
+  ok(init.attrLinks.length >= 1 && init.attrLinks.every(l => l.href === 'https://maps.gsi.go.jp/development/ichiran.html' && l.text === '地理院タイル' && l.target === '_blank' && /noopener/.test(l.rel)),
+    '★「地理院タイル」はタイル一覧へのリンク（＝地理院タイル＋URL）', init.attrLinks);
+  ok(init.attrNoInnerHTML, '出典は innerHTML を使わずに組み立てる');
   ok(init.tooSmall.length === 0, 'タッチターゲットは44px以上', init.tooSmall);
   ok(init.zoomRange[1] === 18, '最大ズームは18', init.zoomRange);
 
@@ -407,6 +413,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(/\{z\}\/\{y\}\/\{x\}/.test(esri.url), 'EsriはURLのx/yが逆', esri.url);
   ok(esri.saved === 'esri', '選択が保存される', esri.saved);
   ok(esri.attribution.includes('Esri'), '出典がEsriに変わる', esri.attribution);
+  ok(esri.attribution.startsWith('Esri') && esri.attribution.endsWith('地理院タイル（標高タイル）を加工して作成'),
+    '★Esri だけでも加工した標高タイルの出典は出る（標高タイルはレイヤーと関係なく使う）', esri.attribution);
   ok(esri.activeCount === 1, '切替後もactiveは1つだけ', esri.activeCount);
 
   /* ================= 2.5 山域・百名山レイヤー =================
@@ -510,7 +518,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(Math.abs(relief.opacity - 0.40) < 1e-6, '既定透過率40%', relief.opacity);
   ok(relief.maxNative === 15 && relief.maxZoom === 18,
     'ネイティブ上限を超えてもオーバーズームで埋める', relief);
-  ok(relief.attribution.includes('Esri') && relief.attribution.includes('国土地理院'),
+  ok(relief.attribution.includes('Esri') && relief.attribution.includes('地理院タイル / '),
     '出典がベース＋オーバーレイになる', relief.attribution);
 
   // スライダーを動かすと即座に反映される
@@ -638,7 +646,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       defined: !!def,
       pending: !!(def && def.pending),
       shown: usableOverlays().some(o => o.id === 'csmap'),
-      inPanel: /CS立体図/.test(document.getElementById('layer-overlays').innerHTML),
+      // ⚠ 名前で見ない。「CS立体図（栃木県）」（csmapTochigi）は別の行としてパネルに出る（v4.165.0）
+      inPanel: !!document.querySelector('#layer-overlays [data-id="csmap"]'),
       // 保存済みの設定に残っていても復元しない
       restored: (() => {
         localStorage.setItem('sotoki.map.overlays', JSON.stringify([{ id: 'csmap', opacity: 0.7 }]));
@@ -651,6 +660,35 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(csmap.defined && csmap.pending, 'CS立体図は定義を残したまま保留（pending）', csmap);
   ok(!csmap.shown && !csmap.inPanel, '保留中はレイヤー一覧に出さない', csmap);
   ok(!csmap.restored, '保存済みに残っていても保留中のレイヤーは復元しない', csmap.restored);
+
+  /* CS立体図（栃木県）（v4.165.0・#112）：県内だけの配信。bounds で外を取りに行かず、
+     長方形の中の県外の 403 は「失敗」にしない（partialCoverage） */
+  const csTochigi = await page.evaluate(() => {
+    const def = MAP_OVERLAYS.find(o => o.id === 'csmapTochigi');
+    const opts = tileOpts(def);
+    const plain = tileOpts(MAP_OVERLAYS.find(o => o.id === 'slope'));
+    // 一部だけ欠けたときの扱い（偽のレイヤーに tileload / tileerror を流す）
+    const fake = L.tileLayer('');
+    watchTileStatus(fake, def);
+    for (let i = 0; i < 6; i++) fake.fire('tileload');
+    for (let i = 0; i < 6; i++) fake.fire('tileerror', { coords: { z: 14 } });
+    return {
+      shown: usableOverlays().some(o => o.id === 'csmapTochigi'),
+      blendable: isBlendable(def),
+      hasBounds: !!opts.bounds && opts.bounds.contains([36.765, 139.491]) && !opts.bounds.contains([37.05, 138.9]),
+      plainNoBounds: plain.bounds === undefined,
+      attribution: def.attribution,
+      wait: WX_FAIL_SETTLE_MS,
+    };
+  });
+  ok(csTochigi.shown, 'CS立体図（栃木県）はレイヤー一覧に出る', csTochigi);
+  ok(csTochigi.blendable, 'CS立体図（栃木県）は重ね方を選べる', csTochigi);
+  ok(csTochigi.hasBounds && csTochigi.plainNoBounds, 'bounds は CS立体図（栃木県）にだけ付く', csTochigi);
+  ok(/栃木県森林資源データ/.test(csTochigi.attribution) && /加工して作成/.test(csTochigi.attribution),
+    '出典に栃木県森林資源データと加工の旨', csTochigi.attribution);
+  await page.waitForTimeout(csTochigi.wait + 300);
+  const csPartial = await page.evaluate(() => ({ text: layerStatus.csmapTochigi, failed: !!layerFailed.csmapTochigi }));
+  ok(/配信の範囲外/.test(csPartial.text || '') && !csPartial.failed, '県境で一部欠けても失敗（赤帯）にしない', csPartial);
 
   /* ★ふつうのオーバーレイでも、タイルが取れなければ理由をパネルに出すこと。
      時刻つきタイルにしか報告を付けていなかったため、CS立体図が失敗しても
@@ -681,9 +719,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   // v4.120.0 で「風の流れ（実験）」（windFlowGL・WebGL の PoC）を足した。Canvas 版と並べて比べる
   // v4.152.0 で「雷雨の目安」（thunderHint・#138）も足した（9種）
   // v4.151.0 で「降雪の目安」（snowHint・#131）を足した（風の矢印と同じ格子点に雨・みぞれ・雪の記号）
-  const WX_EXPECT = ['radar', 'satellite', 'thunder', 'amedas', 'windFlow', 'windFlowGL', 'windArrows', 'snowHint', 'thunderHint'];
+  // v4.178.0 で「風の強さ（地形）」（windDown・WindNinja の表・ADR-0019）を足した
+  const WX_EXPECT = ['radar', 'satellite', 'thunder', 'amedas', 'windFlow', 'windFlowGL', 'windArrows', 'windDown', 'snowHint', 'thunderHint'];
   ok(JSON.stringify(wxDefs.map(w => w.id)) === JSON.stringify(WX_EXPECT),
-    '気象レイヤーの顔ぶれ（8種）', wxDefs.map(w => w.id));
+    '気象レイヤーの顔ぶれ（10種）', wxDefs.map(w => w.id));
 
   // 降雨レーダー：targetTimes を引いてから basetime/validtime 入りのURLを組む
   await page.evaluate(() => toggleOverlay('radar'));
@@ -1000,7 +1039,10 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
 
   // 風の矢印（leaflet-velocityは使わない＝アニメーションなし）
   await page.evaluate(() => { leafletMap.setView([36.57, 137.65], 9); toggleOverlay('windArrows'); });
-  await page.waitForTimeout(1200);
+  /* ⚠ 固定の待ち（1.2秒）だと手元で3回中2回落ちた（count:0・2026-10-08）。CIでは通っていた。
+     矢印が出るまで待つ。出なければ下の ok() に中身を出させる */
+  await page.waitForFunction(() => document.querySelectorAll('.wind-box').length > 0, null, { timeout: 10000 })
+    .catch(() => {});
   /* ⚠⚠ **画面上の向きで見ること。** 要素自身の transform だけを見ると、
      祖先（回転した #map と、文字を立てるため逆回転する .wind-box）を勘定できず、
      **ヘディングアップで矢印が地図と一緒に回っていなくても素通りする**。
@@ -1024,7 +1066,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     };
   });
   ok(wind.count > 0, '風の矢印が出る', wind);
-  ok(wind.rotated === wind.count, '矢印が風向に回っている', wind);
+  // count が0だと 0 === 0 で素通りするので、矢印があることも条件に入れる
+  ok(wind.count > 0 && wind.rotated === wind.count, '矢印が風向に回っている', wind);
   ok(!wind.usesVelocity, 'leaflet-velocityは使っていない（禁止ライブラリ）');
 
   // 気象レイヤーはSWのキャッシュ対象に入れない（時間で中身が変わるため）
@@ -1034,6 +1077,85 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(/www\.jma\.go\.jp/.test(wxHosts.nowcast), 'ナウキャストは気象庁ホスト', wxHosts);
 
   await page.screenshot({ path: __dirname + '/smoke_mapui.png' });
+
+  /* ================= 5c'. 地図の上の情報を隠す（#185） ================= */
+  await page.evaluate(() => {
+    closeLayerPanel();
+    const q = document.getElementById('map-search-input');
+    q.value = '槍'; q.focus();                 // 入力の途中で押したときにキーボードを畳むか
+    document.getElementById('map-time').classList.remove('hidden');   // つまみも隠れるかを見るため出しておく
+  });
+  await page.waitForTimeout(300);
+  const DC_HIDE = ['map-search-row', 'map-results', 'map-when', 'map-hint', 'map-rain', 'map-trouble',
+    'map-awake', 'map-time', 'map-picked', 'map-fav-slot'];
+  // 右のボタン列（6つ）は隠さない（v4.162.0・利用者の指定）
+  const DC_KEEP = ['map-attribution', 'btn-map-close', 'btn-declutter',
+    'btn-layers', 'btn-orient', 'btn-locate', 'btn-wxmap', 'btn-about'];
+  const dcState = () => page.evaluate(({ hide, keep }) => {
+    const vis = id => getComputedStyle(document.getElementById(id)).visibility;
+    // 中心を突いて、そのボタン自身（か子）に当たるか
+    const hit = id => {
+      const el = document.getElementById(id), r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!t && (t === el || el.contains(t));
+    };
+    const b = document.getElementById('btn-declutter').getBoundingClientRect();
+    const vw = innerWidth, vh = innerHeight;
+    return {
+      pressed: document.getElementById('btn-declutter').getAttribute('aria-pressed'),
+      hidden: hide.filter(id => vis(id) === 'hidden'),
+      keptVisible: keep.filter(id => vis(id) === 'visible'),
+      btnHit: hit('btn-declutter'),
+      closeHit: hit('btn-map-close'),
+      // 隠した検索窓の位置を突くと、下の地図に抜ける（見えない部品が指を奪わない）
+      searchHitsMap: (() => {
+        const r = document.getElementById('map-search-row').getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!t && !!t.closest('#map');
+      })(),
+      size: [b.width, b.height],
+      inView: b.left >= 0 && b.top >= 0 && b.right <= vw && b.bottom <= vh,
+      activeIsSearch: document.activeElement === document.getElementById('map-search-input'),
+      btnTop: b.top,
+    };
+  }, { hide: DC_HIDE, keep: DC_KEEP });
+  const dcBefore = await dcState();
+  ok(dcBefore.pressed === 'false' && dcBefore.hidden.length === 0, '隠す前はすべて見えている', dcBefore);
+  await page.evaluate(() => toggleMapDeclutter());
+  await page.waitForTimeout(250);
+  const dcOn = await dcState();
+  ok(dcOn.pressed === 'true', '隠すボタンが押された状態になる', dcOn.pressed);
+  ok(JSON.stringify(dcOn.hidden) === JSON.stringify(DC_HIDE), '隠すものがすべて隠れる（時刻のつまみを含む）',
+    DC_HIDE.filter(id => !dcOn.hidden.includes(id)));
+  ok(dcOn.keptVisible.length === DC_KEEP.length, '★出典・閉じる・右のボタン列（6つ）は見えたまま', DC_KEEP.filter(id => !dcOn.keptVisible.includes(id)));
+  ok(dcOn.btnHit, '隠している間も戻すボタンが押せる（elementFromPoint）', dcOn);
+  ok(dcOn.closeHit, '隠している間も地図を閉じられる', dcOn);
+  ok(dcOn.searchHitsMap, '隠した検索窓の位置は地図に抜ける', dcOn);
+  ok(dcOn.size[0] >= 44 && dcOn.size[1] >= 44, '戻すボタンは44px以上', dcOn.size);
+  ok(!dcOn.activeIsSearch, '入力の途中で隠したらキーボードを畳む（検索欄からフォーカスを外す）', dcOn);
+  ok(dcOn.btnTop === dcBefore.btnTop, '隠してもボタンの位置が動かない', [dcBefore.btnTop, dcOn.btnTop]);
+  // 横向きの低い画面でも、戻すボタンが画面に収まり押せる（#184 の前に見ておく）
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(250);
+  const dcLand = await dcState();
+  ok(dcLand.btnHit && dcLand.inView, '横向きの低い画面でも戻すボタンが押せる', dcLand);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => toggleMapDeclutter());
+  await page.waitForTimeout(250);
+  const dcOff = await dcState();
+  ok(dcOff.pressed === 'false' && dcOff.hidden.length === 0, 'もう一度押すと元に戻る', dcOff.hidden);
+  // 状態は覚えない：隠したまま閉じて開き直すと表示に戻る
+  await page.evaluate(() => { toggleMapDeclutter(); closeMap(); openMap(); });
+  await page.waitForTimeout(400);
+  const dcReopen = await dcState();
+  ok(dcReopen.pressed === 'false' && dcReopen.hidden.length === 0, '開き直すと表示に戻る（状態を覚えない）', dcReopen.hidden);
+  ok(await page.evaluate(() => { try { return !Object.keys(localStorage).some(k => /declutter/i.test(k)); } catch (e) { return true; } }),
+    '隠した状態を端末に保存しない');
+  await page.evaluate(() => {
+    document.getElementById('map-search-input').value = '';
+    document.getElementById('map-time').classList.add('hidden');
+  });
 
   /* ================= 5d. 地図を閉じずに地点を選べる ================= */
   await page.evaluate(() => { closeLayerPanel(); leafletMap.setView([36.57, 137.65], 11); });
@@ -1092,6 +1214,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
                           return !!t && document.getElementById('map-search-input').contains(t); })(),
       closeH: Math.round(close.height),
       // 出典表記は利用条件。浮かせても見えていること
+      attrLinkHit: (() => { const a = document.querySelector('#map-attribution a'); if (!a) return null;
+        const r = a.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return hit === a || a.contains(hit) ? true : (hit ? (hit.id || hit.className || hit.tagName) : null); })(),
       attrVisible: (() => { const a = document.getElementById('map-attribution').getBoundingClientRect();
                             return a.width > 0 && a.height > 0 && a.bottom <= window.innerHeight + 1; })(),
       // ★DOMの入れ子が壊れていないこと（他の画面が地図の中に入り込むと見えなくなる）
@@ -1107,6 +1232,37 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(full.closeHit && full.closeH >= 44, '閉じるボタンが押せる（44px以上）', full);
   ok(full.searchHit, '検索欄が押せる', full.searchHit);
   ok(full.attrVisible, '出典表記が見えている（利用条件）', full.attrVisible);
+  ok(full.attrLinkHit === true, '★出典のリンクは押せる（#map-foot の pointer-events: none を打ち消す。パネルを閉じた状態）', full.attrLinkHit);
+  /* 出典は円柱の下に横幅いっぱいの細い帯（v4.162.0）。⚠ 全文を出す（切り詰め・横スクロールで隠さない＝利用条件） */
+  const attrStrip = await page.evaluate(() => {
+    const el = document.getElementById('map-attribution');
+    const a = el.getBoundingClientRect(), fav = document.getElementById('map-fav-slot').getBoundingClientRect();
+    const st = document.getElementById('map-stage').getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const lh = parseFloat(cs.lineHeight);
+    const bgA = (cs.backgroundColor.match(/rgba?\(([^)]+)\)/) || [, '0,0,0,1'])[1].split(',').map(Number)[3] ?? 1;
+    // 帯の空いたところを突くと地図に抜ける（リンクの無い右端の少し内側）
+    const t = document.elementFromPoint(a.right - 3, a.bottom - 2);
+    return {
+      belowFav: a.top >= fav.bottom - 0.5,
+      inFoot: !!el.closest('#map-foot'),
+      widthRatio: +(a.width / st.width).toFixed(2),
+      lines: Math.round((a.height - 2) / lh),
+      clipped: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+      nowrap: cs.whiteSpace === 'nowrap', overflowX: cs.overflowX,
+      bgAlpha: bgA,
+      passThrough: !!t && !!t.closest('#map'),
+      bottomIn: a.bottom <= innerHeight + 0.5,
+    };
+  });
+  ok(attrStrip.belowFav && !attrStrip.inFoot, '★出典は円柱の下に置く（地点名の行から外した）', attrStrip);
+  ok(attrStrip.widthRatio >= 0.9, '出典は横幅いっぱいの帯', attrStrip.widthRatio);
+  ok(attrStrip.lines <= 3, '出典の帯は細い（390px で3行以内）', attrStrip);
+  ok(!attrStrip.clipped && !attrStrip.nowrap && attrStrip.overflowX !== 'scroll' && attrStrip.overflowX !== 'auto',
+    '★出典は全文を出す（切り詰め・横スクロールで隠さない。利用条件）', attrStrip);
+  ok(attrStrip.bgAlpha <= 0.6, '出典の地は薄い（透過）', attrStrip.bgAlpha);
+  ok(attrStrip.passThrough, '出典の帯の空いたところは地図に抜ける（帯がタップを食わない）', attrStrip);
+  ok(attrStrip.bottomIn, '出典の帯は画面の中に収まる', attrStrip);
   ok(full.rankOutside && full.favOverlayOutside,
     '★他の画面が地図の入れ子に紛れ込んでいない', full);
   ok(full.zoomCtl === 0, 'Leaflet標準の+/-は出さない（左上は閉じるボタン）', full.zoomCtl);
@@ -1169,6 +1325,111 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
       .match(/env\(safe-area-inset-[a-z]+\)(?!,)/g) || []);
   ok(envDirect.length === 0,
     'safe-area は --sa-top / --sa-bottom を通す（env()の直書きは検査をすり抜ける）', envDirect);
+
+  /* ================= 5d-3. 横向き（#184） =================
+     横向きでは地図だけ画面いっぱい（#map-overlay を fixed）。#app は 480px のまま。
+     左右のノッチは --sa-left / --sa-right（headless の env() は 0 なので差し替えて見る） */
+  const SA_SIDE = 47;
+  // グラフは横にスクロールする幅広の canvas なので、横向きにする前の幅と比べる
+  const chartWidths = () => page.evaluate(() => [...document.querySelectorAll('#app canvas')]
+    .filter(c => c.offsetParent && !c.closest('#map-overlay')).map(c => Math.round(c.getBoundingClientRect().width)).join(','));
+  const chartsBefore = await chartWidths();
+  await page.setViewportSize({ width: 844, height: 390 });
+  const land = await page.evaluate(async side => {
+    const root = document.documentElement;
+    root.style.setProperty('--sa-left', side + 'px');
+    root.style.setProperty('--sa-right', side + 'px');
+    if (!isMapOpen()) openMap();
+    await new Promise(r => setTimeout(r, 400));
+    const W = innerWidth;
+    const inside = el => { const r = el.getBoundingClientRect(); return r.left >= side - 0.5 && r.right <= W - side + 0.5; };
+    const hit = el => { const r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!t && (t === el || el.contains(t)); };
+    const ids = ['btn-map-close', 'map-search-row', 'map-topleft', 'map-tools', 'map-picked', 'map-attribution'];
+    const out = {
+      W, stageW: Math.round(document.getElementById('map-stage').getBoundingClientRect().width),
+      appW: Math.round(document.getElementById('app').getBoundingClientRect().width),
+      outside: ids.filter(id => !inside(document.getElementById(id))),
+      toolsHit: [...document.querySelectorAll('#map-tools > button')].filter(b => !hit(b)).map(b => b.id),
+      // 下の帯（時刻・地点名・円柱・出典）は右のボタン列と重ならない（v4.161.0 の実機で重なった）
+      // ⚠ 列の外枠ではなくボタン1つずつと比べる（外枠は横長の「レイヤー」の幅を含み、丸ボタンの下の空きまで数えてしまう）
+      bottomOverTools: (() => { const btns = [...document.querySelectorAll('#map-tools > button')].map(b => b.getBoundingClientRect());
+        const out = [];
+        ['map-time', 'map-picked', 'map-fav-slot', 'map-attribution'].forEach(id => {
+          const el = document.getElementById(id); if (!el || el.offsetParent === null) return;
+          const r = el.getBoundingClientRect(); if (!r.width) return;
+          btns.forEach((t, i) => { if (r.right > t.left && r.left < t.right && r.top < t.bottom && r.bottom > t.top) out.push(id + '×' + i); });
+        });
+        return out; })(),
+      // 出典の帯：横向きでは2行以内で、右のボタン列と重ならない
+      attr: (() => { const el = document.getElementById('map-attribution'), a = el.getBoundingClientRect();
+        const tools = document.getElementById('map-tools').getBoundingClientRect();
+        return { lines: Math.round((a.height - 2) / parseFloat(getComputedStyle(el).lineHeight)),
+                 overlapTools: a.top < tools.bottom && a.right > tools.left }; })(),
+    };
+    // レイヤーパネルの✕
+    toggleLayerPanel();
+    await new Promise(r => setTimeout(r, 350));
+    const lc = document.getElementById('btn-layer-close');
+    out.layerClose = { inside: inside(lc), hit: hit(lc) };
+    closeLayerPanel();
+    await new Promise(r => setTimeout(r, 300));
+    // 地図から開く画面は 480px の中央のまま。✕はノッチの外で、地図の上に出ている
+    const subs = [
+      ['wxmap', () => openWxMap(), 'btn-wxmap-close', 'wxmap-overlay', () => closeWxMap()],
+      ['fav', () => openFav(), 'btn-fav-close', 'fav-overlay', () => closeFav()],
+      ['rank', () => openRank(), 'btn-rank-close', 'rank-overlay', () => closeRank()],
+      ['coord', () => openCoordSheet(36.57, 137.65, '試験'), 'coord-sheet-close', 'coord-sheet', () => closeCoordSheet()],
+    ];
+    out.subs = [];
+    for (const [name, open, closeId, boxId, close] of subs) {
+      open();
+      await new Promise(r => setTimeout(r, 350));
+      const c = document.getElementById(closeId);
+      out.subs.push({ name, w: Math.round(document.getElementById(boxId).getBoundingClientRect().width),
+        inside: inside(c), hit: hit(c) });
+      close();
+      await new Promise(r => setTimeout(r, 300));
+    }
+    return out;
+  }, SA_SIDE);
+  ok(land.stageW === land.W, '★横向きでは地図が画面の幅いっぱいに広がる', land);
+  ok(land.appW <= 480, '横向きでも本体（#app）の幅は480pxのまま（グラフを広げない）', land.appW);
+  ok(land.outside.length === 0, '★横向きで地図の部品が左右のノッチに潜らない', land.outside);
+  ok(land.toolsHit.length === 0, '横向きで右のボタン列がすべて押せる', land.toolsHit);
+  ok(land.attr.lines <= 2 && !land.attr.overlapTools, '横向きで出典の帯は2行以内・右のボタン列と重ならない', land.attr);
+  ok(land.bottomOverTools.length === 0, '★横向きで下の帯が右のボタン列と重ならない', land.bottomOverTools);
+  // ノッチが左（回転角 90）なら右のボタン列は右端まで寄せる。右（270）なら逃げ幅を取る
+  const notchSide = await page.evaluate(async side => {
+    const tryAngle = async a => {
+      Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: a, addEventListener() {} }) });
+      applyNotchSide();
+      await new Promise(r => setTimeout(r, 100));
+      const t = document.getElementById('map-tools').getBoundingClientRect();
+      return Math.round(innerWidth - t.right);
+    };
+    const at90 = await tryAngle(90), at270 = await tryAngle(270);
+    delete screen.orientation; applyNotchSide();
+    return { at90, at270, side, cls: document.documentElement.className };
+  }, SA_SIDE);
+  ok(notchSide.at90 === 8, '★ノッチが左なら右のボタン列は右端（8px）まで寄せる', notchSide);
+  ok(notchSide.at270 === 8 + SA_SIDE, 'ノッチが右なら右のボタン列はノッチを避ける', notchSide);
+  ok(land.layerClose.inside && land.layerClose.hit, '横向きでレイヤーパネルの✕がノッチに潜らず押せる', land.layerClose);
+  const badSubs = land.subs.filter(s => s.w > 480 || !s.inside || !s.hit);
+  ok(badSubs.length === 0, '地図から開く画面は480pxのままで、✕がノッチに潜らず押せる', land.subs);
+  // 地図を開いたまま横にして閉じ、縦に戻すと、グラフの幅は横にする前と同じ
+  await page.evaluate(() => closeMap());
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForTimeout(500);
+  const chartsAfter = await chartWidths();
+  ok(chartsBefore.length > 0 && chartsAfter === chartsBefore,
+    '横向きのあと縦に戻すと、グラフの幅は元どおり', { chartsBefore, chartsAfter });
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.style.removeProperty('--sa-left'); root.style.removeProperty('--sa-right');
+    openMap();
+  });
+  await page.waitForTimeout(400);
 
   ok(rotary.count === 1, 'お気に入り円柱の実体は1つだけ', rotary.count);
   ok(rotary.inMap, '地図を開くと円柱が地図画面へ移る', rotary);
@@ -1255,6 +1516,17 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(fly.calls[0] && fly.calls[0].o && fly.calls[0].o.duration > 0, 'アニメーション時間が指定されている', fly.calls[0]);
   ok(fly.open, '円柱で選んでも地図は開いたまま');
   await page.waitForTimeout(1200);
+  // #216：選んだら FAV_GO_ZOOM まで寄る。すでにそれより拡大していれば縮めない
+  const favZoom = await page.evaluate(async () => {
+    const z1 = leafletMap.getZoom();
+    leafletMap.setZoom(17, { animate: false });
+    selectFav(36.2899, 137.6480, '常念岳');
+    await new Promise(r => setTimeout(r, 1200));
+    const z2 = leafletMap.getZoom();
+    return { z1, z2, go: FAV_GO_ZOOM };
+  });
+  ok(favZoom.z1 === favZoom.go, '★円柱で選ぶと FAV_GO_ZOOM まで寄る（#216）', favZoom);
+  ok(favZoom.z2 === 17, '★すでに拡大していれば縮めない', favZoom);
 
   // 閉じると円柱は元の場所（グラフ画面の最下段 #fav-bar-slot。v4.105.0 でヘッダーから移した）へ戻る
   await page.evaluate(() => closeMap());
@@ -1426,6 +1698,69 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(heading.pressed === 'true', 'ヘディングアップ中だと分かる状態にする', heading.pressed);
   ok(heading.rimColor !== northRim, '★ヘディングアップでは方位環の色が変わる', { heading: heading.rimColor, north: northRim });
   ok(heading.rotating, '地図の実体を広げるクラスが付く');
+
+  /* 横向き（#184）：センサーの方位は端末の上端が基準なので、画面の回転ぶんを足す。
+     端末を反時計回りに90°（screen.orientation.angle=90）回して北を向くと、画面の上は東 */
+  const landHeading = await page.evaluate(async () => {
+    const fire = h => { const ev = new Event('deviceorientation'); ev.webkitCompassHeading = h; window.dispatchEvent(ev); };
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 90 }) });
+    fire(0);
+    await new Promise(r => setTimeout(r, 100));
+    const at90 = headingDeg;
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 270 }) });
+    fire(30);
+    await new Promise(r => setTimeout(r, 100));
+    const at270 = headingDeg;
+    delete screen.orientation;               // 元の getter（Screen.prototype）に戻す
+    fire(90);                                // 後の検査のため、東向き・縦に戻す
+    await new Promise(r => setTimeout(r, 100));
+    return { at90, at270, back: headingDeg, angleNow: screenAngle() };
+  });
+  ok(landHeading.at90 === 90 && landHeading.at270 === 300,
+    '横向きでは画面の回転ぶんを方位に足す（90°→+90・270°→+270）', landHeading);
+  ok(landHeading.back === 90 && landHeading.angleNow === 0, '縦に戻せば補正は0', landHeading);
+
+  /* 横向きで回転角の2つの取り口が食い違うとき（v4.183.1）：iOS のホーム画面の PWA で、横にしても
+     ヘディングアップの地図が横へ流れた（回転角が 0 のままだった見込み）。画面の縦横と合う方を採る */
+  const vp0 = page.viewportSize();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(300);
+  const mixed = await page.evaluate(async () => {
+    const fire = h => { const ev = new Event('deviceorientation'); ev.webkitCompassHeading = h; window.dispatchEvent(ev); };
+    const prevHeading = headingDeg;      // ⚠ 後の検査（矢尻・タップの補正）のため、最後に方位と回転を戻す
+    Object.defineProperty(window, 'orientation', { configurable: true, get: () => 90 });
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 0, addEventListener() {} }) });
+    const a1 = screenAngle();
+    fire(0);
+    await new Promise(r => setTimeout(r, 100));
+    const h1 = headingDeg;
+    Object.defineProperty(window, 'orientation', { configurable: true, get: () => 0 });
+    Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 270, addEventListener() {} }) });
+    const a2 = screenAngle();
+    delete window.orientation; delete screen.orientation;
+    /* 回した地図が画面の四隅を覆う（横向きで 45° 回しても黒く欠けない） */
+    applyMapRotation(-45);
+    await new Promise(r => setTimeout(r, 100));
+    const st = document.getElementById('map-stage').getBoundingClientRect();
+    const m = document.getElementById('map');
+    const side = m.offsetWidth, cx = st.left + st.width / 2, cy = st.top + st.height / 2;
+    // 回した正方形の中か：中心から見た座標を地図の向きへ戻して、半辺に収まるか
+    const inside = (x, y) => {
+      const t = 45 * Math.PI / 180, dx = x - cx, dy = y - cy;
+      const u = dx * Math.cos(t) - dy * Math.sin(t), v = dx * Math.sin(t) + dy * Math.cos(t);
+      return Math.abs(u) <= side / 2 && Math.abs(v) <= side / 2;
+    };
+    const corners = [[st.left, st.top], [st.right, st.top], [st.left, st.bottom], [st.right, st.bottom]].map(([x, y]) => inside(x, y));
+    const square = m.offsetWidth === m.offsetHeight;
+    fire(prevHeading);                   // 縦（回転角 0）で元の方位に戻す＝地図の回転も元どおり
+    await new Promise(r => setTimeout(r, 100));
+    return { a1, h1, a2, corners, square, side, stage: [st.width, st.height], restored: [headingDeg, mapRotationDeg] };
+  });
+  await page.setViewportSize(vp0);
+  await page.waitForTimeout(300);
+  ok(mixed.a1 === 90 && mixed.h1 === 90, '★★横なのに一方の回転角が 0 のままでも、画面の縦横と合う方（90）を足す', mixed);
+  ok(mixed.a2 === 270, '★逆の食い違い（window.orientation が 0）でも合う方（270）を採る', mixed);
+  ok(mixed.square && mixed.corners.every(Boolean), '★★横向きで地図を回しても画面の四隅が欠けない（対角線の正方形）', mixed);
 
   /* ★自位置は車のナビと同じ矢尻で描く（進行方向が一目で分かるように）。
      方位が取れたら丸（.me-dot）から矢尻（.me-arrow）へ入れ替わる。 */
@@ -2076,6 +2411,126 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     '★薄い雲の濃さが想定どおり（輝度→透明度がsRGBで計算されている）',
     { frac: +frac.toFixed(3), lOff: +lOff.toFixed(1), lOn: +lOn.toFixed(1), lFull: +lFull.toFixed(1) });
   await page6.close();
+  /* 既定（保存なし）の見え方：雨雲と雷は通常、雷のタイルは mapThunder に入る（#194 の既定を守る） */
+  const pageD0 = await newPage();
+  await pageD0.click('#btn-map');
+  await pageD0.waitForTimeout(700);
+  await pageD0.evaluate(() => { toggleOverlay('radar'); toggleOverlay('thunder'); });
+  await pageD0.waitForTimeout(300);
+  const d0 = await pageD0.evaluate(() => ({
+    radar: leafletMap.getPane('mapNowcastMask').style.mixBlendMode,
+    thunder: leafletMap.getPane('mapThunderMask').style.mixBlendMode,
+    thunderTiles: overlayTileLayers.thunder ? overlayTileLayers.thunder.options.pane : null,
+    radarTiles: overlayTileLayers.radar ? overlayTileLayers.radar.options.pane : null,
+  }));
+  ok(d0.radar === 'normal' && d0.thunder === 'normal', '既定では雨雲・雷とも通常の合成（今の見え方どおり）', d0);
+  ok(d0.thunderTiles === 'mapThunder' && d0.radarTiles === 'mapNowcast', '雷のタイルは mapThunder、雨雲は mapNowcast に入る', d0);
+  await pageD0.close();
+
+  /* ================= 9. 重ね方（レイヤーごと・覚える・#194） =================
+     ⚠ 重ね方は pane に掛ける（タイルの div に掛けると継ぎ目が出る・下と混ざらない）。
+     並び順は z-index（340〜）で決め、DOM は動かさない。外して入れ直しても覚えている。 */
+  const pageB = await newPage({
+    'sotoki.map.overlays': JSON.stringify([{ id: 'slope', opacity: 0.6 }, { id: 'relief', opacity: 0.8 }]),
+    'sotoki.map.blend': JSON.stringify({ slope: 'screen', rrimLike: 'screen', radar: 'multiply', satellite: 'screen', bogus: 'multiply', relief: 'blur' }),
+  });
+  await pageB.click('#btn-map');
+  await pageB.waitForTimeout(700);
+  await pageB.click('#btn-layers');
+  await pageB.waitForTimeout(400);
+  const b0 = await pageB.evaluate(() => {
+    const mp = leafletMap.getPanes().mapPane;
+    const pane = id => leafletMap.getPane('mapOv_' + id);
+    return {
+      slope: { z: Number(pane('slope').style.zIndex), blend: pane('slope').style.mixBlendMode, parent: pane('slope').parentNode === mp },
+      relief: { z: Number(pane('relief').style.zIndex), blend: pane('relief').style.mixBlendMode, parent: pane('relief').parentNode === mp },
+      oldPane: !!leafletMap.getPane('mapOverlays'),
+      thunderBox: (() => { const h = leafletMap.getPane('mapThunderMask'); const t = leafletMap.getPane('mapThunder'); return !!h && !!t && t.parentNode === h && h.parentNode === mp && Number(h.style.zIndex) === 381; })(),
+      mapPrefsBlend: mapPrefs.blend,
+      chips: document.querySelectorAll('.layer-blend-btn').length,
+      // 行の右端が地図パネルの内側に収まるか（箱の中に収まる子では scrollWidth で見ても効かない）
+      fits: (() => {
+        const panel = document.getElementById('layer-overlays').getBoundingClientRect();
+        return [...document.querySelectorAll('.layer-ov-op')].every(e => e.getBoundingClientRect().right <= panel.right + 1);
+      })(),
+    };
+  });
+  ok(b0.slope.blend === 'screen', '保存された重ね方（スクリーン）が地形図のpaneに掛かる', b0);
+  ok(b0.relief.blend === 'normal', '不正な重ね方（blur）は通常に落ちる', b0.relief);
+  ok(b0.mapPrefsBlend.slope === 'screen' && b0.mapPrefsBlend.rrimLike === 'screen' && b0.mapPrefsBlend.radar === 'multiply',
+    '読み込み時、重ね方を選べるもの（地形図・赤色立体図風・雨雲）は残す', b0.mapPrefsBlend);
+  ok(!('satellite' in b0.mapPrefsBlend) && !('bogus' in b0.mapPrefsBlend),
+    '読み込み時、衛星（対象外）・未知のIDの重ね方は捨てる', b0.mapPrefsBlend);
+  ok(b0.slope.parent && b0.relief.parent, '重ね方のpaneは地図の直下（mapOverlaysの子ではない）', b0);
+  ok(b0.slope.z >= 340 && b0.relief.z > b0.slope.z && b0.relief.z < 360,
+    '並び順は overlays の順（後ろほど上）で、赤色立体図風（360）より下', [b0.slope.z, b0.relief.z]);
+  ok(b0.oldPane === false, '旧 mapOverlays の pane は作らない');
+  ok(b0.thunderBox, '雷は雨雲と別の箱（mapThunderMask・z381）に入る', b0.thunderBox);
+  ok(b0.chips === 6, '重ね方のボタンは on の重ね方を選べるレイヤーにだけ出る（2枚×3）', b0.chips);
+  ok(b0.fits, '重ね方のボタンを足しても行が横にはみ出さない（390px）', b0);
+
+  await pageB.evaluate(() => setOverlayBlend('relief', 'multiply'));
+  await pageB.waitForTimeout(200);
+  const b1 = await pageB.evaluate(() => ({
+    pane: leafletMap.getPane('mapOv_relief').style.mixBlendMode,
+    saved: JSON.parse(localStorage.getItem('sotoki.map.blend') || '{}'),
+    activeMultiply: [...document.querySelectorAll('.layer-blend-btn.active')].map(b => b.textContent),
+  }));
+  ok(b1.pane === 'multiply' && b1.saved.relief === 'multiply', '重ね方を変えると、その場で pane が変わり保存される', b1);
+  ok(b1.activeMultiply.length === 2 && b1.activeMultiply.includes('乗算'), '選んでいるボタンが表示に出る', b1.activeMultiply);
+
+  // 外して入れ直しても重ね方は残る（#194の決定）
+  await pageB.evaluate(() => { toggleOverlay('slope'); toggleOverlay('slope'); });
+  await pageB.waitForTimeout(300);
+  const b2 = await pageB.evaluate(() => ({
+    slope: leafletMap.getPane('mapOv_slope').style.mixBlendMode,
+    saved: JSON.parse(localStorage.getItem('sotoki.map.blend') || '{}'),
+  }));
+  ok(b2.slope === 'screen' && b2.saved.slope === 'screen', '外して入れ直しても重ね方が残る', b2);
+
+  // 赤色立体図風の排他で外れた側も、重ね方は覚えている
+  await pageB.evaluate(() => { toggleOverlay('rrimLike'); });
+  await pageB.waitForTimeout(300);
+  const b3 = await pageB.evaluate(() => ({
+    ids: mapPrefs.overlays.map(o => o.id),
+    saved: JSON.parse(localStorage.getItem('sotoki.map.blend') || '{}'),
+    rrimBlend: getComputedStyle(leafletMap.getPane('rrimSlope')).mixBlendMode,
+  }));
+  ok(!b3.ids.includes('slope') && b3.saved.slope === 'screen',
+    '赤色立体図風の排他で外れても、傾斜量図の重ね方は覚えている', b3);
+  ok(b3.rrimBlend === 'screen', '傾斜量図の箱は保存された重ね方（スクリーン）に従う（既定の乗算は保存が無いときだけ）', b3.rrimBlend);
+
+  // 雨雲と雷は、on のときそれぞれ重ね方のボタンを出す（雨雲と雷は別々に選べる）
+  await pageB.evaluate(() => { toggleOverlay('radar'); toggleOverlay('thunder'); });
+  await pageB.waitForTimeout(300);
+  const b4 = await pageB.evaluate(() => {
+    const rows = [...document.querySelectorAll('.layer-ov.on')].filter(r => r.querySelector('.layer-blend'));
+    return rows.map(r => r.querySelector('.layer-ov-name').textContent.trim().slice(0, 4));
+  });
+  ok(b4.some(t => t.startsWith('降雨')) && b4.some(t => t.startsWith('雷')),
+    '雨雲と雷は、on のとき重ね方のボタンを出す', b4);
+  await pageB.evaluate(() => { setOverlayBlend('radar', 'screen'); setOverlayBlend('thunder', 'multiply'); });
+  const b5 = await pageB.evaluate(() => ({
+    thunder: leafletMap.getPane('mapThunderMask').style.mixBlendMode,
+    radar: leafletMap.getPane('mapNowcastMask').style.mixBlendMode,
+  }));
+  ok(b5.thunder === 'multiply' && b5.radar === 'screen',
+    '雷の重ね方は雨雲と別に掛かる（雷は乗算・雨雲はスクリーン）', b5);
+  // 雨雲と雷の上下は overlays の順（後に入れた方が上）
+  await pageB.evaluate(() => {
+    if (isOverlayOn('radar')) toggleOverlay('radar');
+    if (isOverlayOn('thunder')) toggleOverlay('thunder');
+  });
+  await pageB.evaluate(() => { toggleOverlay('radar'); toggleOverlay('thunder'); });
+  await pageB.waitForTimeout(200);
+  const z1 = await pageB.evaluate(() => [Number(leafletMap.getPane('mapNowcastMask').style.zIndex), Number(leafletMap.getPane('mapThunderMask').style.zIndex)]);
+  await pageB.evaluate(() => { toggleOverlay('radar'); toggleOverlay('radar'); });   // 雨雲だけ外して入れ直す（一番後ろになる）
+  await pageB.waitForTimeout(200);
+  const z2 = await pageB.evaluate(() => [Number(leafletMap.getPane('mapNowcastMask').style.zIndex), Number(leafletMap.getPane('mapThunderMask').style.zIndex)]);
+  ok(z1[1] > z1[0], '雷を後に入れたら雷が上（overlays の順）', z1);
+  ok(z2[0] > z2[1], '雨雲を後から入れ直したら雨雲が上（overlays の順）', z2);
+  await pageB.close();
+
   satTileMode = 'dark';
 
   await browser.close();

@@ -1,0 +1,4 @@
+# 日本の山の直接のクラス（P31）の内訳（ラベルなし）
+SELECT ?cls (COUNT(DISTINCT ?item) AS ?n) WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q8502 ; wdt:P17 wd:Q17 ; wdt:P31 ?cls .
+} GROUP BY ?cls ORDER BY DESC(?n) LIMIT 12

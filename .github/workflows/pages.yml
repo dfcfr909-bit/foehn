@@ -8,8 +8,9 @@ name: Pages へデプロイ
 #   ブランチ配信と同じ**で、変わるのは配信の仕組みだけ。
 #   移行の経緯は docs/adr/0009-repo-rebuild.md
 #
-# ⚠ 直下をまるごと上げるので、リポジトリに置いたものは公開される。
+# ⚠ 直下をまるごと上げるので、リポジトリに置いたものは公開される（experiments/ だけは除く）。
 #   CLAUDE.md の「公開したくないものを置かない」がそのまま効く。
+#   除いても**リポジトリ自体は public** なので、コードは GitHub 上で見える。
 on:
   push:
     branches: [main]
@@ -40,10 +41,19 @@ jobs:
         with:
           enablement: true
 
-      # 直下をそのまま上げる。.nojekyll があるので Jekyll の変換は走らない
+      # 直下を配信用の一時フォルダへ写し、experiments/ だけ除いて上げる。
+      # experiments/ は試作の置き場で、外部データの利用条件を確かめていないものがある
+      # （CS立体図の閲覧ページは栃木県のタイルを読む。#146）。リポジトリからは消さず、配信だけ止める。
+      # 公開したくなったら、利用条件を確かめてから --exclude を外す。
+      # .nojekyll も写るので Jekyll の変換は走らない
+      - name: 配信物をまとめる（experiments/ を除く）
+        run: |
+          mkdir -p "$RUNNER_TEMP/site"
+          tar --exclude='./.git' --exclude='./.github' --exclude='./experiments' -cf - . | tar -xf - -C "$RUNNER_TEMP/site"
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: ${{ runner.temp }}/site
 
       - id: deployment
         uses: actions/deploy-pages@v4

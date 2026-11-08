@@ -261,6 +261,42 @@ async function ask(sw, type) {
     ok(usage.count === 0, 'サイズの分からないレスポンスは保存しない（LRUが壊れるため）', usage);
   }
 
+  /* ================= 7. 山域の保存（#244 段2）：別の箱・LRU に入らない・先に引く・消えない ================= */
+  {
+    const statusOf = u => u.includes('/404/') ? 404 : 200;
+    let netCalls = 0;
+    const sw = loadSw({ fetchImpl: async u => {
+      netCalls++;
+      const r = makeResponse('area:' + u, 2000); r.status = statusOf(String(u)); r.ok = r.status === 200; return r;
+    } });
+    const A = sw.get('AREA_CACHE');
+    ok(A === 'sotoki-areas-v1' && A !== sw.get('TILE_CACHE'), '山域の箱は LRU と別', A);
+    const urls = ['https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/17/1/1.png',
+      'https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/17/404/1.png', 'https://api.open-meteo.com/v1/forecast?x=1'];
+    let out;
+    sw.handlers.message({ data: { type: 'area-fetch', urls }, ports: [{ postMessage: v => { out = v; } }], waitUntil: p => p });
+    await settle(80);
+    ok(out && out[0].status === 200 && out[0].size === 2000 && out[1].status === 404 && out[2].status === -1,
+      '★★area-fetch は1枚ずつ結果を返す（404 は保存しない・地図の配信元だけ）', out);
+    const area = sw.caches._store.get(A);
+    ok(area && area.has(urls[0]) && !area.has(urls[1]), '★★ok だけを山域の箱に入れる', area && [...area.keys()]);
+    ok(!(sw.caches._store.get('sotoki-tiles-v1') || new Map()).has(urls[0]) && sw.indexedDB._data.tiles.size === 0,
+      '★★★山域の保存は LRU（タイルの控え・索引）に入らない');
+    netCalls = 0;
+    const hit = await runFetch(sw, urls[0]);
+    ok(netCalls === 0 && hit.res && hit.res._body === 'area:' + urls[0], '★★タイルの要求は山域の箱を先に引く（ネットに行かない）', { netCalls });
+    await ask(sw, 'tiles-clear');
+    ok(sw.caches._store.get(A) && sw.caches._store.get(A).has(urls[0]), '★★★tiles-clear（見た範囲の削除）で山域は消えない');
+    const waits = [];
+    sw.handlers.activate({ waitUntil: p => waits.push(p) });
+    await Promise.allSettled(waits); await settle();
+    ok((await sw.caches.keys()).includes(A), '★★★activate（版の更新）で山域の箱は消えない');
+    let del;
+    sw.handlers.message({ data: { type: 'area-delete', urls: [urls[0]] }, ports: [{ postMessage: v => { del = v; } }], waitUntil: p => p });
+    await settle(40);
+    ok(del && del.deleted === 1 && !sw.caches._store.get(A).has(urls[0]), 'area-delete で消える', del);
+  }
+
   if (fails.length) {
     console.log(`FAILED ${fails.length}件:`);
     for (const f of fails) console.log('  ✗ ' + f);

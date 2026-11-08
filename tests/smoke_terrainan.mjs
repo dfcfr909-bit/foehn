@@ -534,12 +534,12 @@ const bgc = await page.evaluate(() => {
     mid: windBgRGB((WIND_BG.MID[1] + WIND_BG.MID[2]) / 2) };
   // 格子の各点の色が「その点の格子の速さ」の色（乗算済み）と一致するか
   const check = () => {
-    const g = windGL.bgGrid, d = windGL.bgData, A = WIND_BG.ALPHA; let bad = 0, n = 0;
+    const g = windGL.bgGrid, d = windGL.bgData; let bad = 0, n = 0;
     for (let k = 0; k < g.u.length; k += 37) {
       if (!g.ok[k]) continue; n++;
       const ms = Math.hypot(g.u[k], g.v[k]);
-      if (ms < windBgMinSpeed()) { if (d[k * 4 + 3] !== 0) bad++; continue; }   // 最小風速未満は着色しない（透明）
-      const c = windBgRGB(ms);
+      if (ms <= windBgMinSpeed()) { if (d[k * 4 + 3] !== 0) bad++; continue; }   // 最小風速以下は着色しない（透明）
+      const c = windBgRGB(ms), A = WIND_BG.ALPHA * windBgFade(ms, windBgMinSpeed());   // 最小の上はなめらかに濃くなる（#219）
       if (Math.abs(d[k * 4] - Math.round(c[0] * A)) > 1 || Math.abs(d[k * 4 + 3] - Math.round(255 * A)) > 1) bad++;
     }
     return { n, bad, same: g === windGL.grid };
@@ -570,7 +570,7 @@ const bgm = await page.evaluate(() => {
   const out = { relMin: windBgMinSpeed() };
   const cnt = () => { const g = windGL.bgGrid, d = windGL.bgData; let lo = 0, loBad = 0, hi = 0, hiBad = 0;
     for (let k = 0; k < g.u.length; k++) { if (!g.ok[k]) continue; const ms = Math.hypot(g.u[k], g.v[k]);
-      if (ms < windBgMinSpeed()) { lo++; if (d[k * 4 + 3] !== 0) loBad++; } else { hi++; if (d[k * 4 + 3] === 0) hiBad++; } }
+      if (ms <= windBgMinSpeed()) { lo++; if (d[k * 4 + 3] !== 0) loBad++; } else if (windBgFade(ms, windBgMinSpeed()) * WIND_BG.ALPHA * 255 >= 0.5) { hi++; if (d[k * 4 + 3] === 0) hiBad++; } }
     return { lo, loBad, hi, hiBad }; };
   out.rel = cnt();
   document.getElementById('wind-hud-bgspeed').click();      // 実際に押す
@@ -589,6 +589,10 @@ const bgm = await page.evaluate(() => {
 });
 ok(bgm.relMin === 5 && bgm.absMin === 3 && bgm.backMin === 5 && bgm.saved === 1, '★背景の最小風速：相対5m/s・絶対3m/sをボタンで切り替え、端末に覚える', bgm);
 ok(bgm.partBefore === '背景最小:相対5m/s' && bgm.partAfter === '背景最小:絶対3m/s' && bgm.partActive, '★色:粒でも背景最小を押すとラベルと選択が切り替わる', bgm);
+// #219：最小の上はなめらかに濃くなる（最小で一段に切り替えない）
+const fade = await page.evaluate(() => ({ at: windBgFade(3, 3), lo: windBgFade(2.9, 3), q: windBgFade(3.375, 3), mid: windBgFade(3.75, 3), full: windBgFade(4.5, 3), over: windBgFade(9, 3), nan: windBgFade(NaN, 3) }));
+ok(fade.at === 0 && fade.lo === 0 && fade.nan === 0 && fade.full === 1 && fade.over === 1 && Math.abs(fade.mid - 0.5) < 1e-9 && fade.q > 0 && fade.q < 0.5,
+  '★背景の濃さは最小から最小×1.5 でなめらかに満ちる（#219・最小で段差を作らない）', fade);
 ok(bgm.rel.loBad === 0 && bgm.rel.hiBad === 0 && bgm.abs.loBad === 0 && bgm.abs.hiBad === 0, '★最小風速未満は透明・以上は着色（切り替え後の塗り直し）', bgm);
 // ⑪計測表示のスライダー（v4.139.0）：粒の数と背景の濃さを別々に変えられ、端末に覚える
 const sl = await page.evaluate(() => {
@@ -601,7 +605,7 @@ const sl = await page.evaluate(() => {
   c.value = WIND_COUNT_STEPS.indexOf(3000); c.dispatchEvent(new Event('input'));
   out.n = windGL.n; out.savedN = windPref.get('count'); out.labelN = document.getElementById('wind-sl-count-v').textContent;
   b.value = 0.7; b.dispatchEvent(new Event('input'));
-  out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex((x, k) => x && Math.hypot(windGL.bgGrid.u[k], windGL.bgGrid.v[k]) >= windBgMinSpeed()) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
+  out.alpha = windBgAlpha(); out.texA = windGL.bgData[[...windGL.bgGrid.ok].findIndex((x, k) => x && Math.hypot(windGL.bgGrid.u[k], windGL.bgGrid.v[k]) >= windBgMinSpeed() * (1 + WIND_BG.RAMP_FRAC)) * 4 + 3]; out.labelB = document.getElementById('wind-sl-bg-v').textContent;
   windGLSetBgAlpha(9); out.clampB = windBgAlpha();
   windGLSetCount(10); out.clampN = windGL.n;
   windGLSetCount(50000); out.clampHi = windGL.n;

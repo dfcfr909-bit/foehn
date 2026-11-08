@@ -1,0 +1,4 @@
+[out:csv(::id,::lat,::lon,"name","name:ja-Hira","name:ja-Latn","name:ja_rm","name:ja_kana","name:ja-Kana","ele","wikidata","natural";true;"\t")][timeout:180];
+area["ISO3166-1"="JP"][admin_level=2]->.jp;
+(node["natural"="peak"](area.jp); node["natural"="volcano"](area.jp););
+out;

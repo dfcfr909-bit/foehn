@@ -28,6 +28,7 @@
   --warn-bg: #fdf3ef;
   --sa-l: env(safe-area-inset-left, 0px);
   --sa-r: env(safe-area-inset-right, 0px);
+  --sa-t: env(safe-area-inset-top, 0px);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -50,7 +51,9 @@ body {
 }
 .wrap { max-width: 720px; margin: 0 auto; }
 
-header { padding-block: 40px 8px; }
+/* ⚠ 上端は右上の「戻る」（44px・safe-area の下）の下から始める。
+   40px のままだと見出しがステータスバーに潜り、右上の「戻る」とも重なる */
+header { padding-block: calc(var(--sa-t) + 66px) 8px; }
 .eyebrow { font-size: 12px; letter-spacing: .12em; color: var(--text3); margin: 0 0 6px; }
 h1 { font-size: 26px; line-height: 1.4; margin: 0 0 10px; font-weight: 700; }
 .lede { font-size: 15px; color: var(--text2); margin: 0 0 4px; }
@@ -107,12 +110,17 @@ table.judge th[scope="row"] { background: none; white-space: normal; }
 .g-b { background: var(--b-col); }
 .g-c { background: var(--c-col); }
 
-.cta {
-  display: inline-block; background: var(--accent); color: #fff;
-  text-decoration: none; font-weight: 700; border-radius: 8px;
-  padding: 11px 22px; margin: 6px 8px 6px 0;
+/* 右上に常に浮かぶ「戻る」（#193）。どこまで読んでも同じ位置で押せる。
+   見出しの下の大きいボタンはやめてこれに一本化した（実機で邪魔にならない位置と確認・2026-10-09）。
+   ステータスバー・ノッチは safe-area で避ける */
+.back-float {
+  position: fixed; z-index: 10;
+  top: calc(var(--sa-t) + 10px); right: calc(var(--sa-r) + 12px);
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+  border-radius: 22px; box-shadow: 0 2px 10px rgba(0,0,0,.18);
+  font-size: 14px; font-weight: 700; text-decoration: none;
 }
-.cta.sub { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
 
 .issue { display: flex; gap: 10px; align-items: baseline; margin-bottom: 7px; }
 .issue .n { flex: 0 0 auto; font-variant-numeric: tabular-nums; color: var(--text3); font-size: 13px; }
@@ -133,8 +141,8 @@ footer {
     <strong>何をどこから引いていて、それをどう解釈して A / B / C になっているか。</strong>
     判定の基準・データの参照元・そして<strong>どこで妥協しているか</strong>をまとめてあります。
   </p>
-  <p><a class="cta" href="sotoki_v4.html">アプリに戻る</a></p>
 </header>
+<a class="back-float" id="backFloat" href="sotoki_v4.html">← アプリに戻る</a>
 
 <div class="note warn">
   <p style="margin-bottom:0">
@@ -165,19 +173,42 @@ footer {
     <tr><td>突風</td>
         <td>取得していません。<strong>山頂の風から計算した目安</strong>です（下の「妥協点」）</td></tr>
     <tr><td><strong>山頂の標高</strong></td>
-        <td><a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> 標高タイル（判定の入力に使います）</td></tr>
+        <td><a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル（標高タイル）を加工して作成</a>（判定の入力に使います）</td></tr>
     <tr><td>地図の風（AUTO）の高さの基準</td>
         <td>国土地理院 標高タイルから、約11km四方の升目ごとに<strong>高い方から1割の標高</strong>
             （稜線と斜面の上部）を前もって計算した表</td></tr>
     <tr><td>地図</td>
-        <td>国土地理院（標準・淡色・写真・陰影起伏・傾斜量・CS立体図ほか） /
-            OpenStreetMap / Esri / エコリス地図タイル</td></tr>
+        <td><a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>（標準・淡色・写真・陰影起伏・傾斜量・色別標高・過去の空中写真） /
+            OpenStreetMap / Esri /
+            CS立体図（栃木県）：栃木県森林資源データ（2021〜2022年度計測）を加工して作成
+            （<a href="https://www.geospatial.jp/ckan/dataset/csmap_tochigi">G空間情報センター</a>の配信を、透過・重ね方を変えて表示しています。
+            栃木県が森林行政のために作成した、計測時点の地形の図です。<strong>このアプリでの表示は栃木県が作成したものではありません。</strong>見るためだけに使い、判定には使いません） /
+            CIマップ（栃木県）：<a href="https://www.geospatial.jp/ckan/dataset/dem05_tochigi">栃木県の標高タイル</a>から、
+            収束度（Convergence Index）を<strong>この端末の中で計算して</strong>描いています（栃木県森林資源データ（2021〜2022年度計測）を加工して作成。
+            このアプリでの表示は栃木県が作成したものではありません）。図法と名称「CIマップ」は、
+            上原大二郎・西村修一・田中風羽・竹田和弘「収束度（Convergence Index）を利用する微地形表現図『CIマップ』の考案」
+            （第59回地盤工学研究発表会、23-13-1-06）によります。尾根（周りへ流れ出す所）が赤、谷（周りから流れ込む所）が青です。
+            栃木県内だけで、拡大したとき（z13 から）に出ます。標高タイルは端末に保存され（地図タイルの保存の上限の中で、ほかの地図タイルを押し出すことがあります）、
+            一度見た範囲は圏外でも描けます。見るためだけに使い、判定には使いません /
+            CS立体図風（全国）：<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル（標高タイル）を加工して作成</a>。
+            国土地理院の標高（航空レーザーの 5m 格子。無い所・海に面した所は 10m 格子）から、曲率（谷が青・尾根が赤）と傾斜（急なほど暗い）を
+            <strong>この端末の中で計算して</strong>描いています。<strong>国土地理院の図そのものではなく、本物の CS立体図（0.5〜1m の航空レーザーから作る）でもありません</strong>。
+            拡大したとき（z12 から）に出ます。さらに寄ると（z16〜17）、1m 格子の標高が配信されている所だけ 1m で計算します（無い所・欠けのある所は 5m・10m の図を引き伸ばします）。標高タイルは端末に保存され（地図タイルの保存の上限の中で、ほかの地図タイルを押し出すことがあります）、
+            一度見た範囲は圏外でも描けます。見るためだけに使い、判定には使いません /
+            風の当たり方：同じ標高タイルと、選んでいる地点の予報の風向から<strong>この端末の中で計算して</strong>描いています（下の「4. どこで妥協しているか」）</td></tr>
+    <tr><td>施設（地図）</td>
+        <td><a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>（© OpenStreetMap contributors・ODbL 1.0）。
+            予報山域の峰（110峰）から8km以内の登山口・山小屋・トイレ・水場・温泉・店と、名前のある駐車場を、前もって取り出したものです。
+            取り出した日は地図の出典欄に出ます。<strong>現地と違うことがあります</strong>（営業・水場の有無などは別に確かめてください）</td></tr>
     <tr><td>雨雲・ひまわり・アメダス・天気図</td>
         <td><a href="https://www.jma.go.jp/">気象庁</a></td></tr>
     <tr><td>地名の検索</td>
-        <td>国土地理院 地名検索 / Nominatim（OpenStreetMap）</td></tr>
+        <td>国土地理院 地理院地図の地名検索API（<a href="https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html">国土地理院コンテンツ利用規約</a>に基づく） / Nominatim（OpenStreetMap）</td></tr>
   </tbody>
 </table>
+<p>地図の保存について：見た地図タイル・標高タイルは、この端末（ブラウザのキャッシュ）に保存され、圏外でも出ます。
+  地図の「山域の保存」で、お気に入りの地点のまわりの地形（標高タイル）と標準地図を前もって保存することもできます（自動では消えません。圏外の下地は標準地図の z16 まで）。
+  端末の中で自分で見るだけなら手続きは要りません。<strong>保存した地図や画面を公開などするときは</strong>、国土地理院の「地図の利用手続」に沿って、申請が要るかを確かめてください。</p>
 </div>
 
 <p>
@@ -370,6 +401,12 @@ footer {
     コルへ集まるように向きも少し曲げます。これは地形から見た目を作る<strong>表示用の推定</strong>で、観測や計算で確かめた風ではありません。
     補正を入れているときの色は、この見た目の速さに合わせて変わります（モデルの風速ではありません）。
     矢印・押したときの説明・判定（A/B/C）はいつもモデルの風のままです</li>
+  <li>地図の「風の当たり方」は、風上の地形をどれだけ見上げるか（風上 100m か 300m の範囲の最大の角度）を
+    5m（無い所は 10m）の標高で計算し（いちばん拡大したときだけ 5m を軽くならす）、<strong>風が当たる所を橙、風の陰を青</strong>に塗ったものです。
+    ⚠ <strong>風速ではありません。</strong>元の風は約11kmの格子に1つで、尾根や沢で何倍になるかは分からないので、数値は出していません。
+    ⚠ 風向は<strong>選んでいる地点の予報の1つの向き</strong>（16方位に丸める）を画面全体に使います。地点から離れた所や、谷で向きが変わる所は合いません。
+    ⚠ <strong>吹きだまりの判定ではありません。</strong>雪の量・風の強さ・吹いた時間で変わります。雪崩の判断には使わないでください。
+    「風の流れ」の補正（約30mの格子）と同じ考え方ですが、格子の細かさが違うので値は一致しません</li>
 </ul>
 
 <h3>降雪の目安（地図）</h3>
@@ -493,7 +530,9 @@ footer {
     気象庁（雨雲ナウキャスト・ひまわり・アメダス・天気図） /
     国土地理院（地図タイル・標高タイル・地名検索） /
     © OpenStreetMap contributors / Esri, Maxar, Earthstar Geographics /
-    エコリス地図タイル（CS立体図）
+    エコリス地図タイル（CS立体図） /
+    栃木県森林資源データ（2021〜2022年度計測）を加工して作成 /
+    CIマップ（上原ほか、第59回地盤工学研究発表会）
   </p>
   <p>
     個人が趣味で作っているアプリです。表示内容の正確性は保証しません。

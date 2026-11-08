@@ -1,0 +1,5 @@
+# 日本の山のうち、日本語の別名（alias）にひらがなだけの語を持つ項目の数
+SELECT (COUNT(DISTINCT ?item) AS ?nHiraAlias) WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q8502 ; wdt:P17 wd:Q17 ; skos:altLabel ?a .
+  FILTER(LANG(?a)="ja" && REGEX(STR(?a), "^[ぁ-ゖー・ ]+$"))
+}

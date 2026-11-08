@@ -29,7 +29,7 @@
 
 | 範囲 | 中身 |
 |---|---|
-| 1〜27 | `<head>`・CDN（Leaflet）・同梱スクリプト（uPlot / `snowRanking.js`） |
+| 1〜29 | `<head>`・同梱スクリプト（Leaflet / uPlot / `snowRanking.js`・ADR-0017）・Web フォント（止めない形） |
 | 28〜1629 | `<style>`（16ブロック。下記） |
 | 1630〜1886 | `<body>` のマークアップ |
 | 1887〜7137 | `<script>`（本体。以下すべてここ） |
@@ -133,6 +133,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `loadWxCache(lat, lon)` | 完全一致 → 無ければ最寄り。**古くても返す**（古さの判断は呼び手） | 2435 |
 | `trimWxCache()` | 期限切れと上限超過を消す | 2456 |
 | `wxAgeText(ms)` / `wxStampText(at)` | 経過時間・取得時刻の言い方 | 2472 |
+| `WX_SOFT_MS` / `WX_HARD_MS` / `wxReqSeq` / `wxNormalBusy` | 弱電波（#227・v4.182.0）。通常の取得は6秒で控えを先に出し（帯「通信を続けています」）、届いた新しいデータは帯の「押すと更新」で替える（勝手に描き直さない）。strict は30秒で打ち切る。`wxReqSeq` で追い越された取得は画面に触らない（控えへの保存だけ）。通常の取得の最中は `switchModel` しない（`wxNormalBusy`） | — |
 | `setWxSource(info)` | **帯（`#offline-note`）の出し分け。** 通信で取れたら `null` で必ず消す | 2490 |
 
 ## 気象データ取得
@@ -363,11 +364,34 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `clearWxTimes()` | 時刻表のキャッシュ破棄 | 約 4829 |
 | `timedTileUrl(def, t)` | 時刻つきタイルのURL | 約 4832 |
 | `dropStaleWxLayer` / `dropAllStaleWxLayers` | 古いレイヤーを必ず外す（`WX_DROP_MS`=8秒） | 約 4851 / 4856 |
-| `wxPaneFor(def)` | pane の振り分け（衛星=`mapSat`／他=`mapNowcast`） | 約 4867 |
+| `wxPaneFor(def)` | pane の振り分け（衛星=`mapSat`／雷=`mapThunder`／他=`mapNowcast`） | 約 4867 |
 | `buildSatFilter(tint, cut)` | **輝度→透明度のSVGフィルタを毎回作り直す** | 約 4899 |
 | `applyWxBlend(def)` | 旧方式（`blend`/`floor`）の適用と解除 | 約 4942 |
 | `addTimedTileLayer(def, op, replace)` | **時刻つきタイルの貼り替え**（新しいのが出るまで消さない） | 約 4957 |
 | `startWxRefresh` / `stopWxRefresh` / `refreshWeatherLayers` | 5分ごとの自動更新 | 約 4989-4998 |
+
+### CIマップ（栃木県）（#202・v4.168.0）
+
+栃木県の標高タイル（Terrain-RGB）から収束度（CI）を端末で計算して描く。仕様は `map.md`「CIマップ（栃木県）」。`applyOverlays` の直前。
+
+| 関数 | 役割 |
+|---|---|
+| `decodeTochigiDem` / `ciGaussBlur` / `ciAcos` / `ciMargin` / `ciAssembleGrid` / `computeCiTile` | 計算。⚠⚠ **Worker に `fn.toString()` で渡す**（`CI_WORKER_FNS`）。外の定数・ほかの関数を参照しない（定数は `CI_PRM` を引数で渡す）。足したら `CI_WORKER_FNS` にも足す |
+| `ciWorkerMain()` | Worker の本体（これも toString で渡す）。1枚ずつ順に、取り消しは飛ばす |
+| `getCiWorker()` / `ciBreakWorker()` | Worker を初回に作る。無い・壊れたら以後はメイン |
+| `ciFetchBlob(z,x,y)` | 標高タイルの取得は**メイン**（Service Worker のタイルキャッシュを通す）。通信の失敗は覚えない |
+| `ciComputeMain(job)` / `ciDecodeMain` | Worker が使えないときの計算（1枚ずつ譲る） |
+| `DEM_SRC` / `decodeGsiDem` / `demFetchBlob(src,z,x,y)` | 標高タイルの源（栃木・地理院 DEM5A・DEM10B・DEM1A）。`demFetchBlob` は `{blob}`／`{missing}`（403・404）／`{error}`（通信の失敗・覚えない）。鍵は `ciTileKey(z,x,y,src)`（栃木は従来の `z/x/y`）。`ciFetchBlob` は栃木用の薄い包み（戻り値は従来どおり） |
+| `csMargin` / `computeCsTile` / `CS_PRM` | CS立体図風の計算（曲率＋傾斜）。Worker に toString で渡す（`CI_WORKER_FNS`） |
+| `sxMargin` / `computeSxTile` | 風の当たり方の計算（風上の仰角 Sx・Float32 を返す）。Worker に toString で渡す（`CI_WORKER_FNS`）。余白は DMAX ぶん |
+| `windExp` / `windExpDir` / `sxSync` / `sxRenderTile` / `sxColorize` / `sxParent` / `sxCropQuarter` / `SxLayerClass()` / `windExpSettings` | 風の当たり方のレイヤー（v4.177.0）。風向は自動（`state.allData[i].wdir`）か16方位。源の選び方は CS と同じ（`csGather`・`csCompute` に alg='sx'） |
+| `WIND_TABLE_AREAS` / `WD` / `wdLoadTable` / `wdDecodePng` / `wdDirWeights` / `wdCell` / `wdPlan` / `wdPaint` / `wdTablesFor` / `wdSync` / `windDownSettings` | 風の強さ（地形）（v4.178.0・ADR-0019）。WindNinja の表（`data/wind/`）× 判定の風 ÷ 基準の峰の倍率。画像1枚（`L.imageOverlay`）。塗らない条件は `wdPlan` |
+| `csRenderTile` / `csGather` / `csCompute` / `csParent` / `csCropPart` / `csMiss*` / `CsLayerClass()` | CS立体図風の1枚（ADR-0018）。DEM5A の9枚で1枚でも 404 なら9枚とも DEM10B。504 では落とさず、`demMiss5a` の記録（30日）があれば 10B。z15 の 10B は z14 の親を共有して切り出す（`csCropPart(pix,k,qx,qy)`） |
+| `csRender1m` / `csStretch15` / `csZ15` / `CS_PRM_1M` / `CS_MISS1A_KEY` | z16〜17 の 1m（ADR-0020）。DEM1A の9枚が欠け無く揃えば 1m、だめなら z15 の結果を切り出して引き伸ばす。`demMiss1a` の記録がある9枚は取りに行かない。`csMiss*` は保存先の鍵を引数で受ける（既定 `demMiss5a`） |
+| `csStats` | 計数と時間（検査用・画面には出さない）。行の下の計測は #231 で iPhone を測り終えて v4.176.1 で外した |
+| `ciRenderTile` / `ciCancel` / `CiMapLayerClass()` | GridLayer。中心タイルが無ければ `done(Error)` → `watchTileStatus` が文言を決める。地図から外れたタイルは取り消す。⚠ GridLayer の派生は**使うときに作る**（最上位で `L.` を呼ぶと、Leaflet が取れないとき本体ごと止まる） |
+| `updateCiZoomNote()` | z13 未満で「拡大すると表示（z13 から）」 |
+| `ciStats` | どちらの経路で何枚計算したか（検査用） |
 
 ## 雨の予告
 
@@ -472,6 +496,11 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 | `isOverlayOn` / `overlayOpacity` / `toggleOverlay` / `setOverlayOpacity` | オーバーレイの操作 | 約 5542-5570 |
 | `moveFavRotaryTo(slot)` / `restoreFavRotary()` | **🏠＋円柱の器（`#fav-bar`）の引っ越し（DOMは1つだけ）** | 約 5592 / 5600 |
 | `toggleLayerPanel` / `closeLayerPanel` / `renderLayerPanel` | レイヤーパネル | 約 5689-5730 |
+| `baseOpacity` / `setBaseOpacity` / `paintBaseFaded` | 下地の透過率（#211）。下地ごと・既定 1・地は白（`#map.base-faded`） | `applyBaseLayer` の上 |
+| `orderLayers` / `layerSectionDefs` / `sanitizeLayerOrder` / `sanitizeLayerHiddenIds` | 一覧の並び（#205 段階1）。保存順＋版で足したものは末尾。⚠ 重ね順（`mapPrefs.overlays`）とは別 | `loadMapPrefs` の上 |
+| `toggleLayerEdit` / `moveLayer` / `toggleLayerHidden` / `resetLayerOrder` / `layerEditRows` / `layerHiddenSummary` | 並べ替え・隠すの編集モード（覚えない）。選択中の下地は隠せない | `renderLayerPanel` の上 |
+| `sanitizeLayerSets` / `captureLayerSet` / `applyLayerSet` / `saveCurrentLayerSet` / `renameLayerSet` / `overwriteLayerSet` / `deleteLayerSet` / `moveLayerSet` / `isLayerSetActive` / `renderLayerSets` | レイヤーセット（#205 段階2）。丸ごと置き換え・重ね方は実効値・分からない項目は変えない・端末だけ8件 | `renderLayerPanel` の上 |
+| `setMapDeclutter(on)` / `toggleMapDeclutter()` | 地図の上の情報を隠す（#185）。隠すものは CSS `#map-stage.declutter`。状態は覚えない | `closeMap` の直後 |
 | `amedasElementChips()` / `satBandChips()` | パネル内のチップ | 約 5712 / 5719 |
 | `setAmedasElement` / `setSatTint` / `setSatBand` | 選択の確定（localStorageへ） | 約 6877-6893 |
 
@@ -527,10 +556,24 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 |---|---|---|
 | `swMessage(payload)` | Service Worker とのやり取り | 約 5848 |
 | `refreshTileCacheUsage()` | 使用量の取得（レイヤーパネル最下段） | 約 5862 |
-| `clearTileCache()` | 削除 | 約 5880 |
+| `clearTileCache()` | 削除（見た範囲の LRU だけ。保存した山域は消さない） | 約 5880 |
+| `areaPlan(lat, lon, missKeys)` / `areaTilesIn` / `areaTiles10b` / `areaTile` / `areaTileRange` | 山域の保存の範囲（#244 段2）。5A z13〜15・10B（5A の 404 から）・1A z16・1A z17（中心から近い順）で標高 `AREA_DEM_MAX`=1,100、標準地図 z12〜16 で `AREA_STD_MAX`=750。URL は demFetchBlob と同じ式 | `clearTileCache` の下 |
+| `saveArea(fav)` / `deleteArea(id)` / `renderAreaPanel()` / `loadSavedAreas()` / `storeSavedAreas()` / `areaMissHas(keys)` | 保存の流れ（SW に 8 枚ずつ頼み 2 秒あける・やめる・続きは箱を見る）・削除（重なるタイルは残す）・パネル。`areaMissHas` は保存した山域の 404（期限切れにならない）で、`csRender1m`（1A は圏内でも取らない）と `csRenderTile`／`sxRenderTile`（5A が通信の失敗のときだけ）が引く。⚠ ランキングの `loadAreas()`（areas.json）と名前が別 | 同上 |
 | `formatBytes(n)` | 表示整形 | 約 5858 |
 
 SW 側の実装は `sw.js` → `pwa.md`
+
+### 地図を開いた回数（#210 段階0・v4.167.0）
+
+Google マップを下地にした場合の費用の当たりをつけるための目安。**端末の中（`MAP_LS_OPENS`）だけで数え、外へは送らない。**
+表示はレイヤーパネル最下段（`#layer-map-opens`）。仕様は `map.md`「地図を開いた回数」。
+
+| 関数 | 役割 | 目安行 |
+|---|---|---|
+| `recordMapOpen()` | `openMap()` の先頭から。⚠ **開いたまま呼ばれたら数えない**（`isMapOpen()` で弾く） | `clearTileCache` の直前 |
+| `bumpMapOpens(log, dayKey)` / `summarizeMapOpens(log, dayKey)` | 純関数。⚠ **数え始め `since` は日ごとの表と別に持つ**（表は60日で切り落とす） | 同上 |
+| `localDayKey(d)` | ⚠ **端末のローカル日付**（UTC だと日本の 0〜9時が前日に入る） | 同上 |
+| `refreshMapOpensView()` | 表示。読めなければ「回数を読めません」 | 同上 |
 
 ## 地図 — 地点の確定・移動・検索
 
@@ -542,8 +585,11 @@ SW 側の実装は `sw.js` → `pwa.md`
 | `mapFlyTo(lat, lon, zoom)` | `flyTo` 0.8s（`setView` の瞬間移動は使わない） | 約 5908 |
 | `updatePinVisibility()` | 追跡中は選択地点のピンを出さない | 約 5941 |
 | `updateMapToolButtons()` | 右上3ボタンの状態 | 約 5948 |
+| `parseCoordInput()` / `goCoordPoint()` / `coordGoRow()` | **座標を打って移る**（v4.158.0・v4.159.0）。十進度・DDM・DMS・UTM・MGRS を読む純関数／長押しと同じく `pickPinPoint`・地名の履歴に印 `coord` で残す／入力中の先頭行。座標なら `doMapSearch` は外に投げない。返り値に `{bad:'band'}`（UTM・MGRS の緯度帯の文字と北距が合わない）がある＝呼び手は `lat` があるときだけ移る | 約 12795（移動）／約 13590（読む） |
+| `fromUTM()` / `parseUtmMgrs()` / `utmCellInBand()` | UTM → 緯度経度（`toUTM` の逆・北半球のみ）／UTM・MGRS の入力を読む／緯度帯の照合（表示の精度の升目の4隅で見る） | 約 13440／約 13567 |
 | `doMapSearch()` | 地名検索。OSMと地理院を同時に回す（Nominatimの中は直列）。`fetchJsonWithTimeout`（`SEARCH_TIMEOUT_MS`=5秒） | 約 8391 |
-| `renderSearchHist()` / `addSearchHist()` | **検索の履歴**（選んだ地点。空の窓で全件・打つと絞り込み）。`sotoki_search_hist` に100件 | 約 8491 |
+| `renderSearchHist()` / `addSearchHist()` | **検索の窓の中身**（手元の山の候補・山の履歴 → 地名の履歴。空の窓で全件・打つと絞り込み）。地名の履歴は `sotoki_search_hist` に100件 | 約 8491 |
+| `mtnSearch()` / `mtnKey()` / `buildPeakIndex()` / `renderMtnSection()` | **手元の山の検索**（#171）。areas.json の110峰＋`data/peak_meta.json`（読み等）。一致度＋履歴＋名山（`MTN_SEARCH`）。山の履歴は `mtnSearchHistory.v1` に50件（`addMtnHist`）。選ぶと `pickMtn` が公称の標高を渡す | 約 13000 |
 | `showMapHint()` / `flashPinHint()` | 案内文（`MAP_HINT_MS`=4.5秒） | 約 6359 / 6341 |
 
 ## 現在地の追跡と地図の向き
@@ -619,6 +665,7 @@ SW 側の実装は `sw.js` → `pwa.md`
 | 関数 | 役割 | 目安行 |
 |---|---|---|
 | `saveLast(lat, lon, name)` / `loadLast()` | 最終地点の localStorage | 約 7014 / 7017 |
+| `BOOT_GEO_WAIT_MS` / `boot`（即時関数） | 起動：前回の地点 → 無ければ位置情報（成功・失敗・8秒の時間切れの最初の1回だけ）→ 既定の地点（v4.159.1） | 約 14637 |
 | `showLoading(msg)` / `hideLoading()` | **地図を開いている間は出さない** | 約 7025 / 7031 |
 | resize ハンドラ | 150ms デバウンスでチャートを組み直す | 約 7038 |
 | Service Worker 登録 | 失敗してもアプリの動作に影響させない | 約 7058 |

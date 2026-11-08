@@ -72,6 +72,11 @@ const NOMINATIM = {
     ? 'renderSearchHist未定義（スクリプトが評価されていない）' : null)).catch(e => e.message);
   if (boot) throw new Error(`起動に失敗: ${boot} / pageerror: ${errors.join(' / ') || 'なし'}`);
 
+  /* 手元の山の検索（#171）を止めて、地名検索（Nominatim・地理院）だけを検査する。
+     ⚠ areasData は残す（百名山の印の照合が読む）。一覧を作り終えてから空にする
+     （作成中に空にすると、作り終えた一覧で上書きされる） */
+  await page.evaluate(async () => { await ensureMtnIndex(); mtnIndex = []; });
+
   // 検索窓は地図の中にある。開いていないとフォーカスできない
   await page.evaluate(() => openMap());
   await page.waitForTimeout(300);
@@ -98,7 +103,7 @@ const NOMINATIM = {
     await doMapSearch();
   });
   ok(await page.evaluate(() => loadSearchHist().length === 0), '★検索しただけでは履歴に残さない');
-  await page.evaluate(() => document.querySelector('#map-results .map-result-item').click());
+  await page.evaluate(() => document.querySelector('#place-results .map-result-item').click());
   const saved = await page.evaluate(() => loadSearchHist());
   ok(saved.length === 1 && saved[0].name === '笙ケ岳 二峰' &&
     Math.abs(saved[0].lat - 39.0927) < 1e-6 && Math.abs(saved[0].lon - 140.002) < 1e-6,
@@ -108,7 +113,7 @@ const NOMINATIM = {
   await page.evaluate(async () => {
     document.getElementById('map-search-input').value = '月山';
     await doMapSearch();
-    document.querySelector('#map-results .map-result-item').click();
+    document.querySelector('#place-results .map-result-item').click();
   });
   await focusEmpty();
   let rows = await histRows();

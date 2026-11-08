@@ -1,0 +1,23 @@
+# 出典: 国土地理院ベクトルタイル（experimental_bvmap / optimal_bvmap-v1）を加工して作成。z=15 の那須岳付近の1枚
+## optimal {'AdmArea': 1, 'Anno': 237, 'Cntr': 218, 'RdCL': 29, 'TpgphArea': 1, 'TpgphLine': 250}
+ layer AdmArea keys ['vt_code']
+ layer Anno keys ['vt_arrng', 'vt_arrngagl', 'vt_code', 'vt_text']
+ layer Cntr keys ['vt_alti', 'vt_code']
+ layer RdCL keys ['vt_code', 'vt_drworder', 'vt_lvorder', 'vt_motorway', 'vt_rdctg', 'vt_rnkwidth', 'vt_tollsect', 'vt_width']
+ layer TpgphArea keys ['vt_code']
+ layer TpgphLine keys ['vt_code']
+   Anno {"vt_code": 312, "vt_text": "茶臼岳", "vt_arrng": 1, "vt_arrngagl": 0}
+   Anno {"vt_code": 311, "vt_text": "那須岳", "vt_arrng": 1, "vt_arrngagl": 0}
+## experimental_bvmap {'contour': 218, 'elevation': 2, 'symbol': 23, 'landformp': 209, 'landforml': 250, 'road': 29, 'landforma': 1, 'label': 6}
+ layer contour keys ['alti', 'altiFlag', 'ftCode', 'orgGILvl']
+ layer elevation keys ['alti', 'ftCode', 'orgGILvl']
+ layer symbol keys ['alti', 'ftCode', 'gcpCode', 'orgGILvl']
+ layer landformp keys ['ftCode', 'orgGILvl']
+ layer landforml keys ['ftCode', 'orgGILvl']
+ layer road keys ['ftCode', 'lvOrder', 'medSect', 'motorway', 'orgGILvl', 'rdCtg', 'rnkWidth', 'tollSect']
+ layer landforma keys ['ftCode', 'orgGILvl']
+ layer label keys ['annoCtg', 'arrng', 'arrngAgl', 'ftCode', 'kana', 'knj', 'orgGILvl']
+   label {"orgGILvl": "25000", "ftCode": 100, "annoCtg": 810, "knj": "茶臼岳", "arrng": 1, "arrngAgl": 0}
+   label {"orgGILvl": "25000", "ftCode": 100, "annoCtg": 810, "knj": "那須岳", "arrng": 1, "arrngAgl": 0}
+   label {"orgGILvl": "25000", "ftCode": 100, "annoCtg": 312, "knj": "茶臼岳", "kana": "ちゃうすだけ", "arrng": 1, "arrngAgl": 0}
+   label {"orgGILvl": "25000", "ftCode": 100, "annoCtg": 311, "knj": "那須岳", "kana": "なすだけ", "arrng": 1, "arrngAgl": 0}

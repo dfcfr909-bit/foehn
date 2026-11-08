@@ -68,8 +68,11 @@ jobs:
 
       # ⚠ npm install も Chromium も要らない（--only=deploy は Node の標準機能だけ）。
       #    足すと軽さが失われるので、必要になっても browser ジョブ側に足すこと。
+      # ⚠ shell: bash を明示する（pipefail が付く）。付けないと tee が失敗を飲み込み、
+      #   照合が落ちてもジョブは緑になる（2026-10-08 に browser 側で実際に起きた）
       - name: 配信物を照合
         working-directory: tests
+        shell: bash
         run: node verify-live.mjs "$LIVE_URL" --only=deploy | tee result.txt
 
       - name: 結果をサマリーへ
@@ -104,8 +107,10 @@ jobs:
       - name: Chromium を用意
         uses: ./.github/actions/chromium
 
+      # ⚠ shell: bash を明示する（pipefail が付く）。理由は「配信物を照合」と同じ
       - name: 実ブラウザで検証
         working-directory: tests
+        shell: bash
         run: node verify-live.mjs "$LIVE_URL" --only=browser | tee result.txt
 
       - name: 結果をサマリーへ

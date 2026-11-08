@@ -122,6 +122,13 @@ https://api.open-meteo.com/v1/forecast
 **できること／できないこと**
 
 - できる … 開いている間に取れたものを控え、次に開いたとき圏外でも出す
+- **弱電波（v4.182.0・#227）**：通常の取得が `WX_SOFT_MS`＝6秒たっても返らず、24時間以内の控えがあれば**先に控えを出す**（帯に「通信を続けています」）。
+  通信は続け、届いた新しいデータは**勝手に描き直さない**。帯の「新しいデータがあります。押すと更新」で替える（判定が後から覆らない・ADR-0006 と同じ考え）。届いたデータは控えには入れる。
+  モデル切り替え（strict）は控えを出さず、`WX_HARD_MS`＝30秒で打ち切って理由を出す。
+  後から別の取得が始まったら、古い取得は画面に触らない（`wxReqSeq`。控えへの保存だけする。strict が追い越されたら例外を投げず `false`）。
+  新しい取得が始まったら前の「押すと更新」は外す。通常の取得の最中はモデルを切り替えない（`wxNormalBusy`。切り替えが追い越して失敗すると新しい地点が描かれない）。
+  ⚠ `WX_HARD_MS`（30秒）の打ち切りは検査していない（検査が30秒かかる）
+  - ⚠ 画面（HTML）の取得は `sw.js` のネットワーク優先のまま（弱電波では開くまで待つ）。古い画面を出さない保証を優先した（利用者の決定 2026-10-22）
 - **できない … アプリを閉じた状態での定期取得。** iOS は Background Sync /
   Periodic Background Sync / Background Fetch のいずれも未対応で、
   バックグラウンドに回すとページと Service Worker の JS ごと止まる。
@@ -185,6 +192,10 @@ ADR-0011（`elevation` の意味が変わり判定が黙って甘くなった件
 - `reverseGeocode(lat, lon)` … 緯度経度→地点名
 - 地点名の表示は `updateLocationName()`、同一地点の判定は `sameLoc(a, b)`
 - 最後に見た地点は localStorage（`saveLast` / `loadLast`）
+- **起動の流れ**（`boot`）：前回の地点があればそこ（位置情報は使わない）。無ければ位置情報を求め、成功ならその地点、失敗・**時間切れ（`BOOT_GEO_WAIT_MS`=8秒・v4.159.1）**なら既定の地点（立山・黒部）
+  - ⚠ 許可の問いに誰も答えないと `getCurrentPosition` は成功も失敗も呼ばない（`timeout` は許可が出てから数える）。上限が無いと「GPS取得中…」のまま止まっていた
+  - ⚠ 成功・失敗・時間切れのうち**最初の1回だけ**が先へ進む。8秒を過ぎてから許可しても地点は動かない（GPS ボタンで取り直す）
+  - 検査は `tests/smoke_bootgeo.mjs`
 
 ## 気象庁のタイルと時刻表
 
@@ -277,6 +288,15 @@ ADR-0011（`elevation` の意味が変わり判定が黙って甘くなった件
 - 最新時刻は `latest_time.txt`
 - 出す要素は `AMEDAS_ELEMENTS` から選ぶ → `map.md`
 - 新雪ランキングも同じアメダスを使う（`snowRanking.js`）→ `docs/snow_ranking.md`
+
+## 施設（OSM）`data/poi.json`（#199）
+
+- 作り方：`scripts/buildPoi.mjs`（Actions「施設データ（OSM）を作る」・`poi.yml`。手動実行か、スクリプトを変えた push（main 以外）で走り、そのブランチにコミットする）
+- 取り方：`areas.json` の峰ごとに半径8kmの円を囲む矩形（一辺16km）で Overpass に問い合わせ、峰から 8km の円の外は手元で落とす（around は重くて60分に収まらなかった）。node と way（way は中心）。重複は `n123`/`w123` で除く
+- 落とすもの：医療施設の名前（病院・医院・クリニック・診療所・歯科など）・私有の駐車場（`access=private|no|customers`）・名前の無い駐車場
+- 形：`{ source, license:'ODbL 1.0…', attribution, generated:'YYYY-MM-DD', note, types:[{id,key,name}], items:[[緯度,経度,種類id,名前?]] }`
+- ⚠ Overpass は時間切れでも 200 で `remark` を返す。`remark` に error/timeout があれば失敗にする。0件の山域は失敗にせず印だけ
+- ライセンス：ODbL 1.0。派生データベースとして公開リポジトリに置く（ODbL のまま・share-alike）
 
 ## 関連
 
