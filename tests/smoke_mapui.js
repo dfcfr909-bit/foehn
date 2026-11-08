@@ -1727,6 +1727,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   await page.waitForTimeout(300);
   const mixed = await page.evaluate(async () => {
     const fire = h => { const ev = new Event('deviceorientation'); ev.webkitCompassHeading = h; window.dispatchEvent(ev); };
+    const prevHeading = headingDeg;      // ⚠ 後の検査（矢尻・タップの補正）のため、最後に方位と回転を戻す
     Object.defineProperty(window, 'orientation', { configurable: true, get: () => 90 });
     Object.defineProperty(screen, 'orientation', { configurable: true, get: () => ({ angle: 0, addEventListener() {} }) });
     const a1 = screenAngle();
@@ -1751,7 +1752,9 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     };
     const corners = [[st.left, st.top], [st.right, st.top], [st.left, st.bottom], [st.right, st.bottom]].map(([x, y]) => inside(x, y));
     const square = m.offsetWidth === m.offsetHeight;
-    return { a1, h1, a2, corners, square, side, stage: [st.width, st.height] };
+    fire(prevHeading);                   // 縦（回転角 0）で元の方位に戻す＝地図の回転も元どおり
+    await new Promise(r => setTimeout(r, 100));
+    return { a1, h1, a2, corners, square, side, stage: [st.width, st.height], restored: [headingDeg, mapRotationDeg] };
   });
   await page.setViewportSize(vp0);
   await page.waitForTimeout(300);

@@ -1140,6 +1140,11 @@ html, body {
   box-shadow: 0 1px 5px rgba(0,0,0,0.25);
 }
 #map-scale.hidden { display: none; }
+#map-orient-diag {
+  margin-top: 4px; padding: 2px 7px; border-radius: 6px; width: max-content;
+  font-size: 10px; line-height: 1.4; color: #333; background: rgba(255,255,255,0.88);
+}
+#map-orient-diag.hidden { display: none; }
 /* 目盛り棒。両端に脚を出す「コの字」（地図の慣例）。⚠ 上辺は引かない */
 #map-scale-bar {
   display: block;
@@ -2688,6 +2693,8 @@ html, body {
         <div id="map-scale" class="hidden" aria-hidden="true">
           <i id="map-scale-bar"></i><span id="map-scale-label"></span>
         </div>
+        <!-- 仮（v4.183.1）：横向きのヘディングアップで、回転角の取り口ごとの値を出す。実機で原因を確かめたら外す -->
+        <div id="map-orient-diag" class="hidden"></div>
       </div>
 
       <!-- 下に浮かぶもの：案内文／地点名＋出典／お気に入り円柱 -->
@@ -14346,6 +14353,7 @@ async function enableHeading() {
     /* センサーの方位は端末の上端が基準。横向きでは画面の上＝端末の横の辺なので、
        画面の回転ぶんを足す（#184）。⚠ GPS の進む向き（onGeoUpdate）には足さないので setHeading には入れない */
     setHeading(h + screenAngle());
+    showOrientDiag(h);
   };
   window.addEventListener('deviceorientation', headingHandler, true);
   return true;
@@ -14369,6 +14377,19 @@ function screenAngle() {
     if (fits(so) && !fits(wo)) return so;
     return wo;
   } catch (e) { return 0; }
+}
+
+/* 仮（v4.183.1）：横向きのヘディングアップ中だけ、回転角の2つの取り口・採った値・センサーの方位を出す。
+   v4.183.0 の実機で横向きのとき地図が横へ流れた。どちらの取り口が何を返しているかを実機で見て、確かめたら外す */
+function showOrientDiag(h) {
+  const el = document.getElementById('map-orient-diag');
+  if (!el) return;
+  const landscape = window.innerWidth > window.innerHeight;
+  if (!mapHeadingUp || !landscape) { el.classList.add('hidden'); return; }
+  const so = screen.orientation && typeof screen.orientation.angle === 'number' ? screen.orientation.angle : '—';
+  const wo = typeof window.orientation === 'number' ? window.orientation : '—';
+  el.textContent = `向きの補正 screen ${so}°／window ${wo}°／採用 ${screenAngle()}°／方位 ${Math.round(h)}°`;
+  el.classList.remove('hidden');
 }
 
 /* ノッチ（Dynamic Island）がどちら側にあるかで、右のボタン列の逃げ幅を変える。
@@ -14435,6 +14456,8 @@ function setHeadingUp(on) {
   } else {
     leafletMap.dragging.enable();
     applyMapRotation(0);
+    const dg = document.getElementById('map-orient-diag');
+    if (dg) dg.classList.add('hidden');
     if (headingHandler) {
       window.removeEventListener('deviceorientation', headingHandler, true);
       headingHandler = null;

@@ -867,8 +867,10 @@ JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-0
 - 横向きでは**下の帯（時刻・地点名・円柱・出典）を右のボタン列の手前で止める**（`#map-bottom` の右の余白＝8＋逃げ幅＋44＋8px）。背が低いのでボタン列の下の方と重なった（v4.161.0 の実機）
 - 左右のノッチは `--sa-left` / `--sa-right`（`env(safe-area-inset-left/right)`）。地図の浮いた部品
   （`#map-top`・`#map-results`・`#map-topleft`・`#map-tools`・`#map-bottom`・レイヤーパネル）に効かせる。縦では 0
-- ヘディングアップの方位は、センサー（端末の上端基準）に**画面の回転角**（`screenAngle()`＝`screen.orientation.angle`、
-  無ければ `window.orientation`）を足す。足すのは `enableHeading` の handler だけ（GPS の進む向きには足さない）。
+- ヘディングアップの方位は、センサー（端末の上端基準）に**画面の回転角**（`screenAngle()`）を足す。
+  回転角は `window.orientation` と `screen.orientation.angle` の両方を読み、食い違えば画面の縦横（`innerWidth > innerHeight`）と合う方、
+  どちらも合わなければ `window.orientation`（v4.183.1）。⚠ v4.183.0 の実機で、横向きのとき地図が横へ流れた（方位が 90° ずれた見え方）。
+  回転角が 0 のまま返った見込みだが**未確認**。仮の表示 `#map-orient-diag`（横向きのヘディングアップ中だけ、2つの取り口・採用・方位）で確かめてから外す。足すのは `enableHeading` の handler だけ（GPS の進む向きには足さない）。
   符号は W3C の定義（angle は反時計回り）どおり。**実機で確認済み**（2026-10-08・横向きのヘディングアップで北が上。`webkitCompassHeading` は画面の向きを補正していない）
 - ⚠ `@media (orientation: landscape)` は横長の画面すべてに当たる。PC のブラウザや iPad の横向きでも地図は全幅になる
 - 検査：`smoke_mapui`「5d-3. 横向き」（844×390・左右47px）と方位補正、`smoke_pwa`（`orientation` が `any`）
@@ -880,7 +882,7 @@ JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-0
 - 回すと Leaflet の座標変換が狂うので、`patchRotatedInput(map)` が
   `mouseEventToContainerPoint` を中心まわりの逆回転で補正する
 - **回転中は手動パンを止める**（`dragging.disable()`）
-- 角が欠けないよう、回転中は `#map` の実体を `inset:-40%` で広げる
+- 角が欠けないよう、回転中は `#map` を**画面の対角線＋16px を一辺とする正方形**にして中央に置く（`--map-diag`・`updateMapDiag`。縦横が変われば測り直す）。以前の `inset:-40%` は横向きで高さが足りず四隅が黒く欠けた（v4.183.0 の実機）
 - 自前のラベル（アメダス・風）は `--map-rot` で逆回転させて立てる
 - 方位は iOS が `webkitCompassHeading`、他は `alpha`（360−alpha）。`setHeading(deg)`。
   **iOS は利用者の操作の中で `DeviceOrientationEvent.requestPermission()` が要る**
