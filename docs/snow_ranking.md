@@ -31,6 +31,17 @@ node scripts/buildSpots.mjs --dry-run   # シードの静的チェックだけ�
 node scripts/buildSpots.mjs             # 実際に生成する
 ```
 
+⚠ **開発環境からは Overpass・国土地理院に届かない**（403・切断）。届かない環境では
+GitHub Actions「新雪ランキングの地点を作る」（`.github/workflows/build-spots.yml`）を**手動実行**する。
+
+1. Actions →「新雪ランキングの地点を作る」→ Run workflow（`main`）
+2. 実行のサマリーに、スクリプトの出力と生成物（`data/spots.json` の中身）が出る。
+   同じものが成果物（artifact）`spots` にも入る（14日で消える）
+3. 下の目視項目を見る。直す所があれば種（`data/spots.seed.json`）を直して、もう一度回す
+4. 良ければ、**別の PR で `data/spots.json` を入れる**
+
+ワークフローは**何もコミットしない**（権限も read）。生成物を人が見てから入れるため。
+
 `resort` は bbox 内の索道（駅ノード＋各リフト線の両端）を Overpass から拾い、
 国土地理院の標高APIで**標高最大の点＝索道最上部**を採る。
 `bc` は `coord` をそのまま使い、標高だけ取る。

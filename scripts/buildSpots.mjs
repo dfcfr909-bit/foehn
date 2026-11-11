@@ -24,6 +24,9 @@ const SEED_PATH = join(ROOT, 'data', 'spots.seed.json');
 const OUT_PATH = join(ROOT, 'data', 'spots.json');
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// 誰が叩いているかを名乗る（buildPoi.mjs と同じ形）。
+// ⚠ 予防として付けている。既定の User-Agent が弾かれるという報告はあるが、ここでは未検証
+const USER_AGENT = 'NagiNavi-buildSpots/1.0 (+https://dfcfr909-bit.github.io/foehn/)';
 const GSI_URL = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php';
 
 // レート制限（相手は公共の無料API。詰めすぎない）
@@ -153,7 +156,7 @@ async function fetchJson(url, init, tries = 3) {
 
 async function fetchOverpass(bbox) {
   const body = new URLSearchParams({ data: buildOverpassQuery(bbox) });
-  return fetchJson(OVERPASS_URL, { method: 'POST', body });
+  return fetchJson(OVERPASS_URL, { method: 'POST', body, headers: { 'User-Agent': USER_AGENT } });
 }
 
 async function fetchElevation(lat, lon) {

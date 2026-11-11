@@ -1,0 +1,80 @@
+name: 新雪ランキングの地点を作る
+
+# 新雪ランキングの地点 data/spots.json を作る（#8）。
+# data/spots.seed.json → scripts/buildSpots.mjs → data/spots.json。
+# スキー場は Overpass API（OpenStreetMap）の索道から最上部を、BC は種の座標を使い、
+# 標高は国土地理院の標高APIで取る。
+#
+# ⚠ 開発環境からは Overpass・国土地理院に届かないので、ここで作る（check-peaks.yml と同じ制約）。
+# ⚠ 手動実行のみ。push・定期実行は足さない（相手は公共の無料API。無駄に叩かない）。
+# ⚠ **何もコミットしない。** 結果は成果物（artifact）とサマリーに出すだけ。
+#   生成物は必ず人が目視する決まり（docs/snow_ranking.md「座標の確定」）なので、
+#   見てから別の PR で data/spots.json を入れる。権限も read のまま。
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-spots
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 作る
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      # ⚠ shell: bash を明示する（pipefail が付く）。付けないと tee がスクリプトの
+      #   異常終了を飲み込み、壊れた結果のまま緑になる。
+      # ⚠ 一部の地点が未確定でもスクリプトは 0 で終わる。それは「要確認が出た」という
+      #   正常な結果で、故障ではない（サマリーの「未確定」「要確認」を読む）。
+      - name: 地点を作る
+        shell: bash
+        run: node scripts/buildSpots.mjs | tee result.txt
+
+      # ログにも出す（成果物を落とせない端末でも読める・別の PR へ写せる）
+      - name: 生成物をログへ
+        run: cat data/spots.json
+
+      # ⚠ 上の段が落ちたときは上げない（壊れた・古い生成物を成果物として残さない）。
+      #   落ちたときの出力は下のサマリーで読める。
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spots
+          path: |
+            data/spots.json
+            result.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 結果をサマリーへ
+        if: always()
+        run: |
+          {
+            echo '## 新雪ランキングの地点（data/spots.json）'
+            echo
+            echo '```'
+            cat result.txt 2>/dev/null || echo '（出力なし）'
+            echo '```'
+            echo
+            echo '### 生成物'
+            echo
+            echo '```json'
+            cat data/spots.json 2>/dev/null || echo '（生成されていない）'
+            echo '```'
+            echo
+            echo '**リポジトリには入れていない。** 次を目視してから、別の PR で `data/spots.json` を入れる。'
+            echo
+            echo '- 湯沢周辺（かぐら / 神立 / 岩原 / 中里）が別々の座標か（近すぎる組は上に ⚠ が出る）'
+            echo '- 「OSMに索道データなし」の地点は、種（`data/spots.seed.json`）に `coord` を足して再実行'
+            echo '- BC の標高乖離の ⚠ が出たら座標の間違い。**種の座標を直す**（想定標高を合わせない）'
+            echo '- 28地点中25以上が確定しているか'
+          } >> "$GITHUB_STEP_SUMMARY"
