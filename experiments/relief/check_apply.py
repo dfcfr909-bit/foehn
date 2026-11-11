@@ -1,5 +1,5 @@
 # 「適用」ボタン方式の動作確認（新規）。各項目を「期待」「実測」で並べて出す。画像は保存しない。
-# 使い方（experiments/relief で）: ../landmark/.venv/Scripts/python.exe check_apply.py
+# 使い方（experiments/relief で）: 初回は python -m venv .venv → .venv/Scripts/pip install -r requirements.txt → .venv/Scripts/python -m playwright install chromium。実行は .venv/Scripts/python check_apply.py
 import functools, http.server, json, threading
 from playwright.sync_api import sync_playwright
 

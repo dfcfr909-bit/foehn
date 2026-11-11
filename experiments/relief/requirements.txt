@@ -1,0 +1,3 @@
+# check_*.py（ヘッドレス Chromium での確認）に必要なもの。viewer.html 本体は不要
+# 版は固定していない（手元の版は未確認）。入れたあとに: python -m playwright install chromium
+playwright

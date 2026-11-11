@@ -1,5 +1,5 @@
 # 欠けの扱いと、メインスレッドの止まり具合の確認（新規）。数字だけ出す。画像は保存しない。
-# 使い方（experiments/relief で）: ../landmark/.venv/Scripts/python.exe check_missing.py
+# 使い方（experiments/relief で）: 初回は python -m venv .venv → .venv/Scripts/pip install -r requirements.txt → .venv/Scripts/python -m playwright install chromium。実行は .venv/Scripts/python check_missing.py
 import functools, http.server, json, threading
 from playwright.sync_api import sync_playwright
 class H(http.server.SimpleHTTPRequestHandler):

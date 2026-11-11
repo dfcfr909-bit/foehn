@@ -72,9 +72,9 @@
 // ---- 標高タイルの情報源 ----
 const SRC = {
   gsi5: { url: (z,x,y) => `https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/${z}/${x}/${y}.png`, zmax: 15, zmin: 8, kind: "gsi",
-    attr: `標高：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 標高タイル（DEM5A）</a>を加工して作成` },
+    attr: `標高：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル（標高タイル）</a>を加工して作成` },
   gsi10: { url: (z,x,y) => `https://cyberjapandata.gsi.go.jp/xyz/dem_png/${z}/${x}/${y}.png`, zmax: 14, zmin: 8, kind: "gsi",
-    attr: `標高：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 標高タイル（DEM10B）</a>を加工して作成` },
+    attr: `標高：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル（標高タイル）</a>を加工して作成` },
   tochigi: { url: (z,x,y) => `https://rinya-tochigi.geospatial.jp/2023/rinya/tile/terrainRGB/${z}/${x}/${y}.png`, zmax: 18, zmin: 8, kind: "tochigi",
     attr: `出典：栃木県森林資源データ（2021〜2022年度計測）を加工して作成（<a href="https://www.geospatial.jp/ckan/dataset/dem05_tochigi" target="_blank" rel="noopener">データセット</a>）。栃木県が作成したものではありません。` },
 };
