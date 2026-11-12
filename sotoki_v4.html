@@ -2845,16 +2845,16 @@ html, body {
           <div id="layer-areas"></div>
           <div id="layer-areas-note">お気に入りの地点を中心に、地形（CS立体図風・風の当たり方の元）と標準地図を前もって保存する。自動では消えない。電波のよい所で。
             ⚠ 圏外の下地は標準地図の z16 まで（それより寄ると下地が出ないことがある）。淡色地図・写真は保存しない。</div>
-          <div class="layer-section-title">地図を開いた回数（この端末）</div>
-          <div id="layer-opens">
-            <div id="layer-map-opens">—</div>
-            <div id="layer-opens-note">この端末の中だけで数え、外へは送らない。Google マップを下地にした場合の費用の見当に使う（課金の回数とぴったりは一致しない目安）。</div>
-          </div>
           <div class="layer-section-title">起動の内訳（この端末）</div>
           <div id="layer-boot">
             <div id="layer-boot-view">—</div>
             <button id="btn-boot-copy" onclick="copyBootLog()">内訳をコピー</button>
             <div id="layer-boot-note">ページの読み込みが始まってからの秒数。アイコンを押してから読み込みが始まるまで（OS の起動）は測れない。直近10回をこの端末の中だけに残し、外へは送らない。</div>
+          </div>
+          <div class="layer-section-title">地図を開いた回数（この端末）</div>
+          <div id="layer-opens">
+            <div id="layer-map-opens">—</div>
+            <div id="layer-opens-note">この端末の中だけで数え、外へは送らない。Google マップを下地にした場合の費用の見当に使う（課金の回数とぴったりは一致しない目安）。</div>
           </div>
         </div>
       </div>
@@ -2968,7 +2968,7 @@ html, body {
    ・印は performance.now()（このページの読み込み開始からの ms）。同じ印は最初の1回だけ
    ・最初の描画が済んだら1件の記録にまとめ、端末の中（localStorage）に直近 BOOT_LOG_KEEP 件だけ残す。
      ⚠ **外へは送らない。緯度経度・地点名は入れない**（時間と版数だけ）
-   ・表示は地図のレイヤーパネル最下段「起動の内訳」（refreshBootLogView）
+   ・表示は地図のレイヤーパネルの下の方「起動の内訳」（「地図を開いた回数」の上・refreshBootLogView）
    ⚠ アイコンを押してからページの読み込みが始まるまで（OS の起動・スプラッシュ）は、ページからは測れない。
    ⚠ ホーム画面の PWA は start_url（./＝index.html）から入り、そこから sotoki_v4.html へ移る。
      入口のぶんはこのページの時計に乗らないので、index.html が出発時刻を sessionStorage に置き、ここで差を取る（bootTime.hop）
@@ -14126,7 +14126,7 @@ function refreshMapOpensView() {
   }
 }
 /* ------ 起動の内訳（v4.185.0・#227） ------
-   印（bootMark）を1件の記録にまとめて端末に残し、レイヤーパネル最下段に出す。入れ物と印は script の先頭。
+   印（bootMark）を1件の記録にまとめて端末に残し、レイヤーパネルの下の方（「地図を開いた回数」の上）に出す。入れ物と印は script の先頭。
    記録 rec = { t: 読み込み開始の時刻(ms), v: 版, out, m: { 印: ms }, nav: { fs, ws, rs, re, type, size }, res: { 部品: ms },
                 fcp, hop: { ms, now }, on, sw, hid, over, err }
    ・out … 'net'＝通信で取れて描いた／'soft'＝WX_SOFT_MS 待って控えを先に出した／'cache'＝通信できず控えで描いた／

@@ -1,6 +1,6 @@
 /* 起動の内訳の計測（v4.185.0・#227）。
  * 「PWA の初回が 8〜10 秒」の内訳を実機で読むため、起動の各段に印を付けて端末の中に直近10件を残し、
- * 地図のレイヤーパネル最下段に出す。
+ * 地図のレイヤーパネルの下の方（「地図を開いた回数」の上）に出す。
  *
  * ⚠⚠ **測るだけ。起動の流れは変えない。** 印が待ち合わせ・順序・戻り値を変えていないことは、
  *    既存の smoke_offline（6秒の先出し・追い越し）・smoke_bootgeo（位置情報待ち）が見る。
@@ -126,19 +126,19 @@ const ordered = (m, keys) => {
   ok(!/テスト地点|36\.123|138\.456|"lat"|"lon"|"name"/.test(raw), 'A: 記録に緯度経度・地点名が無い', raw.slice(0, 300));
   ok(s.outbound.length === 0, 'A: 計測のための送信が無い', s.outbound);
 
-  /* ---- 表示（レイヤーパネル最下段） ---- */
+  /* ---- 表示（レイヤーパネルの下の方。最下段は「地図を開いた回数」のまま＝smoke_mapopens） ---- */
   const view = await s.page.evaluate(() => {
     refreshBootLogView();
     const el = document.getElementById('layer-boot-view');
     return { text: el.textContent, rows: el.querySelectorAll('.boot-table tbody tr').length,
              labels: [...el.querySelectorAll('.boot-table tbody td:first-child')].map(td => td.textContent),
-             inPanel: !!document.querySelector('#layer-panel #layer-boot, #layer-opens ~ #layer-boot'),
+             inPanel: !!document.querySelector('#layer-boot ~ #layer-opens'),
              copy: bootLogText() };
   });
   ok(/合計 \d+\.\d\d秒（通信で取得/.test(view.text), 'A: 見出しに合計と経路が出る', view.text.slice(0, 120));
   ok(['プログラムの準備', '予報の取得', '標高の取得', '描画の準備', '描画', '画面に出るまで'].every(l => view.labels.includes(l)), 'A: 表に各段が出る', view.labels);
   ok(!view.labels.includes('位置情報待ち') && !view.labels.includes('控えを出すまで') && !view.labels.includes('入口（index.html）'), 'A: 通らなかった段は出さない', view.labels);
-  ok(view.inPanel, 'A: 置き場は「地図を開いた回数」の下');
+  ok(view.inPanel, 'A: 置き場は「地図を開いた回数」の上（最下段は回数のまま）');
   ok(/raw \{"t":\d+/.test(view.copy) && view.copy.includes('予報の取得'), 'A: コピーの文面に行と生の値が入る', view.copy.slice(0, 200));
 
   /* ---- 開き直すと2件目。同じ起動は置き換え ---- */
