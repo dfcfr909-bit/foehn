@@ -45,10 +45,11 @@ esac
 # ⚠ git だけでは見分けられない。squash マージ済みのブランチが88本残っていて、
 #    「main に無い中身があるか」を調べると85本が該当と出た（2026-11-12 に試した）。
 # ⚠ 取れなかったときも黙らない。「何も出ない」を「何も開いていない」と読ませない。
-JQ_ROW='[(.number|tostring), (if .draft then "draft" else "ready" end), (.updated_at | fromdateiso8601 + 32400 | strftime("%Y-%m-%d %H:%M")), ([.labels[].name] | join(",")), .title[0:70]] | join("\u001f")'
+JQ_ROW='[(.number|tostring), (if .draft then "draft" else "ready" end), (.updated_at | fromdateiso8601 + 32400 | strftime("%Y-%m-%d %H:%M")), ([.labels[].name] | join(",")), (.head.ref // ""), .title[0:70]] | join("\u001f")'
 # timeout の無い環境（素の macOS など）では、付けずに走らせる（付けると必ず失敗する）
 run_to() { local sec=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$sec" "$@"; else "$@"; fi; }
 PR_MAX=100
+pr_heads=""   # 開いている PR の head ブランチ（下の「PR の無いブランチ」から除く。検索で引いたときは分からない）
 # まず PR の一覧そのものを引く。使えない環境（検索しか通らない所がある）では検索で引く。
 # ⚠ 検索は索引なので、出したばかりの PR が載るまで少し遅れることがある
 fetch_prs() {
@@ -62,8 +63,9 @@ if prs=$(fetch_prs); then
     echo "【開いている PR】（進行中の作業の正本。新しい作業の前に必ず読む）"
     waiting=0
     # ⚠ 区切りはタブにしない。タブは空白扱いで、空の欄（ラベルなし）が詰められて題がラベルの欄に入る
-    while IFS=$'\x1f' read -r num state updated labels title; do
+    while IFS=$'\x1f' read -r num state updated labels head title; do
       [ -n "$num" ] || continue
+      [ -n "$head" ] && pr_heads="${pr_heads}${head}"$'\n'
       mark="   -"
       case ",${labels}," in
         *",needs-decision,"*) mark="   ‼️ 返事待ち"; waiting=$((waiting + 1)) ;;
@@ -130,13 +132,15 @@ mainTime=$(git log -1 --format=%ct origin/main 2>/dev/null || echo 0)
 newer=$(for b in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin 2>/dev/null | grep -v 'origin/HEAD$' | grep -v 'origin/main$' | grep -v '^origin$'); do
   t=$(git log -1 --format=%ct "$b" 2>/dev/null || echo 0)
   [ "$t" -gt "$mainTime" ] || continue
+  # 開いている PR の head は上に出ているので、ここでは出さない（「PR の無い作業」と言わない）
+  printf '%s' "$pr_heads" | grep -qxF -- "${b#origin/}" && continue
   n=$(git rev-list --count origin/main.."$b" 2>/dev/null || echo 0)
   [ "$n" -ge 1 ] && echo "$t $b"
 done | sort -rn | head -5)
 
 if [ -n "$newer" ]; then
   echo
-  echo "【main の先端より新しいコミットを持つブランチ】（上の「開いている PR」に無ければ、PR の無い作業かもしれません）"
+  echo "【PR の無いブランチかもしれません】main の先端より新しいコミットを持ち、開いている PR の head に無いもの"
   echo "$newer" | while read -r t b; do echo "   - $b"; done
 fi
 
