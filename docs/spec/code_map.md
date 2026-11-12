@@ -571,6 +571,23 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 
 SW 側の実装は `sw.js` → `pwa.md`
 
+### 起動の内訳の計測（v4.185.0・#227）
+
+「PWA の初回が 8〜10 秒」の内訳を実機で読むための印。**測るだけで、起動の流れ（待ち合わせ・順序）は変えない。**
+端末の中（`BOOT_LS_LOG`）に直近10件だけ残し、**外へは送らない。緯度経度・地点名は入れない。**
+表示はレイヤーパネルの下の方（`#layer-boot`・「地図を開いた回数」の上）。仕様は `data.md`「起動の内訳」。検査は `tests/smoke_boottime.mjs`。
+
+| 関数 | 役割 | 目安行 |
+|---|---|---|
+| `bootTime` / `bootMark(key)` / `bootOrigin()` | 入れ物と印（**メインの script の先頭**）。印は `performance.now()`・同じ印は最初の1回だけ。入口（`index.html`）が `sessionStorage`（`BOOT_SS_HOP`）に置いた出発時刻もここで読んで消す | script 先頭 |
+| `bootOut(v)` / `bootFinish(out)` / `bootAmend()` / `bootSave()` | 経路（`net`／`soft`／`cache`／`fail`）を決め、最初の描画で記録を書く。**先出しの後に届いた通信・画面に出た頃は、同じ記録（`t` が同じ）に足す** | 地図を開いた回数の後ろ |
+| `bootNavInfo()` / `bootRecord()` | Navigation Timing（HTML の取得・SW の起動）・同梱の部品の所要・FCP を読み、1件の記録にまとめる | 同上 |
+| `bootLogPush(log, rec)` / `loadBootLog()` | 純関数：同じ起動は置き換え・直近 `BOOT_LOG_KEEP` 件・壊れた値は捨てる | 同上 |
+| `bootRows(rec)` / `bootTotal(rec)` / `bootHeadline(rec)` / `bootSec` / `bootWhen` | 純関数：記録 → 表の行・合計・見出し。⚠ 経路ごとに印の有無と順序が違う（ある印だけで組む） | 同上 |
+| `refreshBootLogView()` / `bootLogText()` / `copyBootLog()` | パネルの表示（直近1件は表・以前は1行ずつ）と、貼り付け用の文面（行＋生の値） | 同上 |
+
+印を付けている所：`boot`（`boot`・`geo0`・`geo1`）／`fetchWeather` の1本目だけ（`wx0`・`wxRes`・`wxJson`・`dem1`）／`applyWeatherJson`（`apply`）／`render`（`render0`・`render1`・`paint`）。
+
 ### 地図を開いた回数（#210 段階0・v4.167.0）
 
 Google マップを下地にした場合の費用の当たりをつけるための目安。**端末の中（`MAP_LS_OPENS`）だけで数え、外へは送らない。**
@@ -673,7 +690,7 @@ Google マップを下地にした場合の費用の当たりをつけるため�
 | 関数 | 役割 | 目安行 |
 |---|---|---|
 | `saveLast(lat, lon, name)` / `loadLast()` | 最終地点の localStorage | 約 7014 / 7017 |
-| `BOOT_GEO_WAIT_MS` / `boot`（即時関数） | 起動：前回の地点 → 無ければ位置情報（成功・失敗・8秒の時間切れの最初の1回だけ）→ 既定の地点（v4.159.1） | 約 14637 |
+| `BOOT_GEO_WAIT_MS` / `boot`（即時関数） | 起動：前回の地点 → 無ければ位置情報（成功・失敗・8秒の時間切れの最初の1回だけ）→ 既定の地点（v4.159.1）。起動の内訳の印（`bootMark`）は上の「起動の内訳の計測」 | 末尾（約 17240） |
 | `showLoading(msg)` / `hideLoading()` | **地図を開いている間は出さない** | 約 7025 / 7031 |
 | resize ハンドラ | 150ms デバウンスでチャートを組み直す | 約 7038 |
 | Service Worker 登録 | 失敗してもアプリの動作に影響させない | 約 7058 |

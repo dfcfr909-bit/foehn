@@ -1724,6 +1724,24 @@ html, body {
 #layer-opens { font-size: 11px; color: var(--text2); }
 #layer-map-opens { font-family: var(--font-mono); }
 #layer-opens-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
+/* 起動の内訳（v4.185.0）。直近の1件は表、それ以前は1行ずつ */
+#layer-boot { font-size: 11px; color: var(--text2); }
+#layer-boot-view { font-family: var(--font-mono); }
+#layer-boot .boot-head { font-weight: 700; margin-bottom: 4px; }
+#layer-boot .boot-table { width: 100%; border-collapse: collapse; }
+#layer-boot .boot-table th { text-align: left; font-weight: 400; color: var(--text3); font-size: 10px; }
+#layer-boot .boot-table td { padding: 1px 6px 1px 0; vertical-align: top; }
+#layer-boot .boot-table td:first-child { white-space: nowrap; }
+#layer-boot .boot-table td.num, #layer-boot .boot-table th:nth-child(2) { text-align: right; white-space: nowrap; }
+#layer-boot .boot-table td:last-child { color: var(--text3); font-size: 10px; }
+#layer-boot .boot-older { margin-top: 6px; color: var(--text3); font-size: 10px; }
+#btn-boot-copy {
+  margin-top: 6px; padding: 6px 14px; min-height: 44px;   /* 押しやすさ（44px 以上） */
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text2);
+  font-family: var(--font-ui); font-size: 11px; cursor: pointer;
+}
+#layer-boot-note { margin-top: 6px; color: var(--text3); font-size: 10px; }
 
 /* 地図画面だけOSのダークテーマに追従する（全画面オーバーレイなので本体と並ばない）。
    本体アプリはlight固定のまま。 */
@@ -2648,7 +2666,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.184.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.185.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -2827,6 +2845,12 @@ html, body {
           <div id="layer-areas"></div>
           <div id="layer-areas-note">お気に入りの地点を中心に、地形（CS立体図風・風の当たり方の元）と標準地図を前もって保存する。自動では消えない。電波のよい所で。
             ⚠ 圏外の下地は標準地図の z16 まで（それより寄ると下地が出ないことがある）。淡色地図・写真は保存しない。</div>
+          <div class="layer-section-title">起動の内訳（この端末）</div>
+          <div id="layer-boot">
+            <div id="layer-boot-view">—</div>
+            <button id="btn-boot-copy" onclick="copyBootLog()">内訳をコピー</button>
+            <div id="layer-boot-note">ページの読み込みが始まってからの秒数。アイコンを押してから読み込みが始まるまで（OS の起動）は測れない。直近10回をこの端末の中だけに残し、外へは送らない。</div>
+          </div>
           <div class="layer-section-title">地図を開いた回数（この端末）</div>
           <div id="layer-opens">
             <div id="layer-map-opens">—</div>
@@ -2938,6 +2962,44 @@ html, body {
 </div><!-- #app -->
 
 <script>
+/* ============================================================
+   起動の内訳の計測（v4.185.0・#227）
+   「PWA の初回が 8〜10 秒」の内訳を実機で読むための印。**測るだけで、起動の流れは変えない。**
+   ・印は performance.now()（このページの読み込み開始からの ms）。同じ印は最初の1回だけ
+   ・最初の描画が済んだら1件の記録にまとめ、端末の中（localStorage）に直近 BOOT_LOG_KEEP 件だけ残す。
+     ⚠ **外へは送らない。緯度経度・地点名は入れない**（時間と版数だけ）
+   ・表示は地図のレイヤーパネルの下の方「起動の内訳」（「地図を開いた回数」の上・refreshBootLogView）
+   ⚠ アイコンを押してからページの読み込みが始まるまで（OS の起動・スプラッシュ）は、ページからは測れない。
+   ⚠ ホーム画面の PWA は start_url（./＝index.html）から入り、そこから sotoki_v4.html へ移る。
+     入口のぶんはこのページの時計に乗らないので、index.html が出発時刻を sessionStorage に置き、ここで差を取る（bootTime.hop）
+   ============================================================ */
+const BOOT_LS_LOG = 'sotoki.boot.log';   // 起動の内訳の記録（直近 BOOT_LOG_KEEP 件の配列）
+const BOOT_SS_HOP = 'sotoki.boot.hop';   // index.html が置く出発時刻（{ o: 時刻の原点, now: 入口が動き出すまでの ms }）
+const BOOT_LOG_KEEP = 10;
+const BOOT_HOP_MAX_MS = 120000;          // これより古い出発時刻は別の起動の残りとみなして捨てる
+const bootTime = { m: {}, done: false, out: null, hidden: false, err: false, over: false, hop: null };
+function bootMark(key) {
+  if (key in bootTime.m) return;
+  try { bootTime.m[key] = Math.round(performance.now()); } catch (e) { /* 測れなくても起動は続ける */ }
+}
+// このページの読み込みが始まった時刻（端末の時計・ms）。記録の見出しと、入口（index.html）との差に使う
+function bootOrigin() {
+  return Math.round(performance.timeOrigin || (Date.now() - performance.now()));
+}
+bootMark('script');
+try {
+  // 入口（index.html）した時間。読んだら消す（再読み込みで前の値を数えない）
+  const hopRaw = sessionStorage.getItem(BOOT_SS_HOP);
+  if (hopRaw) {
+    sessionStorage.removeItem(BOOT_SS_HOP);
+    const h = JSON.parse(hopRaw), ms = bootOrigin() - Math.round(h.o);
+    if (ms >= 0 && ms < BOOT_HOP_MAX_MS) bootTime.hop = { ms, now: Number.isFinite(h.now) ? Math.round(h.now) : null };
+  }
+  // 起動の途中で画面が隠れると描画（rAF）が止まり、数字が伸びる。記録に印を残す
+  if (document.hidden) bootTime.hidden = true;
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !bootTime.done) bootTime.hidden = true; });
+} catch (e) { /* 読めなくても起動は続ける */ }
+
 /* ============================================================
    STATE
    ============================================================ */
@@ -3508,6 +3570,9 @@ async function fetchWeather(lat, lon, opts) {
   const strict = !!(opts && opts.strict);
   const seq = ++wxReqSeq, current = () => seq === wxReqSeq;
   if (!strict) wxNormalBusy = seq;
+  // 起動の内訳の計測（v4.185.0）：最初の取得だけ印を付ける。⚠ 測るだけ。待ち合わせ・順序は変えない
+  const boot1 = seq === 1, bm = boot1 ? bootMark : () => {};
+  bm('wx0');
   // 前の取得の「押すと更新」は、新しい取得が始まったら外す（押しても何もしないボタンを残さない）
   const oldBtn = document.querySelector('#offline-note .wx-fresh-btn');
   if (oldBtn) oldBtn.remove();
@@ -3548,23 +3613,26 @@ async function fetchWeather(lat, lon, opts) {
     // ⚠ 先出しは24時間以内だけ（#228）。すぐ新しいデータが届く場面で、何日も前の判定を先に出して残さない
     if (settled || !current() || !hit || hit.ageMs > WX_STALE_MS) return;
     shown = hit;
+    if (boot1) bootOut('soft');
     showHit(hit, 'fetching');
   }, WX_SOFT_MS);
   try {
     // 山頂標高（地理院DEM）は**判定の入力**なので、気象データと一緒に待つ。
     // 先に判定を出してから覆ると、安全に関わる表示が化ける（ADR-0006）
     const [res, dem] = await Promise.all([
-      fetch(url, ctl ? { signal: ctl.signal } : undefined),
-      fetchPointElevation(lat, lon).catch(() => null),
+      fetch(url, ctl ? { signal: ctl.signal } : undefined).then(r => { bm('wxRes'); return r; }),
+      fetchPointElevation(lat, lon).catch(() => null).then(v => { bm('dem1'); if (boot1) bootAmend(); return v; }),
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
+    bm('wxJson');
     // strict：中身が空の応答（そのモデルがこの地点を返さない等）も失敗として扱う
     if (strict && !weatherJsonUsable(json)) throw new Error('データが空でした');
     settled = true; clearTimeout(soft); clearTimeout(hard);
     if (wxNormalBusy === seq) wxNormalBusy = 0;
     // 追い越された・控えを先に出していた：画面はそのまま、控えにだけ入れる
     if (!current() || shown) {
+      if (boot1) bootAmend();                    // 先出しの後に届いた：通信にかかった時間を記録へ足す
       await saveWxCache(lat, lon, json, dem, reqName, reqModel);
       if (!current()) return false;
       // 届いた。押したら替える（その間に別の取得が始まっていたら何もしない）
@@ -3577,6 +3645,7 @@ async function fetchWeather(lat, lon, opts) {
       return true;
     }
     setWxSource(null);                           // 通信で取れた＝帯は消す
+    if (boot1) bootOut('net');
     applyWeatherJson(json, dem, lat, lon, reqModel);
     // 圏外で出せるように控える（失敗しても無視）。
     // ⚠ **補助データの取得より先に済ませる。** 補助は本体の記録に後付けするので、
@@ -3588,6 +3657,7 @@ async function fetchWeather(lat, lon, opts) {
   } catch (e) {
     settled = true; clearTimeout(soft); clearTimeout(hard);
     if (wxNormalBusy === seq) wxNormalBusy = 0;
+    if (boot1) { bootTime.err = true; bootAmend(); }   // 起動の最初の取得が通信で取れなかった（記録に印）
     if (!current()) return false;                // 追い越された：新しい画面に触らない（strict も投げない）
     if (strict) {
       hideLoading();
@@ -3599,10 +3669,12 @@ async function fetchWeather(lat, lon, opts) {
     const hit = await loadWxCache(lat, lon, reqModel);
     if (!current()) return false;
     if (hit && hit.ageMs <= WX_MAX_AGE_MS) {
+      if (boot1) bootOut('cache');
       showHit(hit);
       return;
     }
     hideLoading();
+    if (boot1) bootFinish('fail');               // 描画に至らなかった起動も記録する
     // 控えてはあるが古すぎる場合は、そう言うだけにする（数字は更新しない）
     setWxSource(hit || null);
     if (!hit) alert('データ取得失敗: ' + e.message);
@@ -3620,6 +3692,7 @@ function weatherJsonUsable(json) {
     && h.temperature_2m.some(v => v != null));
 }
 function applyWeatherJson(json, dem, lat, lon, modelKey) {
+  bootMark('apply');
   state.daily = json.daily || null;            // 日の出・日の入り（昼間帯シェーディング用）
   state.elevation = (typeof json.elevation === 'number') ? json.elevation : null;  // モデル格子の標高(m)
   state.demElevation = (typeof dem === 'number' && isFinite(dem)) ? dem : null;
@@ -3929,6 +4002,7 @@ let chartsReady = false;
 
 function render() {
   if (!state.allData) return;
+  bootMark('render0');
   try {
     updateLocationName();
     buildCharts();          // データ取得・リサイズ時のみの1回描画
@@ -3942,9 +4016,16 @@ function render() {
     layoutScrubber();
     updateParticles();
     hideLoading();
+    // 起動の内訳（v4.185.0）：最初の描画が済んだ。記録を残し、実際に画面へ出た頃（次のコマの後）を足す
+    if (!bootTime.done) {
+      bootMark('render1');
+      bootFinish();
+      requestAnimationFrame(() => setTimeout(() => { bootMark('paint'); bootAmend(); }, 0));
+    }
   } catch (e) {
     // 例外時にローディングが永久表示にならないよう必ず解除し、原因を表示
     hideLoading();
+    bootFinish('fail');     // 起動の内訳：描画に至らなかった起動も記録する（済んでいれば何もしない）
     alert('画面描画エラー: ' + e.message);
   }
 }
@@ -13285,6 +13366,7 @@ function toggleLayerPanel() {
     refreshTileCacheUsage();
     renderAreaPanel();
     refreshMapOpensView();
+    refreshBootLogView();
   }
 }
 function closeLayerPanel() {
@@ -14042,6 +14124,155 @@ function refreshMapOpensView() {
   } catch (e) {
     el.textContent = '回数を読めません';
   }
+}
+/* ------ 起動の内訳（v4.185.0・#227） ------
+   印（bootMark）を1件の記録にまとめて端末に残し、レイヤーパネルの下の方（「地図を開いた回数」の上）に出す。入れ物と印は script の先頭。
+   記録 rec = { t: 読み込み開始の時刻(ms), v: 版, out, m: { 印: ms }, nav: { fs, ws, rs, re, type, size }, res: { 部品: ms },
+                fcp, hop: { ms, now }, on, sw, hid, over, err }
+   ・out … 'net'＝通信で取れて描いた／'soft'＝WX_SOFT_MS 待って控えを先に出した／'cache'＝通信できず控えで描いた／
+           'fail'＝描画に至らなかった（控えが無い・古すぎる）／null＝起動の最初の取得が追い越された
+   ・「起動の最初の取得」＝ fetchWeather の1本目（seq 1）。ふつうは boot の呼び出し。
+     ⚠ 位置情報待ちの間に利用者が地点を選ぶと、その取得が1本目になる。over（別の取得が始まった）が立つので数字は参考
+   ・最初の描画で一度書き（bootFinish）、あとから分かったこと（先出しの後に届いた通信・画面に出た頃）は同じ記録に足す（bootAmend）
+   ⚠ **外へは送らない。緯度経度・地点名は入れない。** */
+function bootOut(v) { if (!bootTime.done && !bootTime.out) bootTime.out = v; }
+function bootNavInfo() {
+  const o = { nav: null, res: {}, fcp: null };
+  try {
+    const n = performance.getEntriesByType('navigation')[0];
+    const r = v => Math.round(v || 0);
+    if (n) o.nav = { fs: r(n.fetchStart), ws: r(n.workerStart), rs: r(n.responseStart), re: r(n.responseEnd), type: n.type || '', size: r(n.transferSize) };
+    // 同梱の部品（head で読むもの）。所要だけ
+    for (const e of performance.getEntriesByType('resource')) {
+      const hit = /leaflet\.js|uPlot\.iife\.min\.js|snowRanking\.js/.exec(e.name);
+      if (hit) o.res[hit[0].replace(/\..*$/, '')] = Math.round(e.duration);
+    }
+    const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+    if (fcp) o.fcp = Math.round(fcp.startTime);
+  } catch (e) { /* 読めない端末では空のまま */ }
+  return o;
+}
+function bootRecord() {
+  const info = bootNavInfo();
+  return {
+    t: bootOrigin(), v: (document.getElementById('app-version') || {}).textContent || '',
+    out: bootTime.out, m: { ...bootTime.m }, nav: info.nav, res: info.res, fcp: info.fcp, hop: bootTime.hop,
+    on: navigator.onLine !== false, sw: !!(navigator.serviceWorker && navigator.serviceWorker.controller),
+    hid: bootTime.hidden, over: bootTime.over, err: bootTime.err,
+  };
+}
+// 記録を足す（純関数）。同じ起動（t が同じ）は置き換え、直近 BOOT_LOG_KEEP 件に切る。壊れた値は捨てる
+function bootLogPush(log, rec) {
+  const arr = (Array.isArray(log) ? log : []).filter(r => r && Number.isFinite(r.t) && r.m && typeof r.m === 'object');
+  if (arr.length && arr[arr.length - 1].t === rec.t) arr[arr.length - 1] = rec; else arr.push(rec);
+  return arr.slice(-BOOT_LOG_KEEP);
+}
+function loadBootLog() {
+  // ⚠ 読み出しの失敗（getItem の例外）は呼び手へ投げる（「記録が無い」と「読めない」を分ける）。壊れた値だけを空にする
+  const raw = localStorage.getItem(BOOT_LS_LOG);
+  try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+}
+function bootSave() {
+  // 書けなくても起動は続ける（測るのは脇の仕事）
+  try { localStorage.setItem(BOOT_LS_LOG, JSON.stringify(bootLogPush(loadBootLog(), bootRecord()))); }
+  catch (e) { /* 書けなければ残さない */ }
+}
+function bootFinish(out) {
+  if (bootTime.done) return;
+  if (out) bootOut(out);
+  bootTime.over = wxReqSeq > 1;   // 記録を閉じた時点で決める（あとから足すとき、起動後の地点替えで立てない）
+  bootTime.done = true;
+  bootSave();
+}
+// 記録を閉じた後に分かったことを、同じ記録に足す（閉じる前は何もしない＝閉じるときに入る）
+function bootAmend() { if (bootTime.done) bootSave(); }
+
+const BOOT_OUT_LABEL = { net: '通信で取得', soft: '控えを先に出した', cache: '通信できず控え', fail: '描画に至らず' };
+function bootSec(ms) { return (ms / 1000).toFixed(2); }
+// 合計（ms）：入口（index.html）＋このページの読み込み開始から画面に出るまで。描画に至らなければ null
+function bootTotal(rec) {
+  const m = (rec && rec.m) || {}, end = Number.isFinite(m.paint) ? m.paint : m.render1;
+  if (!Number.isFinite(end)) return null;
+  return end + ((rec.hop && Number.isFinite(rec.hop.ms)) ? rec.hop.ms : 0);
+}
+/* 記録 → 表示の行（純関数）。行＝{ label, start, dur, note }。start＝このページの読み込み開始からの ms、dur＝所要 ms（分からなければ null）。
+   ⚠ 経路ごとに印の有無と順序が違う（先出しでは apply が wxJson より先・控えだけなら wxJson が無い）。ある印だけで組む */
+function bootRows(rec) {
+  const m = (rec && rec.m) || {}, nav = (rec && rec.nav) || null, hop = (rec && rec.hop) || null;
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const rows = [];
+  const add = (label, a, b, note) => {
+    a = num(a); b = num(b);
+    rows.push({ label, start: a, dur: (a == null || b == null) ? null : Math.max(0, b - a), note: note || '' });
+  };
+  if (hop && num(hop.ms) != null) {
+    rows.push({ label: '入口（index.html）', start: null, dur: hop.ms,
+                note: num(hop.now) != null ? `うち入口の取得 ${bootSec(hop.now)}` : '' });
+  }
+  if (nav && nav.re > 0) {
+    const sw = nav.ws > 0 ? `SW の起動 ${bootSec(nav.ws)}・` : '';
+    add('画面（HTML）の取得', 0, nav.re, `${sw}応答まで ${bootSec(nav.rs)}／受信 ${bootSec(Math.max(0, nav.re - nav.rs))}`);
+    add('解析〜プログラム開始', nav.re, m.script);
+  } else {
+    add('画面の取得〜プログラム開始', 0, m.script, '内訳は読めない端末');
+  }
+  add('プログラムの準備', m.script, m.boot);
+  if (num(m.geo0) != null) add('位置情報待ち', m.geo0, m.geo1);
+  const wxNote = [num(m.wxRes) != null && num(m.wx0) != null ? `応答まで ${bootSec(Math.max(0, m.wxRes - m.wx0))}` : '',
+                  num(m.wxJson) == null ? (rec && rec.err ? '通信で取れなかった' : '届く前に記録') : ''].filter(Boolean).join('・');
+  add('予報の取得', m.wx0, m.wxJson, wxNote);
+  add('標高の取得', m.wx0, m.dem1, '予報と並行');
+  if (rec && (rec.out === 'soft' || rec.out === 'cache')) add('控えを出すまで', m.wx0, m.apply, BOOT_OUT_LABEL[rec.out]);
+  add('描画の準備', m.apply, m.render0);
+  add('描画', m.render0, m.render1);
+  if (num(m.paint) != null) add('画面に出るまで', m.render1, m.paint);
+  return rows;
+}
+function bootWhen(t) {
+  const d = new Date(t), p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 見出しの1行（日時・版・合計・経路・但し書き）
+function bootHeadline(rec) {
+  const total = bootTotal(rec);
+  const flags = [BOOT_OUT_LABEL[rec.out] || '経路不明', rec.sw ? '' : 'SW なし', rec.on === false ? '圏外' : '',
+                 rec.nav && rec.nav.type && rec.nav.type !== 'navigate' ? `再読み込み（${rec.nav.type}）` : '',
+                 rec.hid ? '途中で画面が隠れた' : '', rec.over ? '途中で別の取得（参考）' : ''].filter(Boolean).join('・');
+  return `${bootWhen(rec.t)} ${rec.v || ''} 合計 ${total == null ? '—' : bootSec(total) + '秒'}（${flags}）`;
+}
+function refreshBootLogView() {
+  const el = document.getElementById('layer-boot-view');
+  if (!el) return;
+  try {
+    const log = loadBootLog().filter(r => r && r.m).reverse();   // 新しい順
+    if (!log.length) { el.textContent = 'まだ記録がありません（次の起動から残ります）'; return; }
+    const cell = v => (v == null ? '—' : bootSec(v));
+    const rowsHtml = bootRows(log[0]).map(r =>
+      `<tr><td>${escapeHtml(r.label)}</td><td class="num">${cell(r.dur)}</td><td>${escapeHtml(r.note)}</td></tr>`).join('');
+    const older = log.slice(1).map(r => `<div>${escapeHtml(bootHeadline(r))}</div>`).join('');
+    el.innerHTML = `<div class="boot-head">${escapeHtml(bootHeadline(log[0]))}</div>` +
+      `<table class="boot-table"><thead><tr><th>項目</th><th>秒</th><th></th></tr></thead><tbody>${rowsHtml}</tbody></table>` +
+      (older ? `<div class="boot-older">${older}</div>` : '');
+  } catch (e) {
+    el.textContent = '記録を読めません';
+  }
+}
+// 貼り付け用の文面（直近の全件。行＋生の値）
+function bootLogText() {
+  const log = loadBootLog().filter(r => r && r.m).reverse();
+  const cell = v => (v == null ? '—' : bootSec(v));
+  return log.map(rec => [bootHeadline(rec),
+    ...bootRows(rec).map(r => `  ${r.label} ${cell(r.dur)}${r.start != null ? `（開始 ${bootSec(r.start)}）` : ''}${r.note ? ' ' + r.note : ''}`),
+    `  raw ${JSON.stringify(rec)}`].join('\n')).join('\n');
+}
+async function copyBootLog() {
+  const btn = document.getElementById('btn-boot-copy');
+  let ok = false;
+  try { const t = bootLogText(); ok = !!t && await copyText(t); } catch (e) { ok = false; }
+  if (!btn) return;
+  btn.textContent = ok ? 'コピーしました' : 'コピーできません';
+  setTimeout(() => { btn.textContent = '内訳をコピー'; }, 1500);
 }
 async function clearTileCache() {
   // 破壊的操作なので必ず確認を挟む
@@ -17174,6 +17405,7 @@ loadOutlook();
      上限を過ぎたら既定の地点（立山・黒部）で始め、あとから許可されても地点は動かさない（GPS ボタンで取り直せる） */
 const BOOT_GEO_WAIT_MS = 8000;
 (function boot() {
+  bootMark('boot');
   hideLoading();
   // お気に入りの予報と風を裏で控える（#228）。最初の取得に回線を譲ってから
   setTimeout(() => prefetchFavs(), FAV_PREFETCH_DELAY_MS);
@@ -17189,15 +17421,17 @@ const BOOT_GEO_WAIT_MS = 8000;
   // 前回地点なし → GPS試行 → 失敗時・時間切れはデフォルト地点
   if (navigator.geolocation) {
     showLoading('GPS取得中…');
+    bootMark('geo0');
     /* ⚠ 成功・失敗・時間切れのうち、最初の1回だけが先へ進む（BOOT_GEO_WAIT_MS の注記）。
        遅れて届いた成功では地点を動かさず、逆ジオコーディングも叩かない */
     let settled = false;
-    const toDefault = () => { if (settled) return; settled = true; clearTimeout(timer); fetchWeather(state.lat, state.lon); };
+    const toDefault = () => { if (settled) return; settled = true; clearTimeout(timer); bootMark('geo1'); fetchWeather(state.lat, state.lon); };
     const timer = setTimeout(toDefault, BOOT_GEO_WAIT_MS);
     navigator.geolocation.getCurrentPosition(
       pos => {
         if (settled) return;
         settled = true; clearTimeout(timer);
+        bootMark('geo1');
         state.lat = pos.coords.latitude;
         state.lon = pos.coords.longitude;
         reverseGeocode(state.lat, state.lon).then(name => {
