@@ -33,7 +33,10 @@ const GSI_URL = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevat
 const GSI_INTERVAL_MS = 250;
 const OVERPASS_INTERVAL_MS = 1200;
 
-const MAX_CANDIDATES = 60;      // 1地点あたりの標高問い合わせ上限
+// 1地点あたりの標高問い合わせ上限。
+// ⚠ 60 では足りなかった（2026-11-12 の初回実行で 蔵王・ネコマ・神立・岩原 が上限に当たった）。
+//   Overpass の並び順のまま切るので、切れると最上部が候補から漏れうる。切ったら ⚠ を出す
+const MAX_CANDIDATES = 200;
 const COORD_DECIMALS = 4;       // 約11m。これで重複を潰す
 const ALT_TOLERANCE_M = 100;    // bcの標高乖離警告のしきい値
 
@@ -56,32 +59,49 @@ export function roundCoord(v) {
   return Number(v.toFixed(COORD_DECIMALS));
 }
 
-/** Overpassの結果から標高を問い合わせる候補点を取り出す。
- *  索道駅ノードと、各索道線の両端（＝山頂側の駅がここに入る）。 */
-export function extractCandidates(overpassJson) {
+/** Overpassの結果から標高を問い合わせる候補点を、索道の名前つきで取り出す。
+ *  索道駅ノードと、各索道線の両端（＝山頂側の駅がここに入る）。
+ *  返すのは { points: [{lat, lon, names:[…]}], total: 切る前の数 }。
+ *  名前は「どの索道を拾ったか」を人が目で確かめるためのもの（出力には入れない）。 */
+export function extractNamedCandidates(overpassJson, max = MAX_CANDIDATES) {
   const els = (overpassJson && overpassJson.elements) || [];
   const out = [];
-  const seen = new Set();
-  const push = (lat, lon) => {
+  const byKey = new Map();
+  const push = (lat, lon, name) => {
     if (typeof lat !== 'number' || typeof lon !== 'number') return;
     const p = [roundCoord(lat), roundCoord(lon)];
     const key = `${p[0]},${p[1]}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(p);
+    let c = byKey.get(key);
+    if (!c) { c = { lat: p[0], lon: p[1], names: [] }; byKey.set(key, c); out.push(c); }
+    if (name && !c.names.includes(name)) c.names.push(name);
   };
   for (const el of els) {
+    const name = el.tags && typeof el.tags.name === 'string' ? el.tags.name.trim() : '';
     if (el.type === 'node') {
-      push(el.lat, el.lon);
+      push(el.lat, el.lon, name);
     } else if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length) {
       // 線の両端だけ。中間点は標高を問い合わせるだけ無駄
       const g = el.geometry.filter(p => p && typeof p.lat === 'number');
       if (!g.length) continue;
-      push(g[0].lat, g[0].lon);
-      push(g[g.length - 1].lat, g[g.length - 1].lon);
+      push(g[0].lat, g[0].lon, name);
+      push(g[g.length - 1].lat, g[g.length - 1].lon, name);
     }
   }
-  return out.slice(0, MAX_CANDIDATES);
+  return { points: out.slice(0, max), total: out.length };
+}
+
+/** 候補点を [lat, lon] の並びで返す（従来の形）。 */
+export function extractCandidates(overpassJson) {
+  return extractNamedCandidates(overpassJson).points.map(c => [c.lat, c.lon]);
+}
+
+/** 標高の高い順に上位 n 点（名前つき）。どの索道を拾ったかの目視用。 */
+export function topCandidates(named, elevations, n = 3) {
+  return named
+    .map((c, i) => ({ ...c, elevation: elevations[i] }))
+    .filter(c => typeof c.elevation === 'number' && Number.isFinite(c.elevation))
+    .sort((a, b) => b.elevation - a.elevation)
+    .slice(0, n);
 }
 
 /** 候補点と標高から索道最上部を選ぶ。標高が取れなかった点は捨てる。 */
@@ -154,9 +174,26 @@ async function fetchJson(url, init, tries = 3) {
   throw lastErr;
 }
 
-async function fetchOverpass(bbox) {
+// ⚠ 相手が混んでいるとき（429・502・503・504）は長めに待つ。
+//   2026-11-12 の初回実行で 会津だいくら が HTTP 502 のまま3回・計3秒で諦めていた（buildPoi.mjs と同じ考え）
+async function fetchOverpass(bbox, tries = 4) {
   const body = new URLSearchParams({ data: buildOverpassQuery(bbox) });
-  return fetchJson(OVERPASS_URL, { method: 'POST', body, headers: { 'User-Agent': USER_AGENT } });
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      // 問い合わせ自体の時間切れは90秒（buildOverpassQuery）。返事が来ないまま待ち続けないよう、こちらでも切る
+      const res = await fetch(OVERPASS_URL, {
+        method: 'POST', body, headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(150000),
+      });
+      if (res.ok) return await res.json();
+      last = new Error(`HTTP ${res.status}`);
+      if (i < tries - 1) await sleep(([429, 502, 503, 504].includes(res.status) ? 20000 : 5000) * (i + 1));
+    } catch (e) {
+      last = e;
+      if (i < tries - 1) await sleep(5000 * (i + 1));
+    }
+  }
+  throw last;
 }
 
 async function fetchElevation(lat, lon) {
@@ -185,12 +222,16 @@ async function resolveResort(spot, log) {
     log.push(`  ⚠ Overpass失敗: ${e.message}`);
     return null;
   }
-  const points = extractCandidates(overpass);
+  const { points: named, total } = extractNamedCandidates(overpass);
+  const points = named.map(c => [c.lat, c.lon]);
   if (!points.length) {
     log.push('  ⚠ OSMに索道データなし → シードに coord を足して手動指定すること');
     return null;
   }
   log.push(`  索道の候補点 ${points.length}箇所の標高を取得中…`);
+  if (total > points.length) {
+    log.push(`  ⚠ 候補が ${total}箇所あり、上限の ${points.length}箇所だけ調べた（最上部が漏れている可能性。bbox を狭めるか coord で手動指定）`);
+  }
   const elevations = [];
   for (const [lat, lon] of points) {
     elevations.push(await fetchElevation(lat, lon));
@@ -203,6 +244,10 @@ async function resolveResort(spot, log) {
   }
   const got = elevations.filter(e => e != null).length;
   log.push(`  索道最上部 (${best.lat}, ${best.lon}) 標高${Math.round(best.elevation)}m　[${got}/${points.length}点で標高取得]`);
+  // どの索道を拾ったかを目視できるように、標高の上位を名前つきで出す（出力には入れない）
+  for (const c of topCandidates(named, elevations)) {
+    log.push(`    ${Math.round(c.elevation)}m (${c.lat}, ${c.lon}) ${c.names.length ? c.names.join(' / ') : '（名前なし）'}`);
+  }
   return { lat: best.lat, lon: best.lon, elevation: Math.round(best.elevation) };
 }
 
