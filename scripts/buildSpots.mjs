@@ -32,6 +32,8 @@ const GSI_URL = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevat
 // レート制限（相手は公共の無料API。詰めすぎない）
 const GSI_INTERVAL_MS = 250;
 const OVERPASS_INTERVAL_MS = 1200;
+const FETCH_TIMEOUT_MS = 30000;        // 国土地理院の標高API 1回あたり
+const OVERPASS_TIMEOUT_MS = 150000;    // Overpass 1回あたり（問い合わせ側の時間切れは90秒）
 
 // 1地点あたりの標高問い合わせ上限。
 // ⚠ 60 では足りなかった（2026-11-12 の初回実行で 蔵王・ネコマ・神立・岩原 が上限に当たった）。
@@ -115,6 +117,20 @@ export function pickHighest(points, elevations) {
   return best;
 }
 
+/** Overpass は時間切れでも 200 で空の elements と remark を返す。それを成功と見なさない
+ *  （buildPoi.mjs の checkOverpass と同じ。見なすと「OSMに索道データなし」と取り違える）。 */
+export function checkOverpass(json) {
+  if (!json || !Array.isArray(json.elements)) throw new Error('応答の形が違う');
+  if (json.remark && /error|timeout|timed out|runtime/i.test(json.remark)) throw new Error(`remark: ${json.remark}`);
+  return json;
+}
+
+/** Overpass の再試行までの待ち（ms）。相手が混んでいるとき（429・502・503・504）は長めに。
+ *  status は HTTP の番号（通信そのものの失敗は 0）、attempt は 0 始まり。 */
+export function overpassRetryWaitMs(status, attempt) {
+  return ([429, 502, 503, 504].includes(status) ? 20000 : 5000) * (attempt + 1);
+}
+
 /** GSI標高APIのレスポンスを数値にする。「-----」（データ無し）はnull。 */
 export function parseElevation(json) {
   if (!json) return null;
@@ -163,7 +179,8 @@ async function fetchJson(url, init, tries = 3) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetch(url, init);
+      // ⚠ 返事が来ないまま待ち続けない（1点が止まるとジョブの上限まで引きずる）
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (e) {
@@ -174,24 +191,24 @@ async function fetchJson(url, init, tries = 3) {
   throw lastErr;
 }
 
-// ⚠ 相手が混んでいるとき（429・502・503・504）は長めに待つ。
+// ⚠ 相手が混んでいるときは長めに待ち、「200 だが時間切れ」も失敗として再試行する。
 //   2026-11-12 の初回実行で 会津だいくら が HTTP 502 のまま3回・計3秒で諦めていた（buildPoi.mjs と同じ考え）
 async function fetchOverpass(bbox, tries = 4) {
   const body = new URLSearchParams({ data: buildOverpassQuery(bbox) });
   let last;
   for (let i = 0; i < tries; i++) {
+    let status = 0;
     try {
-      // 問い合わせ自体の時間切れは90秒（buildOverpassQuery）。返事が来ないまま待ち続けないよう、こちらでも切る
       const res = await fetch(OVERPASS_URL, {
-        method: 'POST', body, headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(150000),
+        method: 'POST', body, headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
       });
-      if (res.ok) return await res.json();
+      status = res.status;
+      if (res.ok) return checkOverpass(await res.json());
       last = new Error(`HTTP ${res.status}`);
-      if (i < tries - 1) await sleep(([429, 502, 503, 504].includes(res.status) ? 20000 : 5000) * (i + 1));
     } catch (e) {
       last = e;
-      if (i < tries - 1) await sleep(5000 * (i + 1));
     }
+    if (i < tries - 1) await sleep(overpassRetryWaitMs(status, i));
   }
   throw last;
 }
