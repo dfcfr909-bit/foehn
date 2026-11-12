@@ -1625,6 +1625,16 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     out.first = leafletMap.getZoom();
     out.pendingAfter = locateZoomPending;
     stopTracking();
+    // 現在地を一度押した後（once）に地図を引いてからヘディングアップへ：追跡に入る時に寄る
+    // （方位センサーが使えず向きが変わらなくても、寄るのは先に起きる）
+    setLocateMode('once'); await wait(1600);
+    leafletMap.setZoom(11, { animate: false });
+    const al = window.alert; window.alert = () => {};
+    await toggleOrientation(); await wait(1400);
+    window.alert = al;
+    out.headingFromOnce = leafletMap.getZoom();
+    out.headingMode = locateMode;
+    stopTracking();
     // すでに拡大していれば縮めない
     leafletMap.setView([36.2, 137.9], 17, { animate: false });
     setLocateMode('once'); await wait(1600);
@@ -1644,6 +1654,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
   ok(locZoom.pinKept, '★追跡で寄るとき、選択地点のピンは動かさない', locZoom);
   ok(locZoom.noRezoom === 13, '★追跡中に自分で引いた倍率は、次の測位で戻さない', locZoom);
   ok(locZoom.pending === true && locZoom.first === 16 && locZoom.pendingAfter === false, '★★現在地がまだ無いまま追跡に入っても、最初の測位で z16 まで寄る', locZoom);
+  ok(locZoom.headingMode === 'follow' && locZoom.headingFromOnce === 16, '★★現在地を押した後にヘディングアップへ入っても z16 まで寄る', locZoom);
   ok(locZoom.keep17 === 17, '★すでに拡大していれば縮めない', locZoom);
   ok(locZoom.tri === 11, '★百名山の△を押したときは寄せない（11 のまま）', locZoom);
 

@@ -14824,8 +14824,10 @@ function applyMapRotation(deg) {
 
 async function toggleOrientation() {
   if (mapHeadingUp) { setHeadingUp(false); return; }
-  if (geoWatchId == null) setLocateMode('follow');   // 向きだけ変えても使いにくいので追跡も入れる
-  else { locateMode = 'follow'; mapFollow = true; }
+  /* 向きだけ変えても使いにくいので追跡も入れる。
+     ⚠ 必ず setLocateMode を通す（v4.186.0）。現在地を一度押した後（once）にここへ来たとき、
+       モードだけ書き換えると寄る処理（LOCATE_GO_ZOOM）を素通りして、引いた地図のまま追跡が始まっていた */
+  if (locateMode !== 'follow') setLocateMode('follow');
   if (!await enableHeading()) { alert('方位センサーを使えませんでした'); return; }
   setHeadingUp(true);
 }
