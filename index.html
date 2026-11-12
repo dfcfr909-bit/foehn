@@ -13,7 +13,15 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta http-equiv="refresh" content="0; url=sotoki_v4.html">
-<script>location.replace('sotoki_v4.html');</script>
+<script>
+// 起動の内訳の計測（v4.185.0）：この入口の出発時刻を、移った先（sotoki_v4.html）が読んで差を取る。
+// ⚠ 置けなくても必ず移る（計測は脇の仕事）
+try {
+  sessionStorage.setItem('sotoki.boot.hop', JSON.stringify({
+    o: performance.timeOrigin || (Date.now() - performance.now()), now: Math.round(performance.now()) }));
+} catch (e) {}
+location.replace('sotoki_v4.html');
+</script>
 </head>
 <body>
 <p>NAGI NAV を開いています… 自動で移動しない場合は <a href="sotoki_v4.html">こちら</a> をタップしてください。</p>
