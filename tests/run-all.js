@@ -58,6 +58,7 @@ const TESTS = [
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
   ['smoke_workflows', 'ワークフロー共通（Nodeの版の一本化・写し違いの禁止・権限の明示）'],
+  ['smoke_sessionhook', '起動時フック（開いている PR を毎回出す・needs-decision は返事待ち・取れなかったら黙らない・0件は「なし」）'],
   ['smoke_wxmap',  '天気図（UTC→日本時間・予想は基準+24h・並び順を仮定しない）'],
   ['smoke_lead',   '予報の確からしさの目安（近い予報には出さない・目安と明記）'],
   ['smoke_pin',    '地点のピン（タップを受けない・他のマーカーを巻き添えにしない）'],
