@@ -2977,7 +2977,7 @@ const BOOT_LS_LOG = 'sotoki.boot.log';   // 起動の内訳の記録（直近 BO
 const BOOT_SS_HOP = 'sotoki.boot.hop';   // index.html が置く出発時刻（{ o: 時刻の原点, now: 入口が動き出すまでの ms }）
 const BOOT_LOG_KEEP = 10;
 const BOOT_HOP_MAX_MS = 120000;          // これより古い出発時刻は別の起動の残りとみなして捨てる
-const bootTime = { m: {}, done: false, out: null, hidden: false, err: false, hop: null };
+const bootTime = { m: {}, done: false, out: null, hidden: false, err: false, over: false, hop: null };
 function bootMark(key) {
   if (key in bootTime.m) return;
   try { bootTime.m[key] = Math.round(performance.now()); } catch (e) { /* 測れなくても起動は続ける */ }
@@ -3621,7 +3621,7 @@ async function fetchWeather(lat, lon, opts) {
     // 先に判定を出してから覆ると、安全に関わる表示が化ける（ADR-0006）
     const [res, dem] = await Promise.all([
       fetch(url, ctl ? { signal: ctl.signal } : undefined).then(r => { bm('wxRes'); return r; }),
-      fetchPointElevation(lat, lon).catch(() => null).then(v => { bm('dem1'); return v; }),
+      fetchPointElevation(lat, lon).catch(() => null).then(v => { bm('dem1'); if (boot1) bootAmend(); return v; }),
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
@@ -4025,6 +4025,7 @@ function render() {
   } catch (e) {
     // 例外時にローディングが永久表示にならないよう必ず解除し、原因を表示
     hideLoading();
+    bootFinish('fail');     // 起動の内訳：描画に至らなかった起動も記録する（済んでいれば何もしない）
     alert('画面描画エラー: ' + e.message);
   }
 }
@@ -14157,7 +14158,7 @@ function bootRecord() {
     t: bootOrigin(), v: (document.getElementById('app-version') || {}).textContent || '',
     out: bootTime.out, m: { ...bootTime.m }, nav: info.nav, res: info.res, fcp: info.fcp, hop: bootTime.hop,
     on: navigator.onLine !== false, sw: !!(navigator.serviceWorker && navigator.serviceWorker.controller),
-    hid: bootTime.hidden, over: wxReqSeq > 1, err: bootTime.err,
+    hid: bootTime.hidden, over: bootTime.over, err: bootTime.err,
   };
 }
 // 記録を足す（純関数）。同じ起動（t が同じ）は置き換え、直近 BOOT_LOG_KEEP 件に切る。壊れた値は捨てる
@@ -14180,6 +14181,7 @@ function bootSave() {
 function bootFinish(out) {
   if (bootTime.done) return;
   if (out) bootOut(out);
+  bootTime.over = wxReqSeq > 1;   // 記録を閉じた時点で決める（あとから足すとき、起動後の地点替えで立てない）
   bootTime.done = true;
   bootSave();
 }
