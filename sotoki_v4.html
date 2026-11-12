@@ -2666,7 +2666,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.185.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.186.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -3970,7 +3970,7 @@ function fetchGPS(opts) {
       // 地図から呼ばれたときは閉じずに、現在地へなめらかに寄る
       if (opts && opts.keepMap && isMapOpen()) {
         setPickedName('取得中…');
-        mapFlyTo(state.lat, state.lon, Math.max(leafletMap.getZoom(), 12));
+        mapFlyTo(state.lat, state.lon, Math.max(leafletMap.getZoom(), LOCATE_GO_ZOOM));
         fetchPointElevation(state.lat, state.lon);
       }
       reverseGeocode(state.lat, state.lon).then(name => {
@@ -4375,6 +4375,12 @@ function updateFavStar() {
    v4.170.0 は 14 だったが、実機で「まだ広い」（利用者・2026-10-11。縮尺 200 m の画面を指定）
    ⚠ 地図を初めて開いたときの z10 は変えない（山域の位置関係を見るのに使う） */
 const FAV_GO_ZOOM = 16;
+/* 現在地ボタン（1回目・追跡・ヘディングアップ）と、検索の結果・座標の入力で寄る倍率（v4.186.0・利用者の指定 2026-11-13）。
+   ダイヤルと同じ z16（ナビのときの縮尺）。すでにそれより拡大していれば縮めない。
+   それまでは 現在地 12／追跡 13／検索の結果 11／座標 14 で、z10 で開いた地図から押しても広域のままだった
+   ⚠ 百名山の△を地図で押したときは寄せない（pickMapPoint の既定の 11。山域を見ている途中の操作なので） */
+const LOCATE_GO_ZOOM = 16;
+const SEARCH_GO_ZOOM = 16;
 // 地点選択（現在地点と同じなら正面合わせのみ、違えば天気取得）
 function selectFav(lat, lon, name) {
   state.summitElev = null;      // お気に入りは標高を持たない。DEMに任せる
@@ -14490,7 +14496,8 @@ function renderAreaPanel() {
 
 /* ------ 地名検索（Nominatim） ------ */
 // 地図上に選択マーカーを移動し、地点を確定して天気取得
-function pickMapPoint(lat, lon, name, elev) {
+// zoom … 寄る倍率（検索の結果は SEARCH_GO_ZOOM）。省くと 11（百名山の△。山域を見ている途中なので寄せない）
+function pickMapPoint(lat, lon, name, elev, zoom) {
   state.lat = lat;
   state.lon = lon;
   state.locationName = name;
@@ -14499,7 +14506,8 @@ function pickMapPoint(lat, lon, name, elev) {
   releaseFollow();                   // 選んだ地点から現在地へ引き戻されないように
   setPickedName(name);
   document.getElementById('map-results').innerHTML = '';   // 選んだら候補は畳む
-  mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : 11, 11));
+  const goZoom = zoom || 11;
+  mapFlyTo(lat, lon, Math.max(leafletMap ? leafletMap.getZoom() : goZoom, goZoom));
   fetchWeather(lat, lon);            // 地図は開いたまま。閉じるのは利用者の操作で
 }
 
@@ -14589,6 +14597,15 @@ function paintCompass() {
    地図のタップでピンを立てないようにした代わりに、**現在地を選ぶのはこのボタンの役目**。
    ボタンを押すのは意思のある操作なので、長押しの決まりとは矛盾しない。 */
 let locateMode = 'off';
+let locateZoomPending = false;    // 追跡に入ったが現在地がまだ無い。最初の測位で LOCATE_GO_ZOOM まで寄る（v4.186.0）
+let locateFlyUntil = 0;           // 寄っている最中（この時刻まで）は、測位が来ても panTo しない（寄る動きを途中で止めない）
+const LOCATE_FLY_S = 0.8;         // 寄る動きの長さ（mapFlyTo と同じ）
+// 追跡の地図を現在地へ寄せる。⚠ 選択地点のピンは動かさない（mapFlyTo はピンも動かすので使わない）
+function locateFlyToMe() {
+  if (!myPos || !leafletMap) return;
+  locateFlyUntil = performance.now() + LOCATE_FLY_S * 1000 + 100;
+  leafletMap.flyTo([myPos.lat, myPos.lon], Math.max(leafletMap.getZoom(), LOCATE_GO_ZOOM), { duration: LOCATE_FLY_S });
+}
 
 function cycleLocate() {
   if (locateMode === 'off') setLocateMode('once');
@@ -14600,13 +14617,16 @@ function setLocateMode(mode) {
   if (mode === 'off') { stopTracking(); return; }
   locateMode = mode;
   mapFollow = (mode === 'follow');
+  locateZoomPending = false;
   pinPickedByUser = false;        // 現在地に戻ってきたので、前に選んだピンは引っ込める
   updatePinVisibility();
   if (geoWatchId == null) startTracking(mapFollow);
   if (mode === 'once') {
     fetchGPS({ keepMap: true });          // 現在地へ寄って、その地点を選ぶ
   } else if (myPos && leafletMap) {
-    mapFlyTo(myPos.lat, myPos.lon, Math.max(leafletMap.getZoom(), 13));
+    locateFlyToMe();
+  } else {
+    locateZoomPending = true;             // まだ現在地が分からない（ヘディングアップから直に入った）：最初の測位で寄る
   }
   updateMapToolButtons();
 }
@@ -14635,6 +14655,7 @@ function releaseFollow() {
      何を選んだのか分かるよう、追跡中でもピンを出し直す。 */
   pinPickedByUser = true;
   updatePinVisibility();
+  locateZoomPending = false;      // 自分で地点を選んだ：あとから現在地へ寄らない
   if (!mapFollow && locateMode !== 'follow') return;
   mapFollow = false;
   if (locateMode === 'follow') locateMode = 'once';
@@ -14647,6 +14668,7 @@ function stopTracking() {
   geoWatchId = null;
   mapFollow = false;
   locateMode = 'off';
+  locateZoomPending = false;
   setHeadingUp(false);            // 向きだけ残しても意味がないので一緒に戻す
   if (meMarker) { leafletMap.removeLayer(meMarker); meMarker = null; }
   if (meCircle) { leafletMap.removeLayer(meCircle); meCircle = null; }
@@ -14664,7 +14686,11 @@ function onGeoUpdate(pos) {
   if (!headingHandler && typeof c.heading === 'number' && !isNaN(c.heading)) setHeading(c.heading);
   drawMe();
   updateMeSpotlight();
-  if (mapFollow && leafletMap) leafletMap.panTo([myPos.lat, myPos.lon], { animate: true, duration: 0.5 });
+  if (mapFollow && leafletMap) {
+    // 追跡に入って最初の測位：ナビの縮尺まで寄る（すでに拡大していれば縮めない）。以後は倍率を変えずに追う
+    if (locateZoomPending) { locateZoomPending = false; locateFlyToMe(); }
+    else if (performance.now() >= locateFlyUntil) leafletMap.panTo([myPos.lat, myPos.lon], { animate: true, duration: 0.5 });
+  }
 }
 
 function drawMe() {
@@ -15288,7 +15314,7 @@ function renderMapResults() {
        DEMは `state.demElevation` に入って自動で使われる（`docs/spec/judge.md`）。 */
     el.addEventListener('click', () => {
       addSearchHist(name, lat, lon, item._elev);   // 選んだ地点だけを残す（検索しただけでは残さない）
-      pickMapPoint(lat, lon, name);
+      pickMapPoint(lat, lon, name, undefined, SEARCH_GO_ZOOM);
     });
     results.appendChild(el);
   }
@@ -15437,8 +15463,8 @@ async function doMapSearch() {
 
 /* 座標の入力で移る（v4.158.0）。長押しのピンと同じ扱い（標高は DEM・地点名は逆ジオコーディング）。
    ⚠ 長押しとちがい**検索として扱い、地名の履歴に残す**（印 coord。履歴から押しても同じ動きになる）
-   ⚠ ズームは打った地点が見える細かさまで寄せる（地名を選ぶときの 11 より細かく） */
-const COORD_GO_ZOOM = 14;
+   ⚠ ズームは打った地点が見える細かさまで寄せる（検索の結果と同じ z16・v4.186.0。それまでは 14） */
+const COORD_GO_ZOOM = 16;
 const COORD_OUT_MSG = '日本の範囲外の座標です（緯度20〜46・経度122〜154）';
 function goCoordPoint(lat, lon) {
   addSearchHist(`${lat.toFixed(5)}, ${lon.toFixed(5)}`, lat, lon, undefined, { coord: true });
@@ -15579,7 +15605,7 @@ function renderSearchHist() {
     el.addEventListener('click', () => {
       if (h.coord) { goCoordPoint(h.lat, h.lon); return; }   // 打ったときと同じ動き（先頭へ移すのも中で行う）
       addSearchHist(h.name, h.lat, h.lon, h.elev);   // 使ったものを先頭へ
-      pickMapPoint(h.lat, h.lon, h.name);
+      pickMapPoint(h.lat, h.lon, h.name, undefined, SEARCH_GO_ZOOM);
     });
     const del = document.createElement('button');
     del.type = 'button';
@@ -15831,7 +15857,7 @@ function mtnDisplayName(p) {
 // 選んで確定：山の履歴に残し、公称の標高を渡して飛ぶ（ADR-0006。△と同じ扱い）
 function pickMtn(p) {
   addMtnHist(p.id);
-  pickMapPoint(p.lat, p.lon, p.name, p.elevation);
+  pickMapPoint(p.lat, p.lon, p.name, p.elevation, SEARCH_GO_ZOOM);
 }
 
 /* ------ 画面 ------

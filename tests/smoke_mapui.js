@@ -1598,6 +1598,55 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     '3回目で解除される（マーカーも消える）', locBack);
   ok(locBack.pinShown, '追跡をやめたら選択地点のピンが戻る', locBack.pinShown);
 
+  /* --- 現在地で寄る倍率（v4.186.0）。それまでは 12／13 で、z10 で開いた地図から押しても広域のままだった（利用者の報告） --- */
+  const locZoom = await page.evaluate(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const keep = { c: leafletMap.getCenter(), z: leafletMap.getZoom() };
+    const out = { go: LOCATE_GO_ZOOM };
+    // 1回目（現在地へ）：z10 から押しても寄る
+    leafletMap.setView([36.2, 137.9], 10, { animate: false });
+    setLocateMode('once'); await wait(1600);
+    out.once = leafletMap.getZoom();
+    // 追跡へ：引いてあっても寄る。⚠ 選択地点のピンは動かさない
+    leafletMap.setZoom(12, { animate: false });
+    const pin0 = leafletMarker.getLatLng();
+    setLocateMode('follow'); await wait(1400);
+    out.follow = leafletMap.getZoom();
+    out.pinKept = leafletMarker.getLatLng().equals(pin0);
+    // 追跡中に自分で引いたら、次の測位では寄り直さない（倍率を変えずに追う）
+    leafletMap.setZoom(13, { animate: false });
+    onGeoUpdate({ coords: { latitude: 36.57, longitude: 137.65, accuracy: 25 } }); await wait(800);
+    out.noRezoom = leafletMap.getZoom();
+    stopTracking();
+    // 現在地がまだ無いまま追跡に入る（ヘディングアップから直に入ったとき）：最初の測位で寄る
+    leafletMap.setView([36.2, 137.9], 11, { animate: false });
+    setLocateMode('follow');
+    out.pending = locateZoomPending; await wait(1800);
+    out.first = leafletMap.getZoom();
+    out.pendingAfter = locateZoomPending;
+    stopTracking();
+    // すでに拡大していれば縮めない
+    leafletMap.setView([36.2, 137.9], 17, { animate: false });
+    setLocateMode('once'); await wait(1600);
+    out.keep17 = leafletMap.getZoom();
+    stopTracking();
+    // 百名山の△を地図で押したときは寄せない（山域を見ている途中の操作）
+    leafletMap.setView(keep.c, 10, { animate: false });
+    const calls = []; leafletMap.flyTo = function (ll, z) { calls.push(z); return this; };
+    pickMapPoint(state.lat, state.lon, state.locationName, state.summitElev);
+    delete leafletMap.flyTo;
+    out.tri = calls[0];
+    leafletMap.setView(keep.c, keep.z, { animate: false });
+    return out;
+  });
+  ok(locZoom.go === 16 && locZoom.once === 16, '★★現在地ボタン（1回目）で z16 まで寄る', locZoom);
+  ok(locZoom.follow === 16, '★★追跡に切り替えても z16 まで寄る', locZoom);
+  ok(locZoom.pinKept, '★追跡で寄るとき、選択地点のピンは動かさない', locZoom);
+  ok(locZoom.noRezoom === 13, '★追跡中に自分で引いた倍率は、次の測位で戻さない', locZoom);
+  ok(locZoom.pending === true && locZoom.first === 16 && locZoom.pendingAfter === false, '★★現在地がまだ無いまま追跡に入っても、最初の測位で z16 まで寄る', locZoom);
+  ok(locZoom.keep17 === 17, '★すでに拡大していれば縮めない', locZoom);
+  ok(locZoom.tri === 11, '★百名山の△を押したときは寄せない（11 のまま）', locZoom);
+
   // 以降のヘディングアップの検査のため、追跡に戻しておく
   await page.click('#btn-locate');
   await page.waitForTimeout(700);

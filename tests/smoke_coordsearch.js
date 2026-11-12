@@ -336,6 +336,16 @@ const LAT = 36.7380, LON = 139.4950;   // 日光付近を見ている
   ok(!st.html.includes('古い候補の地名') && st.items.length === 0 && Math.abs(st.lat - 33.082187) < 1e-5,
     '★★遅れて届いた地名検索の結果を、座標へ移った後に使わない（通し番号で捨てる）', st);
 
+  /* ---------- 7. 座標で移るときも z16 まで寄る（v4.186.0。それまでは 14） ---------- */
+  const cz = await page.evaluate(() => {
+    leafletMap.setView([36.2, 137.9], 10, { animate: false });
+    const calls = []; leafletMap.flyTo = function (ll, z) { calls.push(z); return this; };   // 動かさずに倍率だけ見る
+    goCoordPoint(35.3606, 138.7274);
+    delete leafletMap.flyTo;
+    return { calls, go: COORD_GO_ZOOM };
+  });
+  ok(cz.go === 16 && cz.calls[0] === 16, '★座標で移ると z16 まで寄る', cz);
+
   ok(errors.length === 0, 'ページ内で例外が出ていない', errors);
 
   await browser.close();

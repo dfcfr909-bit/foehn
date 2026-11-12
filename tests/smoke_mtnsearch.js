@@ -403,6 +403,19 @@ const NOMINATIM = {
   }
   if (process.env.MTN_SHOT) await page.screenshot({ path: process.env.MTN_SHOT }).catch(() => {});   // 目視用（任意）
 
+  /* --- 選んだら SEARCH_GO_ZOOM まで寄る（v4.186.0。それまでは 11 で、z10 で開いた地図では広域のままだった） --- */
+  const mz = await page.evaluate(() => {
+    leafletMap.setView([36.2, 137.9], 10, { animate: false });
+    const calls = []; leafletMap.flyTo = function (ll, z) { calls.push(z); return this; };   // 動かさずに倍率だけ見る
+    pickMtn(mtnIndex[0]);
+    leafletMap.setZoom(17, { animate: false });
+    pickMtn(mtnIndex[0]);
+    delete leafletMap.flyTo;
+    return { calls, go: SEARCH_GO_ZOOM };
+  });
+  ok(mz.go === 16 && mz.calls[0] === 16, '★手元の山を選ぶと z16 まで寄る', mz);
+  ok(mz.calls[1] === 17, '★すでに拡大していれば縮めない', mz);
+
   ok(errors.length === 0, 'ページ内で例外が出ていない', errors);
   await browser.close();
   if (fails.length) {

@@ -211,6 +211,25 @@ const NOMINATIM = {
   await page.evaluate(() => localStorage.setItem('sotoki_search_hist', '{壊れ'));
   ok(await page.evaluate(() => loadSearchHist().length === 0), 'JSONが壊れていても落ちない');
 
+  /* --- 検索の結果・履歴から選んだら SEARCH_GO_ZOOM まで寄る（v4.186.0。それまでは 11） --- */
+  await page.evaluate(async () => {
+    localStorage.removeItem('sotoki_search_hist');
+    leafletMap.setView([36.2, 137.9], 10, { animate: false });
+    window.__fly = [];
+    leafletMap.flyTo = function (ll, z) { window.__fly.push(z); return this; };   // 動かさずに倍率だけ見る
+    document.getElementById('map-search-input').value = '月山';
+    await doMapSearch();
+    document.querySelector('#place-results .map-result-item').click();
+  });
+  await focusEmpty();
+  const sz = await page.evaluate(() => {
+    document.querySelector('#map-results .map-hist-row .map-result-item').click();
+    delete leafletMap.flyTo;
+    return { calls: window.__fly, go: SEARCH_GO_ZOOM };
+  });
+  ok(sz.go === 16 && sz.calls[0] === 16, '★検索の結果を選ぶと z16 まで寄る', sz);
+  ok(sz.calls[1] === 16, '★履歴から選んでも z16 まで寄る', sz);
+
   ok(!errors.length, 'ページ内で例外が出ていない', errors);
   await browser.close();
 
