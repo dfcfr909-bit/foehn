@@ -45,11 +45,17 @@ esac
 # ⚠ git だけでは見分けられない。squash マージ済みのブランチが88本残っていて、
 #    「main に無い中身があるか」を調べると85本が該当と出た（2026-11-12 に試した）。
 # ⚠ 取れなかったときも黙らない。「何も出ない」を「何も開いていない」と読ませない。
-JQ_PRS='.items[] | [(.number|tostring), (if .draft then "draft" else "ready" end), (.updated_at | fromdateiso8601 + 32400 | strftime("%Y-%m-%d %H:%M")), ([.labels[].name] | join(",")), .title[0:70]] | join("\u001f")'
-# timeout の無い環境（素の macOS など）では、付けずに走らせる（付けると必ず失敗して「取得できず」になる）
-TO=""; command -v timeout >/dev/null 2>&1 && TO="timeout 15"
+JQ_ROW='[(.number|tostring), (if .draft then "draft" else "ready" end), (.updated_at | fromdateiso8601 + 32400 | strftime("%Y-%m-%d %H:%M")), ([.labels[].name] | join(",")), .title[0:70]] | join("\u001f")'
+# timeout の無い環境（素の macOS など）では、付けずに走らせる（付けると必ず失敗する）
+run_to() { local sec=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$sec" "$@"; else "$@"; fi; }
 PR_MAX=100
-if prs=$($TO gh api -X GET search/issues -f q="repo:${EXPECT_REMOTE} is:pr is:open" -f per_page=${PR_MAX} --jq "$JQ_PRS" 2>/dev/null); then
+# まず PR の一覧そのものを引く。使えない環境（検索しか通らない所がある）では検索で引く。
+# ⚠ 検索は索引なので、出したばかりの PR が載るまで少し遅れることがある
+fetch_prs() {
+  run_to 15 gh api -X GET "repos/${EXPECT_REMOTE}/pulls" -f state=open -f per_page=${PR_MAX} --jq ".[] | ${JQ_ROW}" 2>/dev/null && return 0
+  run_to 15 gh api -X GET search/issues -f q="repo:${EXPECT_REMOTE} is:pr is:open" -f per_page=${PR_MAX} --jq ".items[] | ${JQ_ROW}" 2>/dev/null
+}
+if prs=$(fetch_prs); then
   if [ -z "$prs" ]; then
     echo "【開いている PR】なし"
   else
@@ -85,7 +91,7 @@ fi
 
 # 取得できなくても致命的ではないので失敗は握りつぶす
 # （SESSION_HOOK_SKIP_FETCH は検査用。tests/smoke_sessionhook.mjs が通信なしで走らせる）
-[ -n "${SESSION_HOOK_SKIP_FETCH:-}" ] || timeout 20 git fetch --quiet origin 2>/dev/null
+[ -n "${SESSION_HOOK_SKIP_FETCH:-}" ] || run_to 20 git fetch --quiet origin 2>/dev/null
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
 version=$(grep -o 'id="app-version">v[0-9.]*' sotoki_v4.html 2>/dev/null | head -1 | sed 's/.*>//')

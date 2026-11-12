@@ -20,14 +20,17 @@ const ok = (c, label, extra) => { if (!c) fails.push(label + (extra !== undefine
 const US = '\x1f';
 const row = (num, state, updated, labels, title) => [num, state, updated, labels, title].join(US);
 
-/** 偽の gh を置いてフックを走らせる。lines=null なら gh は失敗する。 */
-function run(lines) {
+/** 偽の gh を置いてフックを走らせる。lines=null なら gh は失敗する。
+ *  pullsFail なら、PR の一覧（repos/…/pulls）だけ失敗させて検索へ落とす。 */
+function run(lines, { pullsFail = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hook-'));
   const out = path.join(dir, 'out.txt');
   if (lines) fs.writeFileSync(out, lines.join('\n') + (lines.length ? '\n' : ''));
   const args = path.join(dir, 'args.txt');
   fs.writeFileSync(path.join(dir, 'gh'),
-    `#!/bin/bash\nprintf '%s\\n' "$@" > "${args}"\n` + (lines ? `cat "${out}"\n` : 'exit 1\n'), { mode: 0o755 });
+    `#!/bin/bash\nprintf '%s\\n' "$@" >> "${args}"\n`
+    + (pullsFail ? 'case "$*" in *"/pulls"*) exit 1 ;; esac\n' : '')
+    + (lines ? `cat "${out}"\n` : 'exit 1\n'), { mode: 0o755 });
   const r = spawnSync('bash', [HOOK], {
     cwd: ROOT, encoding: 'utf8',
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, CLAUDE_PROJECT_DIR: ROOT, SESSION_HOOK_SKIP_FETCH: '1' },
@@ -50,7 +53,13 @@ ok(/#901 draft・最終更新 2026-11-08 15:08 JST・feat: 甲の機能/.test(a.
   '★ラベルの無い PR：番号・状態・日時・題の順（題がラベルの欄に入らない）', a.text);
 ok(/#902 ready・最終更新 2026-11-12 08:05 JST・\[relief,parked\]・relief: 乙の試作/.test(a.text), 'ラベルは [ ] で出る', a.text);
 ok(!/返事待ち/.test(a.text), '返事待ちが無ければ、返事待ちと言わない', a.text);
-ok(/is:pr is:open/.test(a.called) && /dfcfr909-bit\/foehn/.test(a.called), '★このリポジトリの開いている PR を引いている', a.called);
+ok(/repos\/dfcfr909-bit\/foehn\/pulls/.test(a.called) && /state=open/.test(a.called), '★このリポジトリの開いている PR を引いている', a.called);
+ok(!/search\/issues/.test(a.called), '一覧が取れたら検索は叩かない', a.called);
+
+/* --- 場面1b: 一覧が引けない環境では、検索で引く --- */
+const a2 = run([row('901', 'draft', '2026-11-08 15:08', '', 'feat: 甲の機能')], { pullsFail: true });
+ok(/#901 draft/.test(a2.text) && !/取得できず/.test(a2.text), '★★一覧が失敗しても、検索で取れれば出す', a2.text);
+ok(/search\/issues/.test(a2.called) && /is:pr is:open/.test(a2.called), '検索は開いている PR に絞っている', a2.called);
 
 /* --- 場面2: needs-decision の PR は「返事待ち」。新しい作業より先に出せと言う --- */
 const b = run([
