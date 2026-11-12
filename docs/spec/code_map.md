@@ -604,7 +604,7 @@ Google マップを下地にした場合の費用の当たりをつけるため�
 
 | 関数 | 役割 | 目安行 |
 |---|---|---|
-| `pickMapPoint(lat, lon, name)` | **名前つきの地点確定**（検索結果・百名山の△）。`mapFlyTo` で飛ぶ | 約 6002 |
+| `pickMapPoint(lat, lon, name, elev, zoom)` | **名前つきの地点確定**（検索結果・百名山の△）。`mapFlyTo` で飛ぶ。`zoom` は検索の結果が `SEARCH_GO_ZOOM`(16) を渡す。省くと 11（△・v4.186.0） | 約 6002 |
 | `pickPinPoint(lat, lng)` | **長押しのピン**。逆ジオコーディングで名前を引く。⚠ 上と混ぜない | 約 6481 |
 | `setPickedName(name)` | 地点名の表示 | 約 5901 |
 | `mapFlyTo(lat, lon, zoom)` | `flyTo` 0.8s（`setView` の瞬間移動は使わない） | 約 5908 |
@@ -622,7 +622,7 @@ Google マップを下地にした場合の費用の当たりをつけるため�
 | 関数 | 役割 | 目安行 |
 |---|---|---|
 | `cycleLocate()` | **3段階（off → once → follow）を回す** | 約 5986 |
-| `setLocateMode(mode)` | モードの適用 | 約 5992 |
+| `setLocateMode(mode)` / `locateFlyToMe()` / `LOCATE_GO_ZOOM` | モードの適用。現在地・追跡に入った時に z16 まで寄る（追跡はピンを動かさない。現在地がまだ無ければ最初の測位で・`locateZoomPending`・v4.186.0） | 約 5992 |
 | `startTracking(follow)` / `stopTracking()` | `watchPosition` の開始・停止 | 約 6007 / 6038 |
 | `onGeoUpdate(pos)` | GPS更新 | 約 6053 |
 | `releaseFollow()` | **意思を持って地点を選んだら追従をやめる**（follow→once） | 約 6026 |
