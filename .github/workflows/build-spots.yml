@@ -24,7 +24,9 @@ jobs:
   build:
     name: 作る
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 初回（2026-11-12・候補の上限60点）は18分。上限を200点に上げたので、ふだんは25分前後の見込み（未実測）。
+    # ⚠ Overpass の再試行が多くの地点で続くと、この上限を超えうる（そのときは時間をおいて回し直す）
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
