@@ -5,6 +5,8 @@
  *
  *   HTML（ナビゲーション）… ネットワーク優先。取れたら必ずそれを表示し、同時にキャッシュを更新。
  *                            通信できないときだけキャッシュへフォールバックする
+ *   入口（./ と index.html）… 控えを即返して裏で更新（v4.187.0）。中身は「本体へ移れ」だけなので古くても害が無い。
+ *                            ⚠ 本体（sotoki_v4.html）は上のネットワーク優先のまま
  *   同梱の静的ファイル      … キャッシュ優先＋裏で更新（stale-while-revalidate）
  *   地図タイル              … 別キャッシュにcache-firstで保存（訪問済みのみ・LRUで上限管理）
  *   保存した山域のタイル    … さらに別の箱（AREA_CACHE）。自動では消さない。タイルはまずここを引く（#244 段2）
@@ -67,6 +69,22 @@ self.addEventListener('activate', e => {
 // このオリジンの同梱ファイルかどうか
 function isAppAsset(url) {
   return url.origin === self.location.origin;
+}
+
+/* 入口（start_url の ./ と index.html）かどうか（v4.187.0・#227）。
+   ホーム画面の PWA は ./ から入り、index.html が sotoki_v4.html へ移すだけ。ここをネットワーク優先で待つと、
+   起動のたびに HTML の取得が2本直列になる（弱電波では入口の往復だけで待たされる）。
+   入口だけは控えを即返し、裏で取り直す。
+   ⚠ **本体（sotoki_v4.html）には広げない。** 本体をネットワーク優先にしているのは「古い画面を出さない」ため（利用者の決定）
+   ⚠ この SW の置き場（/foehn/ などのサブパス）から数える。読めなければ空＝今までどおりネットワーク優先 */
+const ENTRY_PATHS = (() => {
+  try {
+    const base = new URL('./', self.location.href).pathname;
+    return [base, base + 'index.html'];
+  } catch (err) { return []; }
+})();
+function isEntry(url) {
+  return isAppAsset(url) && ENTRY_PATHS.includes(url.pathname);
 }
 
 /* ============================================================
@@ -279,6 +297,28 @@ self.addEventListener('fetch', e => {
 
   // 気象API・地名検索・AI概況は常にネットワーク（キャッシュしない）
   if (!isAppAsset(url) || url.pathname.endsWith('/outlook.json')) return;
+
+  // 入口（./ と index.html）は控えを即返し、裏で取り直す（isEntry の注記）
+  if (isEntry(url)) {
+    e.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      // ./ でも index.html でも中身は同じ。?付きで開かれても同じものを返す
+      // ⚠ リダイレクトを経た応答は使わない・控えない（ナビゲーションに返すとブラウザが拒む＝起動できなくなる）
+      const usable = r => (r && !r.redirected ? r : null);
+      const cached = usable(await cache.match(req, { ignoreSearch: true })) ||
+                     usable(await cache.match('./index.html')) || usable(await cache.match('./'));
+      // ⚠ res.ok を見てから控える（404や500を焼き付けない）
+      const refresh = fetch(req).then(res => {
+        if (res && res.ok && !res.redirected) cache.put(req, res.clone());
+        return res;
+      }).catch(() => null);
+      if (cached) { e.waitUntil(refresh); return cached; }
+      // 控えが無い（初回）：今までどおり通信で取る。取れなければ本体の控えへ
+      return (await refresh) || (await caches.match('./sotoki_v4.html')) ||
+             new Response('オフラインです', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    })());
+    return;
+  }
 
   // HTMLはネットワーク優先。更新が即座に反映されるようにする
   if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
