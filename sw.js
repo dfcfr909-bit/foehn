@@ -308,13 +308,14 @@ self.addEventListener('fetch', e => {
       const cached = usable(await cache.match(req, { ignoreSearch: true })) ||
                      usable(await cache.match('./index.html')) || usable(await cache.match('./'));
       // ⚠ res.ok を見てから控える（404や500を焼き付けない）
-      const refresh = fetch(req).then(res => {
-        if (res && res.ok && !res.redirected) cache.put(req, res.clone());
+      // ⚠ 控えに入れ終わるまでを1つの仕事にする（waitUntil が書き込みの完了まで SW を生かす）。書けなくても応答は返す
+      const refresh = fetch(req).then(async res => {
+        if (res && res.ok && !res.redirected) await cache.put(req, res.clone()).catch(() => {});
         return res;
       }).catch(() => null);
       if (cached) { e.waitUntil(refresh); return cached; }
-      // 控えが無い（初回）：今までどおり通信で取る。取れなければ本体の控えへ
-      return (await refresh) || (await caches.match('./sotoki_v4.html')) ||
+      // 控えが無い（初回）：今までどおり通信で取る。取れなければ（リダイレクトを経た応答も）本体の控えへ
+      return usable(await refresh) || (await caches.match('./sotoki_v4.html')) ||
              new Response('オフラインです', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     })());
     return;

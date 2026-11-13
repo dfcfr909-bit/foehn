@@ -123,6 +123,26 @@ const SHELL = 'sotoki-v2';
     ok(((await cache.match(`${ORIGIN}/`)) || {}).body === 'リダイレクトの控え', '★リダイレクトを経た応答は控えない（上書きしていない）');
   }
 
+  {
+    // 控えが無い初回の通信がリダイレクトを経た応答だった：返さず、本体の控えへ
+    const redir = body => Object.assign(makeResponse(body), { redirected: true, clone() { return redir(body); } });
+    const sw = loadSw({ fetchImpl: async () => redir('リダイレクト後の入口') });
+    const cache = await sw.caches.open(SHELL);
+    await cache.put('./sotoki_v4.html', makeResponse('本体の控え'));
+    const res = await fire(sw, `${ORIGIN}/`).responded; await settle();
+    ok(res && res.body === '本体の控え', '★初回の通信がリダイレクトを経た応答なら返さない（本体の控えへ）', res && res.body);
+    ok((await cache.match(`${ORIGIN}/`)) === undefined, 'リダイレクトを経た応答は初回でも控えない');
+  }
+  {
+    // 控えに書けない端末（容量切れなど）でも、応答は返す
+    const sw = loadSw({ fetchImpl: async () => makeResponse('通信の入口') });
+    const cache = await sw.caches.open(SHELL);
+    const realOpen = sw.caches.open;
+    sw.caches.open = async name => { const c = await realOpen(name); return { ...c, put: async () => { throw new Error('書けない'); } }; };
+    const res = await fire(sw, `${ORIGIN}/`).responded; await settle();
+    ok(res && res.body === '通信の入口', '控えに書けなくても応答は返す', res && res.body);
+  }
+
   /* ---------- 3. 控えが無い初回：通信で取り、控える。圏外なら本体の控え → 503 ---------- */
   {
     const sw = loadSw({ fetchImpl: async () => makeResponse('通信の入口') });
