@@ -21,19 +21,16 @@ const settle = async (n = 30) => { for (let i = 0; i < n; i++) await tick(); };
 const ORIGIN = 'https://sotoki.test';
 function makeCaches(base) {
   const store = new Map();
-  // 相対の鍵（'./index.html'）は SW の置き場から解く（本物の Cache と同じ）。?以降は ignoreSearch のときだけ落とす
-  const key = (k, opt) => {
-    const u = new URL(typeof k === 'string' ? k : k.url, ORIGIN + base);
-    if (opt && opt.ignoreSearch) u.search = '';
-    return u.href;
-  };
+  // 相対の鍵（'./index.html'）は SW の置き場から解く（本物の Cache と同じ）。
+  // ⚠ ? は鍵の一部（本物と同じ）。sw.js が ? を落とした鍵にそろえていることを、この厳密さで見る
+  const key = k => new URL(typeof k === 'string' ? k : k.url, ORIGIN + base).href;
   const api = {
     _store: store,
     open: async name => {
       if (!store.has(name)) store.set(name, new Map());
       const m = store.get(name);
       return {
-        match: async (k, opt) => m.get(key(k, opt)) || undefined,
+        match: async k => m.get(key(k)) || undefined,
         put: async (k, v) => { m.set(key(k), v); },
         delete: async k => m.delete(key(k)),
         add: async () => {},
@@ -89,15 +86,29 @@ const SHELL = 'sotoki-v2';
       ok(hits === 1 && f.waited.length === 1, `入口（${base}${entry}）は裏で取り直す`, { hits, waited: f.waited.length });
       release();
       await Promise.allSettled(f.waited); await settle();
-      // 取り直したものは、開いた URL の鍵で控える（?付きはそのまま）。次の起動は新しい方が返る
-      if (entry !== '?source=pwa') {
-        const again = await fire(loadSwWith(sw), url).responded;
-        ok(again && again.body === '新しい入口', `★入口（${base}${entry}）は次の起動で新しい方を返す`, again && again.body);
-      }
+      // 取り直したものは ? を落とした鍵で控える。次の起動（同じ SW・同じ控え）は新しい方が返る
+      const again = await fire(sw, url).responded;
+      ok(again && again.body === '新しい入口', `★入口（${base}${entry}）は次の起動で新しい方を返す`, again && again.body);
+      const keys = [...sw.caches._store.get(sw.get('CACHE_NAME')).keys()];
+      ok(keys.every(k => !k.includes('?')), `入口（${base}${entry}）の控えを ? の種類ごとに増やさない`, keys);
     }
   }
-  // 同じ SW（同じ控え）で、通信が落ちている状態を作る
-  function loadSwWith(sw) { sw.ctxFetch = null; return { handlers: sw.handlers, caches: sw.caches, get: sw.get }; }
+
+  /* ---------- 1b. ⚠⚠ ?付きの古い控えが残っていても、返す控えと取り直す控えは同じ鍵 ---------- */
+  {
+    // 今までの HTML の分岐は ?付きの鍵のまま控えていた（CACHE_VERSION は据え置きなので残っている）
+    const sw = loadSw({ base: '/foehn/', fetchImpl: async () => makeResponse('新しい入口') });
+    const cache = await sw.caches.open(sw.get('CACHE_NAME'));
+    await cache.put(`${ORIGIN}/foehn/?old=1`, makeResponse('?付きの古い控え'));
+    await cache.put(`${ORIGIN}/foehn/`, makeResponse('控えの入口'));
+    const f = fire(sw, `${ORIGIN}/foehn/`);
+    const res = await f.responded; await Promise.allSettled(f.waited); await settle();
+    ok(res && res.body === '控えの入口', '★★?付きの古い控えを、素の入口に返さない', res && res.body);
+    // ?付きで開く：返るのは素の鍵の控え（さっき取り直した新しい方）。取り直しも素の鍵に入る
+    const g = fire(sw, `${ORIGIN}/foehn/?old=1`);
+    const res2 = await g.responded; await Promise.allSettled(g.waited); await settle();
+    ok(res2 && res2.body === '新しい入口', '★★?付きで開いても、取り直した新しい入口を返す（古い ?付きの控えを返し続けない）', res2 && res2.body);
+  }
 
   /* ---------- 2. エラー応答を控えに焼き付けない ---------- */
   {

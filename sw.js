@@ -302,15 +302,18 @@ self.addEventListener('fetch', e => {
   if (isEntry(url)) {
     e.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
-      // ./ でも index.html でも中身は同じ。?付きで開かれても同じものを返す
+      /* ./ でも index.html でも中身は同じ。?付きで開かれても同じものを返す。
+         ⚠ **引く鍵と入れる鍵を、? を落とした同じ鍵にそろえる。** ignoreSearch で引いて req のまま入れると、
+           ?付きの古い控えが先に当たり、取り直しは別の鍵に入って、古い入口を返し続ける（控えも ? の種類ごとに増える） */
+      const key = url.origin + url.pathname;
       // ⚠ リダイレクトを経た応答は使わない・控えない（ナビゲーションに返すとブラウザが拒む＝起動できなくなる）
       const usable = r => (r && !r.redirected ? r : null);
-      const cached = usable(await cache.match(req, { ignoreSearch: true })) ||
+      const cached = usable(await cache.match(key)) ||
                      usable(await cache.match('./index.html')) || usable(await cache.match('./'));
       // ⚠ res.ok を見てから控える（404や500を焼き付けない）
       // ⚠ 控えに入れ終わるまでを1つの仕事にする（waitUntil が書き込みの完了まで SW を生かす）。書けなくても応答は返す
       const refresh = fetch(req).then(async res => {
-        if (res && res.ok && !res.redirected) await cache.put(req, res.clone()).catch(() => {});
+        if (res && res.ok && !res.redirected) await cache.put(key, res.clone()).catch(() => {});
         return res;
       }).catch(() => null);
       if (cached) { e.waitUntil(refresh); return cached; }
