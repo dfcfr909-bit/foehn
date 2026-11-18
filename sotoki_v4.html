@@ -2526,13 +2526,14 @@ html, body {
 
 /* スマホの横向きのグラフ画面（v4.188.0）。⚠ この条件は JS の WIDE_GRAPH_MQ と同じ文字列にする（片方だけ変えると
    見た目と1時間の幅が食い違う）。iPad の横向き（高さ 500px 超）は対象外＝480px の柱のまま。
+   ⚠ pointer: coarse（指で触る端末）も条件に入れる。無いと PC の背の低い横長の窓でもボタン行が隠れ、地図を開く入口が無くなる
    ・全幅にし、凡例・ボタン行・円柱・AI全国概況を隠す（地点の切り替えと地図は縦向きで行う。利用者の選んだ案 A）
    ・パネルの高さは縦向きと同じ下限（computeChartHeights の 400px）のまま、グラフを縦に送る。
      4パネルを 260px に詰めると風・気圧の目盛りが重なった（試作）
    ・#app の中に inset:0 で置いた画面（お気に入り・ランキング・天気図・座標）は、今までどおり中央の 480px の柱に戻す。
      #app を広げたまま全幅にすると ✕ がノッチに潜る（v4.161.0 の注記）
    ・ノッチとホームバーの逃げ（ボタン行と円柱が持っていた下の逃げが無くなるので、時刻の帯に移す） */
-@media (orientation: landscape) and (max-height: 500px) {
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
   #app { max-width: none; }
   #legend, #footer, #fav-bar-slot, #ai-outlook { display: none !important; }
   #header { padding-left: calc(10px + var(--sa-left)); padding-right: calc(10px + var(--sa-right)); }
@@ -4997,7 +4998,7 @@ let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
 const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
 /* スマホの横向きのグラフ画面（v4.188.0）。⚠ スタイル末尾の @media と同じ文字列にする */
-const WIDE_GRAPH_MQ = '(orientation: landscape) and (max-height: 500px)';
+const WIDE_GRAPH_MQ = '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)';
 const HOURS_PER_SCREEN_WIDE = 48;   // 横向きの1画面（24 のままだと天気の記号・座布団が倍の大きさになる）
 function isWideGraph() {
   try { return window.matchMedia(WIDE_GRAPH_MQ).matches; } catch (e) { return false; }

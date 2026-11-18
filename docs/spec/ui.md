@@ -311,8 +311,8 @@ ADR-0010 で「格子点から自前で描く気圧配置」を外した代わ�
 
 ## スマホの横向き（v4.188.0）
 
-条件は `(orientation: landscape) and (max-height: 500px)`（CSS の `@media` と JS の `WIDE_GRAPH_MQ` で同じ文字列。`isWideGraph()`）。
-**iPad の横向き（高さ 500px 超）は対象外**で、480px の柱のまま。
+条件は `(orientation: landscape) and (max-height: 500px) and (pointer: coarse)`（CSS の `@media` と JS の `WIDE_GRAPH_MQ` で同じ文字列。`isWideGraph()`）。
+**iPad の横向き（高さ 500px 超）と PC の窓（指で触らない）は対象外**で、480px の柱のまま。`pointer: coarse` が無いと、PC の背の低い横長の窓でもボタン行が隠れ、地図を開く入口が無くなる
 
 - グラフ画面（`#app`）を全幅にする。それまでは横向きでも 480px の柱のまま中央に置かれ、844×390 ではチャートが約 130px に潰れていた
 - **凡例・ボタン行・円柱・AI全国概況を隠す**（利用者の選んだ案 A）。地点の切り替えと地図・お気に入り・ランキングは縦向きで行う。版数（`about.html` への入口）も凡例の中なので隠れる（ℹ️ は地図の右の列にある）

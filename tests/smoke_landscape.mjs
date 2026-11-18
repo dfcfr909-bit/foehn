@@ -7,7 +7,8 @@
  *    （v4.161.0：#app を広げると ✕ がノッチに潜る）。
  * ⚠ 1画面の時間は 48 時間（24 のままだと天気の記号・座布団が倍の大きさ）。
  * ⚠ 送ったあとも、選択情報の窓は見えている範囲に留める。
- * ⚠ iPad の横向き（高さ 500px 超）は今のまま。
+ * ⚠ iPad の横向き（高さ 500px 超）と PC の窓（指で触らない・pointer: fine）は今のまま。
+ *   headless の Chromium は hasTouch を付けると pointer: coarse になる。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,7 +57,9 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('dialog', d => d.dismiss().catch(() => {}));
-await page.route('**/*', route => {
+// ページの用意（偽の予報・同梱の部品・前回の地点）。PC の窓の検査でも使う
+async function prep(pg) {
+await pg.route('**/*', route => {
   const url = route.request().url();
   if (url === 'https://sotoki.test/') return route.fulfill({ contentType: 'text/html', body: HTML });
   if (url.includes('uPlot.iife.min.js')) return route.fulfill({ contentType: 'application/javascript', body: UPLOT_JS });
@@ -66,27 +69,51 @@ await page.route('**/*', route => {
   if (url.includes('api.open-meteo.com')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(fakeWeather()) });
   return route.fulfill({ status: 404, body: '' });
 });
-await page.addInitScript(() => {
+await pg.addInitScript(() => {
   localStorage.setItem('sotoki_last', JSON.stringify({ lat: 36.57, lon: 137.65, name: '立山・黒部' }));
 });
-await page.goto('https://sotoki.test/');
-await page.waitForFunction(() => typeof chartsReady !== 'undefined' && chartsReady, null, { timeout: 15000 });
-await page.waitForTimeout(500);
+await pg.goto('https://sotoki.test/');
+await pg.waitForFunction(() => typeof chartsReady !== 'undefined' && chartsReady, null, { timeout: 15000 });
+await pg.waitForTimeout(500);
+}
+await prep(page);
 
-const look = () => page.evaluate(() => {
+const lookFn = () => {
   const r = id => { const el = document.getElementById(id); const b = el.getBoundingClientRect(); return { w: Math.round(b.width), l: Math.round(b.left), h: Math.round(b.height) }; };
   const shown = id => getComputedStyle(document.getElementById(id)).display !== 'none';
   const outer = document.getElementById('charts-outer');
   return { app: r('app'), vw: innerWidth, wide: isWideGraph(), pph: pxPerHourVal, viewW,
     legend: shown('legend'), footer: shown('footer'), favbar: shown('fav-bar-slot'),
     outerH: outer.clientHeight, outerSH: outer.scrollHeight, st: outer.scrollTop, overflowY: getComputedStyle(outer).overflowY };
-});
+};
+const look = () => page.evaluate(lookFn);
 
 /* ---------- 1. 横向き（844×390） ---------- */
 let L = await look();
 ok(L.wide === true, '★横向き（高さ 500px 以下）を見分ける', L);
 ok(L.app.w === 844 && L.app.l === 0, '★★グラフ画面を全幅にする（480px の柱にしない）', L.app);
 ok(!L.legend && !L.footer && !L.favbar, '★★凡例・ボタン行・円柱を隠す', L);
+const outlookHidden = await page.evaluate(() => { const el = document.getElementById('ai-outlook'), prev = el.style.display;
+  el.style.display = 'block'; const d = getComputedStyle(el).display; el.style.display = prev; return d === 'none'; });
+ok(outlookHidden, '★横向きでは AI全国概況のカードも隠す（出ている日でも）');
+// ノッチとホームバーの逃げ（headless の env() は 0 なので差し替えて見る）
+const notch = await page.evaluate(async () => {
+  const root = document.documentElement;
+  root.style.setProperty('--sa-left', '47px'); root.style.setProperty('--sa-right', '47px'); root.style.setProperty('--sa-bottom', '21px');
+  await new Promise(r => setTimeout(r, 50));
+  const cs = id => getComputedStyle(document.getElementById(id));
+  const r = id => document.getElementById(id).getBoundingClientRect();
+  const out = { headerPL: parseFloat(cs('header').paddingLeft), headerPR: parseFloat(cs('header').paddingRight),
+    outerL: Math.round(r('charts-outer').left), outerR: Math.round(innerWidth - r('charts-outer').right),
+    timeL: Math.round(r('time-scroll').left), timeB: Math.round(innerHeight - r('time-scroll').bottom) };
+  root.style.removeProperty('--sa-left'); root.style.removeProperty('--sa-right'); root.style.removeProperty('--sa-bottom');
+  await new Promise(r => setTimeout(r, 50));
+  return out;
+});
+ok(notch.headerPL === 57 && notch.headerPR === 57, '★ヘッダーの左右はノッチを避ける', notch);
+ok(notch.outerL === 47 && notch.outerR === 47 && notch.timeL === 47, '★チャートと時刻の帯の左右はノッチを避ける', notch);
+ok(notch.timeB === 21, '★時刻の帯はホームバーを避ける（ボタン行と円柱が持っていた下の逃げ）', notch);
+await page.evaluate(() => { buildCharts(); layoutScrubber(); });
 ok(Math.abs(L.pph - (L.viewW - 68) / 48) < 0.01, '★1画面は 48 時間（記号を倍の大きさにしない）', { pph: L.pph, viewW: L.viewW });
 ok(L.overflowY === 'auto' && L.outerSH > L.outerH + 50, '★★グラフを縦に送れる（パネルは潰さない）', L);
 
@@ -157,6 +184,21 @@ const swipe = await page.evaluate(async () => {
 ok(swipe.afterStart === swipe.before, '★横向きは、指を置いただけでは時刻を選ばない', swipe);
 ok(swipe.afterVertical === swipe.before, '★★横向きで縦に払っても時刻は変えない（送るだけ）', swipe);
 ok(swipe.afterHorizontal !== swipe.before, '横向きでも横になぞれば時刻を選ぶ', swipe);
+// タップ（click）と時刻の帯でも選べる
+const tapBand = await page.evaluate(async () => {
+  const w = document.getElementById('charts-wrapper'), o = document.getElementById('charts-outer').getBoundingClientRect();
+  setSelectedIndex(100, false);
+  const before = state.sliderIndex;
+  w.dispatchEvent(new MouseEvent('click', { clientX: o.left + o.width * 0.85, clientY: o.top + 60, bubbles: true }));
+  const afterTap = state.sliderIndex;
+  const sc = document.getElementById('scrubber');
+  const left0 = sc.scrollLeft;
+  sc.scrollLeft = left0 + 400;
+  await new Promise(r => setTimeout(r, 600));
+  return { before, afterTap, afterBand: state.sliderIndex, moved: sc.scrollLeft - left0 };
+});
+ok(tapBand.afterTap !== tapBand.before, '★横向きでもタップで時刻を選ぶ', tapBand);
+ok(tapBand.moved > 0 && tapBand.afterBand !== tapBand.afterTap, '★横向きでも時刻の帯を送れば時刻が動く', tapBand);
 
 // 横向きで地図を開いて閉じる（円柱は隠れた器へ戻る）→ 縦へ戻したら円柱を測り直す
 await page.evaluate(async () => { openMap(); await new Promise(r => setTimeout(r, 400)); closeMap(); await new Promise(r => setTimeout(r, 300)); });
@@ -191,6 +233,19 @@ await page.setViewportSize({ width: 1180, height: 820 });
 await page.waitForTimeout(700);
 const T = await look();
 ok(T.wide === false && T.app.w === 480 && T.legend && T.footer, '★iPad の横向き（高さ 500px 超）は今のまま', T);
+
+/* ---------- 3b. PC の背の低い横長の窓（指で触らない）は今のまま ---------- */
+{
+  const pc = await browser.newContext({ viewport: { width: 844, height: 390 }, timezoneId: 'Asia/Tokyo' });
+  const pg = await pc.newPage();
+  pg.on('pageerror', e => errors.push('PC: ' + e.message));
+  await prep(pg);
+  const D = await pg.evaluate(lookFn);
+  ok(D.wide === false && D.app.w === 480 && D.legend && D.footer && D.favbar,
+    '★★PC の背の低い横長の窓（指で触らない）は今のまま（ボタン行を隠さない＝地図を開ける）', D);
+  ok(Math.abs(D.pph - (D.viewW - 68) / 24) < 0.01 && D.overflowY === 'hidden', 'PC の窓は 24 時間・縦に送らない', D);
+  await pc.close();
+}
 
 /* ---------- 4. もう一度横へ：元どおり ---------- */
 await page.setViewportSize({ width: 844, height: 390 });
