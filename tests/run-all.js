@@ -57,6 +57,7 @@ const TESTS = [
   ['smoke_radarcheck', 'レーダー実況との突き合わせ（食い違いを言う・範囲外を断言しない・読めないと言う）'],
   ['smoke_offline', '圏外の予報（控えを出す・古さと距離を出す・1日超は帯を変える・7日で切る・お気に入りの裏取り）'],
   ['smoke_pwa',    'PWA（manifest・アイコン・Service Worker）'],
+  ['smoke_swentry', 'Service Worker の入口（./ と index.html は控えを即返して裏で更新・本体はネットワーク優先のまま・エラーを焼き付けない・サブパスでも見分ける）'],
   ['smoke_version', '版数の照合（HTMLの上げ忘れ・打ち間違い・タグを打つ権限）'],
   ['smoke_workflows', 'ワークフロー共通（Nodeの版の一本化・写し違いの禁止・権限の明示）'],
   ['smoke_sessionhook', '起動時フック（開いている PR を毎回出す・needs-decision は返事待ち・取れなかったら黙らない・0件は「なし」）'],
