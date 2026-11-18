@@ -625,11 +625,11 @@ Google マップを下地にした場合の費用の当たりをつけるため�
 | `cycleLocate()` | **3段階（off → once → follow）を回す** | 約 5986 |
 | `setLocateMode(mode)` / `locateFlyToMe()` / `LOCATE_GO_ZOOM` | モードの適用。現在地・追跡に入った時に z16 まで寄る（追跡はピンを動かさない。現在地がまだ無ければ最初の測位で・`locateZoomPending`・v4.186.0） | 約 5992 |
 | `startTracking(follow)` / `stopTracking()` | `watchPosition` の開始・停止 | 約 6007 / 6038 |
-| `onGeoUpdate(pos)` | GPS更新 | 約 6053 |
+| `onGeoUpdate(pos)` / `gpsCourseUsable(c)` / `compassHeadingAllowed(now)` | GPS更新。動いている間（2.5 m/s 以上・向きが 0〜360）は GPS の進む向きでヘディングアップし、止まってから 8 秒は方位センサーを使わない（v4.189.0） | 約 6053 |
 | `releaseFollow()` | **意思を持って地点を選んだら追従をやめる**（follow→once） | 約 6026 |
 | `drawMe()` | 現在地マーカー（矢尻。半径 `ME_DOT_R`=14px） | 約 6063 |
 | `enableHeading()` | iOS の `requestPermission()` を操作の中で呼ぶ | 約 6089 |
-| `setHeading(deg)` | iOS=`webkitCompassHeading` / 他=360−alpha | 約 6108 |
+| `setHeading(deg)` | iOS=`webkitCompassHeading` / 他=360−alpha。仮の表示は `showOrientDiag`（出どころ・GPS の向きと速さ・傾き `screenTiltDeg`） | 約 6108 |
 | `applyMapRotation(deg)` | **`#map` をCSSで回す**（Leafletに回転機能は無い） | 約 6115 |
 | `toggleOrientation()` / `setHeadingUp(on)` | ノースアップ↔ヘディングアップ | 約 6127 / 6135 |
 | `patchRotatedInput(map)` | **回転中のタップ座標を逆回転で補正**（外すと誤爆する） | 約 6437 |

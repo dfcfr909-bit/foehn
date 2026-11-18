@@ -878,7 +878,7 @@ JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-0
   回転角は `window.orientation` と `screen.orientation.angle` の両方を読み、食い違えば画面の縦横（`innerWidth > innerHeight`）と合う方、
   どちらも合わなければ `window.orientation`（v4.183.1）。⚠ v4.183.0 の実機で、横向きのとき地図が横へ流れた（方位が 90° ずれた見え方）。
   回転角が 0 のまま返った見込みだが**未確認**。仮の表示 `#map-orient-diag`（横向きのヘディングアップ中だけ、2つの取り口・採用・方位）で確かめてから外す。足すのは `enableHeading` の handler だけ（GPS の進む向きには足さない）。
-  符号は W3C の定義（angle は反時計回り）どおり。**実機で確認済み**（2026-10-08・横向きのヘディングアップで北が上。`webkitCompassHeading` は画面の向きを補正していない）
+  符号は W3C の定義（angle は反時計回り）どおり。**実機で確認済み**（2026-10-08・横向きのヘディングアップで北が上。`webkitCompassHeading` は画面の向きを補正していない）。⚠ この確認は平らに持ったときの見込み。車載ホルダーに立てたときは約 90° ずれた（2026-11-19）→ 動いている間は GPS の進む向きを使う（下の「方位」）
 - ⚠ `@media (orientation: landscape)` は横長の画面すべてに当たる。PC のブラウザや iPad の横向きでも地図は全幅になる
 - 検査：`smoke_mapui`「5d-3. 横向き」（844×390・左右47px）と方位補正、`smoke_pwa`（`orientation` が `any`）
 
@@ -894,6 +894,11 @@ JMA モデルでの確認が済んでいない → `docs/decisions.md` 2026-10-0
 - 方位は iOS が `webkitCompassHeading`、他は `alpha`（360−alpha）。`setHeading(deg)`。
   **iOS は利用者の操作の中で `DeviceOrientationEvent.requestPermission()` が要る**
   （`enableHeading()`）。センサーが使えないときは GPS の `heading` で代用する
+- **動いている間は GPS の進む向きでヘディングアップする**（v4.189.0）。`coords.speed` が `HEADING_GPS_MIN_SPEED`（2.5 m/s）以上で、
+  `coords.heading` が 0〜360 の数のとき（null・NaN・負は採らない・`gpsCourseUsable`）。画面の回転角は足さない（進む向きは持ち方・傾きに関係しない）。
+  止まってから `HEADING_GPS_HOLD_MS`（8 秒）の間は GPS の向きを保ち、方位センサーを使わない。過ぎたら方位センサーに戻る
+  - 理由：車載ホルダーに立てて横向きにした iPhone で、方位センサー＋回転角だと地図が約 90° ずれて右から左へ流れた（2026-11-19 の実機。南へ曲がった後の生の方位が 206°＝進む向きに近く、立てた端末は上端ではなく裏の向きを返している見込み・未確認）
+  - ⚠ **止まって 8 秒を過ぎると方位センサーに戻るので、立てているときは停車中に向きが替わりうる。** 立てたときの方位センサーの扱い（回転角を足すか）は、仮の表示（出どころ・GPS の向きと速さ・傾き）で値を取ってから決める
 
 ## 現在地のまわりだけ雨雲を抜く
 
