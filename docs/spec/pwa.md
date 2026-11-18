@@ -10,7 +10,7 @@
 | `name` / `short_name` | `NAGI NAV` |
 | `start_url` / `scope` | `./`（**相対**。GitHub Pages のサブパス配信でも動く） |
 | `display` | `standalone` |
-| `orientation` | `any`（v4.161.0・#184。以前は `portrait`。横向きに対応したのは**地図だけ**で、グラフ・ランキング等は縦の割り付けのまま） |
+| `orientation` | `any`（v4.161.0・#184。以前は `portrait`。地図は v4.161.0、グラフ画面は v4.188.0 でスマホの横向きに対応。ランキング・お気に入り等は縦の割り付けのまま中央の 480px） |
 | `background_color` | `#f5f4f0` |
 | `theme_color` | `#ffffff` |
 | `icons` | 192 / 512（`purpose: any`）＋ maskable 512 |

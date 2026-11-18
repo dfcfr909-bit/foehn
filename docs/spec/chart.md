@@ -25,6 +25,7 @@ draw hook が canvas に直接書く。関数の在り処は `code_map.md`。
 | `SKY_TOP_PAD` | 58（46＋`MODEL_BAND_H`） | 気温パネル上部の余白（予報モデルの帯＋日付ラベル＋天気アイコンの置き場） |
 | `TIME_AXIS_H` | 14 | 各チャート下部の時刻ラベル帯 |
 | `HOURS_PER_SCREEN` | 24 | 1画面に収める時間数 |
+| `HOURS_PER_SCREEN_WIDE` | 48 | スマホの横向き（`isWideGraph()`）の1画面。24 のままだと天気の記号・座布団が倍の大きさになる（v4.188.0）。使うのは `hoursPerScreen()` |
 | `SCRUB_POS` | 0.5 | 選択線の画面内位置（ど真ん中） |
 | `PX_RATIO` | max 2 | canvas の解像度倍率 |
 | `pxPerHourVal` | 実測 | 1時間あたりの px 幅 |

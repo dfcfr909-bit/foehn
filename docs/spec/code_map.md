@@ -221,6 +221,7 @@ ADR-0011 と同じ形になる。`setWxSource` の帯がその唯一の歯止め
 
 | 名前 | 役割 | 目安行 |
 |---|---|---|
+| `WIDE_GRAPH_MQ` / `isWideGraph()` / `hoursPerScreen()` | スマホの横向き（高さ 500px 以下）か・1画面の時間数（横向き 48・縦 24）。⚠ CSS の `@media` と同じ文字列（v4.188.0・`ui.md`「スマホの横向き」） | 約 4960 |
 | `computeChartHeights(outerH)` | 4パネルへの高さ配分 | 約 2698 |
 | `chartsTotalH()` | 4枚の合計高 | 約 2696 |
 | `niceRange(vals, …)` | 軸レンジの丸め | 約 2710 |
