@@ -835,11 +835,11 @@ html, body {
   background: var(--surface);
 }
 #map-overlay.open { display: flex; }
-/* 横向きでは地図だけ画面いっぱいに広げる（#184）。
-   ⚠ #app の幅（max-width 480px）は触らない。広げるとグラフが広い幅で組み直され、
-     閉じても resize が起きないので幅が合わなくなる。地図から開く画面（天気図・お気に入り・
-     ランキング・座標）も全幅になり、✕がノッチに潜る。fixed なら #app の外へ出られる
-     （#app・body に transform/filter/contain が無いことが前提）。
+/* 横向きでは地図を画面いっぱいに広げる（#184）。fixed なら #app の外へ出られる
+   （#app・body に transform/filter/contain が無いことが前提）。
+   ⚠ v4.188.0 からスマホの横向きでは #app（グラフ画面）も全幅にする（スタイル末尾の WIDE_GRAPH_MQ の節）。
+     そのとき地図から開く画面（天気図・お気に入り・ランキング・座標）は中央の 480px に戻す（✕をノッチに潜らせない）。
+     iPad の横向き（高さ 500px 超）は #app が 480px のまま。
    ⚠ 縦向きは absolute のまま。iOS のキーボード表示時に fixed がずれる癖を、縦の主な使い方に持ち込まない */
 @media (orientation: landscape) {
   #map-overlay { position: fixed; inset: 0; }
@@ -2523,6 +2523,30 @@ html, body {
   background: #ffd9b3;
   border-bottom: 3px solid var(--c-col);
 }
+
+/* スマホの横向きのグラフ画面（v4.188.0）。⚠ この条件は JS の WIDE_GRAPH_MQ と同じ文字列にする（片方だけ変えると
+   見た目と1時間の幅が食い違う）。iPad の横向き（高さ 500px 超）は対象外＝480px の柱のまま。
+   ⚠ pointer: coarse（指で触る端末）も条件に入れる。無いと PC の背の低い横長の窓でもボタン行が隠れ、地図を開く入口が無くなる
+   ・全幅にし、凡例・ボタン行・円柱・AI全国概況を隠す（地点の切り替えと地図は縦向きで行う。利用者の選んだ案 A）
+   ・パネルの高さは縦向きと同じ下限（computeChartHeights の 400px）のまま、グラフを縦に送る。
+     4パネルを 260px に詰めると風・気圧の目盛りが重なった（試作）
+   ・#app の中に inset:0 で置いた画面（お気に入り・ランキング・天気図・座標）は、今までどおり中央の 480px の柱に戻す。
+     #app を広げたまま全幅にすると ✕ がノッチに潜る（v4.161.0 の注記）
+   ・ノッチとホームバーの逃げ（ボタン行と円柱が持っていた下の逃げが無くなるので、時刻の帯に移す） */
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  #app { max-width: none; }
+  #legend, #footer, #fav-bar-slot, #ai-outlook { display: none !important; }
+  #header { padding-left: calc(10px + var(--sa-left)); padding-right: calc(10px + var(--sa-right)); }
+  #charts-outer, #time-scroll, #offline-note, #radar-note, #model-note {
+    margin-left: var(--sa-left); margin-right: var(--sa-right);
+  }
+  #time-scroll { margin-bottom: var(--sa-bottom); }
+  #charts-outer { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+  #charts-wrapper { height: auto; }
+  #fav-overlay, #rank-overlay, #wxmap-overlay, #coord-sheet {
+    left: max(0px, calc(50% - 240px)); right: max(0px, calc(50% - 240px));
+  }
+}
 </style>
 </head>
 <body>
@@ -2666,7 +2690,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.187.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.188.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -4800,10 +4824,12 @@ function positionPopupAt(clientX, clientY) {
   const outer = document.getElementById('charts-outer');
   const pop = document.getElementById('scrub-popup');
   const r = outer.getBoundingClientRect();
+  // ⚠ 横向きはグラフを縦に送る。窓は送られる側（内容の座標）に置くので、送った分を足して見えている範囲に止める
+  const st = outer.scrollTop || 0, h = outer.clientHeight || r.height;
   let x = clientX - r.left + 14;
-  let y = clientY - r.top - pop.offsetHeight - 12;
+  let y = clientY - r.top + st - pop.offsetHeight - 12;
   x = Math.max(2, Math.min(r.width - pop.offsetWidth - 2, x));
-  y = Math.max(2, Math.min(r.height - pop.offsetHeight - 2, y));
+  y = Math.max(st + 2, Math.min(st + h - pop.offsetHeight - 2, y));
   pop.style.left = x + 'px';
   pop.style.top = y + 'px';
 }
@@ -4813,8 +4839,23 @@ const POPUP_HOME = 0.13;
 function resetPopupPosition() {
   const pop = document.getElementById('scrub-popup');
   pop.style.left = (POPUP_HOME * 100) + '%';
-  pop.style.top = '4px';
+  pop.style.top = ((document.getElementById('charts-outer').scrollTop || 0) + 4) + 'px';
 }
+/* 横向きでグラフを縦に送ったとき、選択情報の窓を見えている範囲に留める（送った分だけ一緒に動かす） */
+(function keepPopupInView() {
+  const outer = document.getElementById('charts-outer');
+  if (!outer) return;
+  let last = outer.scrollTop || 0;
+  outer.addEventListener('scroll', () => {
+    const st = outer.scrollTop || 0, d = st - last;
+    last = st;
+    if (!d) return;
+    const pop = document.getElementById('scrub-popup');
+    const top = parseFloat(pop.style.top);
+    const y = (isFinite(top) ? top : 4) + d;
+    pop.style.top = Math.max(st + 2, Math.min(st + outer.clientHeight - pop.offsetHeight - 2, y)) + 'px';
+  }, { passive: true });
+})();
 
 /* ============================================================
    ABC JUDGMENT
@@ -4956,6 +4997,13 @@ const FORECAST_HOURS = 168; // 現在時刻から先の表示時間数（7日）
 let   HOURS         = FORECAST_HOURS + 1;   // 実データ長に応じて更新（現在を含む）
 const TIME_AXIS_H   = 14;   // 各チャート下部の時刻ラベル帯
 const HOURS_PER_SCREEN = 24;   // 1画面に収める時間数（≒1日）
+/* スマホの横向きのグラフ画面（v4.188.0）。⚠ スタイル末尾の @media と同じ文字列にする */
+const WIDE_GRAPH_MQ = '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)';
+const HOURS_PER_SCREEN_WIDE = 48;   // 横向きの1画面（24 のままだと天気の記号・座布団が倍の大きさになる）
+function isWideGraph() {
+  try { return window.matchMedia(WIDE_GRAPH_MQ).matches; } catch (e) { return false; }
+}
+function hoursPerScreen() { return isWideGraph() ? HOURS_PER_SCREEN_WIDE : HOURS_PER_SCREEN; }
 const SCRUB_POS     = 0.5;   // 選択線の画面内位置（画面のど真ん中）
 const PX_RATIO      = Math.min(window.devicePixelRatio || 1, 2); // 過剰解像度の禁止
 
@@ -4981,8 +5029,10 @@ function buildCharts() {
   const outer = document.getElementById('charts-outer');
   viewW = outer.clientWidth || window.innerWidth;
   computeChartHeights(outer.clientHeight || 480);   // 表示領域の高さでパネル高を決定
-  // 24時間ぶんが画面幅に収まるpx/hを算出（1日≒1画面）
-  pxPerHourVal = (viewW - PADDING_L - PADDING_R) / HOURS_PER_SCREEN;
+  // 縦へ戻したら、横向きで縦に送った位置を戻す（overflow:hidden でも scrollTop は残り、上が切れたままになる）
+  if (!isWideGraph() && outer.scrollTop) outer.scrollTop = 0;
+  // 24時間ぶん（横向きは48時間ぶん）が画面幅に収まるpx/hを算出（1日≒1画面）
+  pxPerHourVal = (viewW - PADDING_L - PADDING_R) / hoursPerScreen();
   const totalW = chartTotalW();
   // 両端に余白は置かない。以前は先頭・末尾の時刻を選択線（画面SCRUB_POS位置）へ
   // 届かせるため右に画面幅の86%ぶんの余白を作っており、末尾までスクロールすると
@@ -5170,7 +5220,7 @@ const PRESS_WIN_SETTLE_MS = 180;
 function pressWindowFor(idx) {
   const d = state.allData;
   if (!d || !d.length) return null;
-  const half = Math.round(HOURS_PER_SCREEN / 2) + 2;
+  const half = Math.round(hoursPerScreen() / 2) + 2;
   let mn = Infinity, mx = -Infinity;
   for (let i = Math.max(0, idx - half); i <= Math.min(d.length - 1, idx + half); i++) {
     const v = d[i].pressure;
@@ -6577,7 +6627,8 @@ function updateParticles() {
   const wrap = document.getElementById('charts-outer');
   const pc = document.getElementById('particle-canvas');
   pc.width = wrap.clientWidth;
-  pc.height = wrap.clientHeight;
+  // 横向きはグラフを縦に送るので、送った先まで降らせる。⚠ 縦向きは今までどおり見えている高さ（溢れる小さな端末でも伸ばさない）
+  pc.height = isWideGraph() ? Math.max(wrap.clientHeight, wrap.scrollHeight) : wrap.clientHeight;
 
   if (!d) { cancelAnimationFrame(particleAnim); particles = []; return; }
 
@@ -6983,11 +7034,29 @@ function selectFromPointer(clientX, clientY) {
 chartsWrapper.addEventListener('click', e => selectFromPointer(e.clientX, e.clientY));
 
 // タッチした位置の時刻を選択し、ポップアップを指へ追従（なぞって選択も可）
+/* ⚠ 横向き（v4.188.0）はグラフを縦に送るので、指を置いただけでは選ばない。動きの向きを1回だけ決め、
+     横になぞったときだけ選ぶ（縦に払ったら送るだけ）。タップは click で選ばれる。縦向きは今までどおり */
+const TOUCH_AXIS_PX = 8;          // 向きを決めるまでの動き
+let touchGesture = null;          // { x, y, axis: null | 'x' | 'y' }
 chartsWrapper.addEventListener('touchstart', e => {
-  if (e.touches[0]) selectFromPointer(e.touches[0].clientX, e.touches[0].clientY);
+  const t = e.touches[0];
+  if (!t) return;
+  if (isWideGraph()) { touchGesture = { x: t.clientX, y: t.clientY, axis: null }; return; }
+  touchGesture = null;
+  selectFromPointer(t.clientX, t.clientY);
 }, { passive: true });
 chartsWrapper.addEventListener('touchmove', e => {
-  if (e.touches[0]) selectFromPointer(e.touches[0].clientX, e.touches[0].clientY);
+  const t = e.touches[0];
+  if (!t) return;
+  if (touchGesture) {
+    if (!touchGesture.axis) {
+      const dx = Math.abs(t.clientX - touchGesture.x), dy = Math.abs(t.clientY - touchGesture.y);
+      if (Math.max(dx, dy) < TOUCH_AXIS_PX) return;
+      touchGesture.axis = dx > dy ? 'x' : 'y';
+    }
+    if (touchGesture.axis !== 'x') return;
+  }
+  selectFromPointer(t.clientX, t.clientY);
 }, { passive: true });
 
 // 帯をなぞっている間もポップアップを指の位置へ追従（指は帯の上にあるため）。
