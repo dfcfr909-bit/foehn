@@ -1327,7 +1327,8 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     'safe-area は --sa-top / --sa-bottom を通す（env()の直書きは検査をすり抜ける）', envDirect);
 
   /* ================= 5d-3. 横向き（#184） =================
-     横向きでは地図だけ画面いっぱい（#map-overlay を fixed）。#app は 480px のまま。
+     横向きでは地図を画面いっぱい（#map-overlay を fixed）。v4.188.0 からスマホの横向きは #app（グラフ画面）も全幅
+     （smoke_landscape）。地図から開く画面は 480px の柱のまま。
      左右のノッチは --sa-left / --sa-right（headless の env() は 0 なので差し替えて見る） */
   const SA_SIDE = 47;
   // グラフは横にスクロールする幅広の canvas なので、横向きにする前の幅と比べる
@@ -1394,7 +1395,7 @@ const MAP_HINT_WAIT = 5200;   // sotoki_v4.html の MAP_HINT_MS(4500) より少�
     return out;
   }, SA_SIDE);
   ok(land.stageW === land.W, '★横向きでは地図が画面の幅いっぱいに広がる', land);
-  ok(land.appW <= 480, '横向きでも本体（#app）の幅は480pxのまま（グラフを広げない）', land.appW);
+  ok(land.appW === land.W, '横向きは本体（#app・グラフ画面）も全幅（v4.188.0。それまでは 480px のまま）', land);
   ok(land.outside.length === 0, '★横向きで地図の部品が左右のノッチに潜らない', land.outside);
   ok(land.toolsHit.length === 0, '横向きで右のボタン列がすべて押せる', land.toolsHit);
   ok(land.attr.lines <= 2 && !land.attr.overlapTools, '横向きで出典の帯は2行以内・右のボタン列と重ならない', land.attr);
