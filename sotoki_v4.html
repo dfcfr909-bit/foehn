@@ -2690,7 +2690,7 @@ html, body {
     <!-- 版数そのものを「これは何？」ページへの入口にしている。⚠ 凡例の横幅に余裕が無いので、
          文字を足さずに版数をリンクにした（幅が変わらない）。⚠ `id="app-version"` は版数の正なので
          span のまま残すこと（release.yml と smoke_version が読む）。 -->
-    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.188.0</span></a>
+    <a id="about-link" href="about.html" title="判定の基準・データの出どころ・作りの経緯"><span id="app-version">v4.189.0</span></a>
   </div>
 
   <!-- Footer -->
@@ -14616,6 +14616,25 @@ let mapRotationDeg = 0;           // 地図に掛けている回転(deg)
 let headingDeg = 0;               // 端末が向いている方位(deg, 真北=0, 時計回り)
 let headingKnown = false;         // 一度でも方位が取れたか（取れるまでは矢尻を出さない）
 let headingHandler = null;
+/* 動いている間は GPS の進む向きでヘディングアップする（v4.189.0）。
+   車載ホルダーに立てて横向きにした iPhone で、方位センサー＋画面の回転角だと地図が約 90° ずれて横へ流れた（利用者の実機・2026-11-19）。
+   進む向きは端末の持ち方・傾き・画面の回転角に関係しない（カーナビと同じ仕組み）。
+   ⚠ 遅いと GPS の向きはふらつくので、速さがこれ以上のときだけ。⚠ 不明な値（null・NaN・負）は採らない
+   ⚠ 止まってから HOLD の間は GPS の向きを保つ（信号で止まるたびに方位センサーへ跳ばない）。それを過ぎると方位センサーに戻る
+     （立てて止まっているときの方位センサーの正しさは未確認。仮の表示で値を取ってから決める） */
+const HEADING_GPS_MIN_SPEED = 2.5;    // m/s（約 9 km/h）
+const HEADING_GPS_HOLD_MS = 8000;
+let gpsHeadingAt = -Infinity;     // GPS の進む向きを最後に使った時刻（performance.now）
+let headingSrc = null;            // 'gps' | 'compass'（仮の表示用）
+let lastGpsCoords = null;         // 仮の表示用（速さ・進む向き）
+let lastCompass = null;           // 仮の表示用（方位センサーの生の値・傾き）
+// GPS の進む向きが使えるか（純関数）
+function gpsCourseUsable(c) {
+  return !!c && Number.isFinite(c.heading) && c.heading >= 0 && c.heading < 360 &&
+    Number.isFinite(c.speed) && c.speed >= HEADING_GPS_MIN_SPEED;
+}
+// 方位センサーの値を使ってよいか（GPS の向きを保っている間は使わない）
+function compassHeadingAllowed(now) { return now - gpsHeadingAt >= HEADING_GPS_HOLD_MS; }
 
 /* 追跡中は選択地点のピンを出さない。自分の位置は矢尻で分かるので、
    同じ場所に重なるピンは目障りなだけ（実機の画面を見ての指摘）。
@@ -14743,6 +14762,7 @@ function stopTracking() {
   if (meCircle) { leafletMap.removeLayer(meCircle); meCircle = null; }
   myPos = null;
   headingKnown = false;
+  gpsHeadingAt = -Infinity; headingSrc = null; lastGpsCoords = null; lastCompass = null;
   updatePinVisibility();        // 追跡をやめたら選択地点のピンを戻す
   updateMeSpotlight();          // 現在地が分からなくなったらマスクも外す
   updateMapToolButtons();
@@ -14751,8 +14771,15 @@ function stopTracking() {
 function onGeoUpdate(pos) {
   const c = pos.coords;
   myPos = { lat: c.latitude, lon: c.longitude, accuracy: c.accuracy };
-  // 方位センサーが使えないときは、進行方向（GPSのheading）で代用する
-  if (!headingHandler && typeof c.heading === 'number' && !isNaN(c.heading)) setHeading(c.heading);
+  lastGpsCoords = { heading: c.heading, speed: c.speed };
+  /* 動いている間は GPS の進む向きを使う（方位センサーより優先・画面の回転角は足さない）。
+     止まっているときは方位センサー。方位センサーが使えなければ、遅くても GPS の向きで代用する（今までどおり） */
+  if (gpsCourseUsable(c)) {
+    gpsHeadingAt = performance.now();
+    headingSrc = 'gps';
+    setHeading(c.heading);
+    showOrientDiag(null);
+  } else if (!headingHandler && typeof c.heading === 'number' && !isNaN(c.heading)) setHeading(c.heading);
   drawMe();
   updateMeSpotlight();
   if (mapFollow && leafletMap) {
@@ -14808,8 +14835,13 @@ async function enableHeading() {
     if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
     else if (typeof e.alpha === 'number') h = 360 - e.alpha;
     if (h == null || isNaN(h)) return;
+    lastCompass = { h, beta: e.beta, gamma: e.gamma };
+    // 動いている間（と止まってからしばらく）は GPS の進む向きを使う（v4.189.0）
+    if (!compassHeadingAllowed(performance.now())) { showOrientDiag(h); return; }
+    headingSrc = 'compass';
     /* センサーの方位は端末の上端が基準。横向きでは画面の上＝端末の横の辺なので、
-       画面の回転ぶんを足す（#184）。⚠ GPS の進む向き（onGeoUpdate）には足さないので setHeading には入れない */
+       画面の回転ぶんを足す（#184）。⚠ GPS の進む向き（onGeoUpdate）には足さないので setHeading には入れない
+       ⚠ 2026-10-08 の「北が上」の確認は平らに持ったとき。車載ホルダーに立てたときに正しいかは未確認（仮の表示で値を取る） */
     setHeading(h + screenAngle());
     showOrientDiag(h);
   };
@@ -14839,6 +14871,14 @@ function screenAngle() {
 
 /* 仮（v4.183.1）：横向きのヘディングアップ中だけ、回転角の2つの取り口・採った値・センサーの方位を出す。
    v4.183.0 の実機で横向きのとき地図が横へ流れた。どちらの取り口が何を返しているかを実機で見て、確かめたら外す */
+/* v4.189.0：向きの出どころ（GPS／方位）・速さ・GPS の進む向き・端末の傾きも出す。
+   車載ホルダーに立てたとき・平らなときに方位センサーが何を返すかを実機で見て、画面の回転角の足し方を決める。確かめたら外す */
+function screenTiltDeg(beta, gamma) {
+  // 画面の傾き（0＝平ら・90＝立てている）。cos(傾き) = cos β・cos γ（純関数）
+  if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return null;
+  const r = Math.PI / 180, c = Math.cos(beta * r) * Math.cos(gamma * r);
+  return Math.acos(Math.max(-1, Math.min(1, Math.abs(c)))) / r;
+}
 function showOrientDiag(h) {
   const el = document.getElementById('map-orient-diag');
   if (!el) return;
@@ -14846,7 +14886,11 @@ function showOrientDiag(h) {
   if (!mapHeadingUp || !landscape) { el.classList.add('hidden'); return; }
   const so = screen.orientation && typeof screen.orientation.angle === 'number' ? screen.orientation.angle : '—';
   const wo = typeof window.orientation === 'number' ? window.orientation : '—';
-  el.textContent = `向きの補正 screen ${so}°／window ${wo}°／採用 ${screenAngle()}°／方位 ${Math.round(h)}°`;
+  const n = (v, d) => (Number.isFinite(v) ? v.toFixed(d) : '—');
+  const cp = lastCompass, g = lastGpsCoords, tilt = cp ? screenTiltDeg(cp.beta, cp.gamma) : null;
+  el.textContent = `向きの補正 screen ${so}°／window ${wo}°／採用 ${screenAngle()}°／方位 ${cp ? Math.round(cp.h) : '—'}°` +
+    `／出どころ ${headingSrc === 'gps' ? 'GPS' : headingSrc === 'compass' ? '方位' : '—'}` +
+    `／GPS ${g ? n(g.heading, 0) : '—'}°・${g ? n(g.speed, 1) : '—'}m/s／傾き ${n(tilt, 0)}°`;
   el.classList.remove('hidden');
 }
 
